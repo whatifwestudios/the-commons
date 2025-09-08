@@ -199,6 +199,21 @@ class IsometricGrid {
         // Get categories from building manager
         const categories = this.buildingManager.getCategories();
         
+        // If no categories available, show loading message
+        if (categories.length === 0) {
+            const option = document.createElement('option');
+            option.value = '';
+            option.textContent = 'Loading buildings...';
+            categorySelect.appendChild(option);
+            
+            // Try to reload buildings from CSV if empty
+            console.log('No building categories found, attempting to load from CSV...');
+            if (this.buildingManager.isBuildingsEmpty()) {
+                this.buildingManager.initializeBuildingsFromMasterCSV();
+            }
+            return;
+        }
+        
         // Add options for each category
         categories.forEach(category => {
             const option = document.createElement('option');
@@ -787,8 +802,8 @@ class IsometricGrid {
             buyBtn.onclick = () => this.buyParcel(row, col);
             contentEl.appendChild(buyBtn);
             
-        } else if (parcel.owner === 'player') {
-            // Player-owned parcel
+        } else if (parcel.owner === 'player' || (this.multiplayerClient && parcel.owner === this.multiplayerClient.playerId)) {
+            // Player-owned parcel (single-player or multiplayer)
             const playerName = (this.playerSettings && this.playerSettings.name) || 'PLAYER';
             statusEl.textContent = `OWNED BY ${playerName.toUpperCase()}`;
             statusEl.classList.add('owned');
@@ -802,9 +817,25 @@ class IsometricGrid {
             }
             
         } else {
-            // Competitor-owned parcel
-            const competitorName = this.competitorNames[parcel.owner] || parcel.owner.toUpperCase();
-            statusEl.textContent = `OWNED BY ${competitorName.toUpperCase()}`;
+            // Competitor-owned or other player-owned parcel
+            // Check if it's a multiplayer game and we have player data
+            let ownerName = parcel.owner.toUpperCase();
+            
+            // Check for competitor names first
+            if (this.competitorNames[parcel.owner]) {
+                ownerName = this.competitorNames[parcel.owner].toUpperCase();
+            } 
+            // In multiplayer, try to get the actual player name
+            else if (this.multiplayerClient && this.multiplayerClient.playerData) {
+                // Check if we have player info from the multiplayer session
+                const players = this.multiplayerClient.lastKnownPlayers || [];
+                const player = players.find(p => p.id === parcel.owner);
+                if (player && player.name) {
+                    ownerName = player.name.toUpperCase();
+                }
+            }
+            
+            statusEl.textContent = `OWNED BY ${ownerName}`;
             statusEl.classList.add('competitor');
             
             // Show what building they have if any

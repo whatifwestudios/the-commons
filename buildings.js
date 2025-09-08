@@ -46,6 +46,12 @@ class BuildingManager {
             if (buildingData) {
                 const totalBuildings = Object.values(buildingData).reduce((sum, cat) => sum + cat.length, 0);
                 console.log('✅ Initialized with', totalBuildings, 'buildings from master CSV');
+                
+                // Refresh the game UI after loading
+                if (window.game && window.game.populateBuildingCategories) {
+                    window.game.populateBuildingCategories();
+                }
+                
                 return true;
             }
         } catch (error) {

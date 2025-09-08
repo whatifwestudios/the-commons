@@ -710,6 +710,9 @@ class MultiplayerClient {
   updateLeaderboard(players) {
     const leaderboardContent = document.getElementById('leaderboard-content');
     if (!leaderboardContent || !players) return;
+    
+    // Store player information for use in other parts of the game
+    this.lastKnownPlayers = players;
 
     leaderboardContent.innerHTML = players.map((player, index) => `
       <div class="leaderboard-entry ${player.id === this.playerId ? 'self' : ''}">
