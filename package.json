@@ -1,0 +1,26 @@
+{
+  "name": "the-commons",
+  "version": "1.0.0",
+  "description": "A city-building game exploring land value economics",
+  "main": "index.html",
+  "scripts": {
+    "start": "python3 -m http.server 8000",
+    "dev": "python3 -m http.server 8000",
+    "build": "echo 'No build step required for static site'",
+    "deploy": "vercel --prod"
+  },
+  "keywords": [
+    "game",
+    "city-building",
+    "economics",
+    "land-value-tax"
+  ],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "vercel": "^32.0.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

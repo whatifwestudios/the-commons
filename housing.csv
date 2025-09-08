@@ -1,0 +1,61 @@
+ID,Category,Type,Name,ParentBuilding,Tier,PrimaryDemographic,Cost,ConstructionDays,MaxRevenuePerDay,MinMaintenancePerDay,DecayRatePercent,JobsCreated,BedroomsAdded,PrereqBuildings,PrereqPopulation,PrereqLandValueMin,EnergyDemandPerDay,FoodProductionPerDay,HealthImpact,CultureImpact,AffordabilityImpact,ResilienceImpact,MobilityImpact,EducationImpact,SafetyImpact,EnvironmentImpact,NoiseImpact
+1,Housing,Building,Tent,,Primitive,All,50,0,1,1,1.0,0,1,,0,0,0,0.0,-30,5,90,-60,0,-10,-60,10,-10
+2,Housing,Amenity,Camp Stove,Tent,,,10,0,0,1,1.0,0,0,,0,0,0,0.05,5,0,-2,0,0,0,5,-5,0
+3,Housing,Amenity,Shared Firepit,Tent,,,15,0,0,1,1.0,0,0,,0,0,0,0.1,-5,10,0,0,0,0,-2,-10,5
+4,Housing,Amenity,Communal Tent,Tent,,,25,0,0,1,1.0,0,0,,0,0,0,0.0,2,5,0,5,0,0,2,0,0
+5,Housing,Amenity,Makeshift Bedding,Tent,,,5,0,0,1,1.0,0,0,,0,0,0,0.0,-5,0,0,-5,0,0,-5,0,0
+6,Housing,Building,Shack,,Primitive,All,250,2,2,2,0.8,0,1,Dirt Road,10,0,1,0.0,-20,3,75,-30,0,-5,-40,-5,-5
+7,Housing,Amenity,Porch,Shack,,,50,1,0,1,0.8,0,0,,0,0,0,0.0,2,2,0,1,0,0,2,0,0
+8,Housing,Amenity,Insulation Upgrade,Shack,,,80,2,0,1,0.6,0,0,,0,0,1,0.0,5,0,0,5,0,0,0,0,0
+9,Housing,Amenity,Rainwater Catchment,Shack,,,120,2,0,1,0.6,0,0,,0,0,0,0.0,8,0,0,8,0,0,0,5,0
+10,Housing,Amenity,Wood Stove,Shack,,,60,1,0,1,0.8,0,0,,0,0,0,0.0,-2,2,0,3,0,0,-1,-5,0
+11,Housing,Building,Cabin,,Early,All,1500,7,10,5,0.5,1,2,Water Well,50,1000,2,0.0,-5,10,40,0,0,0,-10,5,-10
+12,Housing,Amenity,Loft Bedroom,Cabin,,,300,2,0,2,0.4,0,1,,0,0,0,0.0,2,0,0,0,0,0,0,0,0
+13,Housing,Amenity,Solar Panel,Cabin,,,800,3,0,2,0.2,0,0,Basic Power Grid,0,2000,-3,0.0,2,0,2,8,0,0,0,10,0
+14,Housing,Amenity,Composting Toilet,Cabin,,,200,1,0,1,0.3,0,0,,0,0,0,0.0,6,0,0,5,0,0,0,5,0
+15,Housing,Amenity,Workshop,Cabin,,,400,2,5,2,0.4,1,0,,0,0,1,0.0,0,5,0,5,0,5,0,-2,5
+16,Housing,Building,Tiny Home,,Early-Mid,Adult,5000,10,30,10,0.2,1,2,Basic Power Grid,200,5000,5,0.0,5,5,40,5,0,0,0,10,-5
+17,Housing,Amenity,Expandable Loft,Tiny Home,,,600,3,0,2,0.15,0,1,,0,0,0,0.0,2,0,0,0,0,0,0,0,0
+18,Housing,Amenity,Rooftop Garden,Tiny Home,,,1200,4,0,5,0.2,1,0,,0,0,1,2.0,5,5,0,5,0,0,0,8,0
+19,Housing,Amenity,Rainwater System,Tiny Home,,,700,3,0,2,0.2,0,0,,0,0,0,0.0,6,0,0,6,0,0,0,5,0
+20,Housing,Amenity,Off-grid Battery,Tiny Home,,,1500,5,0,3,0.2,0,0,Solar Panel,0,2000,-3,0.0,0,0,0,10,0,0,0,5,0
+21,Housing,Building,Row House,,Mid,Family,8000,20,60,20,0.1,2,4,Paved Road,1000,10000,10,0.0,5,10,10,10,0,0,10,0,0
+22,Housing,Amenity,Shared Courtyard,Row House,,,800,5,0,5,0.08,1,0,,0,0,0,1.0,5,10,0,2,0,0,2,5,0
+23,Housing,Amenity,Basement Storage,Row House,,,400,3,0,2,0.1,0,0,,0,0,0,0.0,0,0,0,0,0,0,0,0,0
+24,Housing,Amenity,Bike Rack,Row House,,,120,1,0,1,0.05,0,0,,0,0,0,0.0,2,0,0,0,8,0,0,5,-2
+25,Housing,Amenity,Small Garden,Row House,,,300,2,0,2,0.05,0,0,,0,0,0,1.5,5,5,0,5,0,0,0,8,0
+26,Housing,Building,Apartment Block (Low-rise),,Mid,Adults/Family,20000,40,150,50,0.05,8,20,Power Station; Sewage Plant,2000,25000,50,0.0,10,5,0,10,10,0,5,-10,5
+27,Housing,Amenity,Laundry Room,Apartment Block (Low-rise),,,2500,7,0,10,0.04,2,0,,0,0,5,0.0,2,0,0,0,0,0,0,-2,2
+28,Housing,Amenity,Community Room,Apartment Block (Low-rise),,,3000,10,0,8,0.03,1,0,,0,0,2,0.0,5,8,0,2,0,0,0,0,2
+29,Housing,Amenity,Elevator,Apartment Block (Low-rise),,,6000,14,0,10,0.05,2,0,Electrical Grid,0,5000,10,0.0,0,0,0,0,15,0,0,-5,5
+30,Housing,Amenity,Bike Storage,Apartment Block (Low-rise),,,400,2,0,1,0.02,0,0,,0,0,0,0.0,2,0,0,0,8,0,0,5,-1
+31,Housing,Building,Suburban House,,Mid,Family,15000,30,120,50,0.05,3,5,Road Network; Power Station,1500,20000,30,0.0,15,5,-10,10,-5,5,10,-20,10
+32,Housing,Amenity,Garage,Suburban House,,,2000,7,0,8,0.05,0,0,,0,0,2,0.0,0,0,0,0,10,0,2,-5,5
+33,Housing,Amenity,Backyard Garden,Suburban House,,,1000,5,0,5,0.03,0,0,,0,0,0,3.0,8,5,0,5,0,0,0,8,0
+34,Housing,Amenity,Playroom,Suburban House,,,800,3,0,4,0.02,0,0,,0,0,1,0.0,3,0,0,0,0,2,0,0,5
+35,Housing,Amenity,Solar Roof,Suburban House,,,4000,10,0,10,0.02,0,0,Solar Panel,0,5000,-10,0.0,0,0,5,10,0,0,0,15,0
+36,Housing,Building,Mid-rise Condo,,Mid-High,Adults,40000,60,400,100,0.02,40,120,Power Station; Paved Roads; Construction Industry,5000,100000,200,0.0,20,15,-20,20,10,10,15,-25,10
+37,Housing,Amenity,Gym,Mid-rise Condo,,,8000,15,0,20,0.02,5,0,,0,0,10,0.0,10,0,0,0,0,0,0,-5,5
+38,Housing,Amenity,Concierge,Mid-rise Condo,,,5000,10,0,15,0.02,3,0,,0,0,0,0.0,0,5,0,0,0,0,5,0,0
+39,Housing,Amenity,Rooftop Garden,Mid-rise Condo,,,12000,20,0,25,0.02,5,0,,0,0,20,10.0,10,8,0,10,0,0,0,20,0
+40,Housing,Amenity,Parking Garage,Mid-rise Condo,,,15000,30,0,50,0.03,10,0,Road Network,0,20000,30,0.0,0,0,0,0,20,0,0,-10,10
+41,Housing,Building,High-rise Luxury Condo,,High,Affluent Adults,90000,90,900,300,0.01,150,400,High-capacity Power; Advanced Water Treatment; Transit Hub,15000,500000,800,0.0,25,30,-70,30,20,5,30,-50,30
+42,Housing,Amenity,Spa,High-rise Luxury Condo,,,20000,30,0,80,0.01,20,0,,0,0,50,0.0,15,5,0,0,0,0,0,-10,5
+43,Housing,Amenity,Heliport,High-rise Luxury Condo,,,30000,40,0,100,0.02,10,0,Aviation Hub,0,200000,40,0.0,0,0,0,0,50,0,0,-20,30
+44,Housing,Amenity,Sky Garden,High-rise Luxury Condo,,,20000,25,0,40,0.01,10,0,,0,0,30,15.0,10,15,0,10,0,0,0,20,0
+45,Housing,Amenity,Security Hub,High-rise Luxury Condo,,,15000,20,0,60,0.01,25,0,,0,0,20,0.0,0,0,0,10,0,0,30,0,5
+46,Housing,Building,Arcology Tower,,Futuristic,All,100000,100,1000,500,0.01,500,4000,Fusion Plant; Advanced Transit; Waste Recycling Plant; R&D Center,40000,2000000,5000,200.0,40,40,-40,60,30,50,40,10,5
+47,Housing,Amenity,Vertical Farm,Arcology Tower,,,25000,30,0,200,0.01,100,0,Agricultural R&D,0,100000,500,200.0,30,0,0,30,0,0,0,40,0
+48,Housing,Amenity,Waste Recycling Plant,Arcology Tower,,,30000,40,0,250,0.01,150,0,Advanced Waste Management,0,150000,400,0.0,20,0,0,40,0,0,0,50,5
+49,Housing,Amenity,Integrated Clinic,Arcology Tower,,,20000,25,0,200,0.01,50,0,Healthcare Network,0,100000,200,0.0,50,0,0,20,0,0,20,0,0
+50,Housing,Amenity,Research Wing,Arcology Tower,,,40000,50,0,300,0.01,200,0,University,0,500000,800,0.0,0,20,0,0,0,50,0,-5,0
+51,Housing,Building,Floating Sky Pod,,Futuristic,All,85000,80,500,200,0.02,200,800,Orbital Dock; Power Hub; Advanced Materials,25000,1000000,2000,100.0,20,30,-50,40,50,30,20,-10,20
+52,Housing,Amenity,Docking Port,Floating Sky Pod,,,30000,40,0,150,0.02,50,0,Orbital Dock,0,200000,200,0.0,0,0,0,20,40,0,0,-10,20
+53,Housing,Amenity,Desalinator,Floating Sky Pod,,,12000,20,0,60,0.02,10,0,,0,50000,50,0.0,20,0,0,20,0,0,0,5,0
+54,Housing,Amenity,Atmospheric Recycler,Floating Sky Pod,,,20000,30,0,100,0.02,20,0,Advanced Materials,0,100000,100,0.0,30,0,0,30,0,0,0,30,0
+55,Housing,Amenity,Comm Hub,Floating Sky Pod,,,8000,15,0,30,0.02,10,0,Telecom Backbone,0,50000,20,0.0,0,10,0,10,10,10,0,0,0
+56,Housing,Building,Habitat Ring,,Futuristic,All,100000,100,1000,500,0.01,800,8000,Orbital Launch Infrastructure; Advanced R&D; Mega Finance Center,70000,5000000,10000,1000.0,50,50,-80,80,80,80,50,60,10
+57,Housing,Amenity,Orbital Dock,Habitat Ring,,,40000,60,0,300,0.01,200,0,Spaceport,0,500000,1000,0.0,0,0,0,30,80,0,0,-10,30
+58,Housing,Amenity,Artificial Gravity Buffer,Habitat Ring,,,50000,70,0,400,0.01,300,0,Advanced R&D,0,1000000,2000,0.0,40,0,0,40,0,0,20,-5,0
+59,Housing,Amenity,Hydroponic Farms,Habitat Ring,,,60000,80,0,400,0.01,250,0,Agricultural R&D,0,1000000,1500,1000.0,50,0,0,50,0,0,0,40,0
+60,Housing,Amenity,Advanced R&D Labs,Habitat Ring,,,80000,90,0,450,0.01,500,0,University; Mega Finance Center,0,2000000,2500,0.0,0,40,0,0,0,80,0,-10,0
