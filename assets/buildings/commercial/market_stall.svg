@@ -1,0 +1,32 @@
+<svg width="64" height="64" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
+  <!-- Market stall with awning -->
+  
+  <!-- Stall posts -->
+  <rect x="16" y="24" width="2" height="24" fill="#8B4513"/>
+  <rect x="46" y="24" width="2" height="24" fill="#8B4513"/>
+  <rect x="16" y="16" width="2" height="8" fill="#8B4513"/>
+  <rect x="46" y="16" width="2" height="8" fill="#8B4513"/>
+  
+  <!-- Awning -->
+  <polygon points="14,24 50,24 48,16 16,16" fill="#FF6347" stroke="#CD5C5C" stroke-width="1"/>
+  
+  <!-- Counter -->
+  <rect x="16" y="40" width="32" height="8" fill="#DEB887" stroke="#D2691E" stroke-width="1"/>
+  
+  <!-- Goods on display -->
+  <!-- Fruits -->
+  <circle cx="22" cy="36" r="3" fill="#FF4500"/>
+  <circle cx="28" cy="36" r="3" fill="#FFD700"/>
+  <circle cx="34" cy="36" r="3" fill="#32CD32"/>
+  <circle cx="40" cy="36" r="3" fill="#FF69B4"/>
+  
+  <!-- Baskets -->
+  <ellipse cx="24" cy="44" rx="6" ry="3" fill="#DEB887" stroke="#D2691E" stroke-width="1"/>
+  <ellipse cx="40" cy="44" rx="6" ry="3" fill="#DEB887" stroke="#D2691E" stroke-width="1"/>
+  
+  <!-- Hanging items -->
+  <circle cx="20" cy="28" r="2" fill="#8B0000"/>
+  <circle cx="44" cy="28" r="2" fill="#4B0082"/>
+  <line x1="20" y1="24" x2="20" y2="26" stroke="#654321" stroke-width="1"/>
+  <line x1="44" y1="24" x2="44" y2="26" stroke="#654321" stroke-width="1"/>
+</svg>

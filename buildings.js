@@ -625,6 +625,55 @@ class BuildingManager {
         const building = this.getBuildingById(buildingId);
         return building ? building.name : 'Unknown Building';
     }
+    
+    // Get building graphics path with fallback
+    getBuildingGraphics(buildingId) {
+        const building = this.getBuildingById(buildingId);
+        if (!building || !building.graphics) {
+            return {
+                path: 'assets/buildings/default.svg',
+                fallbackPath: 'assets/buildings/default.svg'
+            };
+        }
+        return building.graphics;
+    }
+    
+    // Load building image with fallback support
+    async loadBuildingImage(buildingId) {
+        const graphics = this.getBuildingGraphics(buildingId);
+        
+        return new Promise((resolve) => {
+            const img = new Image();
+            
+            img.onload = () => resolve({ img, success: true, path: graphics.path });
+            
+            img.onerror = () => {
+                // Try fallback
+                const fallbackImg = new Image();
+                fallbackImg.onload = () => resolve({ img: fallbackImg, success: false, path: graphics.fallbackPath });
+                fallbackImg.onerror = () => {
+                    // Create a simple colored rectangle as final fallback
+                    const canvas = document.createElement('canvas');
+                    canvas.width = 64;
+                    canvas.height = 64;
+                    const ctx = canvas.getContext('2d');
+                    
+                    // Simple building-like shape
+                    ctx.fillStyle = '#666';
+                    ctx.fillRect(16, 24, 32, 24);
+                    ctx.fillStyle = '#888';
+                    ctx.fillRect(16, 16, 32, 8);
+                    ctx.fillStyle = '#444';
+                    ctx.fillRect(28, 36, 8, 12);
+                    
+                    resolve({ img: canvas, success: false, path: 'generated' });
+                };
+                fallbackImg.src = graphics.fallbackPath;
+            };
+            
+            img.src = graphics.path;
+        });
+    }
 
     // Get building category by ID
     getBuildingCategory(buildingId) {
@@ -740,10 +789,20 @@ class BuildingManager {
             row.PrereqBuildings.split(',').map(p => p.trim().toLowerCase().replace(/\s+/g, '_')).filter(p => p) : 
             [];
         
+        // Get graphics file path
+        const category = row.Category.toLowerCase();
+        const graphicsFile = row.GraphicsFile || `${id}.png`; // Default to building id + .png if not specified
+        const graphicsPath = `assets/buildings/${category}/${graphicsFile}`;
+        
         return {
             id: id,
             name: row.Name,
-            category: row.Category.toLowerCase(),
+            category: category,
+            graphics: {
+                filename: graphicsFile,
+                path: graphicsPath,
+                fallbackPath: `assets/buildings/default.png` // Fallback for missing graphics
+            },
             isDefault: true,
             canDelete: true,
             economics: {

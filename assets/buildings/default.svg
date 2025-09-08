@@ -1,0 +1,32 @@
+<svg width="64" height="64" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
+  <!-- Isometric building placeholder -->
+  <defs>
+    <linearGradient id="buildingGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#666;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#333;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="roofGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#999;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#555;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+  
+  <!-- Building base -->
+  <polygon points="16,48 48,48 48,24 16,24" fill="url(#buildingGrad)" stroke="#222" stroke-width="1"/>
+  
+  <!-- Building right face -->
+  <polygon points="48,24 56,16 56,40 48,48" fill="#444" stroke="#222" stroke-width="1"/>
+  
+  <!-- Building roof -->
+  <polygon points="16,24 48,24 56,16 24,16" fill="url(#roofGrad)" stroke="#222" stroke-width="1"/>
+  
+  <!-- Door -->
+  <rect x="28" y="36" width="8" height="12" fill="#222"/>
+  
+  <!-- Window -->
+  <rect x="20" y="30" width="6" height="6" fill="#4CAF50" opacity="0.7"/>
+  <rect x="38" y="30" width="6" height="6" fill="#4CAF50" opacity="0.7"/>
+  
+  <!-- Question mark for missing graphic indicator -->
+  <text x="32" y="20" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#4CAF50" font-weight="bold">?</text>
+</svg>
