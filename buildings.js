@@ -638,24 +638,58 @@ class BuildingManager {
         return building.graphics;
     }
     
-    // Load building image with fallback support
-    async loadBuildingImage(buildingId) {
+    // Load building image with fallback support and optimization
+    async loadBuildingImage(buildingId, targetSize = 96) {
         const graphics = this.getBuildingGraphics(buildingId);
         
         return new Promise((resolve) => {
             const img = new Image();
             
-            img.onload = () => resolve({ img, success: true, path: graphics.path });
+            img.onload = () => {
+                // If image is too large, resize it
+                if (img.naturalWidth > targetSize * 2 || img.naturalHeight > targetSize * 2) {
+                    const canvas = document.createElement('canvas');
+                    canvas.width = targetSize;
+                    canvas.height = targetSize;
+                    const ctx = canvas.getContext('2d');
+                    
+                    // Calculate scaling to fit within target size
+                    const scale = Math.min(targetSize / img.naturalWidth, targetSize / img.naturalHeight);
+                    const scaledWidth = img.naturalWidth * scale;
+                    const scaledHeight = img.naturalHeight * scale;
+                    
+                    // Center the image
+                    const x = (targetSize - scaledWidth) / 2;
+                    const y = (targetSize - scaledHeight) / 2;
+                    
+                    ctx.drawImage(img, x, y, scaledWidth, scaledHeight);
+                    
+                    resolve({ 
+                        img: canvas, 
+                        success: true, 
+                        path: graphics.path,
+                        resized: true,
+                        originalSize: `${img.naturalWidth}x${img.naturalHeight}`
+                    });
+                } else {
+                    resolve({ img, success: true, path: graphics.path, resized: false });
+                }
+            };
             
             img.onerror = () => {
                 // Try fallback
                 const fallbackImg = new Image();
-                fallbackImg.onload = () => resolve({ img: fallbackImg, success: false, path: graphics.fallbackPath });
+                fallbackImg.onload = () => resolve({ 
+                    img: fallbackImg, 
+                    success: false, 
+                    path: graphics.fallbackPath,
+                    resized: false
+                });
                 fallbackImg.onerror = () => {
                     // Create a simple colored rectangle as final fallback
                     const canvas = document.createElement('canvas');
-                    canvas.width = 64;
-                    canvas.height = 64;
+                    canvas.width = targetSize;
+                    canvas.height = targetSize;
                     const ctx = canvas.getContext('2d');
                     
                     // Simple building-like shape
@@ -666,13 +700,33 @@ class BuildingManager {
                     ctx.fillStyle = '#444';
                     ctx.fillRect(28, 36, 8, 12);
                     
-                    resolve({ img: canvas, success: false, path: 'generated' });
+                    resolve({ 
+                        img: canvas, 
+                        success: false, 
+                        path: 'generated',
+                        resized: false
+                    });
                 };
                 fallbackImg.src = graphics.fallbackPath;
             };
             
             img.src = graphics.path;
         });
+    }
+    
+    // Check if an image file is too large (over 500KB)
+    async checkImageSize(url) {
+        try {
+            const response = await fetch(url, { method: 'HEAD' });
+            const size = parseInt(response.headers.get('content-length') || '0');
+            return {
+                size: size,
+                isLarge: size > 500 * 1024, // 500KB threshold
+                sizeText: size > 1024 * 1024 ? `${(size/1024/1024).toFixed(1)}MB` : `${(size/1024).toFixed(0)}KB`
+            };
+        } catch (e) {
+            return { size: 0, isLarge: false, sizeText: 'unknown' };
+        }
     }
 
     // Get building category by ID
@@ -789,9 +843,13 @@ class BuildingManager {
             row.PrereqBuildings.split(',').map(p => p.trim().toLowerCase().replace(/\s+/g, '_')).filter(p => p) : 
             [];
         
-        // Get graphics file path
+        // Get graphics file path - prefer SVG for better scaling
         const category = row.Category.toLowerCase();
-        const graphicsFile = row.GraphicsFile || `${id}.png`; // Default to building id + .png if not specified
+        let graphicsFile = row.GraphicsFile;
+        if (!graphicsFile) {
+            // Default to SVG first, then PNG fallback
+            graphicsFile = `${id}.svg`;
+        }
         const graphicsPath = `assets/buildings/${category}/${graphicsFile}`;
         
         return {

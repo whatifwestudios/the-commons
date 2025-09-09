@@ -1,0 +1,32 @@
+<svg width="64" height="64" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
+  <!-- Shack - simple wooden structure -->
+  <defs>
+    <pattern id="woodGrain" patternUnits="userSpaceOnUse" width="4" height="4">
+      <rect width="4" height="4" fill="#8B4513"/>
+      <rect width="2" height="4" fill="#A0522D"/>
+    </pattern>
+  </defs>
+  
+  <!-- Main structure -->
+  <rect x="18" y="28" width="28" height="24" fill="url(#woodGrain)" stroke="#654321" stroke-width="1"/>
+  
+  <!-- Roof -->
+  <polygon points="32,18 16,28 48,28" fill="#654321" stroke="#4A4A4A" stroke-width="1"/>
+  
+  <!-- Door (crooked) -->
+  <polygon points="26,40 32,38 32,52 26,52" fill="#2F4F4F" stroke="#1C1C1C" stroke-width="1"/>
+  
+  <!-- Windows (broken/boarded) -->
+  <rect x="36" y="34" width="6" height="6" fill="#4A4A4A" stroke="#654321" stroke-width="1"/>
+  <line x1="36" y1="34" x2="42" y2="40" stroke="#8B4513" stroke-width="2"/>
+  <line x1="42" y1="34" x2="36" y2="40" stroke="#8B4513" stroke-width="2"/>
+  
+  <!-- Support posts -->
+  <rect x="16" y="48" width="2" height="8" fill="#654321"/>
+  <rect x="46" y="48" width="2" height="8" fill="#654321"/>
+  
+  <!-- Weathered details -->
+  <rect x="20" y="30" width="1" height="16" fill="#654321" opacity="0.7"/>
+  <rect x="24" y="32" width="1" height="12" fill="#654321" opacity="0.7"/>
+  <rect x="40" y="30" width="1" height="18" fill="#654321" opacity="0.7"/>
+</svg>

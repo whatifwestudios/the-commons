@@ -1,6 +1,6 @@
 Category,Name,GraphicsFile,CostToBuild,ConstructionDays,MaxRevenuePerDay,JobsCreated,MaintenancePerDay,DecayRatePercent,BedroomsAdded,PopulationReq,EnergyDemandPerDay,FoodProductionPerDay,PrereqBuildings,PrereqLandValue,HealthImpact,CultureImpact,AffordabilityImpact,ResilienceImpact,MobilityImpact,EducationImpact,SafetyImpact,EnvironmentImpact,NoiseImpact
 Housing,Tent,tent.svg,10,0,0,0,1,1,1,0,0,0,,100,-5,-3,5,3,5,0,-2,-1,0
-Housing,Shack,shack.png,50,1,1,0,2,0.91,2,2,1,0,Tent,200,5,5,4,8,2,0,2,-2,0
+Housing,Shack,shack.svg,50,1,1,0,2,0.91,2,2,1,0,Tent,200,5,5,4,8,2,0,2,-2,0
 Housing,Cabin,cabin.png,200,3,2,0,3,0.82,3,4,3,0,Shack,300,8,8,5,6,6,0,4,4,1
 Housing,Single House,single_house.png,500,4,1,0,4,0.73,4,12,6,0,Cabin,400,6,0,-5,2,2,0,6,-3,2
 Housing,Row Houses,row_houses.png,800,5,6,0,5,0.64,8,15,8,0,,500,-4.55,10.91,-3.64,9.09,10.91,4.55,-7.27,-5.45,8.18
@@ -19,7 +19,7 @@ Education,University,university.png,2800,14,6,30,14,0.28,0,150,36,0,Trade School
 Education,Research Center,research_center.png,5000,18,30,33,15,0.19,0,185,70,0,University,1800,32.73,50,-14.55,58.18,24.55,83.64,24.55,-7.27,32.73
 Education,AI Academy,ai_academy.png,7000,20,60,25,15,0.1,0,400,200,0,Research Center,2000,36.36,55,-17.27,64.09,27.27,91.82,27.27,-8.64,36.36
 Education,Futuristic R&D Lab,futuristic_rd_lab.png,25000,24,72,60,16,0.01,0,650,180,0,AI Academy,2200,40,60,-20,70,30,100,30,-10,40
-Healthcare,Herbalist Hut,herbalist_hut.png,20,0,2,2,1,1,0,0,1,1,,300,10,0,5,5,0,0,0,5,0
+Healthcare,Herbalist Hut,herbalist_hut.svg,20,0,2,2,1,1,0,0,1,1,,300,10,0,5,5,0,0,0,5,0
 Healthcare,Medic Tent,medic_tent.png,80,1,2,3,3,0.91,0,3,2,0,Herbalist Hut,600,16.36,2.73,1.82,10.91,1.82,3.64,3.64,2.73,2.73
 Healthcare,Field Clinic,field_clinic.png,400,2,4,5,5,0.82,0,5,3,0,Medic Tent,900,22.73,5.45,-1.36,16.82,3.64,7.27,7.27,0.45,5.45
 Healthcare,Pharmacy,pharmacy.png,650,4,8,8,6,0.73,0,15,6,0,Field Clinic,1200,29.09,8.18,-4.55,22.73,5.45,10.91,10.91,-1.82,8.18
@@ -60,7 +60,7 @@ Commercial,Department Store,department_store.png,1800,7,40,65,4,0.28,0,450,34,0,
 Commercial,Corporate Tower,corporate_tower.png,6000,14,40,120,11,0.19,0,600,160,0,Department Store,6000,15.45,24.55,-23.64,40.91,24.55,16.36,24.55,-19.55,40.91
 Commercial,Mega Mall,mega_mall.png,10000,21,110,150,25,0.1,0,1100,175,120,Corporate Tower,6600,17.73,27.27,-26.82,45.45,27.27,18.18,27.27,-22.27,45.45
 Civic,Council Hut,council_hut.png,10,0,0,0,0,1,0,0,0,0,,700,0,5,5,0,0,0,5,5,0
-Civic,Town Hall,town_hall.png,95,1,0,2,1,0.82,0,30,11,0,,1400,7.27,15,2.27,10.91,5.45,7.27,15,2.27,3.64
+Civic,Town Hall,town_hall.svg,95,1,0,2,1,0.82,0,30,11,0,,1400,7.27,15,2.27,10.91,5.45,7.27,15,2.27,3.64
 Civic,Post Office,post_office.png,250,2,15,8,2,0.73,0,35,15,0,Town Hall,2100,10.91,20,0.91,16.36,8.18,10.91,20,0.91,5.45
 Civic,Courthouse,courthouse.png,500,6,10,6,3,0.64,0,45,14,0,Post Office,2800,14.55,25,-0.45,21.82,10.91,14.55,25,-0.45,7.27
 Civic,City Hall,city_hall.png,1500,5,0,15,4,0.55,0,95,23,0,Courthouse,3500,18.18,30,-1.82,27.27,13.64,18.18,30,-1.82,9.09
