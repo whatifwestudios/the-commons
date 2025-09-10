@@ -244,6 +244,12 @@ class GameRoom {
   }
 
   startPeriodicUpdates() {
+    // Day advancement (1 hour game = 365 days, so ~10 seconds per day)
+    this.dayAdvanceInterval = setInterval(() => {
+      this.gameState.gameTime.gameDay++;
+      console.log(`Server day advanced to: ${this.gameState.gameTime.gameDay}`);
+    }, 10000); // ~10 seconds per game day
+    
     // Market updates every 2 minutes (natural market fluctuations)
     this.marketUpdateInterval = setInterval(() => {
       this.updateMarketConditions();
@@ -361,7 +367,8 @@ class GameRoom {
     // Set construction start day and duration
     const buildingData = this.getBuildingData(buildingId);
     if (buildingData && buildingData.economics) {
-      parcel.constructionStartDay = this.gameState.day;
+      // Use gameTime.gameDay, not gameState.day (which doesn't exist)
+      parcel.constructionStartDay = this.gameState.gameTime.gameDay || 0;
       parcel.constructionDays = buildingData.economics.constructionDays || 14;
     }
     
@@ -423,7 +430,8 @@ class GameRoom {
     // Set construction start day and duration
     const buildingData = this.getBuildingData(buildingId);
     if (buildingData && buildingData.economics) {
-      parcel.constructionStartDay = this.gameState.day;
+      // Use gameTime.gameDay, not gameState.day (which doesn't exist)
+      parcel.constructionStartDay = this.gameState.gameTime.gameDay || 0;
       parcel.constructionDays = buildingData.economics.constructionDays || 14;
     }
     
@@ -941,6 +949,7 @@ class GameRoom {
 
   destroy() {
     if (this.gameTimer) clearTimeout(this.gameTimer);
+    if (this.dayAdvanceInterval) clearInterval(this.dayAdvanceInterval);
     if (this.marketUpdateInterval) clearInterval(this.marketUpdateInterval);
     if (this.revenueCollectionInterval) clearInterval(this.revenueCollectionInterval);
   }

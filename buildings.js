@@ -4,16 +4,18 @@
 class BuildingManager {
     constructor() {
         this.STORAGE_KEY = 'theCommons_buildings';
-        this.buildings = this.loadBuildings();
         
-        // Always check if we need to load from CSV
-        // This ensures we use the latest CSV data
-        if (this.shouldLoadFromCSV()) {
-            console.log('Loading buildings from master CSV...');
-            this.initializeBuildingsFromMasterCSV();
-        } else {
-            console.log('Using cached buildings:', Object.keys(this.buildings).length, 'categories');
-        }
+        // ALWAYS force load from CSV for now to ensure correct buildings
+        console.log('🔄 Force loading buildings from master CSV...');
+        this.buildings = {}; // Start with empty buildings
+        this.initializeBuildingsFromMasterCSV();
+        
+        // Old loading logic disabled for now
+        // this.buildings = this.loadBuildings();
+        // if (this.shouldLoadFromCSV()) {
+        //     console.log('Loading buildings from master CSV...');
+        //     this.initializeBuildingsFromMasterCSV();
+        // }
     }
 
     // Initialize with default buildings if no saved data exists
