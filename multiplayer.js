@@ -364,6 +364,8 @@ class MultiplayerClient {
           // Sync buildings
           localParcel.building = serverParcel.building;
           localParcel.buildingAge = serverParcel.buildingAge;
+          localParcel.constructionStartDay = serverParcel.constructionStartDay;
+          localParcel.constructionDays = serverParcel.constructionDays;
           
           // Sync land values
           if (serverParcel.landValue) {
@@ -544,6 +546,8 @@ class MultiplayerClient {
           if (parcel) {
             parcel.building = result.parcel.building;
             parcel.buildingAge = result.parcel.buildingAge || 0;
+            parcel.constructionStartDay = result.parcel.constructionStartDay;
+            parcel.constructionDays = result.parcel.constructionDays || 0;
           }
         }
         

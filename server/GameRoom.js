@@ -85,6 +85,8 @@ class GameRoom {
           owner: null,
           building: null,
           buildingAge: 0,
+          constructionStartDay: null,
+          constructionDays: 0,
           landValue: {
             baseValue: this.calculateBaseLandValue(row, col, size),
             currentValue: 0,
@@ -356,6 +358,13 @@ class GameRoom {
     parcel.building = buildingId;
     parcel.buildingAge = 0;
     
+    // Set construction start day and duration
+    const buildingData = this.getBuildingData(buildingId);
+    if (buildingData && buildingData.economics) {
+      parcel.constructionStartDay = this.gameState.day;
+      parcel.constructionDays = buildingData.economics.constructionDays || 14;
+    }
+    
     player.buildings.push({
       row, col, 
       buildingId, 
@@ -366,7 +375,14 @@ class GameRoom {
     return { 
       success: true, 
       data: { 
-        parcel: { row, col, building: buildingId },
+        parcel: { 
+          row, 
+          col, 
+          building: buildingId, 
+          buildingAge: parcel.buildingAge,
+          constructionStartDay: parcel.constructionStartDay,
+          constructionDays: parcel.constructionDays
+        },
         playerCash: player.cash 
       } 
     };
@@ -404,10 +420,26 @@ class GameRoom {
     parcel.owner = 'city'; // City-owned building
     parcel.builder = playerId; // Track who built it for stats
     
+    // Set construction start day and duration
+    const buildingData = this.getBuildingData(buildingId);
+    if (buildingData && buildingData.economics) {
+      parcel.constructionStartDay = this.gameState.day;
+      parcel.constructionDays = buildingData.economics.constructionDays || 14;
+    }
+    
     return { 
       success: true, 
       data: { 
-        parcel: { row, col, building: buildingId, owner: 'city', builder: playerId },
+        parcel: { 
+          row, 
+          col, 
+          building: buildingId, 
+          owner: 'city', 
+          builder: playerId,
+          buildingAge: parcel.buildingAge,
+          constructionStartDay: parcel.constructionStartDay,
+          constructionDays: parcel.constructionDays
+        },
         treasuryRemaining: this.gameState.governance.treasuryPools[treasuryCategory],
         category: treasuryCategory
       } 
@@ -426,6 +458,55 @@ class GameRoom {
     };
     
     return eligibility[category] && eligibility[category].includes(buildingId);
+  }
+
+  getBuildingData(buildingId) {
+    // Basic building data - this should ideally come from the same CSV source as the client
+    // For now, return basic construction data with sensible defaults
+    const buildingDefaults = {
+      // Education buildings
+      elementary_school: { economics: { constructionDays: 14 } },
+      high_school: { economics: { constructionDays: 21 } },
+      university: { economics: { constructionDays: 60 } },
+      library: { economics: { constructionDays: 10 } },
+      
+      // Healthcare buildings
+      clinic: { economics: { constructionDays: 14 } },
+      hospital: { economics: { constructionDays: 45 } },
+      pharmacy: { economics: { constructionDays: 7 } },
+      
+      // Infrastructure buildings
+      power_plant: { economics: { constructionDays: 30 } },
+      water_treatment: { economics: { constructionDays: 21 } },
+      waste_management: { economics: { constructionDays: 14 } },
+      
+      // Housing buildings
+      apartment_building: { economics: { constructionDays: 30 } },
+      single_family: { economics: { constructionDays: 14 } },
+      townhouse: { economics: { constructionDays: 18 } },
+      
+      // Culture buildings
+      art_gallery: { economics: { constructionDays: 14 } },
+      theater: { economics: { constructionDays: 30 } },
+      museum: { economics: { constructionDays: 21 } },
+      
+      // Recreation buildings
+      park: { economics: { constructionDays: 10 } },
+      gym: { economics: { constructionDays: 14 } },
+      sports_complex: { economics: { constructionDays: 30 } },
+      
+      // Commercial buildings
+      grocery_store: { economics: { constructionDays: 14 } },
+      shopping_mall: { economics: { constructionDays: 45 } },
+      restaurant: { economics: { constructionDays: 10 } },
+      
+      // Civic buildings
+      city_hall: { economics: { constructionDays: 30 } },
+      police_station: { economics: { constructionDays: 21 } },
+      fire_station: { economics: { constructionDays: 18 } }
+    };
+    
+    return buildingDefaults[buildingId] || { economics: { constructionDays: 14 } };
   }
 
   // Simplified governance - direct point allocation

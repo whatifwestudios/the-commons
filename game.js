@@ -69,6 +69,8 @@ class IsometricGrid {
                     owner: null, // null = unowned, 'player' = owned by player, 'competitor1', etc.
                     building: null,
                     buildingAge: 0, // Days since building was constructed
+                    constructionStartDay: null, // Day when construction began
+                    constructionDays: 0, // Total days needed for construction
                     decay: 0, // Decay level (0-1, where 1 is fully decayed)
                     amenities: [], // Array of amenity objects
                     landValue: {
@@ -229,6 +231,8 @@ class IsometricGrid {
             this.updateGameDate();
             this.processDailyCashflow();
             this.updatePlayerStats();
+            // Re-render to update building construction stages
+            this.scheduleRender();
         }, this.dayLength);
     }
 
@@ -2198,6 +2202,14 @@ class IsometricGrid {
             this.playerCash -= buildingCost;
             this.grid[row][col].building = buildingId;
             
+            // Set construction start day and duration
+            const building = this.buildingManager.getBuildingById(buildingId);
+            if (building && building.economics) {
+                this.grid[row][col].constructionStartDay = this.currentDay;
+                this.grid[row][col].constructionDays = building.economics.constructionDays || 14;
+                this.grid[row][col].buildingAge = 0;
+            }
+            
             // Update land values, vitality, cashflow and re-render
             this.updateAllLandValues();
             this.updateVitalityDisplay();
@@ -3346,22 +3358,46 @@ class IsometricGrid {
         // Set canvas global alpha for dimming effect
         this.ctx.globalAlpha = opacity;
         
+        // Get parcel to check construction status
+        const parcel = this.grid[row][col];
+        
         // Check if building has custom image
         const building = this.buildingManager.getBuildingById(buildingId);
         
+        // Calculate construction progress if under construction
+        let constructionStage = 4; // Default to fully built
+        if (parcel && parcel.constructionStartDay !== null && parcel.constructionDays > 0) {
+            const daysElapsed = this.currentDay - parcel.constructionStartDay;
+            if (daysElapsed < parcel.constructionDays) {
+                // Building is still under construction
+                const progress = daysElapsed / parcel.constructionDays;
+                // Calculate stage (1-4): 1=32x32, 2=64x64, 3=128x128, 4=full res
+                constructionStage = Math.min(4, Math.floor(progress * 4) + 1);
+                
+                // Debug logging for the first few updates
+                if (Math.random() < 0.01) { // Log 1% of the time to avoid spam
+                    console.log(`Building ${buildingId} at (${row},${col}): Day ${daysElapsed}/${parcel.constructionDays}, Progress ${(progress*100).toFixed(1)}%, Stage ${constructionStage}`);
+                }
+            } else {
+                // Construction complete - clear construction data
+                parcel.constructionStartDay = null;
+                parcel.constructionDays = 0;
+            }
+        }
+        
         if (building && building.images && building.images.built) {
             // Draw custom building image
-            this.drawBuildingImage(building.images.built, offsetX, offsetY);
+            this.drawBuildingImage(building.images.built, offsetX, offsetY, constructionStage);
         } else {
             // Draw simple building representation
-            this.drawSimpleBuilding(buildingId, offsetX, offsetY);
+            this.drawSimpleBuilding(buildingId, offsetX, offsetY, constructionStage);
         }
         
         // Reset global alpha
         this.ctx.globalAlpha = 1.0;
     }
 
-    drawBuildingImage(imageSrc, offsetX, offsetY) {
+    drawBuildingImage(imageSrc, offsetX, offsetY, constructionStage = 4) {
         // Create image if not cached
         if (!this.buildingImageCache) {
             this.buildingImageCache = new Map();
@@ -3387,30 +3423,53 @@ class IsometricGrid {
             const widthMultiplier = window.buildingPositionControls?.widthMultiplier || 1.0;
             
             // Fill diamond width completely (left point to right point)
-            const drawWidth = this.tileWidth * widthMultiplier;
+            const baseDrawWidth = this.tileWidth * widthMultiplier;
+            const baseDrawHeight = (baseDrawWidth / (img.width / img.height)) * heightMultiplier;
             
-            // Calculate height maintaining aspect ratio
-            const aspectRatio = img.width / img.height;
-            let drawHeight = drawWidth / aspectRatio;
-            
-            // Apply height multiplier
-            drawHeight = drawHeight * heightMultiplier;
-            
-            // Position image so bottom edge touches diamond's bottom point (with Y offset)
-            // Same positioning logic as simple buildings
-            const imageY = offsetY + this.tileHeight/2 - drawHeight + yOffset;
-            
-            this.ctx.drawImage(
-                img, 
-                offsetX - drawWidth/2, 
-                imageY, 
-                drawWidth, 
-                drawHeight
-            );
+            // Apply pixelation effect based on construction stage
+            if (constructionStage < 4) {
+                // Create pixelated version
+                const pixelSizes = [32, 64, 128]; // Pixel sizes for stages 1-3
+                const pixelSize = pixelSizes[constructionStage - 1];
+                
+                // Create temporary canvas for pixelation
+                const tempCanvas = document.createElement('canvas');
+                const tempCtx = tempCanvas.getContext('2d');
+                
+                // Set temporary canvas to pixel size
+                tempCanvas.width = pixelSize;
+                tempCanvas.height = pixelSize;
+                
+                // Draw image at low resolution
+                tempCtx.imageSmoothingEnabled = false;
+                tempCtx.drawImage(img, 0, 0, pixelSize, pixelSize);
+                
+                // Draw pixelated version to main canvas
+                this.ctx.imageSmoothingEnabled = false;
+                const imageY = offsetY + this.tileHeight/2 - baseDrawHeight + yOffset;
+                this.ctx.drawImage(
+                    tempCanvas,
+                    offsetX - baseDrawWidth/2,
+                    imageY,
+                    baseDrawWidth,
+                    baseDrawHeight
+                );
+                this.ctx.imageSmoothingEnabled = true;
+            } else {
+                // Draw at full resolution
+                const imageY = offsetY + this.tileHeight/2 - baseDrawHeight + yOffset;
+                this.ctx.drawImage(
+                    img, 
+                    offsetX - baseDrawWidth/2, 
+                    imageY, 
+                    baseDrawWidth, 
+                    baseDrawHeight
+                );
+            }
         }
     }
 
-    drawSimpleBuilding(buildingId, offsetX, offsetY) {
+    drawSimpleBuilding(buildingId, offsetX, offsetY, constructionStage = 4) {
         // Simple colored rectangle for default buildings
         const buildingColors = {
             'education': '#3b82f6',
@@ -3442,13 +3501,50 @@ class IsometricGrid {
         // Rectangle top-left Y coordinate should be: bottom point - building height + yOffset
         const buildingY = offsetY + this.tileHeight/2 - height + yOffset;
         
-        this.ctx.fillStyle = color;
-        this.ctx.fillRect(offsetX - width/2, buildingY, width, height);
-        
-        // Add simple border
-        this.ctx.strokeStyle = '#ffffff';
-        this.ctx.lineWidth = 1;
-        this.ctx.strokeRect(offsetX - width/2, buildingY, width, height);
+        // Apply pixelation effect for construction stages
+        if (constructionStage < 4) {
+            // Create pixelated version
+            const pixelSizes = [32, 64, 128]; // Pixel sizes for stages 1-3
+            const pixelSize = pixelSizes[constructionStage - 1];
+            
+            // Create temporary canvas for pixelation
+            const tempCanvas = document.createElement('canvas');
+            const tempCtx = tempCanvas.getContext('2d');
+            
+            // Set temporary canvas to pixel size
+            tempCanvas.width = pixelSize;
+            tempCanvas.height = pixelSize;
+            
+            // Draw building at low resolution
+            tempCtx.imageSmoothingEnabled = false;
+            tempCtx.fillStyle = color;
+            tempCtx.fillRect(0, 0, pixelSize, pixelSize);
+            
+            // Add simple border at low res
+            tempCtx.strokeStyle = '#ffffff';
+            tempCtx.lineWidth = Math.max(1, pixelSize / 32);
+            tempCtx.strokeRect(0, 0, pixelSize, pixelSize);
+            
+            // Draw pixelated version to main canvas
+            this.ctx.imageSmoothingEnabled = false;
+            this.ctx.drawImage(
+                tempCanvas,
+                offsetX - width/2,
+                buildingY,
+                width,
+                height
+            );
+            this.ctx.imageSmoothingEnabled = true;
+        } else {
+            // Draw at full resolution
+            this.ctx.fillStyle = color;
+            this.ctx.fillRect(offsetX - width/2, buildingY, width, height);
+            
+            // Add simple border
+            this.ctx.strokeStyle = '#ffffff';
+            this.ctx.lineWidth = 1;
+            this.ctx.strokeRect(offsetX - width/2, buildingY, width, height);
+        }
     }
     
     getTileColor(row, col) {
