@@ -6,9 +6,13 @@ class BuildingManager {
         this.STORAGE_KEY = 'theCommons_buildings';
         this.buildings = this.loadBuildings();
         
-        // Auto-initialize all buildings from master CSV if empty
-        if (this.isBuildingsEmpty()) {
+        // Always check if we need to load from CSV
+        // This ensures we use the latest CSV data
+        if (this.shouldLoadFromCSV()) {
+            console.log('Loading buildings from master CSV...');
             this.initializeBuildingsFromMasterCSV();
+        } else {
+            console.log('Using cached buildings:', Object.keys(this.buildings).length, 'categories');
         }
     }
 
@@ -37,6 +41,35 @@ class BuildingManager {
         const keys = Object.keys(this.buildings);
         if (keys.length === 0) return true;
         return keys.every(category => !this.buildings[category] || this.buildings[category].length === 0);
+    }
+    
+    // Check if we should load from CSV (empty buildings OR not the expected CSV buildings)
+    shouldLoadFromCSV() {
+        if (this.isBuildingsEmpty()) {
+            return true;
+        }
+        
+        // Check if we have the expected CSV buildings
+        const expectedBuildings = ['cottage', 'farmers_market', 'high_school', 'schoolhouse', 'cornerstore'];
+        const allBuildings = this.getAllBuildings();
+        const currentBuildingIds = allBuildings.map(b => b.id);
+        
+        // If we don't have all expected buildings, reload from CSV
+        const hasAllExpected = expectedBuildings.every(id => currentBuildingIds.includes(id));
+        
+        if (!hasAllExpected) {
+            console.log('Missing expected CSV buildings. Current:', currentBuildingIds, 'Expected:', expectedBuildings);
+            return true;
+        }
+        
+        // If we have extra buildings beyond the expected ones, reload from CSV
+        const hasOnlyExpected = currentBuildingIds.every(id => expectedBuildings.includes(id));
+        if (!hasOnlyExpected) {
+            console.log('Found unexpected buildings. Reloading from CSV.');
+            return true;
+        }
+        
+        return false;
     }
 
     // Initialize all buildings from master CSV automatically
@@ -1053,6 +1086,16 @@ window.forceReloadCSV = async function() {
     }
     const totalBuildings = result ? Object.values(result).reduce((sum, cat) => sum + cat.length, 0) : 0;
     console.log('✅ Force reload complete:', result ? totalBuildings + ' buildings loaded' : 'failed');
+    return result;
+};
+
+// Force refresh buildings from CSV (clears cache and reloads)
+window.refreshBuildingsFromCSV = async function() {
+    console.log('🔄 Refreshing buildings from CSV...');
+    await window.buildingManager.clearAllBuildings();
+    window.buildingManager.buildings = {};
+    const result = await window.buildingManager.initializeBuildingsFromMasterCSV();
+    console.log('✅ Buildings refreshed from CSV');
     return result;
 };
 

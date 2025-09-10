@@ -4438,8 +4438,68 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
     
+    // Hard reset functionality
+    document.getElementById('hard-reset-btn').addEventListener('click', async () => {
+        if (confirm('⚠️ HARD RESET\n\nThis will completely reset the game:\n• Clear all buildings and progress\n• Reset cash to starting amount\n• Force reload buildings from CSV\n• Clear all saved data\n\nThis cannot be undone. Are you sure?')) {
+            // Clear all localStorage data
+            localStorage.removeItem('theCommons_buildings');
+            localStorage.removeItem('theCommons_customBuildings');
+            localStorage.removeItem('theCommons_customAmenities');
+            localStorage.removeItem('theCommons_gameState');
+            localStorage.removeItem('theCommons_playerSettings');
+            
+            // Try to refresh buildings before reload
+            if (window.refreshBuildingsFromCSV) {
+                try {
+                    await window.refreshBuildingsFromCSV();
+                } catch (e) {
+                    console.log('CSV refresh failed, will reload page:', e);
+                }
+            }
+            
+            // Force reload the page to start fresh
+            window.location.reload(true);
+        }
+        playerMenu.classList.remove('active');
+    });
+    
     document.getElementById('close-devtools').addEventListener('click', () => {
         devtoolsPanel.classList.remove('visible');
+    });
+    
+    // CSV refresh button functionality
+    document.getElementById('refresh-csv-btn').addEventListener('click', async () => {
+        const btn = document.getElementById('refresh-csv-btn');
+        const originalText = btn.innerHTML;
+        
+        try {
+            btn.innerHTML = '⏳ Refreshing...';
+            btn.disabled = true;
+            
+            if (window.refreshBuildingsFromCSV) {
+                await window.refreshBuildingsFromCSV();
+                btn.innerHTML = '✅ Refreshed!';
+                
+                // Update the building list in devtools
+                if (game && game.populateBuildingCategories) {
+                    game.populateBuildingCategories();
+                }
+                
+                setTimeout(() => {
+                    btn.innerHTML = originalText;
+                    btn.disabled = false;
+                }, 2000);
+            } else {
+                throw new Error('Refresh function not available');
+            }
+        } catch (error) {
+            console.error('Failed to refresh buildings:', error);
+            btn.innerHTML = '❌ Failed';
+            setTimeout(() => {
+                btn.innerHTML = originalText;
+                btn.disabled = false;
+            }, 2000);
+        }
     });
     
     // Initialize building position controls

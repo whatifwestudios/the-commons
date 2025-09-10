@@ -20,6 +20,8 @@
             <div class="dropdown-menu" id="player-menu">
                 <button class="dropdown-item">CUSTOMIZE SIDEBAR</button>
                 <button class="dropdown-item">DEVTOOLS</button>
+                <hr style="margin: 8px 0; border: 1px solid #444;">
+                <button class="dropdown-item" id="hard-reset-btn" style="color: #ff6b6b;">🔄 HARD RESET GAME</button>
             </div>
         </div>
         <div class="top-bar-section">
@@ -341,6 +343,10 @@
                     <div class="tab-content" id="building-manager">
                         <div class="dev-section">
                             <h4>Building Manager</h4>
+                            <div style="margin-bottom: 15px;">
+                                <button id="refresh-csv-btn" class="secondary-btn" style="background: #22c55e;">🔄 REFRESH FROM CSV</button>
+                                <span style="margin-left: 10px; font-size: 12px; color: #888;">Force reload buildings from master CSV</span>
+                            </div>
                             <div class="building-filters">
                                 <button class="filter-btn active" data-filter="all">ALL BUILDINGS</button>
                                 <button class="filter-btn" data-filter="default">DEFAULT BUILDINGS</button>
