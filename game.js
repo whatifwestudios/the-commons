@@ -2208,6 +2208,18 @@ class IsometricGrid {
                 this.grid[row][col].constructionStartDay = this.currentDay;
                 this.grid[row][col].constructionDays = building.economics.constructionDays || 14;
                 this.grid[row][col].buildingAge = 0;
+                
+                // Debug logging for construction timing
+                console.log(`🏗️ Building ${buildingId} started construction:`, {
+                    startDay: this.currentDay,
+                    constructionDays: building.economics.constructionDays || 14,
+                    building: building.name
+                });
+            } else {
+                console.warn(`⚠️ Could not set construction timing for ${buildingId}:`, {
+                    hasBuilding: !!building,
+                    hasEconomics: !!(building && building.economics)
+                });
             }
             
             // Update land values, vitality, cashflow and re-render
@@ -3368,15 +3380,27 @@ class IsometricGrid {
         let constructionStage = 4; // Default to fully built
         if (parcel && parcel.constructionStartDay !== null && parcel.constructionDays > 0) {
             const daysElapsed = this.currentDay - parcel.constructionStartDay;
+            
+            // Debug: Show construction data for this building
+            if (buildingId && Math.random() < 0.02) { // Log 2% of renders
+                console.log(`🔍 Construction check for ${buildingId}:`, {
+                    currentDay: this.currentDay,
+                    startDay: parcel.constructionStartDay,
+                    constructionDays: parcel.constructionDays,
+                    daysElapsed: daysElapsed,
+                    stillUnderConstruction: daysElapsed < parcel.constructionDays
+                });
+            }
+            
             if (daysElapsed < parcel.constructionDays) {
                 // Building is still under construction
                 const progress = daysElapsed / parcel.constructionDays;
                 // Calculate stage (1-4): 1=32x32, 2=64x64, 3=128x128, 4=full res
                 constructionStage = Math.min(4, Math.floor(progress * 4) + 1);
                 
-                // Debug logging for the first few updates
-                if (Math.random() < 0.01) { // Log 1% of the time to avoid spam
-                    console.log(`Building ${buildingId} at (${row},${col}): Day ${daysElapsed}/${parcel.constructionDays}, Progress ${(progress*100).toFixed(1)}%, Stage ${constructionStage}`);
+                // Debug logging for construction progress
+                if (Math.random() < 0.05) { // Log 5% of the time to see more updates
+                    console.log(`🚧 Building ${buildingId} at (${row},${col}): Day ${daysElapsed}/${parcel.constructionDays}, Progress ${(progress*100).toFixed(1)}%, Stage ${constructionStage}`);
                 }
             } else {
                 // Construction complete - clear construction data
