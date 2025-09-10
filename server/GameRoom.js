@@ -461,52 +461,26 @@ class GameRoom {
   }
 
   getBuildingData(buildingId) {
-    // Basic building data - this should ideally come from the same CSV source as the client
-    // For now, return basic construction data with sensible defaults
-    const buildingDefaults = {
-      // Education buildings
-      elementary_school: { economics: { constructionDays: 14 } },
-      high_school: { economics: { constructionDays: 21 } },
-      university: { economics: { constructionDays: 60 } },
-      library: { economics: { constructionDays: 10 } },
-      
-      // Healthcare buildings
-      clinic: { economics: { constructionDays: 14 } },
-      hospital: { economics: { constructionDays: 45 } },
-      pharmacy: { economics: { constructionDays: 7 } },
-      
-      // Infrastructure buildings
-      power_plant: { economics: { constructionDays: 30 } },
-      water_treatment: { economics: { constructionDays: 21 } },
-      waste_management: { economics: { constructionDays: 14 } },
-      
-      // Housing buildings
-      apartment_building: { economics: { constructionDays: 30 } },
-      single_family: { economics: { constructionDays: 14 } },
-      townhouse: { economics: { constructionDays: 18 } },
-      
-      // Culture buildings
-      art_gallery: { economics: { constructionDays: 14 } },
-      theater: { economics: { constructionDays: 30 } },
-      museum: { economics: { constructionDays: 21 } },
-      
-      // Recreation buildings
-      park: { economics: { constructionDays: 10 } },
-      gym: { economics: { constructionDays: 14 } },
-      sports_complex: { economics: { constructionDays: 30 } },
-      
-      // Commercial buildings
-      grocery_store: { economics: { constructionDays: 14 } },
-      shopping_mall: { economics: { constructionDays: 45 } },
-      restaurant: { economics: { constructionDays: 10 } },
-      
-      // Civic buildings
-      city_hall: { economics: { constructionDays: 30 } },
-      police_station: { economics: { constructionDays: 21 } },
-      fire_station: { economics: { constructionDays: 18 } }
+    // TODO: Load building data from the same CSV as the client (buildings_all - core_buildings_master.csv)
+    // For now, return basic structure with default construction time
+    // The client-side BuildingManager should be the source of truth for building data
+    
+    // CSV buildings from buildings_all - core_buildings_master.csv:
+    // - cottage (1 day construction)
+    // - farmers_market (2 days construction)  
+    // - high_school (3 days construction)
+    // - schoolhouse (5 days construction)
+    // - cornerstore (4 days construction)
+    
+    const csvBuildingData = {
+      cottage: { economics: { constructionDays: 1 } },
+      farmers_market: { economics: { constructionDays: 2 } },
+      high_school: { economics: { constructionDays: 3 } },
+      schoolhouse: { economics: { constructionDays: 5 } },
+      cornerstore: { economics: { constructionDays: 4 } }
     };
     
-    return buildingDefaults[buildingId] || { economics: { constructionDays: 14 } };
+    return csvBuildingData[buildingId] || { economics: { constructionDays: 1 } };
   }
 
   // Simplified governance - direct point allocation
