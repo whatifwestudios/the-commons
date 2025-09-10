@@ -309,6 +309,16 @@ class IsometricGrid {
                             const maxRevenue = building.economics.maxRevenue || 0;
                             const decayMultiplier = Math.max(0, 1 - parcel.decay);
                             
+                            // Debug logging for revenue calculation
+                            if (Math.random() < 0.02) { // Log 2% of buildings each day
+                                console.log(`💰 Revenue calc for ${building.name}:`, {
+                                    maxRevenue,
+                                    decayMultiplier,
+                                    buildingAge,
+                                    decay
+                                });
+                            }
+                            
                             // Apply city satisfaction multiplier (0.5 to 1.2x based on happiness)
                             const satisfactionMultiplier = 0.5 + (this.citySatisfaction?.overall || 0.5) * 0.7;
                             
@@ -2162,9 +2172,16 @@ class IsometricGrid {
         const coord = this.getParcelCoordinate(row, col);
         const buildingCost = this.getBuildingCost(buildingId);
         
+        // Debug logging for building cost calculation
+        console.log(`💰 Building cost calculation for ${buildingId}:`, {
+            buildingCost: buildingCost,
+            playerCash: this.playerCash,
+            canAfford: this.playerCash >= buildingCost
+        });
+        
         // Check if player has enough cash
         if (this.playerCash < buildingCost) {
-            // Insufficient funds for building - could show UI feedback here instead
+            console.warn('❌ Insufficient funds for building');
             return;
         }
 
@@ -2199,15 +2216,24 @@ class IsometricGrid {
             }
         } else {
             // Fallback for single player
+            const oldCash = this.playerCash;
             this.playerCash -= buildingCost;
+            console.log(`💸 Cash update: ${oldCash} - ${buildingCost} = ${this.playerCash}`);
             this.grid[row][col].building = buildingId;
             
             // Set construction start day and duration
             const building = this.buildingManager.getBuildingById(buildingId);
             if (building && building.economics) {
+                // Start construction from current day, but building should show as under construction initially
                 this.grid[row][col].constructionStartDay = this.currentDay;
                 this.grid[row][col].constructionDays = building.economics.constructionDays || 14;
                 this.grid[row][col].buildingAge = 0;
+                
+                // Force the building to show as under construction initially
+                // by ensuring at least 1 day is needed
+                if (this.grid[row][col].constructionDays < 1) {
+                    this.grid[row][col].constructionDays = 1;
+                }
                 
                 // Debug logging for construction timing
                 console.log(`🏗️ Building ${buildingId} started construction:`, {
@@ -3396,7 +3422,8 @@ class IsometricGrid {
                 // Building is still under construction
                 const progress = daysElapsed / parcel.constructionDays;
                 // Calculate stage (1-4): 1=32x32, 2=64x64, 3=128x128, 4=full res
-                constructionStage = Math.min(4, Math.floor(progress * 4) + 1);
+                // Ensure minimum stage 1 even on day 0
+                constructionStage = Math.max(1, Math.min(4, Math.floor(progress * 4) + 1));
                 
                 // Debug logging for construction progress
                 if (Math.random() < 0.05) { // Log 5% of the time to see more updates
@@ -4468,12 +4495,21 @@ document.addEventListener('DOMContentLoaded', () => {
     // Hard reset functionality
     document.getElementById('hard-reset-btn').addEventListener('click', async () => {
         if (confirm('⚠️ HARD RESET\n\nThis will completely reset the game:\n• Clear all buildings and progress\n• Reset cash to starting amount\n• Force reload buildings from CSV\n• Clear all saved data\n\nThis cannot be undone. Are you sure?')) {
-            // Clear all localStorage data
-            localStorage.removeItem('theCommons_buildings');
-            localStorage.removeItem('theCommons_customBuildings');
-            localStorage.removeItem('theCommons_customAmenities');
-            localStorage.removeItem('theCommons_gameState');
-            localStorage.removeItem('theCommons_playerSettings');
+            // Clear ALL localStorage data for this game
+            const keysToRemove = [];
+            for (let i = 0; i < localStorage.length; i++) {
+                const key = localStorage.key(i);
+                if (key && key.startsWith('theCommons')) {
+                    keysToRemove.push(key);
+                }
+            }
+            
+            keysToRemove.forEach(key => {
+                console.log('🧹 Clearing localStorage key:', key);
+                localStorage.removeItem(key);
+            });
+            
+            console.log('🔄 Hard reset: Cleared', keysToRemove.length, 'localStorage keys');
             
             // Try to refresh buildings before reload
             if (window.refreshBuildingsFromCSV) {
