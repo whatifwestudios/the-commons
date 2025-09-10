@@ -752,8 +752,13 @@ class IsometricGrid {
                     }
                 }
                 
-                // Age and condition
-                if (parcel.buildingAge) {
+                // Construction progress or age
+                if (parcel._isUnderConstruction) {
+                    const progress = Math.round((parcel._constructionProgress || 0) * 100);
+                    const progressBar = this.createProgressBar(progress, '#4ade80', '#1f2937');
+                    stats.push(`🚧 Under Construction: ${progress}%`);
+                    stats.push(progressBar);
+                } else if (parcel.buildingAge) {
                     stats.push(`📅 ${parcel.buildingAge} days old`);
                 }
                 if (parcel.decay && parcel.decay > 0.05) {
@@ -879,6 +884,29 @@ class IsometricGrid {
     
     hideContextMenu() {
         this.contextMenu.classList.remove('visible');
+    }
+    
+    createProgressBar(percentage, fillColor = '#4ade80', bgColor = '#1f2937', width = 120, height = 8) {
+        const progressHtml = `
+            <div style="
+                width: ${width}px; 
+                height: ${height}px; 
+                background: ${bgColor}; 
+                border-radius: 4px; 
+                overflow: hidden;
+                margin: 4px 0;
+                border: 1px solid #374151;
+            ">
+                <div style="
+                    width: ${percentage}%; 
+                    height: 100%; 
+                    background: linear-gradient(90deg, ${fillColor} 0%, ${fillColor}dd 100%);
+                    transition: width 0.3s ease;
+                    border-radius: 3px;
+                "></div>
+            </div>
+        `;
+        return progressHtml;
     }
     
     showTransportationModal(row, col) {
@@ -3403,55 +3431,51 @@ class IsometricGrid {
         const building = this.buildingManager.getBuildingById(buildingId);
         
         // Calculate construction progress if under construction
-        let constructionStage = 4; // Default to fully built
+        let constructionProgress = 1.0; // Default to fully built (1.0 = full color)
+        let isUnderConstruction = false;
+        
         if (parcel && parcel.constructionStartDay !== null && parcel.constructionDays > 0) {
             const daysElapsed = this.currentDay - parcel.constructionStartDay;
             
-            // Debug: Show construction data for this building
-            if (buildingId && Math.random() < 0.02) { // Log 2% of renders
-                console.log(`🔍 Construction check for ${buildingId}:`, {
-                    currentDay: this.currentDay,
-                    startDay: parcel.constructionStartDay,
-                    constructionDays: parcel.constructionDays,
-                    daysElapsed: daysElapsed,
-                    stillUnderConstruction: daysElapsed < parcel.constructionDays
-                });
-            }
-            
             if (daysElapsed < parcel.constructionDays) {
                 // Building is still under construction
-                const progress = daysElapsed / parcel.constructionDays;
-                // Calculate stage (1-4): 1=32x32, 2=64x64, 3=128x128, 4=full res
-                // Ensure minimum stage 1 even on day 0
-                constructionStage = Math.max(1, Math.min(4, Math.floor(progress * 4) + 1));
+                isUnderConstruction = true;
+                constructionProgress = Math.max(0, daysElapsed / parcel.constructionDays);
                 
-                // Debug logging for construction progress
-                if (Math.random() < 0.05) { // Log 5% of the time to see more updates
-                    console.log(`🚧 Building ${buildingId} at (${row},${col}): Day ${daysElapsed}/${parcel.constructionDays}, Progress ${(progress*100).toFixed(1)}%, Stage ${constructionStage}`);
+                // Debug logging for construction progress  
+                if (Math.random() < 0.05) { // Log 5% of the time to see updates
+                    console.log(`🎨 Building ${buildingId} at (${row},${col}): Day ${daysElapsed}/${parcel.constructionDays}, Progress ${(constructionProgress*100).toFixed(1)}%`);
                 }
             } else {
                 // Construction complete - clear construction data
                 parcel.constructionStartDay = null;
                 parcel.constructionDays = 0;
+                constructionProgress = 1.0;
             }
         }
         
+        // Store construction data for tooltip access
+        if (parcel) {
+            parcel._constructionProgress = constructionProgress;
+            parcel._isUnderConstruction = isUnderConstruction;
+        }
+        
         if (building && building.images && building.images.built) {
-            // Draw custom building image
-            this.drawBuildingImage(building.images.built, offsetX, offsetY, constructionStage);
+            // Draw custom building image with color fade effect
+            this.drawBuildingImage(building.images.built, offsetX, offsetY, constructionProgress);
         } else {
-            // Draw simple building representation or debug missing images
+            // Draw simple building representation with color fade effect
             if (building && Math.random() < 0.01) { // Debug log 1% of the time
                 console.log(`Building ${buildingId} using simple rendering. Has images:`, !!building.images, 'Built path:', building.images?.built);
             }
-            this.drawSimpleBuilding(buildingId, offsetX, offsetY, constructionStage);
+            this.drawSimpleBuilding(buildingId, offsetX, offsetY, constructionProgress);
         }
         
         // Reset global alpha
         this.ctx.globalAlpha = 1.0;
     }
 
-    drawBuildingImage(imageSrc, offsetX, offsetY, constructionStage = 4) {
+    drawBuildingImage(imageSrc, offsetX, offsetY, constructionProgress = 1.0) {
         // Create image if not cached
         if (!this.buildingImageCache) {
             this.buildingImageCache = new Map();
@@ -3480,27 +3504,64 @@ class IsometricGrid {
             const baseDrawWidth = this.tileWidth * widthMultiplier;
             const baseDrawHeight = (baseDrawWidth / (img.width / img.height)) * heightMultiplier;
             
-            // Apply pixelation effect based on construction stage
-            if (constructionStage < 4) {
-                // Create pixelated version
-                const pixelSizes = [32, 64, 128]; // Pixel sizes for stages 1-3
-                const pixelSize = pixelSizes[constructionStage - 1];
-                
-                // Create temporary canvas for pixelation
+            const imageY = offsetY + this.tileHeight/2 - baseDrawHeight + yOffset;
+            
+            // Apply construction color effect
+            if (constructionProgress < 1.0) {
+                // Create temporary canvas for color manipulation
                 const tempCanvas = document.createElement('canvas');
                 const tempCtx = tempCanvas.getContext('2d');
+                tempCanvas.width = baseDrawWidth;
+                tempCanvas.height = baseDrawHeight;
                 
-                // Set temporary canvas to pixel size
-                tempCanvas.width = pixelSize;
-                tempCanvas.height = pixelSize;
+                // Draw the original image to temp canvas
+                tempCtx.drawImage(
+                    img, 
+                    0, 0, 
+                    baseDrawWidth, 
+                    baseDrawHeight
+                );
                 
-                // Draw image at low resolution
-                tempCtx.imageSmoothingEnabled = false;
-                tempCtx.drawImage(img, 0, 0, pixelSize, pixelSize);
+                // Apply color effect based on construction progress
+                const imageData = tempCtx.getImageData(0, 0, baseDrawWidth, baseDrawHeight);
+                const data = imageData.data;
                 
-                // Draw pixelated version to main canvas
-                this.ctx.imageSmoothingEnabled = false;
-                const imageY = offsetY + this.tileHeight/2 - baseDrawHeight + yOffset;
+                for (let i = 0; i < data.length; i += 4) {
+                    const r = data[i];
+                    const g = data[i + 1];
+                    const b = data[i + 2];
+                    const alpha = data[i + 3];
+                    
+                    if (alpha > 0) { // Only process non-transparent pixels
+                        if (constructionProgress < 0.1) {
+                            // Stage 1: Pure black silhouette
+                            data[i] = 0;     // R
+                            data[i + 1] = 0; // G  
+                            data[i + 2] = 0; // B
+                        } else if (constructionProgress < 0.5) {
+                            // Stage 2: Fade to grayscale
+                            const gray = Math.round(0.299 * r + 0.587 * g + 0.114 * b);
+                            const fadeProgress = (constructionProgress - 0.1) / 0.4; // 0-1 over this stage
+                            
+                            data[i] = Math.round(gray * fadeProgress);     // R
+                            data[i + 1] = Math.round(gray * fadeProgress); // G
+                            data[i + 2] = Math.round(gray * fadeProgress); // B
+                        } else {
+                            // Stage 3: Fade from grayscale to full color
+                            const gray = Math.round(0.299 * r + 0.587 * g + 0.114 * b);
+                            const fadeProgress = (constructionProgress - 0.5) / 0.5; // 0-1 over this stage
+                            
+                            data[i] = Math.round(gray + (r - gray) * fadeProgress);     // R
+                            data[i + 1] = Math.round(gray + (g - gray) * fadeProgress); // G
+                            data[i + 2] = Math.round(gray + (b - gray) * fadeProgress); // B
+                        }
+                    }
+                }
+                
+                // Put the modified image data back
+                tempCtx.putImageData(imageData, 0, 0);
+                
+                // Draw the processed image to main canvas
                 this.ctx.drawImage(
                     tempCanvas,
                     offsetX - baseDrawWidth/2,
@@ -3508,10 +3569,8 @@ class IsometricGrid {
                     baseDrawWidth,
                     baseDrawHeight
                 );
-                this.ctx.imageSmoothingEnabled = true;
             } else {
-                // Draw at full resolution
-                const imageY = offsetY + this.tileHeight/2 - baseDrawHeight + yOffset;
+                // Draw at full color (construction complete)
                 this.ctx.drawImage(
                     img, 
                     offsetX - baseDrawWidth/2, 
@@ -3523,7 +3582,7 @@ class IsometricGrid {
         }
     }
 
-    drawSimpleBuilding(buildingId, offsetX, offsetY, constructionStage = 4) {
+    drawSimpleBuilding(buildingId, offsetX, offsetY, constructionProgress = 1.0) {
         // Simple colored rectangle for default buildings
         const buildingColors = {
             'education': '#3b82f6',
@@ -3555,50 +3614,47 @@ class IsometricGrid {
         // Rectangle top-left Y coordinate should be: bottom point - building height + yOffset
         const buildingY = offsetY + this.tileHeight/2 - height + yOffset;
         
-        // Apply pixelation effect for construction stages
-        if (constructionStage < 4) {
-            // Create pixelated version
-            const pixelSizes = [32, 64, 128]; // Pixel sizes for stages 1-3
-            const pixelSize = pixelSizes[constructionStage - 1];
-            
-            // Create temporary canvas for pixelation
-            const tempCanvas = document.createElement('canvas');
-            const tempCtx = tempCanvas.getContext('2d');
-            
-            // Set temporary canvas to pixel size
-            tempCanvas.width = pixelSize;
-            tempCanvas.height = pixelSize;
-            
-            // Draw building at low resolution
-            tempCtx.imageSmoothingEnabled = false;
+        // Apply color effect based on construction progress
+        let finalColor = color;
+        
+        if (constructionProgress < 1.0) {
+            // Parse the original color to get RGB values
+            const tempCtx = document.createElement('canvas').getContext('2d');
             tempCtx.fillStyle = color;
-            tempCtx.fillRect(0, 0, pixelSize, pixelSize);
+            tempCtx.fillRect(0, 0, 1, 1);
+            const imageData = tempCtx.getImageData(0, 0, 1, 1);
+            const [r, g, b] = imageData.data;
             
-            // Add simple border at low res
-            tempCtx.strokeStyle = '#ffffff';
-            tempCtx.lineWidth = Math.max(1, pixelSize / 32);
-            tempCtx.strokeRect(0, 0, pixelSize, pixelSize);
-            
-            // Draw pixelated version to main canvas
-            this.ctx.imageSmoothingEnabled = false;
-            this.ctx.drawImage(
-                tempCanvas,
-                offsetX - width/2,
-                buildingY,
-                width,
-                height
-            );
-            this.ctx.imageSmoothingEnabled = true;
-        } else {
-            // Draw at full resolution
-            this.ctx.fillStyle = color;
-            this.ctx.fillRect(offsetX - width/2, buildingY, width, height);
-            
-            // Add simple border
-            this.ctx.strokeStyle = '#ffffff';
-            this.ctx.lineWidth = 1;
-            this.ctx.strokeRect(offsetX - width/2, buildingY, width, height);
+            if (constructionProgress < 0.1) {
+                // Stage 1: Pure black silhouette
+                finalColor = '#000000';
+            } else if (constructionProgress < 0.5) {
+                // Stage 2: Fade to grayscale
+                const gray = Math.round(0.299 * r + 0.587 * g + 0.114 * b);
+                const fadeProgress = (constructionProgress - 0.1) / 0.4;
+                const grayValue = Math.round(gray * fadeProgress);
+                finalColor = `rgb(${grayValue}, ${grayValue}, ${grayValue})`;
+            } else {
+                // Stage 3: Fade from grayscale to full color
+                const gray = Math.round(0.299 * r + 0.587 * g + 0.114 * b);
+                const fadeProgress = (constructionProgress - 0.5) / 0.5;
+                
+                const finalR = Math.round(gray + (r - gray) * fadeProgress);
+                const finalG = Math.round(gray + (g - gray) * fadeProgress);
+                const finalB = Math.round(gray + (b - gray) * fadeProgress);
+                
+                finalColor = `rgb(${finalR}, ${finalG}, ${finalB})`;
+            }
         }
+        
+        // Draw the building with the calculated color
+        this.ctx.fillStyle = finalColor;
+        this.ctx.fillRect(offsetX - width/2, buildingY, width, height);
+        
+        // Add border (white for normal, gray for under construction)
+        this.ctx.strokeStyle = constructionProgress < 1.0 ? '#666666' : '#ffffff';
+        this.ctx.lineWidth = 1;
+        this.ctx.strokeRect(offsetX - width/2, buildingY, width, height);
     }
     
     getTileColor(row, col) {
