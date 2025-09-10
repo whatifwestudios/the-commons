@@ -885,6 +885,11 @@ class BuildingManager {
         }
         const graphicsPath = `assets/buildings/${category}/${graphicsFile}`;
         
+        // Debug logging for graphics path
+        if (Math.random() < 0.2) { // Log 20% of buildings
+            console.log(`Building ${id}: Graphics path = ${graphicsPath}`);
+        }
+        
         return {
             id: id,
             name: row.Name,
@@ -892,7 +897,11 @@ class BuildingManager {
             graphics: {
                 filename: graphicsFile,
                 path: graphicsPath,
-                fallbackPath: `assets/buildings/default.png` // Fallback for missing graphics
+                fallbackPath: `assets/buildings/default.svg` // Fallback for missing graphics
+            },
+            // Also add images property for compatibility with rendering system
+            images: {
+                built: graphicsPath
             },
             isDefault: true,
             canDelete: true,

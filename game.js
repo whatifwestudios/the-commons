@@ -3389,7 +3389,10 @@ class IsometricGrid {
             // Draw custom building image
             this.drawBuildingImage(building.images.built, offsetX, offsetY, constructionStage);
         } else {
-            // Draw simple building representation
+            // Draw simple building representation or debug missing images
+            if (building && Math.random() < 0.01) { // Debug log 1% of the time
+                console.log(`Building ${buildingId} using simple rendering. Has images:`, !!building.images, 'Built path:', building.images?.built);
+            }
             this.drawSimpleBuilding(buildingId, offsetX, offsetY, constructionStage);
         }
         
