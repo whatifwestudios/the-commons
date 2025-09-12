@@ -164,8 +164,91 @@
                 <div class="devtools-content">
                     <div class="tab-content active" id="game-mechanics">
                         <div class="dev-section">
-                            <h4>Coming Soon</h4>
-                            <p>Game mechanics debugging tools will be added here.</p>
+                            <h4>Economic Balance Controls</h4>
+                            <p>Adjust multipliers to fine-tune game balance and economy dynamics.</p>
+                            
+                            <!-- Supply/Demand Effect Multipliers -->
+                            <div class="multiplier-group">
+                                <h5>Supply/Demand Effects</h5>
+                                
+                                <div class="multiplier-control">
+                                    <label for="energy-multiplier">Energy Revenue Multiplier</label>
+                                    <input type="range" id="energy-multiplier" min="0" max="2" step="0.1" value="1.0">
+                                    <span class="multiplier-value">1.0x</span>
+                                    <small>How much energy shortage/oversupply affects building revenues</small>
+                                </div>
+                                
+                                <div class="multiplier-control">
+                                    <label for="food-multiplier">Food Revenue Multiplier</label>
+                                    <input type="range" id="food-multiplier" min="0" max="2" step="0.1" value="1.0">
+                                    <span class="multiplier-value">1.0x</span>
+                                    <small>How much food shortage/oversupply affects building revenues</small>
+                                </div>
+                                
+                                <div class="multiplier-control">
+                                    <label for="housing-multiplier">Housing Revenue Multiplier</label>
+                                    <input type="range" id="housing-multiplier" min="0" max="2" step="0.1" value="1.0">
+                                    <span class="multiplier-value">1.0x</span>
+                                    <small>How much housing shortage/oversupply affects building revenues</small>
+                                </div>
+                                
+                                <div class="multiplier-control">
+                                    <label for="jobs-multiplier">Jobs Revenue Multiplier</label>
+                                    <input type="range" id="jobs-multiplier" min="0" max="2" step="0.1" value="1.0">
+                                    <span class="multiplier-value">1.0x</span>
+                                    <small>How much job shortage/oversupply affects building revenues</small>
+                                </div>
+                            </div>
+                            
+                            <!-- Population Change Rates -->
+                            <div class="multiplier-group">
+                                <h5>Population Dynamics</h5>
+                                
+                                <div class="multiplier-control">
+                                    <label for="population-growth-rate">Population Growth Rate</label>
+                                    <input type="range" id="population-growth-rate" min="0" max="0.1" step="0.005" value="0.02">
+                                    <span class="multiplier-value">2.0%</span>
+                                    <small>Daily population change due to resource satisfaction</small>
+                                </div>
+                                
+                                <div class="multiplier-control">
+                                    <label for="shortage-threshold">Resource Shortage Threshold</label>
+                                    <input type="range" id="shortage-threshold" min="0.5" max="1.5" step="0.05" value="0.8">
+                                    <span class="multiplier-value">0.8</span>
+                                    <small>Supply/demand ratio below which shortages trigger</small>
+                                </div>
+                                
+                                <div class="multiplier-control">
+                                    <label for="oversupply-threshold">Oversupply Threshold</label>
+                                    <input type="range" id="oversupply-threshold" min="1.5" max="3.0" step="0.1" value="2.0">
+                                    <span class="multiplier-value">2.0</span>
+                                    <small>Supply/demand ratio above which oversupply triggers</small>
+                                </div>
+                            </div>
+                            
+                            <!-- Revenue Scaling -->
+                            <div class="multiplier-group">
+                                <h5>Revenue Scaling</h5>
+                                
+                                <div class="multiplier-control">
+                                    <label for="base-revenue-multiplier">Base Revenue Multiplier</label>
+                                    <input type="range" id="base-revenue-multiplier" min="0.5" max="3.0" step="0.1" value="1.0">
+                                    <span class="multiplier-value">1.0x</span>
+                                    <small>Global multiplier for all building revenues</small>
+                                </div>
+                                
+                                <div class="multiplier-control">
+                                    <label for="maintenance-multiplier">Maintenance Cost Multiplier</label>
+                                    <input type="range" id="maintenance-multiplier" min="0.5" max="2.0" step="0.1" value="1.0">
+                                    <span class="multiplier-value">1.0x</span>
+                                    <small>Global multiplier for all maintenance costs</small>
+                                </div>
+                            </div>
+                            
+                            <div class="multiplier-actions">
+                                <button id="reset-multipliers" class="btn-secondary">Reset to Defaults</button>
+                                <button id="apply-multipliers" class="btn-primary">Apply Changes</button>
+                            </div>
                         </div>
                     </div>
                     <div class="tab-content" id="building-creator">
@@ -653,45 +736,82 @@
                 </div>
             </div>
             <div class="sidebar-section collapsible">
-                <div class="section-header" data-target="demographics">
-                    <span>DEMOGRAPHICS</span>
-                    <span class="collapse-icon">▼</span>
-                </div>
-                <div id="demographics" class="section-content">
-                    <div class="metric-row">
-                        <span class="metric-label">EMPLOYMENT</span>
-                        <span class="metric-value" id="employment-rate">0%</span>
-                    </div>
-                    <div class="metric-row">
-                        <span class="metric-label">EDUCATION</span>
-                        <span class="metric-value" id="school-enrollment">0%</span>
-                    </div>
-                    <div class="metric-row">
-                        <span class="metric-label">SATISFACTION</span>
-                        <span class="metric-value" id="city-satisfaction">0%</span>
-                    </div>
-                </div>
-            </div>
-            <div class="sidebar-section collapsible">
                 <div class="section-header" data-target="info">
                     <span>METRICS</span>
                     <span class="collapse-icon">▼</span>
                 </div>
                 <div id="info" class="section-content">
                     <div class="metric-row">
-                        <span class="metric-label">POSITION</span>
-                        <span class="metric-value" id="selected-tile">--</span>
+                        <span class="metric-label">RESIDENTS</span>
+                        <span class="metric-value" id="total-residents">0</span>
                     </div>
                     <div class="metric-row">
-                        <span class="metric-label">PARCELS</span>
-                        <span class="metric-value">196</span>
-                    </div>
-                    <div class="metric-row">
-                        <span class="metric-label">CITIZENS</span>
-                        <span class="metric-value">0</span>
+                        <span class="metric-label">CITY TREASURY</span>
+                        <span class="metric-value" id="city-treasury">$0</span>
                     </div>
                 </div>
             </div>
+            
+            <div class="sidebar-section collapsible">
+                <div class="section-header" data-target="economic-balance">
+                    <span>ECONOMIC BALANCE</span>
+                    <span class="collapse-icon">▼</span>
+                </div>
+                <div id="economic-balance" class="section-content">
+                    <div class="vitality-group">
+                        <div class="vitality-group-title">SUPPLY EFFECTS</div>
+                        <div class="multiplier-control-compact">
+                            <label>Energy</label>
+                            <input type="range" id="sidebar-energy-multiplier" min="0" max="2" step="0.1" value="1.0">
+                            <span class="multiplier-value-compact">1.0x</span>
+                        </div>
+                        <div class="multiplier-control-compact">
+                            <label>Food</label>
+                            <input type="range" id="sidebar-food-multiplier" min="0" max="2" step="0.1" value="1.0">
+                            <span class="multiplier-value-compact">1.0x</span>
+                        </div>
+                        <div class="multiplier-control-compact">
+                            <label>Housing</label>
+                            <input type="range" id="sidebar-housing-multiplier" min="0" max="2" step="0.1" value="1.0">
+                            <span class="multiplier-value-compact">1.0x</span>
+                        </div>
+                        <div class="multiplier-control-compact">
+                            <label>Jobs</label>
+                            <input type="range" id="sidebar-jobs-multiplier" min="0" max="2" step="0.1" value="1.0">
+                            <span class="multiplier-value-compact">1.0x</span>
+                        </div>
+                    </div>
+                    
+                    <div class="vitality-group">
+                        <div class="vitality-group-title">POPULATION</div>
+                        <div class="multiplier-control-compact">
+                            <label>Growth Rate</label>
+                            <input type="range" id="sidebar-population-growth-rate" min="0" max="0.1" step="0.005" value="0.02">
+                            <span class="multiplier-value-compact">2.0%</span>
+                        </div>
+                    </div>
+                    
+                    <div class="vitality-group">
+                        <div class="vitality-group-title">ECONOMY</div>
+                        <div class="multiplier-control-compact">
+                            <label>Revenue</label>
+                            <input type="range" id="sidebar-base-revenue-multiplier" min="0.5" max="3.0" step="0.1" value="1.0">
+                            <span class="multiplier-value-compact">1.0x</span>
+                        </div>
+                        <div class="multiplier-control-compact">
+                            <label>Maintenance</label>
+                            <input type="range" id="sidebar-maintenance-multiplier" min="0.5" max="2.0" step="0.1" value="1.0">
+                            <span class="multiplier-value-compact">1.0x</span>
+                        </div>
+                    </div>
+                    
+                    <div class="multiplier-actions-compact">
+                        <button id="sidebar-reset-multipliers" class="multiplier-btn secondary">Reset</button>
+                        <button id="sidebar-apply-multipliers" class="multiplier-btn primary">Apply</button>
+                    </div>
+                </div>
+            </div>
+            
             <div id="building-info-panel" class="building-info-panel">
                 <div class="building-info-header">
                     <h3 id="building-info-title">Building Info</h3>
@@ -700,30 +820,38 @@
                     <div class="building-info-image">
                         <img id="building-info-img" src="" alt="Building">
                     </div>
-                    <div class="building-info-details">
-                        <div class="info-row">
-                            <span class="info-label">Cost:</span>
+                    <div class="building-description"></div>
+                    
+                    <!-- Supply & Demand Section -->
+                    <div class="building-supply-demand">
+                        <div class="vitality-group-title">SUPPLY & DEMAND</div>
+                        <div class="vitality-row">
+                            <span class="vitality-label">COST</span>
                             <span class="info-value" id="building-cost">$0</span>
                         </div>
-                        <div class="info-row">
-                            <span class="info-label">Build Time:</span>
+                        <div class="vitality-row">
+                            <span class="vitality-label">BUILD TIME</span>
                             <span class="info-value" id="building-time">0 days</span>
                         </div>
-                        <div class="info-row">
-                            <span class="info-label">Category:</span>
-                            <span class="info-value" id="building-category">-</span>
-                        </div>
-                        <div class="info-row">
-                            <span class="info-label">Bedrooms:</span>
+                        <div class="vitality-row">
+                            <span class="vitality-label">BEDROOMS</span>
                             <span class="info-value" id="building-bedrooms">0</span>
                         </div>
-                        <div class="info-row">
-                            <span class="info-label">Jobs:</span>
+                        <div class="vitality-row">
+                            <span class="vitality-label">JOBS</span>
                             <span class="info-value" id="building-jobs">0</span>
                         </div>
                     </div>
+                    
+                    <!-- Requirements Section -->
+                    <div class="building-requirements" style="display: none;">
+                        <div class="vitality-group-title">REQUIREMENTS</div>
+                        <div id="building-requirements-list"></div>
+                    </div>
+                    
+                    <!-- Livability Impacts Section -->
                     <div class="building-impacts">
-                        <h4>Domain Impacts</h4>
+                        <div class="vitality-group-title">LIVABILITY IMPACTS</div>
                         <div id="building-impacts-list"></div>
                     </div>
                 </div>
@@ -753,6 +881,10 @@
                         <p class="section-description">Allocate your voting points to fund public services. Funds come from Land Value Tax collections.</p>
                         <div class="monthly-collection">
                             Monthly LVT Collection: $<span id="monthly-lvt-amount">0</span>
+                        </div>
+                        <div class="unallocated-funds" style="margin-bottom: 15px; padding: 10px; background: #2a2a2a; border-radius: 4px; border-left: 4px solid #fbbf24;">
+                            <strong>Unallocated Funds: $<span id="unallocated-funds-amount">0</span></strong>
+                            <p style="font-size: 11px; margin: 4px 0 0 0; color: #ccc;">These funds will be distributed when you apply budget changes</p>
                         </div>
                         <div class="budget-categories">
                             <div class="budget-category" data-category="education" data-tooltip="Fund schools, libraries, and educational programs to boost citizen learning and development">
@@ -1182,7 +1314,6 @@
     
     <script src="config.js"></script>
     <script src="buildings.js"></script>
-    <script src="multiplayer.js"></script>
     <script src="game.js"></script>
 </body>
 </html>

@@ -1,77 +1,16 @@
 Category,Name,GraphicsFile,CostToBuild,ConstructionDays,MaxRevenuePerDay,JobsCreated,MaintenancePerDay,DecayRatePercent,BedroomsAdded,PopulationReq,EnergyDemandPerDay,FoodProductionPerDay,PrereqBuildings,PrereqLandValue,HealthImpact,CultureImpact,AffordabilityImpact,ResilienceImpact,MobilityImpact,EducationImpact,SafetyImpact,EnvironmentImpact,NoiseImpact
-Housing,Tent,tent.svg,10,0,0,0,1,1,1,0,0,0,,100,-5,-3,5,3,5,0,-2,-1,0
-Housing,Shack,shack.svg,50,1,1,0,2,0.91,2,2,1,0,Tent,200,5,5,4,8,2,0,2,-2,0
-Housing,Cabin,cabin.png,200,3,2,0,3,0.82,3,4,3,0,Shack,300,8,8,5,6,6,0,4,4,1
-Housing,Single House,single_house.png,500,4,1,0,4,0.73,4,12,6,0,Cabin,400,6,0,-5,2,2,0,6,-3,2
-Housing,Row Houses,row_houses.png,800,5,6,0,5,0.64,8,15,8,0,,500,-4.55,10.91,-3.64,9.09,10.91,4.55,-7.27,-5.45,8.18
-Housing,Suburban House,suburban_house.png,650,4,1,0,4,0.55,4,6,6,0,Row House,600,1.82,13.64,-14.55,16.36,13.64,8.18,0.91,-11.82,12.73
-Housing,Low-rise Apartments,lowrise_apartments.png,1000,7,6,0,5,0.46,6,20,6,0,Suburban House,700,8.18,16.36,-25.45,23.64,16.36,11.82,9.09,-18.18,17.27
-Housing,Mid-rise Condos,midrise_condos.png,1500,9,8,2,6,0.37,50,40,100,0,Low-rise Apartments,800,14.55,19.09,-36.36,30.91,19.09,15.45,17.27,-24.55,21.82
-Housing,Luxury Condos,luxury_condos.png,2500,14,16,5,6,0.28,28,80,112,0,Mid-rise Condos,900,20.91,21.82,-47.27,38.18,21.82,19.09,25.45,-30.91,26.36
-Housing,High-rise Tower,highrise_tower.png,5000,20,32,10,10,0.19,80,150,100,0,Luxury Condos,1000,27.27,24.55,-58.18,45.45,24.55,22.73,33.64,-37.27,30.91
-Education,Story Circle,story_circle.svg,15,0,0,2,1,1,0,0,0,0,,200,0,5,10,5,0,10,0,5,0
-Education,Tent School,tent_school.png,75,1,0,2,1,0.91,0,2,1,0,Story Circle,400,3.64,10,7.27,10.91,2.73,18.18,2.73,3.64,3.64
-Education,Community Schoolhouse,community_schoolhouse.png,250,3,0,5,2,0.73,0,4,3,0,,600,10.91,20,1.82,22.73,8.18,34.55,8.18,0.91,10.91
-Education,Elementary School,elementary_school.png,850,5,0,12,4,0.64,0,20,10,0,Community Schoolhouse,800,14.55,25,-0.91,28.64,10.91,42.73,10.91,-0.45,14.55
-Education,High School,high_school.png,1200,6,0,20,8,0.46,0,50,25,0,Public Library,1200,21.82,35,-6.36,40.45,16.36,59.09,16.36,-3.18,21.82
-Education,Trade School,trade_school.png,1500,7,12,25,10,0.37,0,75,40,0,High School,1400,25.45,40,-9.09,46.36,19.09,67.27,19.09,-4.55,25.45
-Education,University,university.png,2800,14,6,30,14,0.28,0,150,36,0,Trade School,1600,29.09,45,-11.82,52.27,21.82,75.45,21.82,-5.91,29.09
-Education,Research Center,research_center.png,5000,18,30,33,15,0.19,0,185,70,0,University,1800,32.73,50,-14.55,58.18,24.55,83.64,24.55,-7.27,32.73
-Education,AI Academy,ai_academy.png,7000,20,60,25,15,0.1,0,400,200,0,Research Center,2000,36.36,55,-17.27,64.09,27.27,91.82,27.27,-8.64,36.36
-Education,Futuristic R&D Lab,futuristic_rd_lab.png,25000,24,72,60,16,0.01,0,650,180,0,AI Academy,2200,40,60,-20,70,30,100,30,-10,40
-Healthcare,Herbalist Hut,herbalist_hut.svg,20,0,2,2,1,1,0,0,1,1,,300,10,0,5,5,0,0,0,5,0
-Healthcare,Medic Tent,medic_tent.png,80,1,2,3,3,0.91,0,3,2,0,Herbalist Hut,600,16.36,2.73,1.82,10.91,1.82,3.64,3.64,2.73,2.73
-Healthcare,Field Clinic,field_clinic.png,400,2,4,5,5,0.82,0,5,3,0,Medic Tent,900,22.73,5.45,-1.36,16.82,3.64,7.27,7.27,0.45,5.45
-Healthcare,Pharmacy,pharmacy.png,650,4,8,8,6,0.73,0,15,6,0,Field Clinic,1200,29.09,8.18,-4.55,22.73,5.45,10.91,10.91,-1.82,8.18
-Healthcare,Community Clinic,community_clinic.png,900,6,12,13,7,0.64,0,40,8,0,Pharmacy,1500,35.45,10.91,-7.73,28.64,7.27,14.55,14.55,-4.09,10.91
-Healthcare,General Hospital,general_hospital.png,2600,10,25,50,19,0.55,12,100,35,0,Community Clinic,1800,41.82,13.64,-10.91,34.55,9.09,18.18,18.18,-6.36,13.64
-Healthcare,Specialist Clinic,specialist_clinic.png,2000,8,20,20,13,0.46,0,125,15,0,General Hospital,2100,48.18,16.36,-14.09,40.45,10.91,21.82,21.82,-8.64,16.36
-Healthcare,Medical Research Center,medical_research_center.png,5000,16,40,70,17,0.37,0,150,30,0,Specialist Clinic,2400,54.55,19.09,-17.27,46.36,12.73,25.45,25.45,-10.91,19.09
-Healthcare,Cybernetic Hospital,cybernetic_hospital.png,18000,21,60,25,21,0.28,0,700,185,0,Medical Research Center,2700,60.91,21.82,-20.45,52.27,14.55,29.09,29.09,-13.18,21.82
-Healthcare,Longevity Institute,longevity_institute.png,50000,30,120,20,12,0.19,0,2000,65,0,Cybernetic Hospital,3000,67.27,24.55,-23.64,58.18,16.36,32.73,32.73,-15.45,24.55
-Healthcare,Biotech Institute,biotech_institute.png,25000,28,90,50,25,0.1,0,2850,135,0,Longevity Institute,3300,73.64,27.27,-26.82,64.09,18.18,36.36,36.36,-17.73,27.27
-Culture,Storytelling Ring,storytelling_ring.png,5,0,0,1,0,1,0,0,1,0,,400,0,10,5,0,0,0,0,5,0
-Culture,Shrine,shrine.png,25,1,0,0,0,0.91,0,0,0,0,Storytelling Ring,800,2.73,16.36,3.64,3.64,1.82,3.64,2.73,3.64,3.64
-Culture,Folk Theater,folk_theater.png,150,2,9,9,1,0.82,0,25,2,0,Shrine,1200,5.45,22.73,2.27,7.27,3.64,7.27,5.45,2.27,7.27
-Culture,Small Gallery,small_gallery.png,250,3,15,3,2,0.73,0,12,2,0,Folk Theater,1600,8.18,29.09,0.91,10.91,5.45,10.91,8.18,0.91,10.91
-Culture,Museum,museum.png,925,6,25,6,5,0.64,0,100,5,0,Small Gallery,2000,10.91,35.45,-0.45,14.55,7.27,14.55,10.91,-0.45,14.55
-Culture,Cathedral,cathedral.png,1950,21,3,2,7,0.55,0,10,4,0,Museum,2400,13.64,41.82,-1.82,18.18,9.09,18.18,13.64,-1.82,18.18
-Culture,Opera House,opera_house.png,2500,14,75,8,4,0.46,0,250,9,0,Cathedral,2800,16.36,48.18,-3.18,21.82,10.91,21.82,16.36,-3.18,21.82
-Culture,Art Complex,art_complex.png,2700,10,60,13,6,0.37,0,200,22,0,Opera House,3200,19.09,54.55,-4.55,25.45,12.73,25.45,19.09,-4.55,25.45
-Culture,Festival Arena,festival_arena.png,5000,18,100,25,15,0.19,0,800,45,0,,3600,24.55,67.27,-7.27,32.73,16.36,32.73,24.55,-7.27,32.73
-Recreation,Open Field,open_field.png,12,0,0,0,0,1,0,0,0,3,,500,0,5,10,0,0,0,0,5,0
-Recreation,Campground,campground.png,60,1,3,1,1,0.91,6,5,0,0,Open Field,1000,3.64,9.09,7.27,3.64,2.73,1.82,2.73,3.18,4.55
-Recreation,Village Tavern,village_tavern.png,200,3,18,4,3,0.82,0,18,4,4,Campground,1500,7.27,13.18,4.55,7.27,5.45,3.64,5.45,1.36,9.09
-Recreation,Playground,playground.png,150,2,0,0,1,0.73,0,0,1,55,Village Tavern,2000,10.91,17.27,1.82,10.91,8.18,5.45,8.18,-0.45,13.64
-Recreation,Community Park,community_park.png,400,1,5,1,1,0.64,0,10,1,73,Playground,2500,14.55,21.36,-0.91,14.55,10.91,7.27,10.91,-2.27,18.18
-Recreation,Sports Complex,sports_complex.png,1600,15,25,2,5,0.55,0,60,28,91,Community Park,3000,18.18,25.45,-3.64,18.18,13.64,9.09,13.64,-4.09,22.73
-Recreation,Stadium,stadium.png,35000,30,150,80,25,0.46,0,2200,350,25,Sports Complex,10000,21.82,29.55,-6.36,21.82,16.36,10.91,16.36,-5.91,27.27
-Recreation,Amusement Arcade,amusement_arcade.png,3000,10,20,15,2,0.37,0,1750,120,15,Stadium,8000,25.45,33.64,-9.09,25.45,19.09,12.73,19.09,-7.73,31.82
-Recreation,Theme Park,theme_park.png,25000,40,140,60,20,0.28,0,4000,500,40,Amusement Arcade,9000,29.09,37.73,-11.82,29.09,21.82,14.55,21.82,-9.55,36.36
-Commercial,Market Stall,market_stall.svg,15,0,2,1,1,1,0,0,1,10,,600,-5,0,5,0,0,0,0,5,0
-Commercial,Food Cart Row,food_cart_row.png,90,1,10,3,2,0.91,0,10,5,35,Market Stall,1200,-2.73,2.73,1.82,4.55,2.73,1.82,2.73,2.27,4.55
-Commercial,Woodshop,woodshop.png,180,1,15,4,3,0.82,0,12,8,0,Food Cart Row,1800,-0.45,5.45,-1.36,9.09,5.45,3.64,5.45,-0.45,9.09
-Commercial,General Store,general_store.png,550,3,50,8,4,0.73,0,35,6,48,Woodshop,2400,1.82,8.18,-4.55,13.64,8.18,5.45,8.18,-3.18,13.64
-Commercial,Shopping Plaza,shopping_plaza.png,650,4,60,30,5,0.64,0,55,12,65,General Store,3000,4.09,10.91,-7.73,18.18,10.91,7.27,10.91,-5.91,18.18
-Commercial,Grocery Market,grocery_market.png,1100,3,70,25,5,0.55,0,40,15,120,Shopping Plaza,3600,6.36,13.64,-10.91,22.73,13.64,9.09,13.64,-8.64,22.73
-Commercial,Office Block,office_block.png,1200,5,15,40,4,0.46,0,80,19,0,Grocery Market,4200,8.64,16.36,-14.09,27.27,16.36,10.91,16.36,-11.36,27.27
-Commercial,Shopping Mall,shopping_mall.png,2500,6,50,75,6,0.37,0,275,42,62,Office Block,4800,10.91,19.09,-17.27,31.82,19.09,12.73,19.09,-14.09,31.82
-Commercial,Department Store,department_store.png,1800,7,40,65,4,0.28,0,450,34,0,Shopping Mall,5400,13.18,21.82,-20.45,36.36,21.82,14.55,21.82,-16.82,36.36
-Commercial,Corporate Tower,corporate_tower.png,6000,14,40,120,11,0.19,0,600,160,0,Department Store,6000,15.45,24.55,-23.64,40.91,24.55,16.36,24.55,-19.55,40.91
-Commercial,Mega Mall,mega_mall.png,10000,21,110,150,25,0.1,0,1100,175,120,Corporate Tower,6600,17.73,27.27,-26.82,45.45,27.27,18.18,27.27,-22.27,45.45
-Civic,Council Hut,council_hut.png,10,0,0,0,0,1,0,0,0,0,,700,0,5,5,0,0,0,5,5,0
-Civic,Town Hall,town_hall.svg,95,1,0,2,1,0.82,0,30,11,0,,1400,7.27,15,2.27,10.91,5.45,7.27,15,2.27,3.64
-Civic,Post Office,post_office.png,250,2,15,8,2,0.73,0,35,15,0,Town Hall,2100,10.91,20,0.91,16.36,8.18,10.91,20,0.91,5.45
-Civic,Courthouse,courthouse.png,500,6,10,6,3,0.64,0,45,14,0,Post Office,2800,14.55,25,-0.45,21.82,10.91,14.55,25,-0.45,7.27
-Civic,City Hall,city_hall.png,1500,5,0,15,4,0.55,0,95,23,0,Courthouse,3500,18.18,30,-1.82,27.27,13.64,18.18,30,-1.82,9.09
-Civic,Capitol,capitol.png,3500,12,0,30,8,0.46,0,450,34,0,City Hall,4200,21.82,35,-3.18,32.73,16.36,21.82,35,-3.18,10.91
-Civic,Parliament,parliament.png,5000,18,0,60,12,0.37,0,950,42,0,Capitol,4900,25.45,40,-4.55,38.18,19.09,25.45,40,-4.55,12.73
-Civic,Public Library,public_library.png,700,5,0,7,2,0.55,0,25,8,0,Elementary School,1000,18.18,30,-3.64,34.55,13.64,50.91,13.64,-1.82,18.18
-Civic,Peace Observatory,peace_observatory.png,6000,21,0,20,15,0.01,0,3500,10,0,,5600,40,60,-10,60,30,40,60,-10,20
-Emergency,Guard Post,guard_post.png,20,0,0,1,1,0.82,0,2,1,0,,6300,15,1.82,2.27,22.73,7.27,1.82,32.73,-3.64,5.45
-Emergency,Medic Station,medic_station.png,350,2,3,3,2,0.73,0,4,3,0,Guard Post,7000,20,2.73,0.91,29.09,10.91,2.73,39.09,-5.45,8.18
-Emergency,Firehouse,firehouse.png,600,4,0,15,6,0.64,4,90,16,0,Medic Station,7700,25,3.64,-0.45,35.45,14.55,3.64,45.45,-7.27,10.91
-Emergency,Police Station,police_station.png,1400,8,0,32,15,0.55,0,120,25,0,Firehouse,8400,30,4.55,-1.82,41.82,18.18,4.55,51.82,-9.09,13.64
-Emergency,Emergency Ops Center,emergency_ops_center.png,2000,15,0,15,5,0.46,0,775,60,0,Police Station,9100,35,5.45,-3.18,48.18,21.82,5.45,58.18,-10.91,16.36
-Emergency,Disaster HQ,disaster_hq.png,3300,30,0,60,10,0.37,0,5000,80,0,Emergency Ops Center,9800,40,6.36,-4.55,54.55,25.45,6.36,64.55,-12.73,19.09
-Emergency,Response Command,response_command.png,6500,45,0,85,12,0.28,0,5500,95,0,Disaster HQ,10500,45,7.27,-5.91,60.91,29.09,7.27,70.91,-14.55,21.82
+Housing,Cottage,cottage.png,250,1,10,0,1,0.05,2,0,5,0,,,10,0,5,5,5,0,10,5,1
+Commercial,Farmers Market,farmers_market.png,250,2,25,10,3,0.15,0,0,0,40,,,20,5,5,20,10,0,5,5,2
+Education,High School,high_school.png,800,3,0,20,5,0.125,0,100,50,0,,,5,10,0,15,5,35,5,10,-3
+Education,Schoolhouse,schoolhouse.png,400,5,0,12,4,0.085,0,25,20,0,,,0,5,0,10,5,20,2,7,-1
+Commercial,Cornerstore,corner_store.png,500,4,40,6,2,0.05,0,15,15,35,,,5,3,3,5,5,0,-2,-3,-3
+Civic,Library,library.png,600,6,2,12,1,0.01,0,50,12,0,,,2,12,15,20,0,30,2,0,0
+Commercial,Bakery,bakery.png,450,3,18,6,3,0.075,0,30,15,25,,,2,3,3,2,0,0,0,-2,0
+Commercial,Barbershop,barbershop.png,375,4,22,4,1,0.05,0,25,11,0,,,3,18,3,0,0,2,2,0,0
+Commercial,Brewery,brewery.png,1100,12,50,15,7,0.2,0,75,35,5,,,-5,15,0,0,0,0,-15,-8,-6
+Recreation,Playground,playground.png,325,4,0,0,1,0.01,0,0,0,0,,,15,5,5,1,0,6,-1,6,-4
+Utilities,Solar Farm,solar_farm.png,1200,11,35,2,3,0.06,0,25,-50,0,,,0,2,10,15,0,0,0,5,0
+Utilities,Coal Plant,coal_plant.png,1500,15,200,35,25,0.175,0,0,-500,0,,,-50,-5,25,20,0,0,-20,-40,-10
+Recreation,Public Pool,public_pool.png,730,8,0,5,20,0.1,0,60,18,0,,,15,5,5,3,0,0,-5,-5,-2
+Housing,Apartments,apartments.png,1400,7,80,0,10,0.125,12,10,24,0,,,15,4,10,7,15,0,20,10,2
+Housing,Town Block,town_block.png,2300,8,200,0,21,0.14,30,20,40,0,,,18,6,14,10,17,0,22,15,6

@@ -14,9 +14,43 @@ class IsometricGrid {
         this.targetFPS = 60;
         this.frameInterval = 1000 / this.targetFPS;
         
+        // Performance caching system
+        this.landValueCache = new Map(); // Cache calculated land values
+        this.accessibilityCache = new Map(); // Cache accessibility scores
+        this.dirtyRegions = new Set(); // Track regions that need recalculation
+        this.lastCacheUpdate = 0; // Track when caches were last cleared
+        
         // Event throttling
         this.throttleTimeout = null;
         this.lastMouseMoveTime = 0;
+        this.pendingMouseUpdate = false;
+        this.lastMousePosition = { x: 0, y: 0 };
+        this.lastMouseEvent = { clientX: 0, clientY: 0 };
+        
+        // Economic calculation caching
+        this.economicCache = {
+            buildingStats: new Map(), // Key: "row-col", Value: {revenue, maintenance, lvt, buildingName, decay, age}
+            playerParcels: new Set(), // Track which parcels are player-owned
+            lastUpdate: 0,
+            dirty: new Set() // Only recalculate changed buildings
+        };
+        
+        // Vitality calculation caching
+        this.vitalityCache = {
+            supply: {},
+            demand: {},
+            netVitality: {},
+            lastCalculated: 0,
+            dirty: true, // Track if recalculation needed
+            dirtyBuildings: new Set() // Track which buildings changed
+        };
+        
+        // Prerequisite checking cache
+        this.prereqCache = {
+            availableBuildings: new Set(), // Buildings currently in the city
+            lastUpdate: 0,
+            dirty: true
+        };
         
         // DOM element caching for performance
         this.domCache = {
@@ -24,7 +58,9 @@ class IsometricGrid {
             gameDate: null,
             playerCash: null,
             playerWealth: null,
-            cityName: null
+            cityName: null,
+            totalResidents: null,
+            cityTreasury: null
         };
         
         // City vitality tracking
@@ -52,11 +88,25 @@ class IsometricGrid {
         // Start game time updates (1 year = 1 hour = 3600 seconds)
         // 1 day in game = 3600/365 = ~9.86 seconds real time
         this.dayLength = 3600000 / 365; // milliseconds per game day
+        this.dayDuration = this.dayLength; // Alias for construction calculations
         this.currentDay = 0;
         this.startGameTime();
 
         // Building manager handles all building data
         this.buildingManager = window.buildingManager;
+        
+        // Economic multipliers for balance tuning
+        this.economicMultipliers = {
+            energy: 1.0,
+            food: 1.0,
+            housing: 1.0,
+            jobs: 1.0,
+            populationGrowthRate: 0.02,
+            shortageThreshold: 0.8,
+            oversupplyThreshold: 2.0,
+            baseRevenue: 1.0,
+            maintenance: 1.0
+        };
         
         // Create a simple square grid
         this.grid = [];
@@ -85,10 +135,35 @@ class IsometricGrid {
         
         // Clean slate - all parcels start unowned
         
-        // Spotlight hover effect
+        // Tilt-shift focus effect
         this.hoveredTile = null; // {row, col} of currently hovered tile
-        this.parcelOpacity = new Map(); // Map to store opacity values for each parcel
-        this.opacityTransitions = new Map(); // Map to store transition animations
+        this.isHoveringBuilding = false; // Simple boolean for blur overlay
+        
+        // Parcel selector fade system
+        this.hoverStartTime = null; // When current hover began
+        this.selectorOpacity = 1.0; // Current opacity of white diamond selector
+        this.completionAnimations = new Map(); // Map of "row,col" -> animation data
+        
+        // Simple hover with bouncing ball physics
+        this.hoverElevation = 10; // Target elevation for hovered buildings
+        this.currentElevation = 0; // Current animated elevation
+        this.bounceAnimation = null; // Animation ID
+        this.elevationVelocity = 0; // Physics: velocity for bounce
+        
+        // Focus effect system
+        this.preBlurMode = true; // Always-on tilt-shift blur effect
+        this.bobAmount = 0.5; // Bob amount in pixels
+        this.bobSpeed = 0.009; // Bob animation speed
+        this.liftAmount = 1; // Base elevation for hovered buildings
+        
+        // Pre-rendered blur canvas for background
+        this.backgroundBlurCanvas = document.createElement('canvas');
+        this.backgroundBlurCtx = this.backgroundBlurCanvas.getContext('2d');
+        this.blurredBackgroundReady = false;
+        
+        this.constructionAnimations = new Set(); // Set of buildings currently animating construction
+        this.lastDayStartTime = performance.now(); // Track when current day started
+        this.pixelRowTimestamps = new Map(); // Track when each pixel row was revealed: "row,col" -> [timestamps]
         
         // Sub-menu hover management
         this.currentSubmenu = null; // Currently visible submenu element
@@ -96,6 +171,11 @@ class IsometricGrid {
         
         // Map layer system
         this.currentLayer = 'normal'; // 'normal', 'landvalue', 'cashflow', 'transportation'
+        
+        // Auction system
+        this.activeAuction = null;
+        this.auctionHistory = [];
+        this.auctionInterval = null;
         
         // Transportation network system
         this.transportationNetwork = {
@@ -132,6 +212,7 @@ class IsometricGrid {
             ],
             categoryAllocations: {}, // Percentage of LVT allocated to each category
             publicCoffers: {}, // Available funds in each category
+            unallocatedFunds: 0, // Funds collected but not yet allocated to categories
             lvtPointsAllocated: 0, // Points allocated to LVT rate changes
             currentLvtRate: 0.50, // 50% starting rate
             proposedLvtRate: 0.50,
@@ -166,12 +247,29 @@ class IsometricGrid {
             netCashflow: 0
         };
         
+        // Separate tracking for UI preview (doesn't overwrite real daily totals)
+        this.currentCashflowPreview = {
+            revenue: 0,
+            maintenance: 0,
+            lvt: 0,
+            netCashflow: 0
+        };
+        
         this.setupCanvas();
+        this.prerenderBlurredBackground(); // Initial pre-render
         this.initDOMCache();
         this.populateBuildingCategories();
         this.setupEventListeners();
         this.setupZoomControls();
         this.setupLayerControls();
+        
+        // Initialize performance caches - mark all regions as dirty for first calculation
+        for (let row = 0; row < this.gridSize; row++) {
+            for (let col = 0; col < this.gridSize; col++) {
+                this.dirtyRegions.add(`${row}-${col}`);
+            }
+        }
+        
         this.updateVitalityDisplay();
         this.updateDemographicsDisplay();
         this.calculateCurrentCashflow(); // Initialize cashflow data
@@ -189,6 +287,8 @@ class IsometricGrid {
         this.domCache.playerWealth = document.getElementById('player-wealth');
         this.domCache.cityName = document.getElementById('city-name');
         this.domCache.playerCashflow = document.getElementById('player-cashflow');
+        this.domCache.totalResidents = document.getElementById('total-residents');
+        this.domCache.cityTreasury = document.getElementById('city-treasury');
     }
 
     populateBuildingCategories() {
@@ -209,7 +309,6 @@ class IsometricGrid {
             categorySelect.appendChild(option);
             
             // Try to reload buildings from CSV if empty
-            console.log('No building categories found, attempting to load from CSV...');
             if (this.buildingManager.isBuildingsEmpty()) {
                 this.buildingManager.initializeBuildingsFromMasterCSV();
             }
@@ -228,6 +327,7 @@ class IsometricGrid {
     startGameTime() {
         setInterval(() => {
             this.currentDay++;
+            this.lastDayStartTime = performance.now(); // Track when this day started
             this.updateGameDate();
             this.processDailyCashflow();
             this.updatePlayerStats();
@@ -269,98 +369,33 @@ class IsometricGrid {
         let dailyMaintenance = 0;
         let dailyLVT = 0;
         
-        // Store detailed breakdown for UI
-        this.cashflowBreakdown = [];
+        // Calculate and apply supply/demand effects first
+        this.applySupplyDemandEffects();
         
-        for (let row = 0; row < this.gridSize; row++) {
-            for (let col = 0; col < this.gridSize; col++) {
-                const parcel = this.grid[row][col];
-                
-                if (parcel.owner === 'player') {
-                    // Process Land Value Tax (50% annually = 0.137% daily)
-                    const dailyLVTRate = 0.50 / 365; // 50% per year, paid daily
-                    const landTax = parcel.landValue.paidPrice * dailyLVTRate;
-                    dailyLVT += landTax;
-                    
-                    let buildingRevenue = 0;
-                    let buildingMaintenance = 0;
-                    let buildingName = 'Empty Land';
-                    let buildingAge = 0;
-                    let decay = 0;
-                    
-                    if (parcel.building) {
-                        // Age the building
-                        parcel.buildingAge++;
-                        buildingAge = parcel.buildingAge;
-                        
-                        // Calculate decay (increases over time)
-                        const building = this.buildingManager.getBuildingById(parcel.building);
-                        if (building) {
-                            buildingName = building.name;
-                            
-                            // Decay rate: 0.1% per day base, accelerating over time
-                            const baseDecayRate = 0.001;
-                            const ageMultiplier = 1 + (parcel.buildingAge / 1000); // Accelerates slowly
-                            const dailyDecayIncrease = baseDecayRate * ageMultiplier;
-                            parcel.decay = Math.min(1, parcel.decay + dailyDecayIncrease);
-                            decay = parcel.decay;
-                            
-                            // Calculate revenue (already daily, affected by decay and satisfaction)
-                            const maxRevenue = building.economics.maxRevenue || 0;
-                            const decayMultiplier = Math.max(0, 1 - parcel.decay);
-                            
-                            // Debug logging for revenue calculation
-                            if (Math.random() < 0.02) { // Log 2% of buildings each day
-                                console.log(`💰 Revenue calc for ${building.name}:`, {
-                                    maxRevenue,
-                                    decayMultiplier,
-                                    buildingAge,
-                                    decay
-                                });
-                            }
-                            
-                            // Apply city satisfaction multiplier (0.5 to 1.2x based on happiness)
-                            const satisfactionMultiplier = 0.5 + (this.citySatisfaction?.overall || 0.5) * 0.7;
-                            
-                            // Apply building efficiency penalty for very unhappy cities
-                            const efficiencyPenalty = this.buildingEfficiencyPenalty || 1.0;
-                            
-                            // Apply population growth modifier (represents changing demand/occupancy)
-                            const growthModifier = this.populationGrowthModifier || 1.0;
-                            
-                            buildingRevenue = maxRevenue * decayMultiplier * satisfactionMultiplier * efficiencyPenalty * growthModifier;
-                            dailyRevenue += buildingRevenue;
-                            
-                            // Calculate maintenance (already daily, increases with decay)
-                            const baseMaintenance = building.economics.maintenanceCost || 0;
-                            const maintenanceMultiplier = 1 + (parcel.decay * 2); // Doubles at full decay
-                            buildingMaintenance = baseMaintenance * maintenanceMultiplier;
-                            dailyMaintenance += buildingMaintenance;
-                        }
-                    }
-                    
-                    // Store breakdown data (preserve full precision)
-                    const netCashflow = buildingRevenue - buildingMaintenance - landTax;
-                    this.cashflowBreakdown.push({
-                        row,
-                        col,
-                        coordinates: `(${row}, ${col})`,
-                        buildingName,
-                        buildingAge,
-                        decay: decay * 100, // Convert to percentage
-                        landValue: parcel.landValue.paidPrice,
-                        revenue: buildingRevenue,
-                        maintenance: buildingMaintenance,
-                        lvt: landTax,
-                        netCashflow
-                    });
-                }
-            }
-        }
+        // Update player parcel tracking and mark aging buildings as dirty
+        this.updatePlayerParcelsAndAging();
+        
+        // Process only dirty/changed buildings + new calculations
+        this.updateEconomicCache();
+        
+        // Sum cached values for totals
+        this.economicCache.buildingStats.forEach(stats => {
+            dailyRevenue += stats.revenue;
+            dailyMaintenance += stats.maintenance;
+            dailyLVT += stats.lvt;
+        });
+        
+        // Build UI breakdown from cache
+        this.buildCashflowBreakdown();
         
         // Apply cashflow (preserve full precision)
         const netCashflow = dailyRevenue - dailyMaintenance - dailyLVT;
         this.playerCash += netCashflow;
+        
+        // Add daily LVT to unallocated funds (city treasury)
+        if (dailyLVT > 0) {
+            this.governance.unallocatedFunds += dailyLVT;
+        }
         
         // Store daily totals for UI
         this.dailyCashflowTotals = {
@@ -370,20 +405,241 @@ class IsometricGrid {
             netCashflow
         };
         
+        console.log(`🔍 Cashflow Summary: Revenue=$${Math.round(dailyRevenue)}, Maintenance=$${Math.round(dailyMaintenance)}, LVT=$${Math.round(dailyLVT)}`);
+        
         // Ensure cash doesn't go below zero
-        this.playerCash = Math.max(0, this.playerCash);
+        if (this.playerCash < 0) {
+            this.playerCash = 0;
+        }
+        
+        // Clear dirty flags after processing
+        this.economicCache.dirty.clear();
+        this.economicCache.lastUpdate = performance.now();
         
         // Check for auction triggers
         this.checkForAuctions();
         
-        // Log cashflow for debugging (can be removed later)
-        if (Math.abs(netCashflow) > 0.01) {
-            console.log(`Daily Cashflow: Revenue $${dailyRevenue.toFixed(2)}, Maintenance $${dailyMaintenance.toFixed(2)}, LVT $${dailyLVT.toFixed(2)}, Net: $${netCashflow.toFixed(2)}`);
+    }
+    
+    // Helper method: Update player parcel tracking and mark aging buildings as dirty
+    updatePlayerParcelsAndAging() {
+        this.economicCache.playerParcels.clear();
+        
+        for (let row = 0; row < this.gridSize; row++) {
+            for (let col = 0; col < this.gridSize; col++) {
+                const parcel = this.grid[row][col];
+                
+                if (parcel.owner === 'player') {
+                    const key = `${row}-${col}`;
+                    this.economicCache.playerParcels.add(key);
+                    
+                    // Age buildings and mark as dirty (all buildings age daily)
+                    if (parcel.building) {
+                        parcel.buildingAge++;
+                        this.markBuildingEconomicsDirty(row, col);
+                    }
+                }
+            }
         }
+    }
+    
+    // Helper method: Update economic cache for dirty buildings only
+    updateEconomicCache() {
+        this.economicCache.dirty.forEach(key => {
+            const [row, col] = key.split('-').map(Number);
+            const parcel = this.grid[row][col];
+            
+            if (parcel.owner === 'player') {
+                const stats = this.calculateBuildingEconomics(parcel, row, col);
+                this.economicCache.buildingStats.set(key, stats);
+            } else {
+                // Remove if no longer player-owned
+                this.economicCache.buildingStats.delete(key);
+            }
+        });
+        
+        // Remove any cached buildings that are no longer player parcels
+        this.economicCache.buildingStats.forEach((stats, key) => {
+            if (!this.economicCache.playerParcels.has(key)) {
+                this.economicCache.buildingStats.delete(key);
+            }
+        });
+    }
+    
+    // Helper method: Calculate economics for a single building/parcel
+    calculateBuildingEconomics(parcel, row, col) {
+        // Process Land Value Tax (50% annually = 0.137% daily)
+        const dailyLVTRate = 0.50 / 365; // 50% per year, paid daily
+        const landTax = parcel.landValue.paidPrice * dailyLVTRate;
+        
+        let buildingRevenue = 0;
+        let buildingMaintenance = 0;
+        let buildingName = 'Empty Land';
+        let buildingAge = parcel.buildingAge || 0;
+        let decay = 0;
+        
+        if (parcel.building) {
+            // Calculate decay (increases over time)
+            const building = this.buildingManager.getBuildingById(parcel.building);
+            if (building) {
+                buildingName = building.name;
+                
+                // Decay rate: 0.1% per day base, accelerating over time
+                const baseDecayRate = 0.001;
+                const ageMultiplier = 1 + (parcel.buildingAge / 1000); // Accelerates slowly
+                const dailyDecayIncrease = baseDecayRate * ageMultiplier;
+                parcel.decay = Math.min(1, parcel.decay + dailyDecayIncrease);
+                decay = parcel.decay;
+                
+                // Calculate revenue (already daily, affected by decay and satisfaction)
+                const maxRevenue = building.economics.maxRevenue || 0;
+                const decayMultiplier = Math.max(0, 1 - parcel.decay);
+                
+                
+                // Apply city satisfaction multiplier (0.5 to 1.2x based on happiness)
+                const satisfactionMultiplier = 0.5 + (this.citySatisfaction?.overall || 0.5) * 0.7;
+                
+                // Apply building efficiency penalty for very unhappy cities
+                const efficiencyPenalty = this.buildingEfficiencyPenalty || 1.0;
+                
+                // Apply population growth modifier (represents changing demand/occupancy)
+                const growthModifier = this.populationGrowthModifier || 1.0;
+                
+                // Apply supply/demand effects
+                let supplyDemandMultiplier = 1.0;
+                if (this.supplyDemandEffects) {
+                    // Apply different multipliers based on building type and resource shortages
+                    if (building.category === 'utilities' || building.resources?.energyDemand < 0) {
+                        // Energy producers affected by energy oversupply/shortage
+                        supplyDemandMultiplier *= this.supplyDemandEffects.energyMultiplier;
+                    } else if (building.category === 'commercial') {
+                        // Commercial buildings affected by energy shortages (higher costs)
+                        if (building.resources?.energyDemand > 0) {
+                            // Energy consumers pay more during shortages
+                            const energyCostMultiplier = 2 - this.supplyDemandEffects.energyMultiplier;
+                            supplyDemandMultiplier *= Math.max(0.1, Math.min(2.0, energyCostMultiplier));
+                        }
+                        // Food producers affected by food oversupply
+                        if (building.resources?.foodProduction > 0) {
+                            supplyDemandMultiplier *= this.supplyDemandEffects.foodMultiplier;
+                        }
+                    } else if (building.category === 'housing') {
+                        // Housing affected by housing shortage (higher rents/values)
+                        supplyDemandMultiplier *= this.supplyDemandEffects.housingMultiplier;
+                    }
+                    
+                    // Job-creating buildings affected by job market conditions
+                    if (building.population?.jobsCreated > 0) {
+                        supplyDemandMultiplier *= this.supplyDemandEffects.jobsMultiplier;
+                    }
+                    
+                    // All revenue-generating buildings affected by overall business efficiency
+                    if (maxRevenue > 0) {
+                        supplyDemandMultiplier *= this.supplyDemandEffects.businessEfficiency;
+                    }
+                }
+                
+                buildingRevenue = maxRevenue * decayMultiplier * satisfactionMultiplier * efficiencyPenalty * growthModifier * supplyDemandMultiplier * this.economicMultipliers.baseRevenue;
+                
+                // Calculate maintenance (already daily, increases with decay)
+                const baseMaintenance = building.economics.maintenanceCost || 0;
+                const maintenanceMultiplier = 1 + (parcel.decay * 2); // Doubles at full decay
+                buildingMaintenance = baseMaintenance * maintenanceMultiplier * this.economicMultipliers.maintenance;
+            }
+        }
+        
+        // Return cached stats object
+        return {
+            row,
+            col,
+            coordinates: `(${row}, ${col})`,
+            buildingName,
+            buildingAge,
+            decay: decay * 100, // Convert to percentage for UI
+            landValue: parcel.landValue.paidPrice,
+            revenue: buildingRevenue,
+            maintenance: buildingMaintenance,
+            lvt: landTax,
+            netCashflow: buildingRevenue - buildingMaintenance - landTax
+        };
+    }
+    
+    // Helper method: Build cashflow breakdown from cached stats for UI
+    buildCashflowBreakdown() {
+        this.cashflowBreakdown = [];
+        
+        this.economicCache.buildingStats.forEach(stats => {
+            this.cashflowBreakdown.push({ ...stats }); // Clone stats for UI
+        });
+    }
+    
+    // Mark building for economic recalculation
+    markBuildingEconomicsDirty(row, col) {
+        this.economicCache.dirty.add(`${row}-${col}`);
+    }
+    
+    // Mark vitality calculations as needing update
+    markVitalityDirty(row = null, col = null) {
+        this.vitalityCache.dirty = true;
+        if (row !== null && col !== null) {
+            this.vitalityCache.dirtyBuildings.add(`${row}-${col}`);
+        }
+    }
+    
+    // Update prerequisite cache
+    updatePrereqCache() {
+        const now = performance.now();
+        
+        // Use cache if recent and not dirty
+        if (!this.prereqCache.dirty && (now - this.prereqCache.lastUpdate) < 500) {
+            return;
+        }
+        
+        this.prereqCache.availableBuildings.clear();
+        
+        for (let row = 0; row < this.gridSize; row++) {
+            for (let col = 0; col < this.gridSize; col++) {
+                const parcel = this.grid[row][col];
+                if (parcel.building) {
+                    const building = this.buildingManager.getBuildingById(parcel.building);
+                    if (building) {
+                        this.prereqCache.availableBuildings.add(building.name);
+                    }
+                }
+            }
+        }
+        
+        this.prereqCache.lastUpdate = now;
+        this.prereqCache.dirty = false;
+    }
+    
+    // Mark prerequisites as needing update
+    markPrereqDirty() {
+        this.prereqCache.dirty = true;
+    }
+    
+    // Centralized method to calculate building cost with public funding
+    calculateBuildingCostWithFunding(building, fullCost) {
+        // Get the building category for public funding check
+        const category = building?.category || 'housing';
+        const availableFunds = this.governance.publicCoffers[category] || 0;
+        const publicFunding = Math.min(availableFunds, fullCost);
+        const playerCost = fullCost - publicFunding;
+        
+        return {
+            fullCost,
+            publicFunding,
+            playerCost,
+            availableFunds,
+            category,
+            fundingStatus: publicFunding >= fullCost ? 'full' : 
+                          publicFunding > 0 ? 'partial' : 'none'
+        };
     }
 
     calculateCurrentCashflow() {
-        // Calculate current cashflow without aging buildings or applying cash changes
+        // Unified cashflow calculation - uses the same method as processDailyCashflow
+        // but without aging buildings or applying cash changes
         let dailyRevenue = 0;
         let dailyMaintenance = 0;
         let dailyLVT = 0;
@@ -391,61 +647,38 @@ class IsometricGrid {
         // Store detailed breakdown for UI
         this.cashflowBreakdown = [];
         
+        // First, ensure supply/demand effects are calculated
+        this.applySupplyDemandEffects();
+        
         for (let row = 0; row < this.gridSize; row++) {
             for (let col = 0; col < this.gridSize; col++) {
                 const parcel = this.grid[row][col];
                 
                 if (parcel.owner === 'player') {
-                    // Process Land Value Tax (50% annually = 0.137% daily)
-                    const dailyLVTRate = 0.50 / 365; // 50% per year, paid daily
-                    const landTax = parcel.landValue.paidPrice * dailyLVTRate;
-                    dailyLVT += landTax;
+                    // Use the unified calculation method
+                    const buildingStats = this.calculateBuildingEconomics(parcel, row, col);
                     
-                    let buildingRevenue = 0;
-                    let buildingMaintenance = 0;
-                    let buildingName = 'Empty Land';
-                    let buildingAge = parcel.buildingAge || 0;
-                    let decay = parcel.decay || 0;
+                    dailyRevenue += buildingStats.revenue;
+                    dailyMaintenance += buildingStats.maintenance;
+                    dailyLVT += buildingStats.lvt;
                     
-                    if (parcel.building) {
-                        const building = this.buildingManager.getBuildingById(parcel.building);
-                        if (building) {
-                            buildingName = building.name;
-                            
-                            // Calculate revenue (already daily, decreases with decay)
-                            const maxRevenue = building.economics.maxRevenue || 0;
-                            const decayMultiplier = Math.max(0, 1 - decay);
-                            buildingRevenue = maxRevenue * decayMultiplier; // Already daily revenue
-                            dailyRevenue += buildingRevenue;
-                            
-                            // Calculate maintenance (already daily, increases with decay)
-                            const baseMaintenance = building.economics.maintenanceCost || 0;
-                            const maintenanceMultiplier = 1 + (decay * 2); // Doubles at full decay
-                            buildingMaintenance = baseMaintenance * maintenanceMultiplier;
-                            dailyMaintenance += buildingMaintenance;
-                        }
-                    }
-                    
-                    // Store breakdown data (preserve full precision)
-                    const netCashflow = buildingRevenue - buildingMaintenance - landTax;
+                    // Store breakdown data for UI
                     this.cashflowBreakdown.push({
-                        row,
-                        col,
-                        coordinates: `(${row}, ${col})`,
-                        buildingName,
-                        buildingAge,
-                        decay: decay * 100, // Convert to percentage
-                        landValue: parcel.landValue.paidPrice,
-                        revenue: buildingRevenue,
-                        maintenance: buildingMaintenance,
-                        lvt: landTax,
-                        netCashflow
+                        ...buildingStats
                     });
                 }
             }
         }
         
-        // Store daily totals for UI
+        // Store preview totals for UI (don't overwrite real daily totals)
+        this.currentCashflowPreview = {
+            revenue: dailyRevenue,
+            maintenance: dailyMaintenance,
+            lvt: dailyLVT,
+            netCashflow: dailyRevenue - dailyMaintenance - dailyLVT
+        };
+        
+        // Also update the daily totals for the UI to show accurate values
         this.dailyCashflowTotals = {
             revenue: dailyRevenue,
             maintenance: dailyMaintenance,
@@ -455,74 +688,241 @@ class IsometricGrid {
     }
 
     checkForAuctions() {
+        // Update calculated values but don't auto-trigger auctions
+        // Players must manually start auctions
         for (let row = 0; row < this.gridSize; row++) {
             for (let col = 0; col < this.gridSize; col++) {
                 const parcel = this.grid[row][col];
-                
-                if (parcel.owner === 'player') {
-                    // Update calculated land value
+                if (parcel.owner && parcel.owner !== 'unclaimed') {
                     parcel.landValue.calculatedValue = this.calculateLandValue(row, col);
-                    
-                    // Check if auction should trigger
-                    const paidPrice = parcel.landValue.paidPrice;
-                    const calculatedValue = parcel.landValue.calculatedValue;
-                    const daysSinceLastAuction = this.currentDay - parcel.landValue.lastAuctionDay;
-                    
-                    // Trigger auction if:
-                    // 1. Value has changed significantly (30% by default)
-                    // 2. At least 90 days have passed since last auction
-                    // 3. The parcel has been owned for at least 30 days
-                    if (paidPrice > 0 && daysSinceLastAuction > 90) {
-                        const valueChange = Math.abs(calculatedValue - paidPrice) / paidPrice;
-                        if (valueChange > parcel.landValue.auctionThreshold) {
-                            this.triggerLandAuction(row, col);
-                        }
-                    }
                 }
             }
         }
     }
 
-    triggerLandAuction(row, col) {
-        const parcel = this.grid[row][col];
-        const calculatedValue = parcel.landValue.calculatedValue;
-        const paidPrice = parcel.landValue.paidPrice;
+    // Auction system methods
+    showAuctionUI() {
+        // Create auction UI overlay
+        const existingUI = document.getElementById('auction-ui');
+        if (existingUI) existingUI.remove();
         
-        // Simple auction simulation: new price is between calculated value and old price
-        // Market efficiency means price moves toward calculated value but doesn't fully reach it
-        const marketEfficiency = 0.7; // 70% of the gap closes
-        const priceGap = calculatedValue - paidPrice;
-        const newPrice = paidPrice + (priceGap * marketEfficiency);
+        const auctionUI = document.createElement('div');
+        auctionUI.id = 'auction-ui';
+        auctionUI.className = 'auction-overlay';
+        auctionUI.innerHTML = `
+            <div class="auction-panel">
+                <div class="auction-header">
+                    <h3>LAND AUCTION - ${this.activeAuction.coord}</h3>
+                    <span class="auction-timer" id="auction-timer">60</span>
+                </div>
+                <div class="auction-info">
+                    <div class="info-row">
+                        <span>Current Owner:</span>
+                        <span>${this.activeAuction.currentOwner || 'UNOWNED'}</span>
+                    </div>
+                    <div class="info-row">
+                        <span>Calculated Land Value:</span>
+                        <span>$${this.activeAuction.calculatedLandValue.toLocaleString()}</span>
+                    </div>
+                    <div class="info-row" ${this.activeAuction.buildingValue ? '' : 'style="display:none"'}>
+                        <span>Building Value:</span>
+                        <span>$${this.activeAuction.buildingValue.toLocaleString()}</span>
+                    </div>
+                </div>
+                <div class="auction-current-bid">
+                    <div class="bid-label">CURRENT BID</div>
+                    <div class="bid-amount" id="current-bid">$${this.activeAuction.currentBid.toLocaleString()}</div>
+                    <div class="bid-status" id="bid-status">Waiting for bidder...</div>
+                </div>
+                <div class="auction-actions" id="auction-actions">
+                    <button class="auction-btn" id="place-bid-btn">PLACE BID</button>
+                </div>
+                <div class="auction-history" id="auction-history">
+                    <!-- Bid history will appear here -->
+                </div>
+            </div>
+        `;
         
-        // Add some randomness to simulate market dynamics (±10%)
-        const randomFactor = 0.9 + (Math.random() * 0.2); // 0.9 to 1.1
-        const finalPrice = Math.max(1000, Math.round(newPrice * randomFactor)); // Minimum $1000
+        document.body.appendChild(auctionUI);
         
-        // Update the parcel
-        parcel.landValue.paidPrice = finalPrice;
-        parcel.landValue.lastAuctionDay = this.currentDay;
-        
-        // Log the auction (can be made optional later)
-        console.log(`🏛️ AUCTION: Parcel (${row},${col}) - Old: $${paidPrice.toLocaleString()}, New: $${finalPrice.toLocaleString()}, Calculated: $${calculatedValue.toLocaleString()}`);
-        
-        // Could trigger UI notification here
-        this.showAuctionNotification(row, col, paidPrice, finalPrice);
+        // Set up bid button
+        const bidBtn = document.getElementById('place-bid-btn');
+        if (bidBtn) {
+            bidBtn.onclick = () => this.placeBid();
+        }
     }
-
-    showAuctionNotification(row, col, oldPrice, newPrice) {
-        // Simple console notification for now - could be enhanced with UI alerts
-        const priceChange = newPrice - oldPrice;
-        const percentChange = ((priceChange / oldPrice) * 100).toFixed(1);
-        const direction = priceChange > 0 ? 'increased' : 'decreased';
+    
+    startAuctionTimer() {
+        if (this.auctionInterval) clearInterval(this.auctionInterval);
         
-        console.log(`📈 Land value ${direction} by ${Math.abs(percentChange)}% at parcel (${row},${col})`);
+        this.auctionInterval = setInterval(() => {
+            if (!this.activeAuction) {
+                clearInterval(this.auctionInterval);
+                return;
+            }
+            
+            const now = Date.now();
+            const timeLeft = Math.max(0, this.activeAuction.endTime - now) / 1000;
+            
+            // Update timer display
+            const timerEl = document.getElementById('auction-timer');
+            if (timerEl) {
+                timerEl.textContent = Math.ceil(timeLeft);
+                if (timeLeft < 10) {
+                    timerEl.style.color = '#ff6b6b';
+                }
+            }
+            
+            // Dutch auction phase - price drops
+            if (this.activeAuction.dutchPhase && !this.activeAuction.currentBidder) {
+                const timeSinceLastUpdate = now - this.activeAuction.lastDutchUpdate;
+                if (timeSinceLastUpdate >= 1000) { // Update every second
+                    const minPrice = this.activeAuction.initialLandValue;
+                    const newBid = Math.max(minPrice, Math.floor(this.activeAuction.currentBid * 0.99));
+                    this.activeAuction.currentBid = newBid;
+                    this.activeAuction.lastDutchUpdate = now;
+                    
+                    const bidEl = document.getElementById('current-bid');
+                    if (bidEl) {
+                        bidEl.textContent = `$${newBid.toLocaleString()}`;
+                    }
+                }
+            }
+            
+            // End auction
+            if (timeLeft <= 0) {
+                this.endAuction();
+            }
+        }, 100); // Update every 100ms
+    }
+    
+    placeBid(increment = 0.01) {
+        if (!this.activeAuction) return;
         
-        // Future enhancement: Add to a notifications system
-        // this.addNotification({
-        //     type: 'auction',
-        //     message: `Land auction completed at (${row},${col}). Value ${direction} by ${Math.abs(percentChange)}%`,
-        //     row, col, oldPrice, newPrice
-        // });
+        // First bid ends Dutch phase
+        if (this.activeAuction.dutchPhase) {
+            this.activeAuction.dutchPhase = false;
+            this.activeAuction.currentBidder = 'player';
+            this.activeAuction.bidHistory.push({
+                bidder: 'player',
+                amount: this.activeAuction.currentBid,
+                time: Date.now()
+            });
+            
+            // Update UI to show increment buttons
+            this.updateAuctionActions();
+        } else {
+            // Calculate new bid with increment
+            const newBid = Math.floor(this.activeAuction.currentBid * (1 + increment));
+            
+            // Check if player can afford total (bid + building value if taking from another owner)
+            const totalCost = this.activeAuction.currentOwner && this.activeAuction.currentOwner !== 'player' 
+                ? newBid + this.activeAuction.buildingValue 
+                : newBid;
+                
+            if (this.playerCash < totalCost) {
+                this.showNotification('Insufficient funds for this bid', 'error');
+                return;
+            }
+            
+            this.activeAuction.currentBid = newBid;
+            this.activeAuction.currentBidder = 'player';
+            this.activeAuction.bidHistory.push({
+                bidder: 'player',
+                amount: newBid,
+                time: Date.now()
+            });
+            
+            // Extend timer if bid in last 10 seconds
+            const timeLeft = (this.activeAuction.endTime - Date.now()) / 1000;
+            if (timeLeft < 10) {
+                this.activeAuction.endTime += 2000; // Add 2 seconds
+            }
+        }
+        
+        // Update display
+        document.getElementById('current-bid').textContent = `$${this.activeAuction.currentBid.toLocaleString()}`;
+        document.getElementById('bid-status').textContent = `Current leader: PLAYER`;
+        
+        // TODO: Add AI bidding logic here
+    }
+    
+    updateAuctionActions() {
+        const actionsEl = document.getElementById('auction-actions');
+        if (!actionsEl || !this.activeAuction) return;
+        
+        if (!this.activeAuction.dutchPhase) {
+            actionsEl.innerHTML = `
+                <button class="auction-btn small" onclick="game.placeBid(0.01)">+1%</button>
+                <button class="auction-btn small" onclick="game.placeBid(0.05)">+5%</button>
+                <button class="auction-btn small" onclick="game.placeBid(0.10)">+10%</button>
+            `;
+        }
+    }
+    
+    endAuction() {
+        if (!this.activeAuction) return;
+        
+        clearInterval(this.auctionInterval);
+        
+        const auction = this.activeAuction;
+        const parcel = this.grid[auction.row][auction.col];
+        const winner = auction.currentBidder;
+        const finalBid = auction.currentBid;
+        
+        if (winner) {
+            // Process the auction result
+            if (winner === parcel.owner) {
+                // Current owner wins - just update land value for tax
+                parcel.landValue.paidPrice = finalBid;
+                parcel.landValue.lastAuctionDay = this.currentDay;
+                
+            } else {
+                // Challenger wins
+                const totalCost = finalBid + auction.buildingValue;
+                const cityFee = Math.floor(totalCost * 0.005); // 0.5% to city
+                const ownerPayment = totalCost - cityFee;
+                
+                // Deduct from winner
+                if (winner === 'player') {
+                    this.playerCash -= totalCost;
+                }
+                
+                // Pay previous owner (minus city fee)
+                if (parcel.owner === 'player') {
+                    this.playerCash += ownerPayment;
+                }
+                
+                // Transfer ownership
+                parcel.owner = winner;
+                parcel.landValue.paidPrice = finalBid;
+                parcel.landValue.lastAuctionDay = this.currentDay;
+                
+            }
+            
+            // Update land values
+            this.updateAllLandValues();
+        } else {
+        }
+        
+        // Clean up UI
+        const auctionUI = document.getElementById('auction-ui');
+        if (auctionUI) auctionUI.remove();
+        
+        // Store in history
+        this.auctionHistory.push({
+            ...auction,
+            endTime: Date.now(),
+            winner,
+            finalBid
+        });
+        
+        this.activeAuction = null;
+        this.scheduleRender();
+    }
+    
+    showNotification(message, type = 'info') {
+        // TODO: Add visual notification system
     }
 
     calculatePopulation() {
@@ -530,11 +930,17 @@ class IsometricGrid {
         let totalJobs = 0;
         let schoolCapacity = 0;
         
-        // Get bedroom counts and jobs from all player-owned buildings
+        // Get bedroom counts and jobs from COMPLETED player-owned buildings only
         for (let row = 0; row < this.gridSize; row++) {
             for (let col = 0; col < this.gridSize; col++) {
                 const parcel = this.grid[row][col];
-                if (parcel.owner === 'player' && parcel.building) {
+                
+                // Check if building is completed (not under construction)
+                const isUnderConstruction = parcel.constructionStartDay !== null && 
+                    parcel.constructionDays > 0 && 
+                    (this.currentDay - parcel.constructionStartDay) < parcel.constructionDays;
+                
+                if (parcel.owner === 'player' && parcel.building && !isUnderConstruction) {
                     const building = this.buildingManager.getBuildingById(parcel.building);
                     if (building && building.population) {
                         totalBedrooms += building.population.bedroomsAdded || 0;
@@ -552,8 +958,10 @@ class IsometricGrid {
             }
         }
         
-        // Calculate detailed population demographics
-        const totalPopulation = Math.floor(totalBedrooms * 2.2); // Average household size
+        // Calculate detailed population demographics (STANDARDIZED: 2 people per bedroom)
+        const totalPopulation = totalBedrooms * 2; // Standardized ratio
+        
+        console.log(`🔍 Population calculation: ${totalBedrooms} bedrooms × 2 = ${totalPopulation} population`);
         const adults = Math.floor(totalBedrooms * 1.5);  // ~1.5 adults per bedroom
         const children = Math.floor(totalBedrooms * 0.7); // ~0.7 children per bedroom
         const workingAge = Math.floor(adults * 0.8);     // 80% of adults are working age
@@ -632,11 +1040,6 @@ class IsometricGrid {
         this.domCache.playerWealth.textContent = `$${Math.round(totalWealth).toLocaleString()}`;
         
         // Update cashflow with proper formatting and color coding
-        console.log('Debug updatePlayerStats:', {
-            hasCashflowElement: !!this.domCache.playerCashflow,
-            hasDailyCashflowTotals: !!this.dailyCashflowTotals,
-            dailyCashflowTotals: this.dailyCashflowTotals
-        });
         
         if (this.domCache.playerCashflow && this.dailyCashflowTotals) {
             const netCashflow = this.dailyCashflowTotals.netCashflow;
@@ -663,7 +1066,27 @@ class IsometricGrid {
             }
         }
         
-        // Update population in sidebar - target the CITIZENS row specifically
+        // Update residents count
+        if (this.domCache.totalResidents) {
+            this.domCache.totalResidents.textContent = population.toLocaleString();
+        }
+        
+        // Calculate total city treasury (sum of all public coffers + unallocated funds)
+        let totalTreasury = 0;
+        if (this.governance && this.governance.publicCoffers) {
+            Object.values(this.governance.publicCoffers).forEach(amount => {
+                totalTreasury += amount || 0;
+            });
+            // Include unallocated funds in treasury total
+            totalTreasury += this.governance.unallocatedFunds || 0;
+        }
+        
+        // Update city treasury display
+        if (this.domCache.cityTreasury) {
+            this.domCache.cityTreasury.textContent = `$${Math.round(totalTreasury).toLocaleString()}`;
+        }
+        
+        // Legacy: Update population in sidebar - target the CITIZENS row specifically (if it still exists)
         const metricRows = document.querySelectorAll('.metric-row');
         metricRows.forEach(row => {
             const label = row.querySelector('.metric-label');
@@ -683,18 +1106,22 @@ class IsometricGrid {
     }
     
     getParcelPrice(row, col) {
-        // Calculate distance from center (6.5, 6.5) using max of row/col distance
+        // Fixed initial purchase prices
+        // Center 4 parcels (6,6), (6,7), (7,6), (7,7) are $150
+        // Price decreases by distance to minimum $90 at perimeter
+        
         const centerRow = 6.5;
         const centerCol = 6.5;
+        
+        // Calculate Chebyshev distance (max of row/col distance)
         const distanceFromCenter = Math.max(
             Math.abs(row - centerRow),
             Math.abs(col - centerCol)
         );
         
-        // Center 4 parcels are $150, each ring out costs $10 less
-        const basePrice = 150;
+        // Price scale: $150 at center, down to $90 at edges
         const ring = Math.floor(distanceFromCenter);
-        return Math.max(10, basePrice - (ring * 10)); // Minimum $10
+        return Math.max(90, 150 - (ring * 10)); // Minimum $90
     }
     
     showTooltip(row, col, mouseX, mouseY) {
@@ -768,6 +1195,33 @@ class IsometricGrid {
                     stats.push(`⚠️ Condition: ${condition}`);
                 }
                 
+                // Building efficiency and needs (show for all buildings)
+                const efficiencyInfo = this.getBuildingEfficiencyInfo(row, col);
+                
+                // Show efficiency with color coding
+                let efficiencyColor = '#ef4444'; // red
+                if (efficiencyInfo.efficiency >= 100) efficiencyColor = '#10b981'; // green
+                else if (efficiencyInfo.efficiency >= 80) efficiencyColor = '#f59e0b'; // amber
+                else if (efficiencyInfo.efficiency >= 60) efficiencyColor = '#f97316'; // orange
+                
+                // Show efficiency percentage or "No demands" for buildings without needs
+                if (efficiencyInfo.topNeeds.length > 0) {
+                    stats.push(`<span style="color: ${efficiencyColor}">⚙️ Efficiency: ${efficiencyInfo.efficiency}%</span>`);
+                    
+                    // Show top needs if not at 100%
+                    if (efficiencyInfo.efficiency < 100) {
+                        stats.push(`<span style="color: #94a3b8">📋 Top Needs:</span>`);
+                        efficiencyInfo.topNeeds.forEach(need => {
+                            const needColor = need.satisfaction < 30 ? '#ef4444' : 
+                                            need.satisfaction < 60 ? '#f97316' : '#f59e0b';
+                            stats.push(`<span style="color: ${needColor}">  ${need.emoji} ${need.resource}: ${need.satisfaction}%</span>`);
+                        });
+                    }
+                } else {
+                    // For buildings with no demands (like pure infrastructure)
+                    stats.push(`<span style="color: #10b981">⚙️ Operating at full capacity</span>`);
+                }
+                
                 // Land value information
                 if (parcel.landValue) {
                     const currentValue = parcel.landValue.calculatedValue || 0;
@@ -785,10 +1239,63 @@ class IsometricGrid {
             this.tooltip.querySelector('.price-value').textContent = `$${price}`;
         }
         
-        // Position 30px to the right of cursor, 80px higher
-        // mouseX, mouseY are now page coordinates (e.clientX, e.clientY)
-        this.tooltip.style.left = `${mouseX + 30}px`;
-        this.tooltip.style.top = `${mouseY - 80}px`;
+        // Smart positioning - attach to one of four parcel corners to stay in viewport
+        const tooltipRect = this.tooltip.getBoundingClientRect();
+        const tooltipWidth = tooltipRect.width || 200; // fallback if not rendered
+        const tooltipHeight = tooltipRect.height || 100; // fallback if not rendered
+        const viewportWidth = window.innerWidth;
+        const viewportHeight = window.innerHeight;
+        const margin = 10; // margin from viewport edges
+        
+        let left, top;
+        
+        // Get parcel screen position for the four corners
+        const canvasRect = this.canvas.getBoundingClientRect();
+        const screenX = mouseX - canvasRect.left;
+        const screenY = mouseY - canvasRect.top;
+        const worldCoords = this.screenToWorldCoords(screenX, screenY);
+        const tileCoord = this.fromIsometric(worldCoords.x, worldCoords.y);
+        
+        if (tileCoord && tileCoord.row >= 0 && tileCoord.row < this.gridSize &&
+            tileCoord.col >= 0 && tileCoord.col < this.gridSize) {
+            const parcelCenter = this.toIsometric(tileCoord.col, tileCoord.row);
+            const parcelX = parcelCenter.x * this.zoomScale + this.panOffset.x + canvasRect.left;
+            const parcelY = parcelCenter.y * this.zoomScale + this.panOffset.y + canvasRect.top;
+            const tileRadius = this.tileWidth / 2;
+            
+            // Try different attachment positions in order of preference
+            const positions = [
+                { x: parcelX + tileRadius, y: parcelY - tileRadius, name: "top-right" },
+                { x: parcelX - tileRadius, y: parcelY - tileRadius, name: "top-left" },  
+                { x: parcelX + tileRadius, y: parcelY + tileRadius, name: "bottom-right" },
+                { x: parcelX - tileRadius, y: parcelY + tileRadius, name: "bottom-left" }
+            ];
+            
+            // Find the first position that keeps tooltip fully in viewport
+            let bestPosition = positions[0]; // fallback
+            for (const pos of positions) {
+                const tooltipLeft = pos.x + 15; // small offset from corner
+                const tooltipTop = pos.y - (pos.name.includes('bottom') ? tooltipHeight + 15 : -15);
+                
+                if (tooltipLeft >= margin && 
+                    tooltipLeft + tooltipWidth <= viewportWidth - margin &&
+                    tooltipTop >= margin && 
+                    tooltipTop + tooltipHeight <= viewportHeight - margin) {
+                    bestPosition = pos;
+                    break;
+                }
+            }
+            
+            left = bestPosition.x + 15;
+            top = bestPosition.y - (bestPosition.name.includes('bottom') ? tooltipHeight + 15 : -15);
+        } else {
+            // Fallback to mouse position if tile calculation fails
+            left = mouseX + 30;
+            top = mouseY - 80;
+        }
+        
+        this.tooltip.style.left = `${left}px`;
+        this.tooltip.style.top = `${top}px`;
         this.tooltip.classList.add('visible');
     }
     
@@ -797,8 +1304,18 @@ class IsometricGrid {
     }
     
     showContextMenu(row, col, mouseX, mouseY) {
-        const parcel = this.grid[row][col];
+        // Set the selected tile and maintain focus/blur effect
+        this.selectedTile = { row, col };
+        this.hoveredTile = { row, col };
+        this.updateParcelIllumination(this.hoveredTile);
+        
+        // Update the selected tile display
         const coord = this.getParcelCoordinate(row, col);
+        if (this.domCache.selectedTile) {
+            this.domCache.selectedTile.textContent = coord;
+        }
+        
+        const parcel = this.grid[row][col];
         const price = this.getParcelPrice(row, col);
         
         this.contextMenu.querySelector('.context-coord').textContent = coord;
@@ -821,8 +1338,8 @@ class IsometricGrid {
             buyBtn.onclick = () => this.buyParcel(row, col);
             contentEl.appendChild(buyBtn);
             
-        } else if (parcel.owner === 'player' || (this.multiplayerClient && parcel.owner === this.multiplayerClient.playerId)) {
-            // Player-owned parcel (single-player or multiplayer)
+        } else if (parcel.owner === 'player') {
+            // Player-owned parcel
             const playerName = (this.playerSettings && this.playerSettings.name) || 'PLAYER';
             statusEl.textContent = `OWNED BY ${playerName.toUpperCase()}`;
             statusEl.classList.add('owned');
@@ -836,22 +1353,12 @@ class IsometricGrid {
             }
             
         } else {
-            // Competitor-owned or other player-owned parcel
-            // Check if it's a multiplayer game and we have player data
+            // Competitor-owned parcel
             let ownerName = parcel.owner.toUpperCase();
             
-            // Check for competitor names first
+            // Check for competitor names
             if (this.competitorNames[parcel.owner]) {
                 ownerName = this.competitorNames[parcel.owner].toUpperCase();
-            } 
-            // In multiplayer, try to get the actual player name
-            else if (this.multiplayerClient && this.multiplayerClient.playerData) {
-                // Check if we have player info from the multiplayer session
-                const players = this.multiplayerClient.lastKnownPlayers || [];
-                const player = players.find(p => p.id === parcel.owner);
-                if (player && player.name) {
-                    ownerName = player.name.toUpperCase();
-                }
             }
             
             statusEl.textContent = `OWNED BY ${ownerName}`;
@@ -884,6 +1391,15 @@ class IsometricGrid {
     
     hideContextMenu() {
         this.contextMenu.classList.remove('visible');
+        
+        // Clear selection and focus effects when context menu closes
+        this.selectedTile = null;
+        this.hoveredTile = null;
+        if (this.domCache.selectedTile) {
+            this.domCache.selectedTile.textContent = '--';
+        }
+        this.updateParcelIllumination(null);
+        this.scheduleRender();
     }
     
     createProgressBar(percentage, fillColor = '#4ade80', bgColor = '#1f2937', width = 120, height = 8) {
@@ -1797,6 +2313,9 @@ class IsometricGrid {
         // Update monthly collection
         document.getElementById('monthly-lvt-amount').textContent = this.governance.monthlyLvtCollected.toLocaleString();
         
+        // Update unallocated funds display
+        document.getElementById('unallocated-funds-amount').textContent = (this.governance.unallocatedFunds || 0).toLocaleString();
+        
         // Update vote summary
         document.getElementById('points-used').textContent = usedPoints;
         document.getElementById('points-available').textContent = this.governance.votingPoints;
@@ -1892,13 +2411,26 @@ class IsometricGrid {
     }
     
     applyGovernanceChanges() {
+        // Distribute unallocated funds according to new allocations
+        if (this.governance.unallocatedFunds > 0) {
+            this.governance.budgetCategories.forEach(category => {
+                const allocation = this.governance.categoryAllocations[category] || 0;
+                const distributedAmount = this.governance.unallocatedFunds * allocation;
+                this.governance.publicCoffers[category] += distributedAmount;
+                
+                if (distributedAmount > 0) {
+                }
+            });
+            
+            this.governance.unallocatedFunds = 0; // Clear unallocated funds
+        }
+        
         // Apply LVT rate change
         this.governance.currentLvtRate = this.governance.proposedLvtRate;
         
         // Hide modal
         this.hideGovernanceModal();
         
-        console.log('Governance changes applied:', this.governance);
     }
     
     // Called at the beginning of each month
@@ -1938,11 +2470,9 @@ class IsometricGrid {
         // Calculate monthly LVT collection
         this.governance.monthlyLvtCollected = this.calculateMonthlyLVT();
         
-        // Distribute to categories based on allocations
-        this.governance.budgetCategories.forEach(category => {
-            const allocation = this.governance.categoryAllocations[category] || 0;
-            this.governance.publicCoffers[category] += this.governance.monthlyLvtCollected * allocation;
-        });
+        // Add to unallocated funds instead of distributing directly
+        this.governance.unallocatedFunds += this.governance.monthlyLvtCollected;
+        
     }
     
     calculateMonthlyLVT() {
@@ -2008,9 +2538,47 @@ class IsometricGrid {
             
             const categoryBtn = document.createElement('button');
             categoryBtn.className = 'category-btn';
+            const availableFunds = this.governance.publicCoffers[category] || 0;
+            
+            // Determine funding status for this category
+            const buildings = this.buildingManager.getBuildingsByCategory(category);
+            let fundingStatus = 'none'; // none, partial, full
+            
+            if (availableFunds > 0 && buildings.length > 0) {
+                const cheapestBuilding = Math.min(...buildings.map(b => b.economics?.buildCost || b.cost || 0));
+                const mostExpensiveBuilding = Math.max(...buildings.map(b => b.economics?.buildCost || b.cost || 0));
+                
+                if (availableFunds >= mostExpensiveBuilding) {
+                    fundingStatus = 'full'; // Can fund most expensive building
+                } else if (availableFunds >= cheapestBuilding) {
+                    fundingStatus = 'partial'; // Can fund some buildings
+                }
+            }
+            
+            // Set indicator color based on funding status
+            let indicatorColor = '#666'; // Default gray
+            if (fundingStatus === 'full') {
+                indicatorColor = '#2196F3'; // Blue for full funding
+            } else if (fundingStatus === 'partial') {
+                indicatorColor = '#FFA726'; // Yellow/orange for partial funding
+            }
+            
+            // Only show funding amount if there are funds available
+            const fundingDisplay = availableFunds > 0 ? 
+                `<span style="font-size: 10px; color: ${indicatorColor};">$${availableFunds.toLocaleString()}</span>` : 
+                '';
+            
             categoryBtn.innerHTML = `
-                <span>${category.charAt(0).toUpperCase() + category.slice(1)}</span>
-                <span class="arrow">▶</span>
+                <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
+                    <div style="display: flex; align-items: center; gap: 6px;">
+                        <div style="width: 6px; height: 6px; border-radius: 50%; background: ${indicatorColor};"></div>
+                        <span>${category.charAt(0).toUpperCase() + category.slice(1)}</span>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        ${fundingDisplay}
+                        <span class="arrow">▶</span>
+                    </div>
+                </div>
             `;
             
             const submenu = document.createElement('div');
@@ -2019,9 +2587,66 @@ class IsometricGrid {
             // Add all buildings for this category
             this.buildingManager.getBuildingsByCategory(category).forEach(building => {
                 const buildingBtn = document.createElement('button');
-                buildingBtn.className = 'building-btn';
-                const cost = building.economics?.buildCost || building.cost || 0;
-                buildingBtn.textContent = `${building.name} - $${cost.toLocaleString()}`;
+                
+                // Check building requirements
+                const requirements = this.checkBuildingRequirements(building.id, row, col);
+                
+                // Set button class based on buildability
+                if (requirements.canBuild) {
+                    buildingBtn.className = 'building-btn';
+                } else {
+                    buildingBtn.className = 'building-btn disabled';
+                    buildingBtn.style.opacity = '0.6';
+                    buildingBtn.style.borderLeft = '3px solid #ff6b6b';
+                }
+                
+                const fullCost = building.economics?.buildCost || building.cost || 0;
+                const fundingInfo = this.calculateBuildingCostWithFunding(building, fullCost);
+                const playerCost = fundingInfo.playerCost;
+                const publicFunding = fundingInfo.publicFunding;
+                
+                // Determine price color based on funding status with gradients
+                let priceColor = '#ccc'; // Default white/gray
+                if (playerCost === 0) {
+                    priceColor = '#2196F3'; // Blue for $0 (fully funded)
+                } else if (publicFunding > 0) {
+                    // Calculate discount percentage for gradient effect
+                    const discountPercent = publicFunding / fullCost;
+                    
+                    if (discountPercent >= 0.75) {
+                        // High discount (75%+) - more blue
+                        priceColor = '#42A5F5'; // Light blue
+                    } else if (discountPercent >= 0.5) {
+                        // Medium discount (50-74%) - blue-orange mix
+                        priceColor = '#66BB6A'; // Green-blue
+                    } else if (discountPercent >= 0.25) {
+                        // Low discount (25-49%) - orange
+                        priceColor = '#FFA726'; // Orange
+                    } else {
+                        // Very low discount (1-24%) - yellow-orange
+                        priceColor = '#FFCC02'; // Yellow
+                    }
+                }
+                
+                if (publicFunding > 0) {
+                    buildingBtn.innerHTML = `
+                        <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
+                            <span>${building.name}</span>
+                            <div style="text-align: right; font-size: 11px;">
+                                <div style="color: #4CAF50;">Public: $${publicFunding.toLocaleString()}</div>
+                                <div style="color: ${priceColor}; font-weight: 600;">You pay: $${playerCost.toLocaleString()}</div>
+                            </div>
+                        </div>
+                    `;
+                } else {
+                    buildingBtn.innerHTML = `
+                        <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
+                            <span>${building.name}</span>
+                            <span style="color: ${priceColor}; font-weight: 600;">$${playerCost.toLocaleString()}</span>
+                        </div>
+                    `;
+                }
+                
                 buildingBtn.onclick = () => this.buildBuilding(row, col, building.id);
                 submenu.appendChild(buildingBtn);
             });
@@ -2075,7 +2700,14 @@ class IsometricGrid {
                 const upgradeBtn = document.createElement('button');
                 upgradeBtn.className = 'context-btn';
                 const upgradeCost = upgrade.economics?.buildCost || upgrade.cost || 0;
-                upgradeBtn.textContent = `→ ${upgrade.name} - $${upgradeCost.toLocaleString()}`;
+                
+                // Calculate public funding for upgrades
+                const upgradeCategory = upgrade.category;
+                const fundingInfo = this.calculateBuildingCostWithFunding({category: upgradeCategory}, upgradeCost);
+                const playerCost = fundingInfo.playerCost;
+                const publicFunding = fundingInfo.publicFunding;
+                
+                upgradeBtn.textContent = `→ ${upgrade.name} - $${playerCost.toLocaleString()}`;
                 upgradeBtn.onclick = () => this.upgradeBuilding(row, col, upgrade.id);
                 upgradeSection.appendChild(upgradeBtn);
             });
@@ -2106,7 +2738,14 @@ class IsometricGrid {
                 const amenityBtn = document.createElement('button');
                 amenityBtn.className = 'context-btn';
                 const amenityCost = amenity.economics?.buildCost || amenity.cost || 0;
-                amenityBtn.textContent = `+ ${amenity.name} - $${amenityCost.toLocaleString()}`;
+                
+                // Calculate public funding for amenities
+                const amenityCategory = amenity.category;
+                const fundingInfo = this.calculateBuildingCostWithFunding({category: amenityCategory}, amenityCost);
+                const playerCost = fundingInfo.playerCost;
+                const publicFunding = fundingInfo.publicFunding;
+                
+                amenityBtn.textContent = `+ ${amenity.name} - $${playerCost.toLocaleString()}`;
                 amenityBtn.onclick = () => this.addAmenity(row, col, amenity.id);
                 amenitySection.appendChild(amenityBtn);
             });
@@ -2135,25 +2774,12 @@ class IsometricGrid {
 
         // Check if parcel is already owned
         if (this.grid[row][col].owner && this.grid[row][col].owner !== 'unclaimed') {
-            console.log(`Parcel ${coord} is already owned by ${this.grid[row][col].owner}`);
             return;
         }
         
-        console.log(`Attempting to purchase parcel ${coord} for $${price}`);
         
-        // Use multiplayer client if available, otherwise fall back to local
-        if (this.multiplayerClient && this.multiplayerClient.connected) {
-            const result = this.multiplayerClient.sendAction({
-                type: 'buyParcel',
-                data: { row, col, bidAmount: price }
-            });
-            
-            if (!result.success) {
-                console.log(`Failed to purchase parcel: ${result.error}`);
-                return;
-            }
-        } else {
-            // Fallback for single player
+        // Process purchase locally
+        if (true) { // Always use local processing
             this.playerCash -= price;
             this.grid[row][col].owner = 'player';
             this.grid[row][col].landValue.paidPrice = price;
@@ -2174,8 +2800,52 @@ class IsometricGrid {
     
     startAuction(row, col) {
         const coord = this.getParcelCoordinate(row, col);
-        console.log(`Starting auction for parcel ${coord}`);
+        const parcel = this.grid[row][col];
+        
+        // Check if there's already an active auction
+        if (this.activeAuction) {
+            this.showNotification('An auction is already in progress', 'error');
+            this.hideContextMenu();
+            return;
+        }
+        
+        // Calculate starting bid based on calculated land value
+        const calculatedValue = this.calculateLandValue(row, col);
+        const initialLandValue = this.getParcelPrice(row, col);
+        
+        // Get building value if present (building value - decay)
+        let buildingValue = 0;
+        if (parcel.building) {
+            const building = this.buildingManager.getBuildingById(parcel.building);
+            if (building) {
+                const decayFactor = 1 - parcel.decay;
+                buildingValue = Math.floor(building.economics.buildCost * decayFactor);
+            }
+        }
+        
+        // Initialize auction
+        this.activeAuction = {
+            row,
+            col,
+            coord,
+            startTime: Date.now(),
+            endTime: Date.now() + 60000, // 60 seconds
+            currentOwner: parcel.owner,
+            calculatedLandValue: calculatedValue,
+            initialLandValue: initialLandValue,
+            buildingValue: buildingValue,
+            currentBid: calculatedValue, // Starts at calculated value
+            currentBidder: null,
+            bidHistory: [],
+            dutchPhase: true, // Start with Dutch auction phase
+            dutchDecrement: 0.01, // 1% decrements
+            lastDutchUpdate: Date.now()
+        };
+        
+        
         this.hideContextMenu();
+        this.showAuctionUI();
+        this.startAuctionTimer();
     }
 
     getCustomBuildings() {
@@ -2200,57 +2870,62 @@ class IsometricGrid {
         const coord = this.getParcelCoordinate(row, col);
         const buildingCost = this.getBuildingCost(buildingId);
         
-        // Debug logging for building cost calculation
-        console.log(`💰 Building cost calculation for ${buildingId}:`, {
-            buildingCost: buildingCost,
-            playerCash: this.playerCash,
-            canAfford: this.playerCash >= buildingCost
-        });
         
-        // Check if player has enough cash
-        if (this.playerCash < buildingCost) {
-            console.warn('❌ Insufficient funds for building');
+        // Get building info for public funding calculation
+        const building = this.buildingManager.getBuildingById(buildingId);
+        
+        // Use centralized cost calculation with public funding
+        const fundingInfo = this.calculateBuildingCostWithFunding(building, buildingCost);
+        const publicFunding = fundingInfo.publicFunding;
+        const playerCostRequired = fundingInfo.playerCost;
+        const buildingCategory = fundingInfo.category;
+        
+        // Check population requirement using single source of truth
+        const currentPopulation = this.calculatePopulation(); // Always use the main function
+        const requiredPopulation = building?.population?.populationRequired || 0;
+        if (currentPopulation < requiredPopulation) {
+            this.showNotification(`Need ${requiredPopulation} population to build ${building.name} (current: ${Math.floor(currentPopulation)})`, 'error');
+            return;
+        }
+
+        // Check if player has enough cash for their portion
+        if (this.playerCash < playerCostRequired) {
             return;
         }
 
         // Check if parcel already has a building
         if (this.grid[row][col].building) {
-            console.log(`Parcel ${coord} already has a building: ${this.grid[row][col].building}`);
             return;
         }
 
-        // Check if player owns this parcel (in multiplayer, check against player ID)
-        const expectedOwner = this.multiplayerClient && this.multiplayerClient.connected 
-            ? this.multiplayerClient.playerId 
-            : 'player';
+        // Check if player owns this parcel
+        const expectedOwner = 'player';
         
         if (this.grid[row][col].owner !== expectedOwner) {
-            console.log(`You don't own parcel ${coord} (owner: ${this.grid[row][col].owner})`);
             return;
         }
         
-        console.log(`Attempting to build ${buildingId} at ${coord} for $${buildingCost}`);
         
-        // Use multiplayer client if available, otherwise fall back to local
-        if (this.multiplayerClient && this.multiplayerClient.connected) {
-            const result = this.multiplayerClient.sendAction({
-                type: 'buildStructure',
-                data: { row, col, buildingId }
-            });
-            
-            if (!result.success) {
-                console.log(`Failed to build structure: ${result.error}`);
-                return;
-            }
-        } else {
-            // Fallback for single player
+        // Process building locally
+        if (true) { // Always use local processing
             const oldCash = this.playerCash;
-            this.playerCash -= buildingCost;
-            console.log(`💸 Cash update: ${oldCash} - ${buildingCost} = ${this.playerCash}`);
+            
+            // Deduct public funds (already calculated above)
+            if (publicFunding > 0) {
+                this.governance.publicCoffers[buildingCategory] -= publicFunding;
+            }
+            
+            // Deduct player cost
+            this.playerCash -= playerCostRequired;
+            
             this.grid[row][col].building = buildingId;
             
+            // Mark caches for updates
+            this.markBuildingEconomicsDirty(row, col);
+            this.markVitalityDirty(row, col);
+            this.markPrereqDirty();
+            
             // Set construction start day and duration
-            const building = this.buildingManager.getBuildingById(buildingId);
             if (building && building.economics) {
                 // Start construction from current day, but building should show as under construction initially
                 this.grid[row][col].constructionStartDay = this.currentDay;
@@ -2258,23 +2933,15 @@ class IsometricGrid {
                 this.grid[row][col].buildingAge = 0;
                 
                 // Force the building to show as under construction initially
-                // by ensuring at least 1 day is needed
-                if (this.grid[row][col].constructionDays < 1) {
-                    this.grid[row][col].constructionDays = 1;
+                // Minimum 3 days so players can see the construction animation  
+                if (this.grid[row][col].constructionDays < 3) {
+                    this.grid[row][col].constructionDays = 3;
                 }
                 
-                // Debug logging for construction timing
-                console.log(`🏗️ Building ${buildingId} started construction:`, {
-                    startDay: this.currentDay,
-                    constructionDays: building.economics.constructionDays || 14,
-                    building: building.name
-                });
-            } else {
-                console.warn(`⚠️ Could not set construction timing for ${buildingId}:`, {
-                    hasBuilding: !!building,
-                    hasEconomics: !!(building && building.economics)
-                });
             }
+            
+            // Mark region as dirty for cache invalidation (performance optimization)
+            this.markRegionDirty(row, col, 3);
             
             // Update land values, vitality, cashflow and re-render
             this.updateAllLandValues();
@@ -2291,6 +2958,64 @@ class IsometricGrid {
     getBuildingCost(buildingId) {
         return this.buildingManager.getBuildingCost(buildingId);
     }
+    
+    checkBuildingRequirements(buildingId, row, col) {
+        const building = this.buildingManager.getBuildingById(buildingId);
+        if (!building) return { canBuild: false, reasons: ['Building not found'] };
+        
+        const reasons = [];
+        
+        // Check if parcel is owned by player
+        if (this.grid[row][col].owner !== 'player') {
+            reasons.push('Must own this parcel');
+        }
+        
+        // Check if parcel already has a building
+        if (this.grid[row][col].building) {
+            reasons.push('Parcel already has a building');
+        }
+        
+        // Check population requirement using single source of truth
+        const currentPopulation = this.calculatePopulation(); // Always use the main function
+        const requiredPopulation = building?.population?.populationRequired || 0;
+        if (currentPopulation < requiredPopulation) {
+            reasons.push(`Requires ${requiredPopulation} population (current: ${Math.floor(currentPopulation)})`);
+        }
+        
+        // Check cash requirement
+        const buildingCost = this.getBuildingCost(buildingId);
+        let publicFunding = 0;
+        const buildingCategory = building?.category;
+        if (buildingCategory && this.governance.publicCoffers[buildingCategory]) {
+            const availableFunds = this.governance.publicCoffers[buildingCategory];
+            publicFunding = Math.min(availableFunds, buildingCost);
+        }
+        const playerCostRequired = buildingCost - publicFunding;
+        
+        if (this.playerCash < playerCostRequired) {
+            reasons.push(`Insufficient funds: need $${playerCostRequired.toLocaleString()} (have $${Math.floor(this.playerCash).toLocaleString()})`);
+        }
+        
+        // Check prerequisites (if any) - use cache for performance
+        if (building.prerequisites && building.prerequisites.length > 0) {
+            // Ensure prerequisite cache is up to date
+            this.updatePrereqCache();
+            
+            const missingPrereqs = building.prerequisites.filter(prereq => {
+                return !this.prereqCache.availableBuildings.has(prereq);
+            });
+            
+            if (missingPrereqs.length > 0) {
+                reasons.push(`Requires: ${missingPrereqs.join(', ')}`);
+            }
+        }
+        
+        return {
+            canBuild: reasons.length === 0,
+            reasons: reasons,
+            building: building
+        };
+    }
 
     destroyBuilding(row, col) {
         const coord = this.getParcelCoordinate(row, col);
@@ -2298,11 +3023,16 @@ class IsometricGrid {
         
         // Destroy building silently
         if (true) {
-            console.log(`Destroying ${building} at ${coord}`);
             
             // Remove building and amenities
             this.grid[row][col].building = null;
             this.grid[row][col].amenities = [];
+            
+            // Mark building for economic recalculation removal
+            this.markBuildingEconomicsDirty(row, col);
+            
+            // Mark region as dirty for cache invalidation (performance optimization)
+            this.markRegionDirty(row, col, 3);
             
             // Update vitality, cashflow and re-render
             this.updateVitalityDisplay();
@@ -2337,10 +3067,12 @@ class IsometricGrid {
 
     upgradeBuilding(row, col, upgradeId) {
         const coord = this.getParcelCoordinate(row, col);
-        console.log(`Upgrading building at ${coord} to ${upgradeId}`);
         
         // Replace the building
         this.grid[row][col].building = upgradeId;
+        
+        // Mark building for economic recalculation
+        this.markBuildingEconomicsDirty(row, col);
         
         // Update vitality and re-render
         this.updateVitalityDisplay();
@@ -2375,7 +3107,6 @@ class IsometricGrid {
 
     addAmenity(row, col, amenityId) {
         const coord = this.getParcelCoordinate(row, col);
-        console.log(`Adding amenity ${amenityId} at ${coord}`);
         
         // Add amenity to parcel
         if (!this.grid[row][col].amenities.includes(amenityId)) {
@@ -2394,8 +3125,22 @@ class IsometricGrid {
         const buildingButtons = submenu.querySelectorAll('.building-btn');
         buildingButtons.forEach(btn => {
             btn.addEventListener('mouseenter', (e) => {
-                const buildingName = e.target.textContent.split(' - ')[0];
-                this.showBuildingInfo(buildingName);
+                // Extract building name from the button structure
+                let buildingName = '';
+                
+                // Try to find the building name in the button structure
+                const spans = btn.querySelectorAll('span');
+                if (spans.length > 0) {
+                    // Get the first span which should contain the building name
+                    buildingName = spans[0].textContent.trim();
+                } else {
+                    // Fallback: try to extract from textContent
+                    buildingName = btn.textContent.split(' - ')[0].trim();
+                }
+                
+                if (buildingName) {
+                    this.showBuildingInfo(buildingName);
+                }
             });
             
             btn.addEventListener('mouseleave', () => {
@@ -2412,12 +3157,15 @@ class IsometricGrid {
         
         // Update panel content
         document.getElementById('building-info-title').textContent = buildingData.name;
-        const displayCost = buildingData.economics?.buildCost || buildingData.cost || 0;
-        document.getElementById('building-cost').textContent = `$${displayCost.toLocaleString()}`;
-        document.getElementById('building-time').textContent = `${buildingData.buildTime} days`;
-        document.getElementById('building-category').textContent = buildingData.category;
-        document.getElementById('building-bedrooms').textContent = buildingData.bedrooms || 0;
-        document.getElementById('building-jobs').textContent = buildingData.jobs || 0;
+        
+        // Add building description
+        this.updateBuildingDescription(buildingData.name);
+        
+        // Update supply/demand displays (includes cost and time)
+        this.updateSupplyDemandDisplay(buildingData);
+        
+        // Update requirements display
+        this.updateBuildingRequirements(buildingData.name);
 
         // Set building image
         const img = document.getElementById('building-info-img');
@@ -2428,7 +3176,7 @@ class IsometricGrid {
             img.style.display = 'none';
         }
 
-        // Update impacts
+        // Update soft metric impacts (livability)
         this.updateBuildingImpacts(buildingData.impacts);
 
         // Show panel
@@ -2444,20 +3192,156 @@ class IsometricGrid {
         const building = this.buildingManager.getAllBuildings().find(b => b.name === buildingName);
         
         if (building) {
+            // Separate supply/demand from soft metrics
+            const allImpacts = building.domainImpacts || this.getBuildingImpacts(building.id);
+            const supplyDemandMetrics = ['energy', 'food', 'housing', 'jobs'];
+            
+            const supplyDemand = {};
+            const softMetrics = {};
+            
+            // Get direct supply/demand from building properties
+            const bedroomsAdded = building.population?.bedroomsAdded || 0;
+            const jobsCreated = building.population?.jobsCreated || 0;
+            const energyDemand = building.resources?.energyDemand || 0;
+            const foodProduction = building.resources?.foodProduction || 0;
+            
+            // Calculate net supply/demand for each metric
+            // ENERGY: Negative energyDemand means energy production
+            if (energyDemand < 0) {
+                // Energy producer (utilities)
+                supplyDemand.energy = Math.abs(energyDemand); // Show as positive supply
+            } else if (energyDemand > 0) {
+                // Energy consumer
+                supplyDemand.energy = -energyDemand; // Show as negative demand
+            } else {
+                supplyDemand.energy = 0;
+            }
+            
+            // FOOD: Production vs consumption (3 per person per day)
+            const peopleInBuilding = bedroomsAdded * 2; // 2 people per bedroom
+            const foodDemand = peopleInBuilding * 3; // 3 food per person per day
+            supplyDemand.food = foodProduction - foodDemand; // Net food balance
+            
+            // HOUSING: Bedrooms supplied vs demanded by jobs
+            if (bedroomsAdded > 0) {
+                supplyDemand.housing = bedroomsAdded; // Supply bedrooms
+            } else if (jobsCreated > 0) {
+                // Jobs create housing demand (0.6 bedrooms per job)
+                supplyDemand.housing = -(jobsCreated * 0.6);
+            } else {
+                supplyDemand.housing = 0;
+            }
+            
+            // JOBS: Jobs created vs demanded by housing
+            if (jobsCreated > 0) {
+                supplyDemand.jobs = jobsCreated; // Supply jobs
+            } else if (bedroomsAdded > 0) {
+                // Housing creates job demand (0.6 jobs per bedroom)
+                supplyDemand.jobs = -(bedroomsAdded * 0.6);
+            } else {
+                supplyDemand.jobs = 0;
+            }
+            
+            // Separate soft metrics from impacts
+            if (allImpacts) {
+                Object.entries(allImpacts).forEach(([key, value]) => {
+                    if (!supplyDemandMetrics.includes(key.toLowerCase())) {
+                        softMetrics[key] = value;
+                    }
+                });
+            }
+            
             return {
                 id: building.id,
                 name: building.name,
                 cost: building.economics?.buildCost || building.cost || 0,
                 buildTime: building.economics?.constructionDays || 30,
                 category: building.category,
-                bedrooms: building.population?.bedroomsAdded || this.getBuildingBedrooms(building.id),
-                jobs: building.population?.jobsCreated || this.getDefaultBuildingJobs(building.id),
-                impacts: building.domainImpacts || this.getBuildingImpacts(building.id),
+                supplyDemand: supplyDemand,
+                impacts: softMetrics,
                 image: building.images?.built || null
             };
         }
         
         return null;
+    }
+    
+    updateBuildingDescription(buildingName) {
+        const descriptions = {
+            // Housing
+            'Cottage': 'A cozy starter home with a white picket fence and room for dreams to grow. Perfect for young families taking their first steps into homeownership.',
+            'Apartments': 'Efficient urban living stacked toward the sky. Where neighbors become friends and every square foot counts.',
+            
+            // Commercial
+            'Farmers Market': 'Fresh produce and friendly faces gather here every weekend. The heartbeat of local commerce where tomatoes come with stories.',
+            'Cornerstore': 'Open late when you need milk at midnight. The neighborhood\'s reliable friend, always there with essentials and a smile.',
+            'Bakery': 'Wake up to the aroma of fresh bread and possibility. Where flour becomes art and mornings become special.',
+            'Barbershop': 'More than just haircuts—it\'s the community\'s living room. Where local news travels faster than scissors.',
+            'Brewery': 'Craft beer and conversation flow freely here. A gathering place where hops meet hopes and stories get better with each pint.',
+            
+            // Education
+            'Schoolhouse': 'One room, endless possibilities. Where ABC\'s meet 123\'s and every child\'s potential begins to shine.',
+            'High School': 'Lockers, learning, and life lessons collide. The forge where teenagers transform into tomorrow\'s leaders.',
+            
+            // Civic
+            'Library': 'A temple of free knowledge and quiet contemplation. Where adventures live on shelves and WiFi is always free.',
+            
+            // Recreation
+            'Playground': 'Swings reach for clouds while imaginations run wild. The embassy of childhood where scraped knees are badges of honor.',
+            'Public Pool': 'Summer\'s favorite destination and winter\'s fondest memory. Where the community goes to make a splash together.',
+            
+            // Utilities
+            'Solar Farm': 'Panels catch sunlight like mechanical sunflowers. Clean energy for a brighter tomorrow, one photon at a time.',
+            'Coal Plant': 'Industrial might powers progress at a cost. Black smoke writes checks that future generations must cash.'
+        };
+        
+        const description = descriptions[buildingName] || 'A vital piece of community infrastructure.';
+        
+        // Check if description element exists, if not create it
+        let descElement = document.querySelector('.building-description');
+        if (!descElement) {
+            descElement = document.createElement('div');
+            descElement.className = 'building-description';
+            const infoContent = document.querySelector('.building-info-content');
+            const firstChild = infoContent.firstChild;
+            infoContent.insertBefore(descElement, firstChild);
+        }
+        
+        descElement.textContent = description;
+    }
+    
+    updateBuildingRequirements(buildingName) {
+        const building = this.buildingManager.getAllBuildings().find(b => b.name === buildingName);
+        if (!building) return;
+        
+        const requirementsContainer = document.querySelector('.building-requirements');
+        const requirementsList = document.getElementById('building-requirements-list');
+        
+        // Check requirements (use row=0, col=0 as placeholder for general checking)
+        const requirements = this.checkBuildingRequirements(building.id, 0, 0);
+        
+        if (requirements.reasons.length > 0) {
+            requirementsContainer.style.display = 'block';
+            requirementsList.innerHTML = '';
+            
+            requirements.reasons.forEach(reason => {
+                const reasonDiv = document.createElement('div');
+                reasonDiv.style.cssText = `
+                    padding: 6px 10px;
+                    background: #1a1a1a;
+                    border-radius: 4px;
+                    margin-bottom: 4px;
+                    font-size: 11px;
+                    color: #ff6b6b;
+                    border-left: 3px solid #ff6b6b;
+                `;
+                reasonDiv.textContent = reason;
+                requirementsList.appendChild(reasonDiv);
+            });
+        } else {
+            // Building is buildable, hide requirements section entirely
+            requirementsContainer.style.display = 'none';
+        }
     }
 
     getDefaultBuildingJobs(buildingId) {
@@ -2492,28 +3376,198 @@ class IsometricGrid {
         return defaultJobs[buildingId] || 0;
     }
 
+    updateSupplyDemandDisplay(buildingData) {
+        const container = document.querySelector('.building-supply-demand');
+        if (!container) return;
+        
+        // Clear and rebuild supply/demand section
+        container.innerHTML = '<div class="vitality-group-title">SUPPLY & DEMAND</div>';
+        
+        // Define supply/demand metrics with colors
+        const supplyDemandConfig = {
+            'energy': { color: '#f59e0b', label: 'ENERGY' },
+            'food': { color: '#84cc16', label: 'FOOD' },
+            'housing': { color: '#06b6d4', label: 'HOUSING' },
+            'jobs': { color: '#ec4899', label: 'JOBS' }
+        };
+        
+        Object.entries(supplyDemandConfig).forEach(([key, config]) => {
+            const value = buildingData.supplyDemand?.[key] || 0;
+            if (value === 0 && key !== 'energy') return; // Skip if no impact (except energy which can be 0)
+            
+            const row = document.createElement('div');
+            row.className = 'vitality-row';
+            
+            // Create label
+            const label = document.createElement('span');
+            label.className = 'vitality-label';
+            label.style.color = config.color;
+            label.textContent = config.label;
+            
+            // Create bar container
+            const barContainer = document.createElement('div');
+            barContainer.className = 'vitality-bar';
+            
+            // Create progress bar
+            const progress = document.createElement('div');
+            progress.className = 'vitality-progress';
+            
+            // Calculate width - supply goes right (green), demand goes left (red)
+            const maxValue = key === 'energy' ? 500 : key === 'food' ? 50 : 30;
+            const normalizedValue = Math.min(Math.max(value / maxValue, -1), 1);
+            
+            // Set position absolute for proper positioning
+            progress.style.position = 'absolute';
+            
+            if (value > 0) {
+                // Supply - goes right from center
+                progress.style.left = '50%';
+                progress.style.width = `${Math.abs(normalizedValue) * 50}%`;
+                progress.style.background = '#22c55e'; // Green for supply
+            } else if (value < 0) {
+                // Demand - goes left from center
+                const width = Math.abs(normalizedValue) * 50;
+                progress.style.left = `${50 - width}%`;
+                progress.style.width = `${width}%`;
+                progress.style.background = '#ef4444'; // Red for demand
+            } else {
+                // Zero - show tiny gray bar at center
+                progress.style.left = '49.5%';
+                progress.style.width = '1%';
+                progress.style.background = '#666666';
+            }
+            
+            barContainer.appendChild(progress);
+            row.appendChild(label);
+            row.appendChild(barContainer);
+            
+            container.appendChild(row);
+        });
+        
+        // Add cost and build time at the bottom
+        const costRow = document.createElement('div');
+        costRow.className = 'vitality-row';
+        
+        // Calculate public funding for this building
+        const building = this.buildingManager.getAllBuildings().find(b => b.name === buildingData.name);
+        const buildingCategory = building?.category;
+        const fundingInfo = this.calculateBuildingCostWithFunding(building, buildingData.cost);
+        const playerCost = fundingInfo.playerCost;
+        const publicFunding = fundingInfo.publicFunding;
+        const availableFunds = fundingInfo.availableFunds;
+        
+        // Show player cost and public funding indicator
+        if (publicFunding > 0) {
+            // Show actual player cost (could be $0) with public funding indicator
+            costRow.innerHTML = `
+                <span class="vitality-label">COST</span>
+                <div style="display: flex; align-items: center; gap: 6px; margin-left: auto;">
+                    <span class="info-value">$${playerCost.toLocaleString()}</span>
+                    <span style="font-size: 8px; color: #4CAF50; background: rgba(76, 175, 80, 0.15); padding: 1px 4px; border-radius: 2px; font-weight: 600;">FUNDED</span>
+                </div>
+            `;
+        } else if (availableFunds > 0) {
+            // Public funds exist but not enough to cover full cost - show partial funding indicator
+            costRow.innerHTML = `
+                <span class="vitality-label">COST</span>
+                <div style="display: flex; align-items: center; gap: 6px; margin-left: auto;">
+                    <span class="info-value">$${playerCost.toLocaleString()}</span>
+                    <span style="font-size: 8px; color: #FFA726; background: rgba(255, 167, 38, 0.15); padding: 1px 4px; border-radius: 2px; font-weight: 600;">PARTIAL</span>
+                </div>
+            `;
+        } else {
+            // No public funding available
+            costRow.innerHTML = `
+                <span class="vitality-label">COST</span>
+                <span class="info-value" style="margin-left: auto;">$${playerCost.toLocaleString()}</span>
+            `;
+        }
+        container.appendChild(costRow);
+        
+        const timeRow = document.createElement('div');
+        timeRow.className = 'vitality-row';
+        timeRow.innerHTML = `
+            <span class="vitality-label">BUILD TIME</span>
+            <span class="info-value" style="margin-left: auto;">${buildingData.buildTime} days</span>
+        `;
+        container.appendChild(timeRow);
+    }
+    
     updateBuildingImpacts(impacts) {
         const impactsList = document.getElementById('building-impacts-list');
         impactsList.innerHTML = '';
 
         if (!impacts || Object.keys(impacts).length === 0) {
-            impactsList.innerHTML = '<div style="color: #666666; font-size: 9px; text-align: center; grid-column: 1 / -1;">No domain impacts</div>';
+            impactsList.innerHTML = '<div style="color: #666666; font-size: 10px; text-align: center;">No livability impacts</div>';
             return;
         }
 
-        Object.entries(impacts).forEach(([domain, value]) => {
-            const impactItem = document.createElement('div');
-            impactItem.className = 'impact-item';
+        // Define soft metrics (livability) order and colors
+        const livabilityConfig = {
+            'health': '#ef4444',
+            'education': '#3b82f6',
+            'safety': '#10b981',
+            'culture': '#a855f7',
+            'mobility': '#8b5cf6',
+            'environment': '#22c55e',
+            'affordability': '#f97316',
+            'resilience': '#14b8a6',
+            'noise': '#6b7280'
+        };
+        
+        // Sort impacts by livability order
+        const sortedImpacts = Object.entries(impacts)
+            .filter(([_, value]) => value !== 0)
+            .sort(([a], [b]) => {
+                const aIndex = Object.keys(livabilityConfig).indexOf(a.toLowerCase());
+                const bIndex = Object.keys(livabilityConfig).indexOf(b.toLowerCase());
+                if (aIndex === -1 && bIndex === -1) return 0;
+                if (aIndex === -1) return 1;
+                if (bIndex === -1) return -1;
+                return aIndex - bIndex;
+            });
+
+        sortedImpacts.forEach(([domain, value]) => {
+            const row = document.createElement('div');
+            row.className = 'vitality-row';
             
-            const valueClass = value > 0 ? 'positive' : value < 0 ? 'negative' : 'neutral';
-            const valueSign = value > 0 ? '+' : '';
+            // Create label
+            const label = document.createElement('span');
+            label.className = 'vitality-label';
+            label.style.color = livabilityConfig[domain.toLowerCase()] || '#808080';
+            label.textContent = domain.toUpperCase();
             
-            impactItem.innerHTML = `
-                <span class="impact-label">${domain}</span>
-                <span class="impact-value ${valueClass}">${valueSign}${value}</span>
-            `;
+            // Create bar container
+            const barContainer = document.createElement('div');
+            barContainer.className = 'vitality-bar';
             
-            impactsList.appendChild(impactItem);
+            // Create progress bar
+            const progress = document.createElement('div');
+            progress.className = 'vitality-progress';
+            
+            // Set position absolute for proper positioning
+            progress.style.position = 'absolute';
+            
+            // For soft metrics, positive is always good (right/colored), negative is bad (left/red)
+            const maxImpact = 50;
+            const normalizedValue = Math.min(Math.max(value / maxImpact, -1), 1);
+            
+            if (value > 0) {
+                progress.style.left = '50%';
+                progress.style.width = `${Math.abs(normalizedValue) * 50}%`;
+                progress.style.background = livabilityConfig[domain.toLowerCase()] || '#4a90e2';
+            } else {
+                const width = Math.abs(normalizedValue) * 50;
+                progress.style.left = `${50 - width}%`;
+                progress.style.width = `${width}%`;
+                progress.style.background = '#ef4444'; // Red for negative
+            }
+            
+            barContainer.appendChild(progress);
+            row.appendChild(label);
+            row.appendChild(barContainer);
+            
+            impactsList.appendChild(row);
         });
     }
 
@@ -2576,55 +3630,204 @@ class IsometricGrid {
 
     // Land value calculation methods
     updateAllLandValues() {
-        for (let row = 0; row < this.gridSize; row++) {
-            for (let col = 0; col < this.gridSize; col++) {
+        // Clear stale caches periodically
+        this.clearCachesIfStale();
+        
+        // If no dirty regions, skip update (major performance optimization)
+        if (this.dirtyRegions.size === 0) {
+            return;
+        }
+        
+        // Only update dirty regions instead of entire grid
+        for (const regionKey of this.dirtyRegions) {
+            const [row, col] = regionKey.split('-').map(Number);
+            if (row >= 0 && row < this.gridSize && col >= 0 && col < this.gridSize) {
                 this.grid[row][col].landValue.calculatedValue = this.calculateLandValue(row, col);
             }
         }
+        
+        // Clear dirty regions after update
+        this.dirtyRegions.clear();
+        
     }
 
     calculateLandValue(row, col) {
-        const basePrice = this.getParcelPrice(row, col);
-        let multiplier = 1.0;
-
-        // Proximity to developed parcels increases value
-        const developedNeighbors = this.getAdjacentDevelopedParcels(row, col);
-        multiplier += developedNeighbors * 0.15; // +15% per developed neighbor
-
-        // Infrastructure buildings nearby increase value
-        const infrastructureNearby = this.getNearbyBuildingsByCategory(row, col, 'infrastructure', 3);
-        multiplier += infrastructureNearby * 0.1; // +10% per infrastructure building within 3 tiles
-
-        // Education buildings increase value
-        const educationNearby = this.getNearbyBuildingsByCategory(row, col, 'education', 2);
-        multiplier += educationNearby * 0.08; // +8% per education building within 2 tiles
-
-        // Commercial buildings have mixed effect
-        const commercialNearby = this.getNearbyBuildingsByCategory(row, col, 'commercial', 2);
-        if (commercialNearby <= 2) {
-            multiplier += commercialNearby * 0.05; // +5% for 1-2 commercial nearby
-        } else {
-            multiplier += 0.1 - (commercialNearby - 2) * 0.03; // Diminishing returns
+        // Check cache first
+        const cacheKey = `${row}-${col}`;
+        if (this.landValueCache.has(cacheKey)) {
+            return this.landValueCache.get(cacheKey);
         }
-
-        // Healthcare increases value
-        const healthcareNearby = this.getNearbyBuildingsByCategory(row, col, 'healthcare', 3);
-        multiplier += healthcareNearby * 0.06; // +6% per healthcare building
-
-        // Culture and recreation add value
-        const cultureNearby = this.getNearbyBuildingsByCategory(row, col, 'culture', 2);
-        const recreationNearby = this.getNearbyBuildingsByCategory(row, col, 'recreation', 2);
-        multiplier += (cultureNearby + recreationNearby) * 0.04; // +4% each
-
-        // Overall city prosperity affects all land values
+        
+        const basePrice = this.getParcelPrice(row, col);
+        const parcel = this.grid[row][col];
+        
+        // Get residential capacity of this parcel (how many people it can house)
+        let residentialCapacity = 0;
+        if (parcel.building) {
+            const building = this.buildingManager.getBuildingById(parcel.building);
+            if (building && building.category === 'housing') {
+                residentialCapacity = building.bedrooms || 0;
+            }
+        }
+        
+        // Calculate accessibility scores for each domain
+        const accessScores = this.calculateAccessibilityScores(row, col);
+        
+        // Base demand multiplier from accessibility (0.5 to 2.0)
+        let accessibilityMultiplier = 0.5;
+        const domains = ['food', 'energy', 'jobs', 'healthcare', 'education', 'transport', 'culture', 'safety'];
+        domains.forEach(domain => {
+            if (accessScores[domain]) {
+                // Each domain can add up to 0.1875 to multiplier (8 domains * 0.1875 = 1.5 max boost)
+                accessibilityMultiplier += Math.min(accessScores[domain], 1.0) * 0.1875;
+            }
+        });
+        
+        // Population-weighted demand multiplier
+        // High-density housing in high-accessibility areas = maximum land value
+        let demandMultiplier = 1.0;
+        if (residentialCapacity > 0) {
+            // Residential parcels gain value based on capacity * accessibility
+            demandMultiplier = 1.0 + (residentialCapacity / 10) * (accessibilityMultiplier - 0.5);
+        } else if (parcel.building) {
+            // Non-residential buildings gain value from serving nearby population
+            const nearbyPopulation = this.getNearbyPopulation(row, col, 3);
+            demandMultiplier = 1.0 + (nearbyPopulation / 50) * 0.5;
+        }
+        
+        // Network effects - developed neighbors still matter but less
+        const developedNeighbors = this.getAdjacentDevelopedParcels(row, col);
+        const networkMultiplier = 1.0 + (developedNeighbors * 0.05); // Only 5% per neighbor now
+        
+        // Overall city prosperity still affects all land values
         const totalVitality = Object.values(this.vitality).reduce((sum, val) => sum + Math.max(0, val), 0);
-        const prosperityBonus = Math.min(totalVitality / 500, 0.5); // Up to 50% bonus
-        multiplier += prosperityBonus;
-
-        // Ensure minimum multiplier of 0.5
-        multiplier = Math.max(0.5, multiplier);
-
-        return Math.round(basePrice * multiplier);
+        const prosperityBonus = Math.min(totalVitality / 500, 0.3); // Reduced to 30% max
+        
+        // Combine all multipliers
+        const totalMultiplier = accessibilityMultiplier * demandMultiplier * networkMultiplier * (1 + prosperityBonus);
+        
+        // Ensure reasonable bounds (0.25x to 5x base price)
+        const finalMultiplier = Math.max(0.25, Math.min(5.0, totalMultiplier));
+        
+        const landValue = Math.round(basePrice * finalMultiplier);
+        
+        // Cache the result
+        this.landValueCache.set(cacheKey, landValue);
+        
+        return landValue;
+    }
+    
+    calculateAccessibilityScores(row, col) {
+        // Check cache first
+        const cacheKey = `accessibility-${row}-${col}`;
+        if (this.accessibilityCache.has(cacheKey)) {
+            return this.accessibilityCache.get(cacheKey);
+        }
+        
+        const scores = {
+            food: 0,
+            energy: 0,
+            jobs: 0,
+            healthcare: 0,
+            education: 0,
+            transport: 0,
+            culture: 0,
+            safety: 0
+        };
+        
+        // Maximum influence distance for any amenity
+        const MAX_DISTANCE = 5;
+        
+        // Scan all parcels within influence range
+        for (let r = Math.max(0, row - MAX_DISTANCE); r <= Math.min(this.gridSize - 1, row + MAX_DISTANCE); r++) {
+            for (let c = Math.max(0, col - MAX_DISTANCE); c <= Math.min(this.gridSize - 1, col + MAX_DISTANCE); c++) {
+                if (r === row && c === col) continue;
+                
+                const distance = Math.max(Math.abs(r - row), Math.abs(c - col));
+                const parcel = this.grid[r][c];
+                
+                if (parcel.building) {
+                    const building = this.buildingManager.getBuildingById(parcel.building);
+                    if (!building) continue;
+                    
+                    // Distance decay function: 1.0 at distance 1, 0.2 at distance 5
+                    const influence = Math.max(0, 1.2 - (distance * 0.2));
+                    
+                    // Food access from commercial buildings with food production
+                    if (building.foodProduction && building.foodProduction > 0) {
+                        scores.food += (building.foodProduction / 50) * influence;
+                    }
+                    
+                    // Jobs from any building that creates employment
+                    if (building.jobs && building.jobs > 0) {
+                        scores.jobs += (building.jobs / 20) * influence;
+                    }
+                    
+                    // Healthcare from healthcare category
+                    if (building.category === 'healthcare') {
+                        scores.healthcare += influence * (building.healthImpact || 10) / 10;
+                    }
+                    
+                    // Education from education category
+                    if (building.category === 'education') {
+                        scores.education += influence * (building.educationImpact || 10) / 10;
+                    }
+                    
+                    // Transport/mobility from relevant buildings
+                    if (building.mobilityImpact && building.mobilityImpact > 0) {
+                        scores.transport += (building.mobilityImpact / 10) * influence;
+                    }
+                    
+                    // Culture from culture/recreation categories
+                    if (building.category === 'culture' || building.category === 'recreation') {
+                        scores.culture += influence * (building.cultureImpact || 10) / 10;
+                    }
+                    
+                    // Safety from civic/emergency buildings
+                    if (building.safetyImpact && building.safetyImpact > 0) {
+                        scores.safety += (building.safetyImpact / 10) * influence;
+                    }
+                    
+                    // Energy is currently simplified - could expand later
+                    if (building.category === 'infrastructure') {
+                        scores.energy += influence * 0.5;
+                    }
+                }
+            }
+        }
+        
+        // Normalize scores to 0-1 range with diminishing returns
+        Object.keys(scores).forEach(key => {
+            scores[key] = Math.tanh(scores[key] * 0.5); // Smooth curve that caps around 1.0
+        });
+        
+        // Cache the result
+        this.accessibilityCache.set(cacheKey, scores);
+        
+        return scores;
+    }
+    
+    getNearbyPopulation(row, col, maxDistance) {
+        let population = 0;
+        
+        for (let r = Math.max(0, row - maxDistance); r <= Math.min(this.gridSize - 1, row + maxDistance); r++) {
+            for (let c = Math.max(0, col - maxDistance); c <= Math.min(this.gridSize - 1, col + maxDistance); c++) {
+                const distance = Math.max(Math.abs(r - row), Math.abs(c - col));
+                if (distance <= maxDistance) {
+                    const parcel = this.grid[r][c];
+                    if (parcel.building) {
+                        const building = this.buildingManager.getBuildingById(parcel.building);
+                        if (building && building.category === 'housing') {
+                            // Weight population by inverse distance
+                            const weight = 1.0 / (1 + distance * 0.5);
+                            population += (building.bedrooms || 0) * weight;
+                        }
+                    }
+                }
+            }
+        }
+        
+        return population;
     }
 
     getAdjacentDevelopedParcels(row, col) {
@@ -2672,6 +3875,670 @@ class IsometricGrid {
 
     getBuildingCategory(buildingId) {
         return this.buildingManager.getBuildingCategory(buildingId);
+    }
+    
+    getBuildingEfficiencyInfo(row, col) {
+        const key = `${row},${col}`;
+        const efficiencyData = this.buildingEfficiencies?.get(key);
+        
+        if (!efficiencyData || !efficiencyData.needs) {
+            return {
+                efficiency: 100,
+                topNeeds: []
+            };
+        }
+        
+        // Calculate overall efficiency based on all needs
+        const needs = efficiencyData.needs;
+        let totalSatisfaction = 0;
+        let needCount = 0;
+        const needsList = [];
+        
+        Object.entries(needs).forEach(([resource, data]) => {
+            totalSatisfaction += data.satisfaction;
+            needCount++;
+            needsList.push({
+                resource,
+                satisfaction: data.satisfaction,
+                deficit: data.demand - data.fulfilled
+            });
+        });
+        
+        // Overall efficiency as percentage (50% to 120%)
+        const avgSatisfaction = needCount > 0 ? totalSatisfaction / needCount : 1.0;
+        const efficiency = Math.round((0.5 + avgSatisfaction * 0.7) * 100);
+        
+        // Sort needs by worst satisfaction first
+        needsList.sort((a, b) => a.satisfaction - b.satisfaction);
+        
+        // Get top 3 worst needs
+        const topNeeds = needsList.slice(0, 3).map(need => {
+            const satisfactionPercent = Math.round(need.satisfaction * 100);
+            const emoji = {
+                'food': '🍎',
+                'energy': '⚡',
+                'jobs': '💼',
+                'workers': '👷',
+                'housing': '🏠',
+                'residents': '👥',
+                'students': '🎓',
+                'recreation': '🎭'
+            }[need.resource] || '📊';
+            
+            // Friendly resource names
+            const friendlyName = {
+                'food': 'Food',
+                'energy': 'Energy',
+                'jobs': 'Jobs',
+                'workers': 'Workers',
+                'housing': 'Housing',
+                'residents': 'Customers',
+                'students': 'Students',
+                'recreation': 'Recreation'
+            }[need.resource] || need.resource;
+            
+            return {
+                resource: friendlyName,
+                emoji: emoji,
+                satisfaction: satisfactionPercent,
+                deficit: Math.round(need.deficit)
+            };
+        });
+        
+        return {
+            efficiency,
+            topNeeds
+        };
+    }
+    
+    // Supply/Demand System with Transport Networks
+    calculateSupplyDemandBalance() {
+        const balance = {
+            energy: { supply: [], demand: [], balance: 0, satisfaction: 0 },
+            food: { supply: [], demand: [], balance: 0, satisfaction: 0 },
+            housing: { supply: [], demand: [], balance: 0, satisfaction: 0 },
+            jobs: { supply: [], demand: [], balance: 0, satisfaction: 0 },
+            workers: { supply: [], demand: [], balance: 0, satisfaction: 0 }, // Workers for jobs
+            residents: { supply: [], demand: [], balance: 0, satisfaction: 0 }, // For commercial/service demand
+            students: { supply: [], demand: [], balance: 0, satisfaction: 0 }, // For schools
+            recreation: { supply: [], demand: [], balance: 0, satisfaction: 0 } // For parks/culture
+        };
+        
+        // Track individual building efficiency and needs
+        this.buildingEfficiencies = new Map();
+        
+        // First pass: Identify all supply and demand points
+        for (let row = 0; row < this.gridSize; row++) {
+            for (let col = 0; col < this.gridSize; col++) {
+                const parcel = this.grid[row][col];
+                if (!parcel.building) continue;
+                
+                const building = this.buildingManager.getBuildingById(parcel.building);
+                if (!building) continue;
+                
+                const key = `${row},${col}`;
+                
+                // Initialize efficiency tracking for ALL buildings
+                this.buildingEfficiencies.set(key, {
+                    row, col,
+                    building: building.name,
+                    category: building.category,
+                    needs: {}
+                });
+                
+                // Housing supplies workers and residents, demands food/energy/jobs/recreation
+                if (building.category === 'housing') {
+                    const residents = building.bedrooms || 0;
+                    
+                    // Supply housing capacity
+                    balance.housing.supply.push({
+                        row, col,
+                        amount: residents,
+                        building: building.name
+                    });
+                    
+                    // Supply workers for jobs (0.6 workers per bedroom)
+                    balance.workers.supply.push({
+                        row, col,
+                        amount: residents * 0.6,
+                        building: building.name
+                    });
+                    
+                    // Supply residents for commercial/service demand
+                    balance.residents.supply.push({
+                        row, col,
+                        amount: residents,
+                        building: building.name
+                    });
+                    
+                    // Supply potential students
+                    balance.students.supply.push({
+                        row, col,
+                        amount: residents * 0.3, // 30% are school-age
+                        building: building.name
+                    });
+                    
+                    // Demand food (1 unit per resident per day)
+                    balance.food.demand.push({
+                        row, col,
+                        amount: residents,
+                        building: building.name
+                    });
+                    
+                    // Demand energy
+                    const energyDemand = building.energyDemand || residents * 2;
+                    balance.energy.demand.push({
+                        row, col,
+                        amount: energyDemand,
+                        building: building.name
+                    });
+                    
+                    // Demand jobs (0.6 jobs per bedroom - residents need employment)
+                    balance.jobs.demand.push({
+                        row, col,
+                        amount: residents * 0.6,
+                        building: building.name
+                    });
+                    
+                    // Demand recreation
+                    balance.recreation.demand.push({
+                        row, col,
+                        amount: residents * 0.5,
+                        building: building.name
+                    });
+                }
+                
+                // Commercial buildings need workers, customers and energy
+                if (building.category === 'commercial') {
+                    // Supply jobs
+                    if (building.jobs > 0) {
+                        balance.jobs.supply.push({
+                            row, col,
+                            amount: building.jobs,
+                            building: building.name
+                        });
+                        
+                        // Demand workers for those jobs
+                        balance.workers.demand.push({
+                            row, col,
+                            amount: building.jobs,
+                            building: building.name
+                        });
+                    }
+                    
+                    // Supply food if applicable
+                    if (building.foodProduction > 0) {
+                        balance.food.supply.push({
+                            row, col,
+                            amount: building.foodProduction,
+                            building: building.name
+                        });
+                    }
+                    
+                    // Demand customers (residents)
+                    const customerDemand = (building.jobs || 0) * 10; // 10 customers per employee
+                    balance.residents.demand.push({
+                        row, col,
+                        amount: customerDemand,
+                        building: building.name
+                    });
+                    
+                    // Demand energy
+                    const energyDemand = building.energyDemand || 20;
+                    balance.energy.demand.push({
+                        row, col,
+                        amount: energyDemand,
+                        building: building.name
+                    });
+                }
+                
+                // Education buildings need students, workers and energy
+                if (building.category === 'education') {
+                    // Supply jobs and demand workers
+                    if (building.jobs > 0) {
+                        balance.jobs.supply.push({
+                            row, col,
+                            amount: building.jobs,
+                            building: building.name
+                        });
+                        
+                        balance.workers.demand.push({
+                            row, col,
+                            amount: building.jobs,
+                            building: building.name
+                        });
+                    }
+                    
+                    // Demand students based on capacity
+                    const studentCapacity = building.populationReq || 50;
+                    balance.students.demand.push({
+                        row, col,
+                        amount: studentCapacity,
+                        building: building.name
+                    });
+                    
+                    // Demand energy
+                    const energyDemand = building.energyDemand || 30;
+                    balance.energy.demand.push({
+                        row, col,
+                        amount: energyDemand,
+                        building: building.name
+                    });
+                }
+                
+                // Recreation/Culture buildings
+                if (building.category === 'recreation' || building.category === 'culture') {
+                    // Supply recreation
+                    const recreationSupply = 100; // Base capacity
+                    balance.recreation.supply.push({
+                        row, col,
+                        amount: recreationSupply,
+                        building: building.name
+                    });
+                    
+                    // Demand visitors (residents)
+                    balance.residents.demand.push({
+                        row, col,
+                        amount: recreationSupply,
+                        building: building.name
+                    });
+                    
+                    // Demand energy
+                    const energyDemand = building.energyDemand || 10;
+                    balance.energy.demand.push({
+                        row, col,
+                        amount: energyDemand,
+                        building: building.name
+                    });
+                }
+                
+                // Healthcare buildings
+                if (building.category === 'healthcare') {
+                    // Supply jobs and demand workers
+                    if (building.jobs > 0) {
+                        balance.jobs.supply.push({
+                            row, col,
+                            amount: building.jobs,
+                            building: building.name
+                        });
+                        
+                        balance.workers.demand.push({
+                            row, col,
+                            amount: building.jobs,
+                            building: building.name
+                        });
+                    }
+                    
+                    // Demand patients (residents)
+                    const patientCapacity = 200; // Can serve 200 residents
+                    balance.residents.demand.push({
+                        row, col,
+                        amount: patientCapacity,
+                        building: building.name
+                    });
+                    
+                    // Demand energy
+                    const energyDemand = building.energyDemand || 40;
+                    balance.energy.demand.push({
+                        row, col,
+                        amount: energyDemand,
+                        building: building.name
+                    });
+                }
+                
+                // Infrastructure supplies energy
+                if (building.category === 'infrastructure') {
+                    // Simplified - each infrastructure building provides 100 energy units
+                    balance.energy.supply.push({
+                        row, col,
+                        amount: 100,
+                        building: building.name
+                    });
+                }
+                
+                // Industrial buildings
+                if (building.category === 'industrial') {
+                    // Supply jobs and demand workers
+                    if (building.jobs > 0) {
+                        balance.jobs.supply.push({
+                            row, col,
+                            amount: building.jobs,
+                            building: building.name
+                        });
+                        
+                        balance.workers.demand.push({
+                            row, col,
+                            amount: building.jobs,
+                            building: building.name
+                        });
+                    }
+                    
+                    // Demand energy (high)
+                    const energyDemand = building.energyDemand || 50;
+                    balance.energy.demand.push({
+                        row, col,
+                        amount: energyDemand,
+                        building: building.name
+                    });
+                }
+            }
+        }
+        
+        // Build transport network connectivity map
+        const transportNetwork = this.buildTransportNetwork();
+        
+        // Second pass: Match supply with demand using distance-attenuated distribution
+        ['energy', 'food', 'jobs', 'workers', 'residents', 'students', 'recreation'].forEach(resource => {
+            const resourceBalance = balance[resource];
+            
+            // Calculate satisfaction for each demand point
+            resourceBalance.demand.forEach(demandPoint => {
+                let fulfilledDemand = 0;
+                
+                resourceBalance.supply.forEach(supplyPoint => {
+                    // Calculate effective distance considering transport
+                    const effectiveDistance = this.calculateEffectiveDistance(
+                        demandPoint.row, demandPoint.col,
+                        supplyPoint.row, supplyPoint.col,
+                        transportNetwork
+                    );
+                    
+                    // Distance attenuation function
+                    // Full access within 2 tiles, 50% at 5 tiles, 10% at 10 tiles, 0% beyond 15
+                    let accessibility = 0;
+                    if (effectiveDistance <= 2) {
+                        accessibility = 1.0;
+                    } else if (effectiveDistance <= 15) {
+                        // Exponential decay
+                        accessibility = Math.exp(-0.3 * (effectiveDistance - 2));
+                    }
+                    
+                    // Amount of supply accessible from this point
+                    const accessibleSupply = supplyPoint.amount * accessibility;
+                    fulfilledDemand += accessibleSupply;
+                });
+                
+                // Calculate satisfaction ratio for this demand point
+                demandPoint.satisfaction = Math.min(1.0, fulfilledDemand / demandPoint.amount);
+                
+                // Store building-specific satisfaction
+                const key = `${demandPoint.row},${demandPoint.col}`;
+                if (!this.buildingEfficiencies.has(key)) {
+                    this.buildingEfficiencies.set(key, {
+                        row: demandPoint.row,
+                        col: demandPoint.col,
+                        building: demandPoint.building,
+                        needs: {}
+                    });
+                }
+                this.buildingEfficiencies.get(key).needs[resource] = {
+                    satisfaction: demandPoint.satisfaction,
+                    demand: demandPoint.amount,
+                    fulfilled: fulfilledDemand
+                };
+            });
+            
+            // Calculate overall balance and satisfaction
+            const totalSupply = resourceBalance.supply.reduce((sum, s) => sum + s.amount, 0);
+            const totalDemand = resourceBalance.demand.reduce((sum, d) => sum + d.amount, 0);
+            resourceBalance.balance = totalSupply - totalDemand;
+            
+            // Average satisfaction across all demand points
+            if (resourceBalance.demand.length > 0) {
+                const totalSatisfaction = resourceBalance.demand.reduce((sum, d) => sum + d.satisfaction, 0);
+                resourceBalance.satisfaction = totalSatisfaction / resourceBalance.demand.length;
+            } else {
+                resourceBalance.satisfaction = 1.0; // No demand = fully satisfied
+            }
+        });
+        
+        // Housing is simpler - just total supply vs population need
+        const totalHousing = balance.housing.supply.reduce((sum, s) => sum + s.amount, 0);
+        const populationNeed = this.totalPopulation || 0;
+        balance.housing.balance = totalHousing - populationNeed;
+        balance.housing.satisfaction = totalHousing > 0 ? Math.min(1.0, populationNeed / totalHousing) : 0;
+        
+        return balance;
+    }
+    
+    buildTransportNetwork() {
+        const network = {
+            nodes: [],
+            connections: new Map() // Map of "row,col" -> [{row, col, capacity}]
+        };
+        
+        // Identify transport nodes (bus stops, subway stations, etc.)
+        for (let row = 0; row < this.gridSize; row++) {
+            for (let col = 0; col < this.gridSize; col++) {
+                const parcel = this.grid[row][col];
+                if (!parcel.building) continue;
+                
+                const building = this.buildingManager.getBuildingById(parcel.building);
+                if (!building) continue;
+                
+                // Check if this is a transport building
+                if (building.category === 'transport' || 
+                    (building.mobilityImpact && building.mobilityImpact > 20)) {
+                    
+                    let capacity = 50; // Default bus capacity
+                    
+                    // Determine capacity based on building type
+                    if (building.name && building.name.toLowerCase().includes('subway')) {
+                        capacity = 500;
+                    } else if (building.name && building.name.toLowerCase().includes('train')) {
+                        capacity = 300;
+                    } else if (building.name && building.name.toLowerCase().includes('tram')) {
+                        capacity = 150;
+                    }
+                    
+                    network.nodes.push({
+                        row, col,
+                        type: building.name,
+                        capacity: capacity
+                    });
+                }
+            }
+        }
+        
+        // Build connections between nearby transport nodes
+        // Simplified: connect nodes within 10 tiles of each other
+        network.nodes.forEach((node1, i) => {
+            const key1 = `${node1.row},${node1.col}`;
+            if (!network.connections.has(key1)) {
+                network.connections.set(key1, []);
+            }
+            
+            network.nodes.forEach((node2, j) => {
+                if (i === j) return;
+                
+                const distance = Math.max(
+                    Math.abs(node1.row - node2.row),
+                    Math.abs(node1.col - node2.col)
+                );
+                
+                if (distance <= 10) {
+                    network.connections.get(key1).push({
+                        row: node2.row,
+                        col: node2.col,
+                        capacity: Math.min(node1.capacity, node2.capacity)
+                    });
+                }
+            });
+        });
+        
+        return network;
+    }
+    
+    calculateEffectiveDistance(row1, col1, row2, col2, transportNetwork) {
+        // Base Manhattan distance
+        const directDistance = Math.abs(row1 - row2) + Math.abs(col1 - col2);
+        
+        // Check if both points are near transport nodes
+        let nearestToPoint1 = null;
+        let nearestToPoint2 = null;
+        let minDist1 = Infinity;
+        let minDist2 = Infinity;
+        
+        transportNetwork.nodes.forEach(node => {
+            const dist1 = Math.max(Math.abs(row1 - node.row), Math.abs(col1 - node.col));
+            const dist2 = Math.max(Math.abs(row2 - node.row), Math.abs(col2 - node.col));
+            
+            if (dist1 < minDist1 && dist1 <= 3) { // Within 3 tiles of transport
+                minDist1 = dist1;
+                nearestToPoint1 = node;
+            }
+            
+            if (dist2 < minDist2 && dist2 <= 3) {
+                minDist2 = dist2;
+                nearestToPoint2 = node;
+            }
+        });
+        
+        // If both points are near transport and the nodes are connected
+        if (nearestToPoint1 && nearestToPoint2) {
+            const key1 = `${nearestToPoint1.row},${nearestToPoint1.col}`;
+            const connections = transportNetwork.connections.get(key1) || [];
+            
+            const connected = connections.some(conn => 
+                conn.row === nearestToPoint2.row && conn.col === nearestToPoint2.col
+            );
+            
+            if (connected) {
+                // Effective distance = walk to station + reduced transit distance + walk from station
+                const transitDistance = Math.max(
+                    Math.abs(nearestToPoint1.row - nearestToPoint2.row),
+                    Math.abs(nearestToPoint1.col - nearestToPoint2.col)
+                ) * 0.2; // Transit is 5x faster
+                
+                return minDist1 + transitDistance + minDist2;
+            }
+        }
+        
+        return directDistance;
+    }
+    
+    // Update building revenues based on supply/demand satisfaction
+    applySupplyDemandEffects() {
+        this.calculateCityVitality(); // Ensure we have current supply/demand data
+        
+        // Calculate supply/demand ratios for JEFH
+        const energyRatio = this.vitalitySupply.ENERGY / Math.max(1, this.vitalityDemand.ENERGY);
+        const foodRatio = this.vitalitySupply.FOOD / Math.max(1, this.vitalityDemand.FOOD);
+        const housingRatio = this.vitalitySupply.HOUSING / Math.max(1, this.vitalityDemand.HOUSING);
+        const jobsRatio = this.vitalitySupply.JOBS / Math.max(1, this.vitalityDemand.JOBS);
+        
+        // Initialize economic modifiers
+        this.economicEffects = {
+            energyMultiplier: 1.0,
+            foodMultiplier: 1.0,
+            housingMultiplier: 1.0,
+            jobsMultiplier: 1.0,
+            populationChangeRate: 0.0, // Daily population change rate
+            businessEfficiency: 1.0 // Overall business performance
+        };
+        
+        // ENERGY EFFECTS (with multiplier scaling)
+        if (energyRatio < this.economicMultipliers.shortageThreshold * 0.5) {
+            // Critical energy shortage: energy costs 10x normal, businesses fail
+            const baseEffect = 0.05; // Revenue drops to 5%
+            this.economicEffects.energyMultiplier = 1 - (1 - baseEffect) * this.economicMultipliers.energy;
+            this.economicEffects.populationChangeRate -= this.economicMultipliers.populationGrowthRate * 2;
+            this.economicEffects.businessEfficiency = 0.1; // Commercial spaces barely function
+        } else if (energyRatio < this.economicMultipliers.shortageThreshold * 0.75) {
+            // Severe energy shortage: energy costs soar, commercial spaces struggle
+            const baseEffect = 0.2; // Revenue drops to 20%
+            this.economicEffects.energyMultiplier = 1 - (1 - baseEffect) * this.economicMultipliers.energy;
+            this.economicEffects.populationChangeRate -= this.economicMultipliers.populationGrowthRate * 1.5;
+            this.economicEffects.businessEfficiency = 0.25;
+        } else if (energyRatio < this.economicMultipliers.shortageThreshold) {
+            // Energy shortage: higher costs, reduced commercial profitability
+            const baseEffect = 0.5; // Revenue drops to 50%
+            this.economicEffects.energyMultiplier = 1 - (1 - baseEffect) * this.economicMultipliers.energy;
+            this.economicEffects.populationChangeRate -= this.economicMultipliers.populationGrowthRate * 0.5;
+            this.economicEffects.businessEfficiency = 0.6;
+        } else if (energyRatio > this.economicMultipliers.oversupplyThreshold * 1.5) {
+            // Massive energy oversupply: utility revenues crash to zero
+            this.economicEffects.energyMultiplier = Math.max(0, 1 - this.economicMultipliers.energy);
+        } else if (energyRatio > this.economicMultipliers.oversupplyThreshold) {
+            // Energy oversupply: reduced utility revenues
+            const reductionFactor = (energyRatio - this.economicMultipliers.oversupplyThreshold) * this.economicMultipliers.energy;
+            this.economicEffects.energyMultiplier = Math.max(0.1, 1 - reductionFactor * 0.5);
+        }
+        
+        // FOOD EFFECTS
+        if (foodRatio < 0.3) {
+            // Critical food shortage: mass exodus, businesses collapse
+            this.economicEffects.populationChangeRate -= 0.08; // 8% daily population loss
+            this.economicEffects.businessEfficiency *= 0.2; // Businesses collapse without customers
+            this.economicEffects.foodMultiplier = Math.max(0.1, 0.5 - foodRatio); // Food prices skyrocket
+        } else if (foodRatio < 0.6) {
+            // Severe food shortage: people leave, commercial spaces suffer
+            this.economicEffects.populationChangeRate -= 0.04; // 4% daily population loss
+            this.economicEffects.businessEfficiency *= 0.4; // Major drop in consumer spending
+            this.economicEffects.foodMultiplier = Math.max(0.3, 0.8 - foodRatio);
+        } else if (foodRatio < 0.9) {
+            // Food shortage: reduced consumer spending
+            this.economicEffects.populationChangeRate -= 0.015;
+            this.economicEffects.businessEfficiency *= 0.7;
+        } else if (foodRatio > 2.5) {
+            // Food oversupply: food business revenues decline
+            this.economicEffects.foodMultiplier = Math.max(0.1, 3 - foodRatio);
+        }
+        
+        // HOUSING EFFECTS
+        if (housingRatio < 0.4) {
+            // Critical housing shortage: homeless crisis, businesses have no customers/workers
+            this.economicEffects.businessEfficiency *= 0.15; // Severe lack of customers and workers
+            this.economicEffects.populationChangeRate -= 0.06; // 6% daily population exodus
+            this.economicEffects.housingMultiplier = Math.max(0.1, 1 - (0.4 - housingRatio) * 5); // Housing costs skyrocket
+        } else if (housingRatio < 0.7) {
+            // Severe housing shortage: high costs, reduced livability
+            this.economicEffects.businessEfficiency *= (0.25 + housingRatio * 0.6);
+            this.economicEffects.populationChangeRate -= 0.03; // People leave due to unaffordable housing
+            this.economicEffects.housingMultiplier = Math.max(0.3, 1 - (0.7 - housingRatio) * 2);
+        } else if (housingRatio < 1.0) {
+            // Housing shortage: increased costs, some population decline
+            this.economicEffects.businessEfficiency *= (0.6 + housingRatio * 0.4);
+            this.economicEffects.populationChangeRate -= 0.01;
+        } else if (housingRatio > 2.0) {
+            // Housing oversupply: high unemployment, businesses suffer
+            const unemployment = Math.min(0.8, (housingRatio - 1) * 0.4);
+            this.economicEffects.businessEfficiency *= (1 - unemployment * 0.6);
+            this.economicEffects.populationChangeRate -= unemployment * 0.01;
+        }
+        
+        // JOBS EFFECTS
+        if (jobsRatio < 0.3) {
+            // Critical job shortage: economic collapse, mass unemployment
+            this.economicEffects.populationChangeRate -= 0.07; // 7% daily population exodus
+            this.economicEffects.businessEfficiency *= 0.15; // Businesses fail without workers
+            this.economicEffects.jobsMultiplier = Math.max(0.1, jobsRatio * 2); // Wages skyrocket for available jobs
+        } else if (jobsRatio < 0.6) {
+            // Severe job shortage: high unemployment, reduced consumer spending
+            this.economicEffects.populationChangeRate -= 0.035;
+            this.economicEffects.businessEfficiency *= 0.3; // Low consumer spending due to unemployment
+            this.economicEffects.jobsMultiplier = Math.max(0.3, jobsRatio * 1.5);
+        } else if (jobsRatio < 0.9) {
+            // Job shortage: unemployment affects consumer spending
+            this.economicEffects.populationChangeRate -= 0.015;
+            this.economicEffects.businessEfficiency *= 0.6;
+        } else if (jobsRatio > 2.0) {
+            // Too many jobs, not enough workers: businesses underperform
+            this.economicEffects.businessEfficiency *= Math.max(0.5, 2.5 - jobsRatio * 0.5);
+        }
+        
+        // Apply cumulative population change (with limits)
+        // Initialize from single source of truth if not set, then apply economic effects
+        if (!this.currentPopulation) {
+            this.currentPopulation = this.calculatePopulation();
+        }
+        const populationChange = this.currentPopulation * this.economicEffects.populationChangeRate;
+        this.currentPopulation = Math.max(0, this.currentPopulation + populationChange);
+        
+        // Store effects for building revenue calculations
+        this.supplyDemandEffects = this.economicEffects;
+        
+        return this.economicEffects;
     }
 
     setupZoomControls() {
@@ -2851,6 +4718,19 @@ class IsometricGrid {
     }
     
     calculateCityVitality() {
+        // Check if we can use cached values
+        const now = performance.now();
+        const cacheAge = now - this.vitalityCache.lastCalculated;
+        
+        // Use cache if it's recent and not dirty (refresh every 100ms max)
+        if (!this.vitalityCache.dirty && cacheAge < 100) {
+            // Update vitality from cache
+            this.vitalitySupply = { ...this.vitalityCache.supply };
+            this.vitalityDemand = { ...this.vitalityCache.demand };
+            this.vitality = { ...this.vitalityCache.netVitality };
+            return;
+        }
+        
         // Initialize supply and demand tracking
         this.vitalitySupply = {};
         this.vitalityDemand = {};
@@ -2861,55 +4741,112 @@ class IsometricGrid {
             this.vitality[domain] = 0; // Net will be supply - demand
         });
         
-        // Calculate base demand from population demographics
-        const population = this.calculatePopulation();
-        const demographics = this.demographics || {};
+        // First pass: count completed buildings only
+        let totalBedrooms = 0;
+        let totalJobs = 0;
+        let totalEnergySupply = 0;
+        let totalEnergyDemand = 0;
+        let totalFoodProduction = 0;
         
-        // Real needs-based demand
-        this.vitalityDemand.ENERGY += population * 0.1;     // Energy per person
-        this.vitalityDemand.FOOD += population * 0.05;      // Food per person
-        this.vitalityDemand.HOUSING += Math.max(0, population - (demographics.total || 0)) * 0.1; // Unhoused population
-        this.vitalityDemand.HEALTH += population * 0.02;    // Healthcare per person
-        this.vitalityDemand.EDUCATION += (demographics.schoolAge || 0) * 0.1; // School-age children
-        this.vitalityDemand.JOBS += (demographics.workingAge || 0) * 0.05;   // Working adults need jobs
-        this.vitalityDemand.CULTURE += population * 0.01;   // Cultural needs
-        this.vitalityDemand.MOBILITY += population * 0.01;  // Transport needs
-        
-        // Calculate supply and demand from buildings
+        // Calculate supply from completed buildings only
         for (let row = 0; row < this.gridSize; row++) {
             for (let col = 0; col < this.gridSize; col++) {
                 const parcel = this.grid[row][col];
-                if (parcel.owner === 'player') {
-                    // Add building impacts
-                    if (parcel.building) {
-                        const building = this.buildingManager.getBuildingById(parcel.building);
-                        if (building && building.domainImpacts) {
-                            Object.keys(building.domainImpacts).forEach(domain => {
-                                if (this.vitality.hasOwnProperty(domain)) {
-                                    const impact = building.domainImpacts[domain];
-                                    
-                                    // Categorize impact as supply (positive) or demand (negative)
-                                    if (impact > 0) {
-                                        // Positive impact = supply/benefit
-                                        this.vitalitySupply[domain] += impact;
-                                    } else if (impact < 0) {
-                                        // Negative impact = demand/cost
-                                        this.vitalityDemand[domain] += Math.abs(impact);
-                                    }
-                                }
-                            });
+                
+                // Only count completed buildings (not under construction)
+                const isUnderConstruction = parcel.constructionStartDay !== null && 
+                    parcel.constructionDays > 0 && 
+                    (this.currentDay - parcel.constructionStartDay) < parcel.constructionDays;
+                
+                if (parcel.building && !isUnderConstruction) {
+                    const building = this.buildingManager.getBuildingById(parcel.building);
+                    if (building) {
+                        // Count bedrooms and jobs
+                        const bedrooms = building.population?.bedroomsAdded || 0;
+                        const jobs = building.population?.jobsCreated || 0;
+                        totalBedrooms += bedrooms;
+                        totalJobs += jobs;
+                        
+                        // Calculate energy - negative energyDemand means supply for utilities
+                        const energyDemand = building.resources?.energyDemand || 0;
+                        if (energyDemand < 0) {
+                            // Negative demand = energy producer (solar, coal plant)
+                            totalEnergySupply += Math.abs(energyDemand);
+                            if (building.name?.includes('Coal') || building.name?.includes('Solar')) {
+                                console.log(`🔍 Energy producer found: ${building.name}, energyDemand=${energyDemand}, contributing ${Math.abs(energyDemand)} to supply`);
+                            }
                         } else {
-                            // Fallback to old system for buildings without domainImpacts
-                            const buildingImpacts = this.getBuildingImpacts(parcel.building);
-                            Object.keys(buildingImpacts).forEach(domain => {
-                                const impact = buildingImpacts[domain];
+                            totalEnergyDemand += energyDemand;
+                        }
+                        
+                        // Food production
+                        totalFoodProduction += building.resources?.foodProduction || 0;
+                    }
+                }
+            }
+        }
+        
+        // Use single source of truth for population
+        const population = this.calculatePopulation(); // Returns total population directly
+        
+        // ENERGY: Supply from power plants, demand from all buildings
+        this.vitalitySupply.ENERGY = totalEnergySupply;
+        this.vitalityDemand.ENERGY = totalEnergyDemand;
+        
+        if (totalEnergySupply > 0) {
+            console.log(`🔍 Final energy calculation: Supply=${totalEnergySupply}, Demand=${totalEnergyDemand}`);
+        }
+        
+        // FOOD: Supply from farms/markets, demand = 3 per person per day
+        this.vitalitySupply.FOOD = totalFoodProduction;
+        this.vitalityDemand.FOOD = population * 3; // 3 food per person per day
+        
+        // HOUSING: Supply = bedrooms, demand based on population (people need homes)
+        this.vitalitySupply.HOUSING = totalBedrooms;
+        this.vitalityDemand.HOUSING = population / 2; // 2 people per bedroom (population needs housing)
+        
+        // JOBS: Supply = jobs created, demand based on working-age population
+        this.vitalitySupply.JOBS = totalJobs;
+        this.vitalityDemand.JOBS = population * 0.6; // 60% of population wants employment
+        
+        // Calculate soft metrics (livability) from completed buildings
+        for (let row = 0; row < this.gridSize; row++) {
+            for (let col = 0; col < this.gridSize; col++) {
+                const parcel = this.grid[row][col];
+                
+                // Only count completed buildings
+                const isUnderConstruction = parcel.constructionStartDay !== null && 
+                    parcel.constructionDays > 0 && 
+                    (this.currentDay - parcel.constructionStartDay) < parcel.constructionDays;
+                
+                if (parcel.building && !isUnderConstruction) {
+                    const building = this.buildingManager.getBuildingById(parcel.building);
+                    if (building && building.domainImpacts) {
+                        // Process soft metrics only (not ENERGY, FOOD, HOUSING, JOBS)
+                        const softMetrics = ['HEALTH', 'EDUCATION', 'SAFETY', 'CULTURE', 'MOBILITY', 
+                                           'ENVIRONMENT', 'AFFORDABILITY', 'NOISE', 'RESILIENCE'];
+                        
+                        softMetrics.forEach(domain => {
+                            if (building.domainImpacts[domain] !== undefined) {
+                                const impact = building.domainImpacts[domain];
                                 if (impact > 0) {
                                     this.vitalitySupply[domain] += impact;
                                 } else if (impact < 0) {
                                     this.vitalityDemand[domain] += Math.abs(impact);
                                 }
-                            });
-                        }
+                            }
+                        });
+                    } else {
+                        // Fallback to old system for buildings without domainImpacts
+                        const buildingImpacts = this.getBuildingImpacts(parcel.building);
+                        Object.keys(buildingImpacts).forEach(domain => {
+                            const impact = buildingImpacts[domain];
+                            if (impact > 0) {
+                                this.vitalitySupply[domain] += impact;
+                            } else if (impact < 0) {
+                                this.vitalityDemand[domain] += Math.abs(impact);
+                            }
+                        });
                     }
                     
                     // Add amenity impacts
@@ -2932,6 +4869,14 @@ class IsometricGrid {
         Object.keys(this.vitality).forEach(domain => {
             this.vitality[domain] = this.vitalitySupply[domain] - this.vitalityDemand[domain];
         });
+        
+        // Update cache with calculated values
+        this.vitalityCache.supply = { ...this.vitalitySupply };
+        this.vitalityCache.demand = { ...this.vitalityDemand };
+        this.vitalityCache.netVitality = { ...this.vitality };
+        this.vitalityCache.lastCalculated = now;
+        this.vitalityCache.dirty = false;
+        this.vitalityCache.dirtyBuildings.clear();
         
         // Calculate city satisfaction based on met needs
         this.calculateCitySatisfaction();
@@ -2986,11 +4931,8 @@ class IsometricGrid {
     }
     
     updateVitalityDisplay() {
-        // In multiplayer, vitality is calculated on the server
-        // Only calculate locally in single-player mode
-        if (!this.multiplayerClient || !this.multiplayerClient.connected) {
-            this.calculateCityVitality();
-        }
+        // Calculate vitality locally
+        this.calculateCityVitality();
         
         // Supply & Demand bars (Energy, Food, Housing, Jobs)
         const supplyDemandMetrics = ['ENERGY', 'FOOD', 'HOUSING', 'JOBS'];
@@ -3002,6 +4944,11 @@ class IsometricGrid {
             const supply = this.vitalitySupply[domain] || 0;
             const demand = this.vitalityDemand[domain] || 0;
             const netBalance = supply - demand;
+            
+            // Debug logging for JEFH
+            if (supply > 0 || demand > 0) {
+                console.log(`🔍 JEFH Update - ${domain}: Supply=${supply}, Demand=${demand}, NetBalance=${netBalance}`);
+            }
             
             // Calculate ratio: -100 to +100 scale
             let ratio = 0;
@@ -3308,6 +5255,8 @@ class IsometricGrid {
         this.canvas.width = rect.width - 40;
         this.canvas.height = rect.height - 40;
         
+        
+        
         // Calculate diamond dimensions for a rotated square
         // In isometric view, a tile appears as a diamond with 2:1 width:height ratio
         const diamondWidth = Math.min(this.canvas.width, this.canvas.height * 2) / this.gridSize * 0.8; // Back to original scale
@@ -3416,13 +5365,66 @@ class IsometricGrid {
         this.ctx.restore();
     }
 
-    drawBuilding(buildingId, offsetX = 0, offsetY = 0, row = 0, col = 0) {
-        // Get opacity from cursor-based system
-        const tileKey = `${row}-${col}`;
-        const opacity = this.parcelOpacity.get(tileKey) || 1.0;
+    // Draw only the elevated building portion (no ground tile)
+    drawBuildingOnly(col, row, elevation) {
+        const parcel = this.grid[row][col];
+        if (!parcel || !parcel.building) return;
         
-        // Set canvas global alpha for dimming effect
-        this.ctx.globalAlpha = opacity;
+        const iso = this.toIsometric(col, row);
+        const elevationHeight = elevation * 8;
+        const adjustedY = iso.y - elevationHeight;
+        
+        this.ctx.save();
+        this.ctx.translate(iso.x, adjustedY);
+        
+        // Draw elevation sides if elevated
+        if (elevation > 0) {
+            // Left side
+            this.ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
+            this.ctx.beginPath();
+            this.ctx.moveTo(-this.tileWidth / 2, 0);
+            this.ctx.lineTo(-this.tileWidth / 2, elevationHeight);
+            this.ctx.lineTo(0, this.tileHeight / 2 + elevationHeight);
+            this.ctx.lineTo(0, this.tileHeight / 2);
+            this.ctx.closePath();
+            this.ctx.fill();
+            
+            // Right side
+            this.ctx.fillStyle = 'rgba(0, 0, 0, 0.15)';
+            this.ctx.beginPath();
+            this.ctx.moveTo(this.tileWidth / 2, 0);
+            this.ctx.lineTo(this.tileWidth / 2, elevationHeight);
+            this.ctx.lineTo(0, this.tileHeight / 2 + elevationHeight);
+            this.ctx.lineTo(0, this.tileHeight / 2);
+            this.ctx.closePath();
+            this.ctx.fill();
+            
+            // Top face
+            this.ctx.fillStyle = this.getTileColor(row, col);
+            this.ctx.beginPath();
+            this.ctx.moveTo(0, -this.tileHeight / 2);
+            this.ctx.lineTo(this.tileWidth / 2, 0);
+            this.ctx.lineTo(0, this.tileHeight / 2);
+            this.ctx.lineTo(-this.tileWidth / 2, 0);
+            this.ctx.closePath();
+            this.ctx.fill();
+        }
+        
+        // Draw building
+        if (this.currentLayer === 'normal') {
+            this.drawBuilding(parcel.building, 0, -this.tileHeight / 4, row, col);
+        }
+        
+        this.ctx.restore();
+    }
+
+    drawBuilding(buildingId, offsetX = 0, offsetY = 0, row = 0, col = 0) {
+        // Apply hover elevation with bouncing physics
+        const isHovered = this.hoveredTile && this.hoveredTile.row === row && this.hoveredTile.col === col;
+        let elevation = isHovered ? this.currentElevation : 0;
+        let scale = 1.0;
+        
+        // No completion animations in simplified system
         
         // Get parcel to check construction status
         const parcel = this.grid[row][col];
@@ -3435,21 +5437,39 @@ class IsometricGrid {
         let isUnderConstruction = false;
         
         if (parcel && parcel.constructionStartDay !== null && parcel.constructionDays > 0) {
-            const daysElapsed = this.currentDay - parcel.constructionStartDay;
+            // Calculate real-time construction progress
+            const totalConstructionTimeMs = parcel.constructionDays * this.dayDuration; // Total time in milliseconds
+            const elapsedTimeMs = (this.currentDay - parcel.constructionStartDay) * this.dayDuration + 
+                                  (performance.now() - this.lastDayStartTime); // Include current day progress
             
-            if (daysElapsed < parcel.constructionDays) {
+            if (elapsedTimeMs < totalConstructionTimeMs) {
                 // Building is still under construction
                 isUnderConstruction = true;
-                constructionProgress = Math.max(0, daysElapsed / parcel.constructionDays);
+                constructionProgress = Math.max(0, Math.min(1.0, elapsedTimeMs / totalConstructionTimeMs));
+                
+                // Schedule frequent re-renders during construction for smooth animation
+                if (!parcel._constructionAnimating) {
+                    parcel._constructionAnimating = true;
+                    this.scheduleConstructionAnimation(row, col);
+                }
                 
                 // Debug logging for construction progress  
-                if (Math.random() < 0.05) { // Log 5% of the time to see updates
-                    console.log(`🎨 Building ${buildingId} at (${row},${col}): Day ${daysElapsed}/${parcel.constructionDays}, Progress ${(constructionProgress*100).toFixed(1)}%`);
+                if (Math.random() < 0.05) { // Log 5% of the time to avoid spam
                 }
             } else {
-                // Construction complete - clear construction data
+                // Construction complete - no animation needed in simplified system
+                if (parcel.constructionStartDay !== null) {
+                    // Just clear the construction data
+                }
+                
+                // Clear construction data
                 parcel.constructionStartDay = null;
                 parcel.constructionDays = 0;
+                parcel._constructionAnimating = false;
+                
+                // Clean up pixel row timestamps
+                this.pixelRowTimestamps.delete(`${row},${col}`);
+                
                 constructionProgress = 1.0;
             }
         }
@@ -3460,22 +5480,34 @@ class IsometricGrid {
             parcel._isUnderConstruction = isUnderConstruction;
         }
         
-        if (building && building.images && building.images.built) {
-            // Draw custom building image with color fade effect
-            this.drawBuildingImage(building.images.built, offsetX, offsetY, constructionProgress);
-        } else {
-            // Draw simple building representation with color fade effect
-            if (building && Math.random() < 0.01) { // Debug log 1% of the time
-                console.log(`Building ${buildingId} using simple rendering. Has images:`, !!building.images, 'Built path:', building.images?.built);
-            }
-            this.drawSimpleBuilding(buildingId, offsetX, offsetY, constructionProgress);
+        // Apply scale transformation if needed
+        if (scale !== 1.0) {
+            this.ctx.save();
+            this.ctx.translate(offsetX, offsetY - elevation);
+            this.ctx.scale(scale, scale);
+            this.ctx.translate(-offsetX, -(offsetY - elevation));
         }
         
-        // Reset global alpha
-        this.ctx.globalAlpha = 1.0;
+        // No per-building filters - using overlay approach
+        
+        if (building && building.images && building.images.built) {
+            // Draw custom building image with elevation
+            this.drawBuildingImage(building.images.built, offsetX, offsetY - elevation, constructionProgress, row, col);
+        } else {
+            // Draw simple building representation with elevation
+            if (building && Math.random() < 0.01) { // Debug log 1% of the time
+            }
+            this.drawSimpleBuilding(buildingId, offsetX, offsetY - elevation, constructionProgress, 0);
+        }
+        
+        
+        // Restore transformation
+        if (scale !== 1.0) {
+            this.ctx.restore();
+        }
     }
 
-    drawBuildingImage(imageSrc, offsetX, offsetY, constructionProgress = 1.0) {
+    drawBuildingImage(imageSrc, offsetX, offsetY, constructionProgress = 1.0, row = 0, col = 0) {
         // Create image if not cached
         if (!this.buildingImageCache) {
             this.buildingImageCache = new Map();
@@ -3506,71 +5538,28 @@ class IsometricGrid {
             
             const imageY = offsetY + this.tileHeight/2 - baseDrawHeight + yOffset;
             
-            // Apply construction color effect
+            // Apply construction animation - bottom-up reveal
             if (constructionProgress < 1.0) {
-                // Create temporary canvas for color manipulation
-                const tempCanvas = document.createElement('canvas');
-                const tempCtx = tempCanvas.getContext('2d');
-                tempCanvas.width = baseDrawWidth;
-                tempCanvas.height = baseDrawHeight;
+                // Bottom-up reveal: show only the bottom portion based on progress
+                const revealHeight = Math.floor(baseDrawHeight * constructionProgress);
                 
-                // Draw the original image to temp canvas
-                tempCtx.drawImage(
-                    img, 
-                    0, 0, 
-                    baseDrawWidth, 
-                    baseDrawHeight
-                );
-                
-                // Apply color effect based on construction progress
-                const imageData = tempCtx.getImageData(0, 0, baseDrawWidth, baseDrawHeight);
-                const data = imageData.data;
-                
-                for (let i = 0; i < data.length; i += 4) {
-                    const r = data[i];
-                    const g = data[i + 1];
-                    const b = data[i + 2];
-                    const alpha = data[i + 3];
+                if (revealHeight > 0) {
+                    // For smooth pixel animation, calculate exact pixel rows
+                    const totalPixelRows = img.height;
+                    const pixelRowsToShow = Math.floor(totalPixelRows * constructionProgress);
                     
-                    if (alpha > 0) { // Only process non-transparent pixels
-                        if (constructionProgress < 0.1) {
-                            // Stage 1: Pure black silhouette
-                            data[i] = 0;     // R
-                            data[i + 1] = 0; // G  
-                            data[i + 2] = 0; // B
-                        } else if (constructionProgress < 0.5) {
-                            // Stage 2: Fade to grayscale
-                            const gray = Math.round(0.299 * r + 0.587 * g + 0.114 * b);
-                            const fadeProgress = (constructionProgress - 0.1) / 0.4; // 0-1 over this stage
-                            
-                            data[i] = Math.round(gray * fadeProgress);     // R
-                            data[i + 1] = Math.round(gray * fadeProgress); // G
-                            data[i + 2] = Math.round(gray * fadeProgress); // B
-                        } else {
-                            // Stage 3: Fade from grayscale to full color
-                            const gray = Math.round(0.299 * r + 0.587 * g + 0.114 * b);
-                            const fadeProgress = (constructionProgress - 0.5) / 0.5; // 0-1 over this stage
-                            
-                            data[i] = Math.round(gray + (r - gray) * fadeProgress);     // R
-                            data[i + 1] = Math.round(gray + (g - gray) * fadeProgress); // G
-                            data[i + 2] = Math.round(gray + (b - gray) * fadeProgress); // B
-                        }
+                    // Track pixel row timestamps for fade-in effect
+                    this.updatePixelRowTimestamps(row, col, pixelRowsToShow, totalPixelRows);
+                    
+                    // Debug construction animation
+                    if (Math.random() < 0.05) {
                     }
+                    
+                    // Lightweight fade-in effect using gradient mask
+                    this.drawConstructionWithGradientMask(img, offsetX, offsetY, baseDrawWidth, baseDrawHeight, imageY, constructionProgress, row, col);
                 }
-                
-                // Put the modified image data back
-                tempCtx.putImageData(imageData, 0, 0);
-                
-                // Draw the processed image to main canvas
-                this.ctx.drawImage(
-                    tempCanvas,
-                    offsetX - baseDrawWidth/2,
-                    imageY,
-                    baseDrawWidth,
-                    baseDrawHeight
-                );
             } else {
-                // Draw at full color (construction complete)
+                // Draw at full height (construction complete)
                 this.ctx.drawImage(
                     img, 
                     offsetX - baseDrawWidth/2, 
@@ -3582,7 +5571,25 @@ class IsometricGrid {
         }
     }
 
-    drawSimpleBuilding(buildingId, offsetX, offsetY, constructionProgress = 1.0) {
+    
+    adjustColorBrightness(color, brightness) {
+        if (brightness >= 1.0) return color;
+        
+        // Parse hex color
+        const hex = color.replace('#', '');
+        const r = parseInt(hex.substr(0, 2), 16);
+        const g = parseInt(hex.substr(2, 2), 16);
+        const b = parseInt(hex.substr(4, 2), 16);
+        
+        // Apply brightness
+        const newR = Math.floor(r * brightness);
+        const newG = Math.floor(g * brightness);
+        const newB = Math.floor(b * brightness);
+        
+        return `rgb(${newR}, ${newG}, ${newB})`;
+    }
+    
+    drawSimpleBuilding(buildingId, offsetX, offsetY, constructionProgress = 1.0, brightness = 1.0) {
         // Simple colored rectangle for default buildings
         const buildingColors = {
             'education': '#3b82f6',
@@ -3614,42 +5621,32 @@ class IsometricGrid {
         // Rectangle top-left Y coordinate should be: bottom point - building height + yOffset
         const buildingY = offsetY + this.tileHeight/2 - height + yOffset;
         
-        // Apply color effect based on construction progress
-        let finalColor = color;
+        // Apply construction animation - bottom-up reveal with brightness
+        const adjustedColor = this.adjustColorBrightness(color, brightness);
+        this.ctx.fillStyle = adjustedColor;
         
         if (constructionProgress < 1.0) {
-            // Parse the original color to get RGB values
-            const tempCtx = document.createElement('canvas').getContext('2d');
-            tempCtx.fillStyle = color;
-            tempCtx.fillRect(0, 0, 1, 1);
-            const imageData = tempCtx.getImageData(0, 0, 1, 1);
-            const [r, g, b] = imageData.data;
+            // Bottom-up reveal: show only the bottom portion based on progress
+            const revealHeight = Math.floor(height * constructionProgress);
             
-            if (constructionProgress < 0.1) {
-                // Stage 1: Pure black silhouette
-                finalColor = '#000000';
-            } else if (constructionProgress < 0.5) {
-                // Stage 2: Fade to grayscale
-                const gray = Math.round(0.299 * r + 0.587 * g + 0.114 * b);
-                const fadeProgress = (constructionProgress - 0.1) / 0.4;
-                const grayValue = Math.round(gray * fadeProgress);
-                finalColor = `rgb(${grayValue}, ${grayValue}, ${grayValue})`;
-            } else {
-                // Stage 3: Fade from grayscale to full color
-                const gray = Math.round(0.299 * r + 0.587 * g + 0.114 * b);
-                const fadeProgress = (constructionProgress - 0.5) / 0.5;
-                
-                const finalR = Math.round(gray + (r - gray) * fadeProgress);
-                const finalG = Math.round(gray + (g - gray) * fadeProgress);
-                const finalB = Math.round(gray + (b - gray) * fadeProgress);
-                
-                finalColor = `rgb(${finalR}, ${finalG}, ${finalB})`;
+            // For smooth pixel animation
+            const totalPixelRows = Math.floor(height);
+            const pixelRowsToShow = Math.floor(totalPixelRows * constructionProgress);
+            
+            // Debug simple construction animation
+            if (Math.random() < 0.05) {
             }
+            
+            if (revealHeight > 0) {
+                // Calculate destination position (aligned to bottom)
+                const destY = buildingY + height - revealHeight;
+                
+                this.ctx.fillRect(offsetX - width/2, destY, width, revealHeight);
+            }
+        } else {
+            // Draw full height (construction complete)
+            this.ctx.fillRect(offsetX - width/2, buildingY, width, height);
         }
-        
-        // Draw the building with the calculated color
-        this.ctx.fillStyle = finalColor;
-        this.ctx.fillRect(offsetX - width/2, buildingY, width, height);
         
         // Add border (white for normal, gray for under construction)
         this.ctx.strokeStyle = constructionProgress < 1.0 ? '#666666' : '#ffffff';
@@ -4063,7 +6060,35 @@ class IsometricGrid {
 
     render() {
         this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
-        
+        // Always use normal scene drawing - blur is handled per-building
+        this.drawScene();
+    }
+    
+    // Performance optimization methods
+    markRegionDirty(row, col, radius = 2) {
+        // Mark affected regions as needing recalculation
+        for (let r = Math.max(0, row - radius); r <= Math.min(this.gridSize - 1, row + radius); r++) {
+            for (let c = Math.max(0, col - radius); c <= Math.min(this.gridSize - 1, col + radius); c++) {
+                const key = `${r}-${c}`;
+                this.dirtyRegions.add(key);
+                this.landValueCache.delete(key);
+                this.accessibilityCache.delete(key);
+            }
+        }
+    }
+    
+    clearCachesIfStale() {
+        const now = performance.now();
+        // Clear all caches every 30 seconds to prevent memory leaks
+        if (now - this.lastCacheUpdate > 30000) {
+            this.landValueCache.clear();
+            this.accessibilityCache.clear();
+            this.dirtyRegions.clear();
+            this.lastCacheUpdate = now;
+        }
+    }
+    
+    drawScene() {
         // Apply zoom and pan transformations
         this.ctx.save();
         this.ctx.translate(this.panOffset.x, this.panOffset.y);
@@ -4072,13 +6097,22 @@ class IsometricGrid {
         // Batch canvas operations for better performance
         this.ctx.beginPath();
         
-        // Render tiles back to front for proper depth (A-1 is farthest, N-14 is closest)
-        // This means we render from row 0 to gridSize-1 (A to N)
-        for (let row = 0; row < this.gridSize; row++) {
-            for (let col = 0; col < this.gridSize; col++) {
-                const tile = this.grid[row][col];
-                if (tile) {
-                    this.drawTile(col, row, this.getTileColor(row, col), tile.elevation);
+        // Check if we should apply depth-of-field blur effect
+        const shouldBlur = this.hoveredTile && this.grid[this.hoveredTile.row] && 
+                          this.grid[this.hoveredTile.row][this.hoveredTile.col] && 
+                          this.grid[this.hoveredTile.row][this.hoveredTile.col].building;
+        
+        if (shouldBlur) {
+            // Render with tilt-shift blur effect
+            this.renderWithDepthOfField();
+        } else {
+            // Normal rendering
+            for (let row = 0; row < this.gridSize; row++) {
+                for (let col = 0; col < this.gridSize; col++) {
+                    const tile = this.grid[row][col];
+                    if (tile) {
+                        this.drawTile(col, row, this.getTileColor(row, col), tile.elevation);
+                    }
                 }
             }
         }
@@ -4100,15 +6134,17 @@ class IsometricGrid {
             this.selectedTile.col >= 0 && this.selectedTile.col < this.gridSize) {
             const tile = this.grid[this.selectedTile.row][this.selectedTile.col];
             if (tile) {
-                // Draw with a subtle white glow
+                // Draw with a subtle white glow that fades with hover time
+                const alpha = 0.3 * this.selectorOpacity; // Apply fade to the base alpha
                 this.drawTileHighlight(this.selectedTile.col, this.selectedTile.row, 
-                                     'rgba(255, 255, 255, 0.3)', tile.elevation);
+                                     `rgba(255, 255, 255, ${alpha})`, tile.elevation);
             }
         }
         
         // Restore transformation matrix
         this.ctx.restore();
     }
+    
     
     // Optimized tile drawing with reduced save/restore calls
     drawTileOptimized(col, row, color, elevation = 0) {
@@ -4168,92 +6204,524 @@ class IsometricGrid {
         this.ctx.setTransform(currentTransform);
     }
     
-    // Update cursor-based parcel illumination with smooth animations
+    // Minimal hover state - just for tooltips and selection
     updateParcelIllumination(cursorTile) {
-        const targetOpacities = new Map();
+        // No special effects, just update render if needed
+        this.scheduleRender();
+    }
+    
+    // Depth-of-field rendering with tilt-shift blur
+    renderWithDepthOfField() {
+        if (!this.hoveredTile) {
+            // No hover - render normally without blur effect
+            for (let row = 0; row < this.gridSize; row++) {
+                for (let col = 0; col < this.gridSize; col++) {
+                    const tile = this.grid[row][col];
+                    if (tile) {
+                        this.drawTile(col, row, this.getTileColor(row, col), tile.elevation);
+                    }
+                }
+            }
+            return;
+        }
+
+        // Fast approach: pre-rendered blur + depth-ordered sharp focused building
+        const focusRow = this.hoveredTile.row;
+        const focusCol = this.hoveredTile.col;
         
-        // Calculate target opacities for all tiles
-        for (let row = 0; row < this.gridSize; row++) {
-            for (let col = 0; col < this.gridSize; col++) {
-                const tileKey = `${row}-${col}`;
-                
-                if (!cursorTile) {
-                    // No cursor hover - all tiles at full opacity
-                    targetOpacities.set(tileKey, 1.0);
-                } else {
-                    const distance = Math.max(
-                        Math.abs(row - cursorTile.row),
-                        Math.abs(col - cursorTile.col)
-                    );
+        // Step 1: Draw the pre-rendered blurred background with blur
+        if (this.blurredBackgroundReady) {
+            this.ctx.save();
+            this.ctx.filter = `blur(2.5px)`;
+            this.ctx.drawImage(this.backgroundBlurCanvas, 0, 0);
+            this.ctx.restore();
+        }
+        
+        // Step 2: Render focused building at correct depth without breaking layer order
+        // First pass: render all tiles up to (but not including) the focused tile depth
+        const focusDepth = focusRow + focusCol;
+        
+        for (let depth = 0; depth < focusDepth; depth++) {
+            for (let row = 0; row < this.gridSize; row++) {
+                for (let col = 0; col < this.gridSize; col++) {
+                    if (row + col !== depth) continue;
                     
-                    if (distance === 0) {
-                        // Hovered tile - full brightness
-                        targetOpacities.set(tileKey, 1.0);
-                    } else if (distance === 1) {
-                        // Adjacent tiles - dimmed to 10%
-                        targetOpacities.set(tileKey, 0.1);
-                    } else {
-                        // Gradual 5% increments: 15%, 20%, 25%, 30%, then full brightness
-                        const opacity = Math.min(1.0, 0.1 + (distance - 1) * 0.05);
-                        targetOpacities.set(tileKey, opacity);
+                    const tile = this.grid[row][col];
+                    if (!tile) continue;
+                    
+                    // Draw any non-focused buildings at this depth that aren't in background
+                    if (!(row === focusRow && col === focusCol)) {
+                        // These should already be in blurred background, skip
                     }
                 }
             }
         }
         
-        // Animate opacity changes
-        targetOpacities.forEach((targetOpacity, tileKey) => {
-            const currentOpacity = this.parcelOpacity.get(tileKey) || 1.0;
-            
-            if (Math.abs(currentOpacity - targetOpacity) > 0.01) {
-                this.animateParcelOpacity(tileKey, currentOpacity, targetOpacity);
-            }
-        });
-    }
-    
-    // Animate smooth opacity transition for a single parcel
-    animateParcelOpacity(tileKey, startOpacity, targetOpacity) {
-        // Cancel any existing animation for this tile
-        if (this.opacityTransitions.has(tileKey)) {
-            cancelAnimationFrame(this.opacityTransitions.get(tileKey));
+        // Second pass: render the focused building at its exact depth
+        const focusedTile = this.grid[focusRow][focusCol];
+        if (focusedTile) {
+            this.drawTile(focusCol, focusRow, this.getTileColor(focusRow, focusCol), focusedTile.elevation);
         }
         
-        const duration = 200; // 200ms animation
-        const startTime = performance.now();
+        // Third pass: render all tiles that should appear in front of the focused tile
+        for (let depth = focusDepth + 1; depth < this.gridSize * 2; depth++) {
+            for (let row = 0; row < this.gridSize; row++) {
+                for (let col = 0; col < this.gridSize; col++) {
+                    if (row + col !== depth) continue;
+                    
+                    const tile = this.grid[row][col];
+                    if (!tile || !tile.building) continue;
+                    
+                    // Draw buildings that should appear in front, blurred and without hover effects
+                    this.ctx.save();
+                    this.ctx.filter = `blur(2.5px)`;
+                    
+                    // Temporarily disable hover effects for buildings in front
+                    const originalHovered = this.hoveredTile;
+                    this.hoveredTile = null;
+                    
+                    this.drawTile(col, row, this.getTileColor(row, col), tile.elevation);
+                    
+                    // Restore hover state
+                    this.hoveredTile = originalHovered;
+                    this.ctx.restore();
+                }
+            }
+        }
+    }
+    
+    // Pre-render the entire scene to blur canvas (without the currently hovered building)
+    prerenderBlurredBackground() {
+        if (!this.hoveredTile) {
+            this.blurredBackgroundReady = false;
+            return;
+        }
         
-        const animate = (currentTime) => {
-            const elapsed = currentTime - startTime;
-            const progress = Math.min(elapsed / duration, 1);
+        this.backgroundBlurCanvas.width = this.canvas.width;
+        this.backgroundBlurCanvas.height = this.canvas.height;
+        
+        this.backgroundBlurCtx.clearRect(0, 0, this.backgroundBlurCanvas.width, this.backgroundBlurCanvas.height);
+        
+        // Temporarily switch to blur canvas context
+        const originalCtx = this.ctx;
+        this.ctx = this.backgroundBlurCtx;
+        
+        // First render ground spaces except under the hovered building
+        for (let row = 0; row < this.gridSize; row++) {
+            for (let col = 0; col < this.gridSize; col++) {
+                // Skip ground space under hovered building
+                if (row === this.hoveredTile.row && col === this.hoveredTile.col) continue;
+                
+                // Draw ground space only
+                this.drawTile(col, row, this.getTileColor(row, col), 0);
+            }
+        }
+        
+        // Then render buildings except the hovered one (blur will be applied when drawing to main canvas)
+        for (let depth = 0; depth < this.gridSize * 2; depth++) {
+            for (let row = 0; row < this.gridSize; row++) {
+                for (let col = 0; col < this.gridSize; col++) {
+                    if (row + col !== depth) continue;
+                    
+                    const tile = this.grid[row][col];
+                    if (tile && !(row === this.hoveredTile.row && col === this.hoveredTile.col)) {
+                        // Draw building with elevation but no ground
+                        if (tile.elevation > 0) {
+                            this.drawBuildingOnly(col, row, tile.elevation);
+                        }
+                    }
+                }
+            }
+        }
+        
+        // Switch back to original context
+        this.ctx = originalCtx;
+        this.blurredBackgroundReady = true;
+    }
+    
+    // Update the blurred background when hover changes
+    updateBlurredBackground() {
+        this.prerenderBlurredBackground();
+    }
+    
+    
+    
+    // Simple bouncing ball physics for hover elevation
+    startBounceAnimation() {
+        if (this.bounceAnimation) {
+            cancelAnimationFrame(this.bounceAnimation);
+        }
+        
+        // Reset to ground level when starting new animation
+        this.currentElevation = 0;
+        
+        // Initial upward velocity (like a ball being dropped upward)
+        this.elevationVelocity = 0.8; // Start with upward velocity
+        
+        const animate = () => {
+            if (!this.hoveredTile) {
+                this.currentElevation = 0;
+                this.bounceAnimation = null;
+                return;
+            }
             
-            // Smooth easing function
-            const easeOut = 1 - Math.pow(1 - progress, 2);
-            const currentOpacity = startOpacity + (targetOpacity - startOpacity) * easeOut;
+            // Physics simulation
+            const gravity = 0.05; // Gravity pulls down
+            const damping = 0.85; // Energy loss on bounce
+            const ground = 0; // Ground level
             
-            this.parcelOpacity.set(tileKey, currentOpacity);
+            // Update velocity and position
+            this.elevationVelocity -= gravity; // Gravity
+            this.currentElevation += this.elevationVelocity;
             
-            if (progress < 1) {
-                const animationId = requestAnimationFrame(animate);
-                this.opacityTransitions.set(tileKey, animationId);
-            } else {
-                this.opacityTransitions.delete(tileKey);
+            // Bounce when hitting the target elevation (like a rubber ball)
+            if (this.currentElevation >= this.hoverElevation) {
+                this.currentElevation = this.hoverElevation;
+                this.elevationVelocity = -Math.abs(this.elevationVelocity) * damping; // Reverse and dampen
+            }
+            
+            // Settle when velocity is very small
+            if (Math.abs(this.elevationVelocity) < 0.02 && 
+                Math.abs(this.currentElevation - this.hoverElevation) < 0.5) {
+                this.currentElevation = this.hoverElevation;
+                this.elevationVelocity = 0;
+                // Start continuous bobbing
+                this.startContinuousBob();
+                return;
             }
             
             this.scheduleRender();
-        };
-        
-        const animationId = requestAnimationFrame(animate);
-        this.opacityTransitions.set(tileKey, animationId);
-    }
-
-    // Throttle utility for event optimization
-    throttleEvent(func, delay) {
-        return (...args) => {
-            const now = performance.now();
-            if (now - this.lastMouseMoveTime >= delay) {
-                this.lastMouseMoveTime = now;
-                func.apply(this, args);
+            
+            // Continue animation if still bouncing
+            if (Math.abs(this.elevationVelocity) > 0.01) {
+                this.bounceAnimation = requestAnimationFrame(animate);
+            } else {
+                // Start continuous bobbing when done bouncing
+                this.startContinuousBob();
             }
         };
+        
+        this.bounceAnimation = requestAnimationFrame(animate);
+    }
+    
+    // Gentle continuous bobbing while hovering
+    startContinuousBob() {
+        if (this.bounceAnimation) {
+            cancelAnimationFrame(this.bounceAnimation);
+        }
+        
+        const startTime = performance.now();
+        
+        const bob = () => {
+            if (!this.hoveredTile) {
+                return;
+            }
+            
+            const elapsed = performance.now() - startTime;
+            const bobOffset = Math.sin(elapsed * this.bobSpeed) * this.bobAmount;
+            this.currentElevation = this.liftAmount + bobOffset; // Lift + bob motion
+            
+            this.scheduleRender();
+            this.bounceAnimation = requestAnimationFrame(bob);
+        };
+        
+        this.bounceAnimation = requestAnimationFrame(bob);
+    }
+    
+    stopBounceAnimation() {
+        if (this.bounceAnimation) {
+            cancelAnimationFrame(this.bounceAnimation);
+            this.bounceAnimation = null;
+        }
+        
+        // Smoothly return to ground
+        const returnToGround = () => {
+            if (this.currentElevation > 0.1) {
+                this.currentElevation *= 0.9; // Exponential decay
+                this.scheduleRender();
+                requestAnimationFrame(returnToGround);
+            } else {
+                this.currentElevation = 0;
+                this.scheduleRender();
+            }
+        };
+        
+        requestAnimationFrame(returnToGround);
+    }
+    
+    // Update pixel row timestamps for fade-in effect
+    updatePixelRowTimestamps(row, col, pixelRowsToShow, totalPixelRows) {
+        const key = `${row},${col}`;
+        
+        if (!this.pixelRowTimestamps.has(key)) {
+            this.pixelRowTimestamps.set(key, new Array(totalPixelRows).fill(null));
+        }
+        
+        const timestamps = this.pixelRowTimestamps.get(key);
+        const currentTime = performance.now();
+        
+        // Mark timestamp for newly revealed pixel rows
+        for (let i = 0; i < pixelRowsToShow; i++) {
+            if (timestamps[i] === null) {
+                timestamps[i] = currentTime;
+            }
+        }
+    }
+    
+    // Draw construction with fade-in effect for individual pixel rows
+    drawConstructionWithFadeIn(img, offsetX, offsetY, baseDrawWidth, baseDrawHeight, imageY, pixelRowsToShow, totalPixelRows, brightness, row, col) {
+        const key = `${row},${col}`;
+        const timestamps = this.pixelRowTimestamps.get(key);
+        
+        if (!timestamps) {
+            // Fallback to normal drawing if no timestamps
+            this.ctx.drawImage(img, offsetX - baseDrawWidth/2, imageY, baseDrawWidth, baseDrawHeight);
+            return;
+        }
+        
+        const currentTime = performance.now();
+        const fadeInDuration = 3000; // 3 seconds fade-in
+        
+        // Draw each pixel row with individual opacity based on age
+        const pixelRowHeight = baseDrawHeight / totalPixelRows;
+        
+        for (let pixelRow = 0; pixelRow < pixelRowsToShow; pixelRow++) {
+            const timestamp = timestamps[pixelRow];
+            if (timestamp === null) continue;
+            
+            // Calculate opacity based on how long this row has been visible
+            const age = currentTime - timestamp;
+            const opacity = Math.min(1.0, age / fadeInDuration);
+            
+            // Calculate source and destination for this pixel row
+            const srcY = img.height - (pixelRow + 1) * (img.height / totalPixelRows);
+            const srcHeight = img.height / totalPixelRows;
+            const destY = imageY + baseDrawHeight - (pixelRow + 1) * pixelRowHeight;
+            const destHeight = pixelRowHeight;
+            
+            // Apply combined brightness and fade-in opacity
+            this.ctx.save();
+            this.ctx.globalAlpha = opacity;
+            this.ctx.filter = `brightness(${brightness})`;
+            
+            this.ctx.drawImage(
+                img,
+                0, srcY, img.width, srcHeight,
+                offsetX - baseDrawWidth/2, destY, baseDrawWidth, destHeight
+            );
+            
+            this.ctx.restore();
+        }
+    }
+    
+    // Lightweight construction animation using gradient mask (much more performant)
+    drawConstructionWithGradientMask(img, offsetX, offsetY, baseDrawWidth, baseDrawHeight, imageY, constructionProgress, row, col) {
+        const key = `${row},${col}`;
+        const timestamps = this.pixelRowTimestamps.get(key);
+        
+        if (!timestamps) {
+            // Fallback to normal drawing if no timestamps
+            this.ctx.drawImage(img, offsetX - baseDrawWidth/2, imageY, baseDrawWidth, baseDrawHeight);
+            return;
+        }
+        
+        const currentTime = performance.now();
+        const fadeInDuration = 3000; // 3 seconds fade-in
+        const revealHeight = baseDrawHeight * constructionProgress;
+        
+        // Create gradient for fade-in effect based on construction progress
+        this.ctx.save();
+        
+        // Set up clipping region for the revealed portion
+        this.ctx.beginPath();
+        this.ctx.rect(offsetX - baseDrawWidth/2, imageY + baseDrawHeight - revealHeight, baseDrawWidth, revealHeight);
+        this.ctx.clip();
+        
+        // Create gradient mask for fade-in effect - validate parameters
+        const gradientStart = imageY + baseDrawHeight - revealHeight;
+        const gradientEnd = imageY + baseDrawHeight;
+        
+        // Check for invalid values that would cause createLinearGradient to fail
+        if (!isFinite(gradientStart) || !isFinite(gradientEnd)) {
+            // Fallback to normal drawing if gradient parameters are invalid
+            this.ctx.drawImage(img, offsetX - baseDrawWidth/2, imageY, baseDrawWidth, baseDrawHeight);
+            return;
+        }
+        
+        const gradient = this.ctx.createLinearGradient(0, gradientStart, 0, gradientEnd);
+        
+        // Calculate how much of the revealed area should have fade effect
+        const totalPixelRows = img.height;
+        const pixelRowsToShow = Math.floor(totalPixelRows * constructionProgress);
+        const fadeRows = Math.min(20, pixelRowsToShow); // Limit fade effect to last 20 rows for performance
+        
+        // Add gradient stops based on pixel row ages
+        const rowHeight = revealHeight / pixelRowsToShow;
+        for (let i = 0; i < pixelRowsToShow; i++) {
+            const timestamp = timestamps[i];
+            if (timestamp === null) continue;
+            
+            const age = currentTime - timestamp;
+            const opacity = Math.min(1.0, age / fadeInDuration);
+            const position = i / pixelRowsToShow;
+            
+            // Only add fade effect to recent rows for better performance
+            if (i >= pixelRowsToShow - fadeRows) {
+                gradient.addColorStop(position, `rgba(255,255,255,${opacity})`);
+            }
+        }
+        
+        // Apply alpha-based fade effect for construction
+        const avgOpacity = this.calculateAverageOpacity(timestamps, pixelRowsToShow, currentTime, fadeInDuration);
+        this.ctx.globalAlpha = avgOpacity;
+        
+        this.ctx.drawImage(img, offsetX - baseDrawWidth/2, imageY, baseDrawWidth, baseDrawHeight);
+        
+        this.ctx.restore();
+    }
+    
+    // Calculate average opacity for fade-in effect
+    calculateAverageOpacity(timestamps, pixelRowsToShow, currentTime, fadeInDuration) {
+        if (!timestamps || pixelRowsToShow === 0) return 1.0;
+        
+        let totalOpacity = 0;
+        let validRows = 0;
+        
+        // Calculate opacity for recent rows (fade effect)
+        const fadeRows = Math.min(20, pixelRowsToShow);
+        const startRow = Math.max(0, pixelRowsToShow - fadeRows);
+        
+        for (let i = startRow; i < pixelRowsToShow; i++) {
+            const timestamp = timestamps[i];
+            if (timestamp !== null) {
+                const age = currentTime - timestamp;
+                const opacity = Math.min(1.0, age / fadeInDuration);
+                totalOpacity += opacity;
+                validRows++;
+            }
+        }
+        
+        // Older rows are fully opaque
+        const olderRows = startRow;
+        totalOpacity += olderRows;
+        validRows += olderRows;
+        
+        return validRows > 0 ? totalOpacity / validRows : 1.0;
+    }
+    
+    // Schedule frequent re-renders for construction animation
+    scheduleConstructionAnimation(row, col) {
+        const key = `${row},${col}`;
+        
+        if (this.constructionAnimations.has(key)) {
+            return; // Already animating
+        }
+        
+        this.constructionAnimations.add(key);
+        
+        const animate = () => {
+            const parcel = this.grid[row][col];
+            
+            // Check if construction is still ongoing
+            if (!parcel || !parcel._constructionAnimating || !parcel.constructionStartDay) {
+                this.constructionAnimations.delete(key);
+                return;
+            }
+            
+            // Re-render for smooth pixel animation
+            this.scheduleRender();
+            
+            // Continue animation at 60fps for smooth pixel reveal
+            requestAnimationFrame(animate);
+        };
+        
+        requestAnimationFrame(animate);
+    }
+
+    // Restore mouse movement debouncing for performance
+    debouncedMouseMove(screenX, screenY) {
+        this.lastMousePosition = { x: screenX, y: screenY };
+        
+        if (!this.pendingMouseUpdate) {
+            this.pendingMouseUpdate = true;
+            requestAnimationFrame(() => {
+                this.processMouseMove(this.lastMousePosition.x, this.lastMousePosition.y);
+                this.pendingMouseUpdate = false;
+            });
+        }
+    }
+
+    // Process mouse movement with all hover logic
+    processMouseMove(screenX, screenY) {
+        // Handle panning
+        if (this.isPanning) {
+            const deltaX = screenX - this.lastPanPoint.x;
+            const deltaY = screenY - this.lastPanPoint.y;
+            
+            this.panOffset.x += deltaX;
+            this.panOffset.y += deltaY;
+            
+            this.lastPanPoint = { x: screenX, y: screenY };
+            this.scheduleRender();
+            return; // Don't process tile selection while panning
+        }
+        
+        // Convert screen coordinates to world coordinates for tile detection
+        const worldCoords = this.screenToWorldCoords(screenX, screenY);
+        const tile = this.fromIsometric(worldCoords.x, worldCoords.y);
+        
+        if (tile) {
+            this.selectedTile = tile;
+            const coord = this.getParcelCoordinate(tile.row, tile.col);
+            if (this.domCache.selectedTile) {
+                this.domCache.selectedTile.textContent = coord;
+            }
+            
+            // Force a render to show the highlight
+            this.scheduleRender();
+            
+            // Update cursor-based illumination and start hover timing
+            if (!this.hoveredTile || 
+                this.hoveredTile.row !== tile.row || 
+                this.hoveredTile.col !== tile.col) {
+                this.hoveredTile = { row: tile.row, col: tile.col };
+                this.updateParcelIllumination(this.hoveredTile);
+                this.updateBlurredBackground(); // Update pre-rendered background
+                
+                // Reset hover timing and selector opacity when moving to new tile
+                this.hoverStartTime = performance.now();
+                this.selectorOpacity = 1.0;
+                
+                // Start bounce animation for buildings
+                const parcel = this.grid[tile.row][tile.col];
+                if (parcel && parcel.building) {
+                    this.startContinuousBob(); // Skip bounce, go directly to gentle bob
+                }
+            }
+            // Show tooltip using stored mouse event coordinates
+            if (this.lastMouseEvent) {
+                this.showTooltip(tile.row, tile.col, this.lastMouseEvent.clientX, this.lastMouseEvent.clientY);
+            }
+        } else {
+            this.selectedTile = null;
+            if (this.domCache.selectedTile) {
+                this.domCache.selectedTile.textContent = '--';
+            }
+            
+            // Clear illumination when not hovering any tile
+            if (this.hoveredTile) {
+                this.hoveredTile = null;
+                this.updateParcelIllumination(null);
+                this.updateBlurredBackground(); // Update pre-rendered background
+                
+                // Reset hover timing and selector opacity
+                this.hoverStartTime = null;
+                this.selectorOpacity = 1.0;
+                this.stopBounceAnimation();
+            }
+            
+            this.hideTooltip();
+        }
     }
 
     drawTileHighlight(col, row, color, elevation = 0) {
@@ -4272,8 +6740,8 @@ class IsometricGrid {
         this.ctx.lineTo(-this.tileWidth / 2, 0);
         this.ctx.closePath();
         
-        // Subtle white glow effect
-        this.ctx.strokeStyle = '#ffffff';
+        // Subtle white glow effect with fading alpha
+        this.ctx.strokeStyle = color; // Use the color parameter which includes the alpha
         this.ctx.lineWidth = 2;
         this.ctx.stroke();
         
@@ -4281,61 +6749,24 @@ class IsometricGrid {
     }
     
     setupEventListeners() {
-        // Throttled mouse move handler for better performance  
-        const throttledMouseMove = this.throttleEvent((e) => {
+        // Debounced mouse move handler for optimal performance  
+        const debouncedMouseMove = (e) => {
+            // Don't process mouse moves if context menu is open - preserve current selection
+            if (this.contextMenu.classList.contains('visible')) {
+                return;
+            }
+            
             const rect = this.canvas.getBoundingClientRect();
             const screenX = e.clientX - rect.left;
             const screenY = e.clientY - rect.top;
             
-            // Handle panning
-            if (this.isPanning) {
-                const deltaX = screenX - this.lastPanPoint.x;
-                const deltaY = screenY - this.lastPanPoint.y;
-                
-                this.panOffset.x += deltaX;
-                this.panOffset.y += deltaY;
-                
-                this.lastPanPoint = { x: screenX, y: screenY };
-                this.scheduleRender();
-                return; // Don't process tile selection while panning
-            }
+            // Store mouse event for tooltip positioning
+            this.lastMouseEvent = { clientX: e.clientX, clientY: e.clientY };
             
-            // Convert screen coordinates to world coordinates for tile detection
-            const worldCoords = this.screenToWorldCoords(screenX, screenY);
-            const tile = this.fromIsometric(worldCoords.x, worldCoords.y);
-            
-            if (tile) {
-                this.selectedTile = tile;
-                const coord = this.getParcelCoordinate(tile.row, tile.col);
-                this.domCache.selectedTile.textContent = coord;
-                
-                
-                // Force a render to show the highlight
-                this.scheduleRender();
-                
-                // Update cursor-based illumination
-                if (!this.hoveredTile || 
-                    this.hoveredTile.row !== tile.row || 
-                    this.hoveredTile.col !== tile.col) {
-                    this.hoveredTile = { row: tile.row, col: tile.col };
-                    this.updateParcelIllumination(this.hoveredTile);
-                }
-                this.showTooltip(tile.row, tile.col, e.clientX, e.clientY);
-            } else {
-                this.selectedTile = null;
-                this.domCache.selectedTile.textContent = '--';
-                
-                // Clear illumination when not hovering any tile
-                if (this.hoveredTile) {
-                    this.hoveredTile = null;
-                    this.updateParcelIllumination(null);
-                }
-                
-                this.hideTooltip();
-            }
-        }, 16); // 60fps throttling
+            this.debouncedMouseMove(screenX, screenY);
+        };
         
-        this.canvas.addEventListener('mousemove', throttledMouseMove, { passive: true });
+        this.canvas.addEventListener('mousemove', debouncedMouseMove, { passive: true });
 
         // Add mouse down handler for panning and 3D rotation
         this.canvas.addEventListener('mousedown', (e) => {
@@ -4392,7 +6823,19 @@ class IsometricGrid {
                 if (this.currentLayer === 'transportation') {
                     this.showTransportationModal(tile.row, tile.col);
                 } else {
-                    this.showContextMenu(tile.row, tile.col, e.clientX, e.clientY);
+                    // Check if clicking the same selected tile - toggle it off
+                    if (this.selectedTile && 
+                        this.selectedTile.row === tile.row && 
+                        this.selectedTile.col === tile.col &&
+                        this.contextMenu.classList.contains('visible')) {
+                        this.hideContextMenu();
+                    } else {
+                        // Clicking any other parcel: hide previous menu and show new one
+                        if (this.contextMenu.classList.contains('visible')) {
+                            this.hideContextMenu();
+                        }
+                        this.showContextMenu(tile.row, tile.col, e.clientX, e.clientY);
+                    }
                 }
                 this.hideTooltip();
             } else {
@@ -4415,6 +6858,8 @@ class IsometricGrid {
             this.scheduleRender();
         });
     }
+    
+    
 }
 
 function generateCityName() {
@@ -4497,13 +6942,15 @@ document.addEventListener('DOMContentLoaded', () => {
             playerBtn.innerHTML = `${playerName.toUpperCase()}<span class="indicator">▼</span>`;
         }
         
-        // Initialize multiplayer client
-        if (window.MultiplayerClient) {
-            game.multiplayerClient = new MultiplayerClient(game);
-            game.multiplayerClient.connect();
-        }
+        // Multiplayer removed - focusing on core mechanics
         
         window.game = game; // Make game accessible globally for devtools
+        
+        // Setup multiplier controls after game is available
+        setupMultiplierControls();
+        setupSidebarMultipliers();
+        setupCashflowMenu();
+        setupVitalityTooltips();
     });
     
     document.getElementById('city-name').textContent = generateCityName().toUpperCase();
@@ -4561,18 +7008,15 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             
             keysToRemove.forEach(key => {
-                console.log('🧹 Clearing localStorage key:', key);
                 localStorage.removeItem(key);
             });
             
-            console.log('🔄 Hard reset: Cleared', keysToRemove.length, 'localStorage keys');
             
             // Try to refresh buildings before reload
             if (window.refreshBuildingsFromCSV) {
                 try {
                     await window.refreshBuildingsFromCSV();
                 } catch (e) {
-                    console.log('CSV refresh failed, will reload page:', e);
                 }
             }
             
@@ -4585,6 +7029,7 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('close-devtools').addEventListener('click', () => {
         devtoolsPanel.classList.remove('visible');
     });
+    
     
     // CSV refresh button functionality
     document.getElementById('refresh-csv-btn').addEventListener('click', async () => {
@@ -4697,8 +7142,9 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
     
-    // Initialize comprehensive tooltips for vitality bars
-    const tooltip = document.getElementById('custom-tooltip');
+    // Setup vitality bar tooltips
+    function setupVitalityTooltips() {
+        const tooltip = document.getElementById('custom-tooltip');
     
     function generateTooltipContent(tooltipData) {
         const data = JSON.parse(tooltipData);
@@ -4775,6 +7221,7 @@ document.addEventListener('DOMContentLoaded', () => {
             tooltip.classList.remove('visible');
         });
     });
+    }
     
     // Tab switching
     document.querySelectorAll('.tab-btn').forEach(btn => {
@@ -4839,7 +7286,6 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
         
-        console.log('Created building:', buildingData);
         
         // Building created successfully (removed alert)
     });
@@ -5018,7 +7464,6 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
         
-        console.log('Created amenity:', amenityData);
         
         // Amenity created successfully (removed alert)
     });
@@ -5321,7 +7766,6 @@ document.addEventListener('DOMContentLoaded', () => {
         window.buildingManager.saveBuilding(buildingData);
         
         const action = editingId ? 'updated' : (isDefaultCopy ? 'customized' : 'created');
-        console.log(`Building ${action}:`, buildingData);
         // Building saved successfully (removed alert)
         
         // Reset form and button if we were editing
@@ -5408,17 +7852,13 @@ document.addEventListener('DOMContentLoaded', () => {
         
         // Save to localStorage
         if (saveToStorage(STORAGE_KEYS.AMENITIES, amenityData)) {
-            console.log('Amenity saved to storage:', amenityData);
             // Amenity created and saved successfully (removed alert)
         } else {
-            console.log('Amenity created but not saved:', amenityData);
             // Amenity created but could not be saved (removed alert)
         }
     });
 
     // Load saved data on startup
-    console.log('Loaded buildings from storage:', loadFromStorage(STORAGE_KEYS.BUILDINGS));
-    console.log('Loaded amenities from storage:', loadFromStorage(STORAGE_KEYS.AMENITIES));
 
     // Setup building manager
     setupBuildingManager();
@@ -5915,7 +8355,282 @@ document.addEventListener('DOMContentLoaded', () => {
     // Initialize governance modal
     setupGovernanceModal();
 
-    // Initialize cashflow menu
-    setupCashflowMenu();
+
+    // Setup economic multiplier controls
+    function setupMultiplierControls() {
+        // Get all slider elements and their corresponding value displays
+        const sliders = {
+            'energy-multiplier': 'energy',
+            'food-multiplier': 'food',
+            'housing-multiplier': 'housing',
+            'jobs-multiplier': 'jobs',
+            'population-growth-rate': 'populationGrowthRate',
+            'shortage-threshold': 'shortageThreshold',
+            'oversupply-threshold': 'oversupplyThreshold',
+            'base-revenue-multiplier': 'baseRevenue',
+            'maintenance-multiplier': 'maintenance'
+        };
+        
+        // Setup each slider
+        Object.entries(sliders).forEach(([sliderId, propertyName]) => {
+            const slider = document.getElementById(sliderId);
+            const valueDisplay = slider.parentElement.querySelector('.multiplier-value');
+            
+            if (!slider || !valueDisplay) return;
+            
+            // Load saved value or use current game value
+            const savedValue = localStorage.getItem(`multiplier_${propertyName}`);
+            if (savedValue) {
+                slider.value = savedValue;
+                window.game.economicMultipliers[propertyName] = parseFloat(savedValue);
+            }
+            
+            // Update display
+            updateValueDisplay(slider, valueDisplay, propertyName);
+            
+            // Add event listener for real-time updates
+            slider.addEventListener('input', () => {
+                const value = parseFloat(slider.value);
+                window.game.economicMultipliers[propertyName] = value;
+                updateValueDisplay(slider, valueDisplay, propertyName);
+                
+                // Save to localStorage
+                localStorage.setItem(`multiplier_${propertyName}`, value);
+                
+                // Sync with sidebar panel if it exists
+                syncSidebarSlider(propertyName, value);
+                
+                // Recalculate vitality in real-time
+                window.game.calculateCityVitality();
+                window.game.updateVitalityDisplay();
+            });
+        });
+        
+        // Reset button
+        document.getElementById('reset-multipliers').addEventListener('click', () => {
+            if (confirm('Reset all multipliers to default values?')) {
+                Object.keys(sliders).forEach(sliderId => {
+                    const slider = document.getElementById(sliderId);
+                    const propertyName = sliders[sliderId];
+                    const defaultValue = getDefaultMultiplier(propertyName);
+                    
+                    slider.value = defaultValue;
+                    window.game.economicMultipliers[propertyName] = defaultValue;
+                    
+                    const valueDisplay = slider.parentElement.querySelector('.multiplier-value');
+                    updateValueDisplay(slider, valueDisplay, propertyName);
+                    
+                    // Clear localStorage
+                    localStorage.removeItem(`multiplier_${propertyName}`);
+                });
+                
+                // Recalculate
+                window.game.calculateCityVitality();
+                window.game.updateVitalityDisplay();
+            }
+        });
+        
+        // Apply button (mainly for feedback, changes are already applied in real-time)
+        document.getElementById('apply-multipliers').addEventListener('click', () => {
+            // Force recalculation
+            window.game.calculateCityVitality();
+            window.game.updateVitalityDisplay();
+            
+            // Visual feedback
+            const btn = document.getElementById('apply-multipliers');
+            const originalText = btn.textContent;
+            btn.textContent = 'Applied!';
+            btn.style.background = '#42B96E';
+            
+            setTimeout(() => {
+                btn.textContent = originalText;
+                btn.style.background = '';
+            }, 1000);
+        });
+    }
+
+    function updateValueDisplay(slider, valueDisplay, propertyName) {
+        const value = parseFloat(slider.value);
+        
+        // Format display based on property type
+        if (propertyName === 'populationGrowthRate') {
+            valueDisplay.textContent = `${(value * 100).toFixed(1)}%`;
+        } else if (propertyName.includes('threshold')) {
+            valueDisplay.textContent = value.toFixed(2);
+        } else {
+            valueDisplay.textContent = `${value.toFixed(1)}x`;
+        }
+    }
+
+    function getDefaultMultiplier(propertyName) {
+        const defaults = {
+            energy: 1.0,
+            food: 1.0,
+            housing: 1.0,
+            jobs: 1.0,
+            populationGrowthRate: 0.02,
+            shortageThreshold: 0.8,
+            oversupplyThreshold: 2.0,
+            baseRevenue: 1.0,
+            maintenance: 1.0
+        };
+        return defaults[propertyName] || 1.0;
+    }
+
+    // Setup integrated sidebar multipliers (integrated into main sidebar)
+    function setupSidebarMultipliers() {
+        // Setup sidebar sliders - map to same properties as devtools
+        const sidebarSliders = {
+            'sidebar-energy-multiplier': 'energy',
+            'sidebar-food-multiplier': 'food',
+            'sidebar-housing-multiplier': 'housing',
+            'sidebar-jobs-multiplier': 'jobs',
+            'sidebar-population-growth-rate': 'populationGrowthRate',
+            'sidebar-base-revenue-multiplier': 'baseRevenue',
+            'sidebar-maintenance-multiplier': 'maintenance'
+        };
+        
+        // Setup each sidebar slider
+        Object.entries(sidebarSliders).forEach(([sliderId, propertyName]) => {
+            const slider = document.getElementById(sliderId);
+            const valueDisplay = slider.parentElement.querySelector('.multiplier-value-compact');
+            
+            if (!slider || !valueDisplay) return;
+            
+            // Load saved value or use current game value
+            const savedValue = localStorage.getItem(`multiplier_${propertyName}`);
+            if (savedValue) {
+                slider.value = savedValue;
+                window.game.economicMultipliers[propertyName] = parseFloat(savedValue);
+            }
+            
+            // Update display
+            updateSidebarValueDisplay(slider, valueDisplay, propertyName);
+            
+            // Add event listener for real-time updates
+            slider.addEventListener('input', () => {
+                const value = parseFloat(slider.value);
+                window.game.economicMultipliers[propertyName] = value;
+                updateSidebarValueDisplay(slider, valueDisplay, propertyName);
+                
+                // Save to localStorage
+                localStorage.setItem(`multiplier_${propertyName}`, value);
+                
+                // Sync with devtools panel if it exists
+                syncDevtoolsSlider(propertyName, value);
+                
+                // Recalculate vitality in real-time
+                window.game.calculateCityVitality();
+                window.game.updateVitalityDisplay();
+            });
+        });
+        
+        // Sidebar reset button
+        document.getElementById('sidebar-reset-multipliers').addEventListener('click', () => {
+            if (confirm('Reset all multipliers to default values?')) {
+                Object.keys(sidebarSliders).forEach(sliderId => {
+                    const slider = document.getElementById(sliderId);
+                    const propertyName = sidebarSliders[sliderId];
+                    const defaultValue = getDefaultMultiplier(propertyName);
+                    
+                    slider.value = defaultValue;
+                    window.game.economicMultipliers[propertyName] = defaultValue;
+                    
+                    const valueDisplay = slider.parentElement.querySelector('.multiplier-value-compact');
+                    updateSidebarValueDisplay(slider, valueDisplay, propertyName);
+                    
+                    // Clear localStorage
+                    localStorage.removeItem(`multiplier_${propertyName}`);
+                    
+                    // Sync with devtools
+                    syncDevtoolsSlider(propertyName, defaultValue);
+                });
+                
+                // Recalculate
+                window.game.calculateCityVitality();
+                window.game.updateVitalityDisplay();
+            }
+        });
+        
+        // Sidebar apply button
+        document.getElementById('sidebar-apply-multipliers').addEventListener('click', () => {
+            // Force recalculation
+            window.game.calculateCityVitality();
+            window.game.updateVitalityDisplay();
+            
+            // Visual feedback
+            const btn = document.getElementById('sidebar-apply-multipliers');
+            const originalText = btn.textContent;
+            btn.textContent = 'Applied!';
+            btn.style.background = '#42B96E';
+            
+            setTimeout(() => {
+                btn.textContent = originalText;
+                btn.style.background = '';
+            }, 1000);
+        });
+    }
+
+    function updateSidebarValueDisplay(slider, valueDisplay, propertyName) {
+        const value = parseFloat(slider.value);
+        
+        // Format display based on property type
+        if (propertyName === 'populationGrowthRate') {
+            valueDisplay.textContent = `${(value * 100).toFixed(1)}%`;
+        } else {
+            valueDisplay.textContent = `${value.toFixed(1)}x`;
+        }
+    }
+
+    function syncDevtoolsSlider(propertyName, value) {
+        // Map property names to devtools slider IDs
+        const devtoolsSliderMap = {
+            energy: 'energy-multiplier',
+            food: 'food-multiplier',
+            housing: 'housing-multiplier',
+            jobs: 'jobs-multiplier',
+            populationGrowthRate: 'population-growth-rate',
+            baseRevenue: 'base-revenue-multiplier',
+            maintenance: 'maintenance-multiplier'
+        };
+        
+        const devtoolsSliderId = devtoolsSliderMap[propertyName];
+        if (devtoolsSliderId) {
+            const devtoolsSlider = document.getElementById(devtoolsSliderId);
+            if (devtoolsSlider) {
+                devtoolsSlider.value = value;
+                const valueDisplay = devtoolsSlider.parentElement.querySelector('.multiplier-value');
+                if (valueDisplay) {
+                    updateValueDisplay(devtoolsSlider, valueDisplay, propertyName);
+                }
+            }
+        }
+    }
+
+    function syncSidebarSlider(propertyName, value) {
+        // Map property names to sidebar slider IDs
+        const sidebarSliderMap = {
+            energy: 'sidebar-energy-multiplier',
+            food: 'sidebar-food-multiplier',
+            housing: 'sidebar-housing-multiplier',
+            jobs: 'sidebar-jobs-multiplier',
+            populationGrowthRate: 'sidebar-population-growth-rate',
+            baseRevenue: 'sidebar-base-revenue-multiplier',
+            maintenance: 'sidebar-maintenance-multiplier'
+        };
+        
+        const sidebarSliderId = sidebarSliderMap[propertyName];
+        if (sidebarSliderId) {
+            const sidebarSlider = document.getElementById(sidebarSliderId);
+            if (sidebarSlider) {
+                sidebarSlider.value = value;
+                const valueDisplay = sidebarSlider.parentElement.querySelector('.multiplier-value-compact');
+                if (valueDisplay) {
+                    updateSidebarValueDisplay(sidebarSlider, valueDisplay, propertyName);
+                }
+            }
+        }
+    }
+
 
 });

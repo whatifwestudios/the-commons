@@ -1280,6 +1280,7 @@ body {
     transition: all 0.3s ease;
     overflow-y: auto;
     z-index: 200;
+    max-height: 100vh;
 }
 
 .building-info-panel.visible {
@@ -1288,33 +1289,51 @@ body {
 }
 
 .building-info-header {
-    padding: 16px 20px;
+    padding: 12px 16px;
     background: #0a0a0a;
     border-bottom: 1px solid #2a2a2a;
 }
 
 .building-info-header h3 {
-    font-size: 12px;
+    font-size: 14px;
     font-weight: 600;
     color: #ffffff;
     letter-spacing: 1px;
     margin: 0;
+    text-transform: uppercase;
 }
 
 .building-info-content {
-    padding: 20px;
+    padding: 16px;
+}
+
+.building-description {
+    padding: 10px 14px;
+    background: #1a1a1a;
+    border-radius: 6px;
+    margin-bottom: 12px;
+    font-size: 11px;
+    line-height: 1.5;
+    color: #a8a8a8;
+    font-style: italic;
+    border-left: 2px solid #4a90e2;
 }
 
 .building-info-image {
-    margin-bottom: 16px;
+    margin-bottom: 12px;
     text-align: center;
+    height: 80px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #0a0a0a;
+    border-radius: 6px;
 }
 
 .building-info-image img {
-    max-width: 100%;
-    max-height: 120px;
-    border-radius: 4px;
-    border: 1px solid #2a2a2a;
+    max-width: 90%;
+    max-height: 70px;
+    object-fit: contain;
 }
 
 .building-info-details {
@@ -1325,7 +1344,7 @@ body {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 6px 0;
+    padding: 10px 0;
     border-bottom: 1px solid #1a1a1a;
 }
 
@@ -1334,47 +1353,153 @@ body {
 }
 
 .building-info-details .info-label {
-    font-size: 10px;
+    font-size: 12px;
     font-weight: 500;
-    color: #666666;
+    color: #808080;
     letter-spacing: 0.5px;
 }
 
 .building-info-details .info-value {
-    font-size: 11px;
+    font-size: 13px;
     font-weight: 600;
     color: #ffffff;
     font-variant-numeric: tabular-nums;
 }
 
 .building-impacts h4 {
+    font-size: 13px;
+    font-weight: 600;
+    color: #4a90e2;
+    margin-bottom: 12px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+#building-impacts-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+}
+
+.building-supply-demand {
+    border-bottom: 1px solid #222222;
+    margin-bottom: 12px;
+    padding-bottom: 12px;
+}
+
+.building-supply-demand .vitality-group-title,
+.building-impacts .vitality-group-title {
+    display: block;
+    font-size: 10px;
+    font-weight: 600;
+    color: #666666;
+    letter-spacing: 1px;
+    margin-bottom: 8px;
+}
+
+.building-supply-demand .vitality-row,
+.building-impacts .vitality-row {
+    display: flex;
+    align-items: center;
+    margin-bottom: 8px;
+    height: 20px;
+}
+
+.building-supply-demand .vitality-label {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    min-width: 80px;
+    margin-right: 12px;
+    color: #808080;
+}
+
+.building-supply-demand .info-value {
     font-size: 11px;
     font-weight: 600;
     color: #ffffff;
-    margin-bottom: 8px;
-    letter-spacing: 0.5px;
+    font-variant-numeric: tabular-nums;
 }
 
-.building-impacts-list {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 4px;
+.building-supply-demand .vitality-progress {
+    position: absolute;
+    height: 100%;
+    border-radius: 4px;
+    transition: all 0.3s ease;
+}
+
+.building-impacts .vitality-label {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    min-width: 80px;
+    margin-right: 12px;
+    text-transform: uppercase;
+}
+
+.building-impacts .vitality-bar {
+    flex: 1;
+    height: 8px;
+    background: #1a1a1a;
+    border-radius: 4px;
+    position: relative;
+    overflow: hidden;
+}
+
+.building-impacts .vitality-bar::before {
+    content: '';
+    position: absolute;
+    left: 50%;
+    top: 0;
+    width: 1px;
+    height: 100%;
+    background: #444444;
+    transform: translateX(-0.5px);
+}
+
+.building-impacts .vitality-progress {
+    position: absolute;
+    height: 100%;
+    border-radius: 4px;
+    transition: all 0.3s ease;
 }
 
 .impact-item {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 4px 8px;
-    background: #1a1a1a;
-    border-radius: 2px;
+    padding: 10px 12px;
+    background: #0a0a0a;
+    border-radius: 6px;
+    position: relative;
+    overflow: hidden;
 }
 
 .impact-item .impact-label {
-    font-size: 9px;
+    color: #b8b8b8;
+    text-transform: capitalize;
+    font-size: 12px;
     font-weight: 500;
-    color: #666666;
+    z-index: 2;
+    position: relative;
     letter-spacing: 0.3px;
+}
+
+.impact-bar {
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    opacity: 0.2;
+    transition: width 0.3s ease;
+}
+
+.impact-bar.positive {
+    background: linear-gradient(90deg, transparent, #4ade80);
+}
+
+.impact-bar.negative {
+    background: linear-gradient(90deg, transparent, #f87171);
 }
 
 .impact-item .impact-value {
@@ -3090,197 +3215,340 @@ body {
     color: #42B96E;
 }
 
-/* Multiplayer UI Styles */
-.connection-status {
+/* Auction System Styles */
+.auction-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.8);
     display: flex;
     align-items: center;
-    padding: 12px 20px;
-    font-size: 11px;
-    border-bottom: 1px solid #1a1a1a;
+    justify-content: center;
+    z-index: 10000;
 }
 
-.status-dot {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    margin-right: 8px;
-    transition: background-color 0.3s ease;
+.auction-panel {
+    background: #1a1a1a;
+    border: 2px solid #52C77E;
+    border-radius: 8px;
+    padding: 0;
+    width: 500px;
+    max-width: 90vw;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
 }
 
-.status-dot.online {
-    background-color: #52C77E;
+.auction-header {
+    background: #52C77E;
+    color: white;
+    padding: 15px 20px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-radius: 6px 6px 0 0;
 }
 
-.status-dot.offline {
-    background-color: #666666;
+.auction-header h3 {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 600;
 }
 
-.status-dot.reconnecting {
-    background-color: #FFB347;
-    animation: pulse 1s infinite;
-}
-
-.status-dot.error {
-    background-color: #FF6B6B;
-}
-
-@keyframes pulse {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.5; }
-}
-
-.status-text {
-    color: #ececec;
-    font-weight: 400;
-}
-
-.room-info {
-    padding: 12px 20px;
-    font-size: 11px;
-    border-bottom: 1px solid #1a1a1a;
-}
-
-.room-id, .players-count {
-    margin-bottom: 4px;
-    color: #ececec;
-}
-
-.room-id span, .players-count span {
-    color: #52C77E;
-    font-weight: 500;
-}
-
-.game-timer-section {
-    padding: 12px 20px;
+.auction-timer {
+    background: rgba(255, 255, 255, 0.2);
+    padding: 5px 10px;
+    border-radius: 4px;
+    font-size: 18px;
+    font-weight: bold;
+    min-width: 40px;
     text-align: center;
 }
 
-.timer-label {
+.auction-info {
+    padding: 20px;
+    border-bottom: 1px solid #2a2a2a;
+}
+
+.auction-info .info-row {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 10px;
+    font-size: 13px;
+    color: #ececec;
+}
+
+.auction-info .info-row:last-child {
+    margin-bottom: 0;
+}
+
+.auction-current-bid {
+    padding: 20px;
+    text-align: center;
+    border-bottom: 1px solid #2a2a2a;
+}
+
+.bid-label {
+    font-size: 11px;
+    color: #888;
+    margin-bottom: 8px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+.bid-amount {
+    font-size: 32px;
+    color: #52C77E;
+    font-weight: bold;
+    font-family: 'Courier New', monospace;
+    margin-bottom: 8px;
+}
+
+.bid-status {
+    font-size: 12px;
+    color: #FFB347;
+}
+
+.auction-actions {
+    padding: 20px;
+    display: flex;
+    gap: 10px;
+    justify-content: center;
+}
+
+.auction-btn {
+    background: #52C77E;
+    color: white;
+    border: none;
+    padding: 12px 24px;
+    border-radius: 4px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.2s ease;
+}
+
+.auction-btn:hover {
+    background: #42B96E;
+}
+
+.auction-btn.small {
+    padding: 8px 16px;
+    font-size: 12px;
+}
+
+.auction-history {
+    max-height: 150px;
+    overflow-y: auto;
+    padding: 10px 20px;
+    font-size: 11px;
+    color: #888;
+}
+
+/* Economic Multiplier Controls */
+.multiplier-group {
+    margin: 20px 0;
+    padding: 15px;
+    border: 1px solid #444;
+    border-radius: 6px;
+    background: #1a1a1a;
+}
+
+.multiplier-group h5 {
+    margin: 0 0 15px 0;
+    color: #52C77E;
+    font-size: 14px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+.multiplier-control {
+    margin: 12px 0;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.multiplier-control label {
+    color: #fff;
+    font-size: 12px;
+    font-weight: 500;
+}
+
+.multiplier-control input[type="range"] {
+    width: 100%;
+    height: 4px;
+    background: #444;
+    border-radius: 2px;
+    outline: none;
+    cursor: pointer;
+}
+
+.multiplier-control input[type="range"]::-webkit-slider-thumb {
+    appearance: none;
+    width: 16px;
+    height: 16px;
+    background: #52C77E;
+    border-radius: 50%;
+    cursor: pointer;
+}
+
+.multiplier-control input[type="range"]::-moz-range-thumb {
+    width: 16px;
+    height: 16px;
+    background: #52C77E;
+    border-radius: 50%;
+    border: none;
+    cursor: pointer;
+}
+
+.multiplier-value {
+    color: #52C77E;
+    font-family: 'Courier New', monospace;
+    font-size: 12px;
+    font-weight: 600;
+    min-width: 40px;
+    text-align: right;
+}
+
+.multiplier-control small {
+    color: #999;
     font-size: 10px;
-    color: #888888;
-    margin-bottom: 4px;
+    line-height: 1.3;
+}
+
+.multiplier-actions {
+    margin-top: 20px;
+    display: flex;
+    gap: 10px;
+    justify-content: center;
+}
+
+.multiplier-actions button {
+    padding: 8px 16px;
+    border: none;
+    border-radius: 4px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.btn-primary {
+    background: #52C77E;
+    color: white;
+}
+
+.btn-primary:hover {
+    background: #42B96E;
+}
+
+.btn-secondary {
+    background: #444;
+    color: #ccc;
+}
+
+.btn-secondary:hover {
+    background: #555;
+    color: #fff;
+}
+
+/* Economic Multipliers in Sidebar */
+.multiplier-control-compact {
+    display: grid;
+    grid-template-columns: 65px 1fr 40px;
+    align-items: center;
+    gap: 8px;
+    margin: 8px 0;
+    padding: 4px 0;
+}
+
+.multiplier-control-compact label {
+    color: #999;
+    font-size: 10px;
+    font-weight: 500;
     text-transform: uppercase;
     letter-spacing: 0.5px;
 }
 
-.timer-value {
-    font-size: 14px;
-    color: #ececec;
-    font-weight: 500;
-    font-family: 'Courier New', monospace;
-}
-
-/* Chat Styles */
-.chat-messages {
-    height: 120px;
-    overflow-y: auto;
-    padding: 8px 20px;
-    font-size: 11px;
-    background: #0f0f0f;
-    border-bottom: 1px solid #1a1a1a;
-}
-
-.chat-message {
-    margin-bottom: 6px;
-    line-height: 1.4;
-}
-
-.message-time {
-    color: #666666;
-    font-size: 10px;
-    margin-right: 6px;
-}
-
-.message-player {
-    font-weight: 500;
-    margin-right: 4px;
-}
-
-.message-content {
-    color: #ececec;
-}
-
-.chat-message.system .message-content {
-    color: #FFB347;
-    font-style: italic;
-}
-
-.chat-message.error .message-content {
-    color: #FF6B6B;
-}
-
-.chat-message.event .message-content {
-    color: #52C77E;
-}
-
-.chat-input {
-    padding: 12px 20px;
-    display: flex;
-    gap: 8px;
-}
-
-.chat-input input {
-    flex: 1;
-    background: #111111;
-    border: 1px solid #2a2a2a;
-    border-radius: 4px;
-    padding: 6px 8px;
-    color: #ececec;
-    font-size: 11px;
-    font-family: inherit;
-}
-
-.chat-input input:focus {
+.multiplier-control-compact input[type="range"] {
+    width: 100%;
+    height: 3px;
+    background: #444;
+    border-radius: 2px;
     outline: none;
-    border-color: #52C77E;
-}
-
-.chat-input button {
-    background: #52C77E;
-    border: none;
-    border-radius: 4px;
-    padding: 6px 12px;
-    color: white;
-    font-size: 11px;
     cursor: pointer;
-    transition: background-color 0.15s ease;
+    -webkit-appearance: none;
+    appearance: none;
 }
 
-.chat-input button:hover {
+.multiplier-control-compact input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 12px;
+    height: 12px;
+    background: #52C77E;
+    border-radius: 50%;
+    cursor: pointer;
+    border: none;
+}
+
+.multiplier-control-compact input[type="range"]::-moz-range-thumb {
+    width: 12px;
+    height: 12px;
+    background: #52C77E;
+    border-radius: 50%;
+    border: none;
+    cursor: pointer;
+}
+
+.multiplier-value-compact {
+    color: #52C77E;
+    font-family: 'Courier New', monospace;
+    font-size: 10px;
+    font-weight: 600;
+    text-align: right;
+    min-width: 35px;
+}
+
+.multiplier-actions-compact {
+    margin-top: 12px;
+    display: flex;
+    gap: 6px;
+    padding-top: 8px;
+    border-top: 1px solid #333;
+}
+
+.multiplier-btn {
+    flex: 1;
+    padding: 4px 8px;
+    border: none;
+    border-radius: 3px;
+    font-size: 9px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.multiplier-btn.primary {
+    background: #52C77E;
+    color: white;
+}
+
+.multiplier-btn.primary:hover {
     background: #42B96E;
 }
 
-/* Leaderboard Styles */
-.leaderboard-entry {
-    display: flex;
-    align-items: center;
-    padding: 8px 20px;
-    font-size: 11px;
-    border-bottom: 1px solid #1a1a1a;
+.multiplier-btn.secondary {
+    background: #333;
+    color: #999;
 }
 
-.leaderboard-entry:last-child {
-    border-bottom: none;
+.multiplier-btn.secondary:hover {
+    background: #444;
+    color: #ccc;
 }
 
-.leaderboard-entry.self {
-    background: rgba(82, 199, 126, 0.1);
-}
-
-.rank {
-    width: 20px;
-    color: #888888;
-    font-weight: 500;
-}
-
-.player-name {
-    flex: 1;
-    margin-left: 8px;
-    font-weight: 400;
-}
-
-.player-wealth {
-    color: #52C77E;
-    font-weight: 500;
-    font-family: 'Courier New', monospace;
-}
