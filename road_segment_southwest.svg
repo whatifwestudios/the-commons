@@ -1,0 +1,20 @@
+<svg width="150" height="75" viewBox="0 0 150 75" xmlns="http://www.w3.org/2000/svg">
+  <!-- Large road segment for Southwest direction -->
+  
+  <!-- Main road surface -->
+  <polygon points="125,37.5 75,12.5 25,37.5 75,62.5" fill="#4A4A4A" stroke="#3A3A3A" stroke-width="0.5"/>
+  
+  <!-- Sidewalks -->
+  <polygon points="115,37.5 75,17.5 35,37.5 75,57.5" fill="#6A6A6A"/>
+  
+  <!-- Center divider line -->
+  <line x1="110" y1="37.5" x2="40" y2="37.5" stroke="#FFD700" stroke-width="1.5" stroke-dasharray="8,4"/>
+  
+  <!-- Lane markers -->
+  <line x1="110" y1="32" x2="40" y2="32" stroke="rgba(255,255,255,0.8)" stroke-width="1"/>
+  <line x1="110" y1="43" x2="40" y2="43" stroke="rgba(255,255,255,0.8)" stroke-width="1"/>
+  
+  <!-- Bike lane markers -->
+  <line x1="113" y1="35" x2="37" y2="35" stroke="rgba(255,255,255,0.6)" stroke-width="0.8" stroke-dasharray="4,2"/>
+  <line x1="113" y1="40" x2="37" y2="40" stroke="rgba(255,255,255,0.6)" stroke-width="0.8" stroke-dasharray="4,2"/>
+</svg>

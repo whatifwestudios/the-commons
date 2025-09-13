@@ -752,65 +752,34 @@
                 </div>
             </div>
             
-            <div class="sidebar-section collapsible">
-                <div class="section-header" data-target="economic-balance">
-                    <span>ECONOMIC BALANCE</span>
-                    <span class="collapse-icon">▼</span>
+            <!-- Action Manager Section -->
+            <div class="sidebar-section action-manager">
+                <div class="section-header">
+                    <span>ACTION MANAGER</span>
                 </div>
-                <div id="economic-balance" class="section-content">
-                    <div class="vitality-group">
-                        <div class="vitality-group-title">SUPPLY EFFECTS</div>
-                        <div class="multiplier-control-compact">
-                            <label>Energy</label>
-                            <input type="range" id="sidebar-energy-multiplier" min="0" max="2" step="0.1" value="1.0">
-                            <span class="multiplier-value-compact">1.0x</span>
+                <div class="action-manager-content">
+                    <div class="action-stats">
+                        <div class="action-stat-row">
+                            <span class="action-label">Your Actions:</span>
+                            <span class="action-value" id="current-actions">10/10</span>
                         </div>
-                        <div class="multiplier-control-compact">
-                            <label>Food</label>
-                            <input type="range" id="sidebar-food-multiplier" min="0" max="2" step="0.1" value="1.0">
-                            <span class="multiplier-value-compact">1.0x</span>
+                        <div class="action-stat-row">
+                            <span class="action-label">Month Ends:</span>
+                            <span class="action-value countdown" id="month-countdown">--:--</span>
                         </div>
-                        <div class="multiplier-control-compact">
-                            <label>Housing</label>
-                            <input type="range" id="sidebar-housing-multiplier" min="0" max="2" step="0.1" value="1.0">
-                            <span class="multiplier-value-compact">1.0x</span>
+                        <div class="action-stat-row">
+                            <span class="action-label">Market:</span>
+                            <span class="action-value" id="market-listings">0 listings</span>
                         </div>
-                        <div class="multiplier-control-compact">
-                            <label>Jobs</label>
-                            <input type="range" id="sidebar-jobs-multiplier" min="0" max="2" step="0.1" value="1.0">
-                            <span class="multiplier-value-compact">1.0x</span>
+                        <div class="action-stat-row">
+                            <span class="action-label">Avg Price:</span>
+                            <span class="action-value" id="action-avg-price">--</span>
                         </div>
                     </div>
-                    
-                    <div class="vitality-group">
-                        <div class="vitality-group-title">POPULATION</div>
-                        <div class="multiplier-control-compact">
-                            <label>Growth Rate</label>
-                            <input type="range" id="sidebar-population-growth-rate" min="0" max="0.1" step="0.005" value="0.02">
-                            <span class="multiplier-value-compact">2.0%</span>
-                        </div>
-                    </div>
-                    
-                    <div class="vitality-group">
-                        <div class="vitality-group-title">ECONOMY</div>
-                        <div class="multiplier-control-compact">
-                            <label>Revenue</label>
-                            <input type="range" id="sidebar-base-revenue-multiplier" min="0.5" max="3.0" step="0.1" value="1.0">
-                            <span class="multiplier-value-compact">1.0x</span>
-                        </div>
-                        <div class="multiplier-control-compact">
-                            <label>Maintenance</label>
-                            <input type="range" id="sidebar-maintenance-multiplier" min="0.5" max="2.0" step="0.1" value="1.0">
-                            <span class="multiplier-value-compact">1.0x</span>
-                        </div>
-                    </div>
-                    
-                    <div class="multiplier-actions-compact">
-                        <button id="sidebar-reset-multipliers" class="multiplier-btn secondary">Reset</button>
-                        <button id="sidebar-apply-multipliers" class="multiplier-btn primary">Apply</button>
-                    </div>
+                    <button class="action-btn" id="open-action-marketplace">OPEN MARKETPLACE</button>
                 </div>
             </div>
+            
             
             <div id="building-info-panel" class="building-info-panel">
                 <div class="building-info-header">
@@ -1308,6 +1277,72 @@
                 </div>
                 
                 <button class="setup-start-btn" id="start-game-btn">Start Game</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Action Marketplace Modal -->
+    <div id="action-marketplace-modal" class="modal" style="display: none;">
+        <div class="modal-content action-marketplace">
+            <div class="modal-header">
+                <h2>Action Marketplace</h2>
+                <button class="modal-close" onclick="window.game.closeActionMarketplace()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="marketplace-tabs">
+                    <button class="tab-btn active" data-tab="your-actions">Your Actions</button>
+                    <button class="tab-btn" data-tab="marketplace">Marketplace</button>
+                    <button class="tab-btn" data-tab="history">History</button>
+                </div>
+                
+                <div class="tab-content active" id="your-actions">
+                    <div class="action-balance">
+                        <h3>Current Balance</h3>
+                        <div class="balance-display">
+                            <span class="balance-number" id="modal-action-balance">10</span>
+                            <span class="balance-label">actions available</span>
+                        </div>
+                        <div class="balance-info">
+                            <p>Used this month: <span id="modal-actions-used">0</span></p>
+                            <p>Next refresh: <span id="modal-next-refresh">--</span></p>
+                            <p style="color: #42B96E; font-size: 12px; margin-top: 10px;">
+                                <strong>✓ Purchased actions never expire and rollover monthly</strong>
+                            </p>
+                        </div>
+                    </div>
+                    <div class="sell-actions">
+                        <h3>Sell Actions</h3>
+                        <div class="sell-form">
+                            <input type="number" id="sell-quantity" min="1" max="10" value="1" placeholder="Quantity">
+                            <input type="number" id="sell-reserve" min="1000" placeholder="Reserve price per action">
+                            <input type="number" id="sell-buynow" min="1000" placeholder="Buy now price (optional)">
+                            <button class="btn-primary" onclick="window.game.listActionsForSale()">List for Sale</button>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="tab-content" id="marketplace" style="display: none;">
+                    <div class="marketplace-header">
+                        <h3>Active Listings</h3>
+                        <div class="market-stats">
+                            <span>Avg Price: <span id="modal-avg-price">--</span></span>
+                            <span>Active Listings: <span id="modal-active-listings">0</span></span>
+                        </div>
+                    </div>
+                    <div style="background: #141414; padding: 10px; border-radius: 4px; margin-bottom: 15px; font-size: 12px; color: #888;">
+                        <strong style="color: #42B96E;">Note:</strong> Purchased actions are permanent assets that rollover each month. Buy now to build your action reserve!
+                    </div>
+                    <div class="listings-container" id="action-listings">
+                        <!-- Listings will be populated here -->
+                    </div>
+                </div>
+                
+                <div class="tab-content" id="history" style="display: none;">
+                    <h3>Transaction History</h3>
+                    <div class="history-container" id="transaction-history">
+                        <!-- History will be populated here -->
+                    </div>
+                </div>
             </div>
         </div>
     </div>

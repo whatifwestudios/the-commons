@@ -1,0 +1,21 @@
+<svg width="150" height="75" viewBox="0 0 150 75" xmlns="http://www.w3.org/2000/svg">
+  <!-- Large road segment filling negative space between shrunken parcels -->
+  <!-- 3x length, full width, extending into intersections -->
+  
+  <!-- Main road surface - elongated diamond filling the gap -->
+  <polygon points="25,37.5 75,12.5 125,37.5 75,62.5" fill="#4A4A4A" stroke="#3A3A3A" stroke-width="0.5"/>
+  
+  <!-- Sidewalks (lighter gray edges) -->
+  <polygon points="25,37.5 35,32.5 115,32.5 125,37.5 115,42.5 35,42.5" fill="#6A6A6A"/>
+  
+  <!-- Center yellow divider line -->
+  <line x1="40" y1="37.5" x2="110" y2="37.5" stroke="#FFD700" stroke-width="1.5" stroke-dasharray="8,4"/>
+  
+  <!-- White lane markers -->
+  <line x1="40" y1="32" x2="110" y2="32" stroke="rgba(255,255,255,0.8)" stroke-width="1"/>
+  <line x1="40" y1="43" x2="110" y2="43" stroke="rgba(255,255,255,0.8)" stroke-width="1"/>
+  
+  <!-- Bike lane markers (dashed white) -->
+  <line x1="37" y1="35" x2="113" y2="35" stroke="rgba(255,255,255,0.6)" stroke-width="0.8" stroke-dasharray="4,2"/>
+  <line x1="37" y1="40" x2="113" y2="40" stroke="rgba(255,255,255,0.6)" stroke-width="0.8" stroke-dasharray="4,2"/>
+</svg>
