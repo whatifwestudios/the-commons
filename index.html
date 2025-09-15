@@ -1573,6 +1573,97 @@
             </div>
         </div>
     </div>
+
+    <!-- Route Configuration Modal -->
+    <div id="route-config-modal" class="modal" style="display: none;">
+        <div class="modal-content route-config">
+            <div class="modal-header">
+                <h2>🚌 Configure Transit Route</h2>
+                <button class="modal-close" id="close-route-modal">&times;</button>
+            </div>
+            <div class="modal-body">
+                <!-- Route Basic Info -->
+                <div class="route-info-section">
+                    <h3>Route Information</h3>
+                    <div class="form-group">
+                        <label for="route-name">Route Name:</label>
+                        <input type="text" id="route-name" class="form-control" placeholder="Bus Route 1">
+                    </div>
+                    <div class="route-stats">
+                        <div class="stat-item">
+                            <span class="stat-label">Stops:</span>
+                            <span class="stat-value" id="route-stops-count">2</span>
+                        </div>
+                        <div class="stat-item">
+                            <span class="stat-label">Route Type:</span>
+                            <span class="stat-value" id="route-type">Bus</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Pricing Section -->
+                <div class="pricing-section">
+                    <h3>Pricing & Revenue</h3>
+                    <div class="form-group">
+                        <label for="ticket-price">Ticket Price ($):</label>
+                        <input type="number" id="ticket-price" class="form-control" step="0.25" min="0.50" max="10.00" value="2.50">
+                        <button id="optimal-pricing" class="btn-secondary">Suggest Optimal Price</button>
+                    </div>
+                    
+                    <!-- Revenue Projections -->
+                    <div class="revenue-projections">
+                        <div class="projection-item">
+                            <span class="proj-label">Daily Ridership:</span>
+                            <span class="proj-value" id="daily-ridership">150</span>
+                        </div>
+                        <div class="projection-item">
+                            <span class="proj-label">Daily Revenue:</span>
+                            <span class="proj-value" id="daily-revenue">$375</span>
+                        </div>
+                        <div class="projection-item">
+                            <span class="proj-label">Daily Costs:</span>
+                            <span class="proj-value" id="daily-costs">$25</span>
+                        </div>
+                        <div class="projection-item profit">
+                            <span class="proj-label">Daily Profit:</span>
+                            <span class="proj-value" id="daily-profit">$350</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Service Level -->
+                <div class="service-section">
+                    <h3>Service Level</h3>
+                    <div class="service-options">
+                        <label class="radio-option">
+                            <input type="radio" name="service-level" value="rush_hour">
+                            <span class="radio-label">Rush Hour Only</span>
+                            <span class="radio-desc">6AM-9AM, 5PM-7PM (Lower cost, reduced capacity)</span>
+                        </label>
+                        <label class="radio-option">
+                            <input type="radio" name="service-level" value="daytime" checked>
+                            <span class="radio-label">Daytime Service</span>
+                            <span class="radio-desc">6AM-10PM (Balanced cost and capacity)</span>
+                        </label>
+                        <label class="radio-option">
+                            <input type="radio" name="service-level" value="full_time">
+                            <span class="radio-label">24/7 Service</span>
+                            <span class="radio-desc">Round-the-clock (Higher cost, maximum capacity)</span>
+                        </label>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <div class="footer-summary">
+                    <span class="summary-text">Expected monthly profit: <strong id="monthly-profit">$10,500</strong></span>
+                </div>
+                <div class="footer-buttons">
+                    <button id="cancel-route" class="btn-secondary">Cancel</button>
+                    <button id="create-route" class="btn-primary">Create Route</button>
+                </div>
+            </div>
+        </div>
+    </div>
     
     <script src="config.js"></script>
     <script src="buildings.js"></script>

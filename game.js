@@ -1055,6 +1055,11 @@ class IsometricGrid {
         const roadMaintenance = this.calculateRoadMaintenance();
         dailyMaintenance += roadMaintenance;
         
+        // Update transit system (revenue, costs, maintenance, decay)
+        if (this.mobilityLayer && this.mobilityLayer.updateTransitSystem) {
+            this.mobilityLayer.updateTransitSystem();
+        }
+        
         // Build UI breakdown from cache
         this.buildCashflowBreakdown();
         
@@ -1429,6 +1434,20 @@ class IsometricGrid {
         this.economicCache.buildingStats.forEach(stats => {
             this.cashflowBreakdown.push({ ...stats }); // Clone stats for UI
         });
+        
+        // Add transit system financials if available
+        if (this.transitFinancials && (this.transitFinancials.dailyRevenue > 0 || this.transitFinancials.dailyCosts > 0)) {
+            this.cashflowBreakdown.push({
+                building: 'Transit System',
+                category: 'Transportation',
+                count: this.transitFinancials.activeRoutes,
+                revenue: this.transitFinancials.dailyRevenue,
+                maintenance: this.transitFinancials.dailyCosts,
+                lvt: 0,
+                net: this.transitFinancials.dailyProfit,
+                details: `${this.transitFinancials.activeRoutes} routes, ${this.transitFinancials.totalStops} stops`
+            });
+        }
     }
     
     // Mark building for economic recalculation
@@ -3087,10 +3106,24 @@ class IsometricGrid {
         // Update UI with current data
         this.updateGovernanceUI();
         document.getElementById('governance-modal').classList.add('visible');
+        
+        // Hide any lingering tooltips
+        const tooltip = document.getElementById('custom-tooltip');
+        if (tooltip) {
+            tooltip.classList.remove('visible');
+            tooltip.style.display = 'none';
+        }
     }
     
     hideGovernanceModal() {
         document.getElementById('governance-modal').classList.remove('visible');
+        
+        // Hide any lingering tooltips
+        const tooltip = document.getElementById('custom-tooltip');
+        if (tooltip) {
+            tooltip.classList.remove('visible');
+            tooltip.style.display = 'none';
+        }
     }
     
     updateGovernanceUI() {
@@ -4946,6 +4979,18 @@ class IsometricGrid {
         const efficiencyData = this.buildingEfficiencies?.get(key);
         
         if (!efficiencyData || !efficiencyData.needs) {
+            // Check if this building should have efficiency tracking
+            const parcel = this.grid[row]?.[col];
+            if (parcel?.building) {
+                const building = this.buildingManager.getBuildingById(parcel.building);
+                if (building?.population?.populationRequired > 0) {
+                    // Building requires workers but has no efficiency data - should be 0%
+                    return {
+                        efficiency: 0,
+                        topNeeds: [{ resource: 'workers', satisfaction: 0, deficit: building.population.populationRequired }]
+                    };
+                }
+            }
             return {
                 efficiency: 100,
                 topNeeds: []
@@ -9249,7 +9294,7 @@ class IsometricGrid {
             
             // Handle mobility layer clicks first (including UI areas)
             if (this.currentLayer === 'mobility') {
-                const handled = this.mobilityLayer.handleClick(worldCoords.x, worldCoords.y, screenX, screenY);
+                const handled = this.mobilityLayer.handleClickEnhanced(worldCoords.x, worldCoords.y, screenX, screenY);
                 if (handled) {
                     this.scheduleRender(); // Update the display
                 }
@@ -9906,27 +9951,28 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // Setup metric tooltips for mobility and other elements
+    const metricTooltip = document.getElementById('custom-tooltip');
     document.querySelectorAll('.metric-tooltip').forEach(element => {
         element.addEventListener('mouseenter', (e) => {
             const tooltipText = element.getAttribute('data-tooltip');
             if (tooltipText) {
-                tooltip.textContent = tooltipText;
+                metricTooltip.textContent = tooltipText;
                 
                 // Position tooltip relative to the hovered element
                 const rect = element.getBoundingClientRect();
-                const tooltipHeight = tooltip.offsetHeight || 100;
+                const tooltipHeight = metricTooltip.offsetHeight || 100;
                 
                 // Position to the left of the sidebar, aligned with the element
-                tooltip.style.left = `${rect.left - 300}px`;
-                tooltip.style.top = `${rect.top + (rect.height / 2) - (tooltipHeight / 2)}px`;
-                tooltip.style.transform = 'none';
+                metricTooltip.style.left = `${rect.left - 300}px`;
+                metricTooltip.style.top = `${rect.top + (rect.height / 2) - (tooltipHeight / 2)}px`;
+                metricTooltip.style.transform = 'none';
                 
-                tooltip.classList.add('visible');
+                metricTooltip.classList.add('visible');
             }
         });
         
         element.addEventListener('mouseleave', () => {
-            tooltip.classList.remove('visible');
+            metricTooltip.classList.remove('visible');
         });
     });
     }
@@ -10965,6 +11011,46 @@ document.addEventListener('DOMContentLoaded', () => {
         // Apply changes button
         document.getElementById('apply-governance').addEventListener('click', () => {
             game.applyGovernanceChanges();
+        });
+        
+        // Setup tooltips for budget categories
+        const governanceTooltip = document.getElementById('custom-tooltip');
+        
+        // Ensure tooltip is hidden initially
+        if (governanceTooltip) {
+            governanceTooltip.classList.remove('visible');
+            governanceTooltip.style.display = 'none';
+        }
+        
+        document.querySelectorAll('.budget-category[data-tooltip]').forEach(element => {
+            element.addEventListener('mouseenter', (e) => {
+                const tooltipText = element.getAttribute('data-tooltip');
+                if (tooltipText && governanceTooltip) {
+                    governanceTooltip.textContent = tooltipText;
+                    governanceTooltip.style.display = 'block';
+                    
+                    // Position tooltip near the element
+                    const rect = element.getBoundingClientRect();
+                    governanceTooltip.style.left = `${rect.left + rect.width / 2}px`;
+                    governanceTooltip.style.top = `${rect.top - 40}px`;
+                    governanceTooltip.style.transform = 'translateX(-50%)';
+                    
+                    // Use timeout to ensure display:block takes effect before adding visible class
+                    setTimeout(() => {
+                        governanceTooltip.classList.add('visible');
+                    }, 10);
+                }
+            });
+            
+            element.addEventListener('mouseleave', () => {
+                if (governanceTooltip) {
+                    governanceTooltip.classList.remove('visible');
+                    // Hide after transition completes
+                    setTimeout(() => {
+                        governanceTooltip.style.display = 'none';
+                    }, 150);
+                }
+            });
         });
     }
     
