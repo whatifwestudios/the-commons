@@ -1427,6 +1427,10 @@ class IsometricGrid {
                     }
                 }
                 
+                // Calculate maintenance (already daily, increases with decay) - MOVED UP for debug logging
+                const baseMaintenance = building.economics.maintenanceCost || 0;
+                const maintenanceMultiplier = 1 + (parcel.decay * 2); // Doubles at full decay
+                
                 // NEW: Apply transport multiplier and livability to revenue
                 buildingRevenue = maxRevenue * decayMultiplier * satisfactionMultiplier * efficiencyPenalty * growthModifier * supplyDemandMultiplier * transportMultiplier * livabilityMultipliers.revenue * this.economicMultipliers.baseRevenue;
                 
@@ -1439,10 +1443,6 @@ class IsometricGrid {
                     console.log(`  Final: Revenue=$${buildingRevenue.toFixed(2)}, Maintenance=$${(baseMaintenance * maintenanceMultiplier * this.economicMultipliers.maintenance).toFixed(2)}, LVT=$${(parcel.landValue.paidPrice * dailyLVTRate).toFixed(2)}`);
                     console.log(`  Net: $${netCashflow.toFixed(2)}`);
                 }
-                
-                // Calculate maintenance (already daily, increases with decay)
-                const baseMaintenance = building.economics.maintenanceCost || 0;
-                const maintenanceMultiplier = 1 + (parcel.decay * 2); // Doubles at full decay
                 buildingMaintenance = baseMaintenance * maintenanceMultiplier * this.economicMultipliers.maintenance;
             }
         }
