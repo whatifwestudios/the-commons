@@ -1280,6 +1280,16 @@ class IsometricGrid {
                 // NEW: Apply transport multiplier and livability to revenue
                 buildingRevenue = maxRevenue * decayMultiplier * satisfactionMultiplier * efficiencyPenalty * growthModifier * supplyDemandMultiplier * transportMultiplier * livabilityMultipliers.revenue * this.economicMultipliers.baseRevenue;
                 
+                // Debug logging for negative cashflow buildings
+                const netCashflow = buildingRevenue - (baseMaintenance * maintenanceMultiplier * this.economicMultipliers.maintenance) - (parcel.landValue.paidPrice * dailyLVTRate);
+                if (netCashflow < 0 && (buildingName === 'Solar Farm' || buildingName === 'Cornerstore')) {
+                    console.log(`🚨 ${buildingName} at (${row},${col}) running negative:`);
+                    console.log(`  Base: Revenue=$${maxRevenue}, Maintenance=$${baseMaintenance}, LandValue=$${parcel.landValue.paidPrice}`);
+                    console.log(`  Multipliers: decay=${decayMultiplier.toFixed(2)}, satisfaction=${satisfactionMultiplier.toFixed(2)}, transport=${transportMultiplier.toFixed(2)}, livability=${livabilityMultipliers.revenue.toFixed(2)}, supply/demand=${supplyDemandMultiplier.toFixed(2)}`);
+                    console.log(`  Final: Revenue=$${buildingRevenue.toFixed(2)}, Maintenance=$${(baseMaintenance * maintenanceMultiplier * this.economicMultipliers.maintenance).toFixed(2)}, LVT=$${(parcel.landValue.paidPrice * dailyLVTRate).toFixed(2)}`);
+                    console.log(`  Net: $${netCashflow.toFixed(2)}`);
+                }
+                
                 // Calculate maintenance (already daily, increases with decay)
                 const baseMaintenance = building.economics.maintenanceCost || 0;
                 const maintenanceMultiplier = 1 + (parcel.decay * 2); // Doubles at full decay
