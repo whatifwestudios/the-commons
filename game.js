@@ -8,6 +8,9 @@ class IsometricGrid {
         this.tooltip = document.getElementById('tooltip');
         this.contextMenu = document.getElementById('context-menu');
         
+        // Mobility tooltip timer
+        this.mobilityTooltipTimer = null;
+        
         // Performance optimizations
         this.isRenderScheduled = false;
         this.lastRenderTime = 0;
@@ -36,6 +39,57 @@ class IsometricGrid {
             dirty: new Set() // Only recalculate changed buildings
         };
         
+        // Standardized building category mapping
+        this.buildingCategories = {
+            // Normalize case and naming differences between CSV and code
+            normalize: (category) => {
+                const mapping = {
+                    'Utilities': 'utilities',
+                    'utilities': 'utilities',
+                    'infrastructure': 'utilities',
+                    'Housing': 'housing', 
+                    'housing': 'housing',
+                    'residential': 'housing',
+                    'Commercial': 'commercial',
+                    'commercial': 'commercial',
+                    'Education': 'education',
+                    'education': 'education',
+                    'Civic': 'culture',
+                    'culture': 'culture',
+                    'Recreation': 'recreation',
+                    'recreation': 'recreation',
+                    'Healthcare': 'healthcare',
+                    'healthcare': 'healthcare',
+                    'office': 'commercial', // Treat office as commercial
+                    'industrial': 'commercial', // Treat industrial as commercial  
+                    'mixed': 'commercial' // Treat mixed as commercial
+                };
+                return mapping[category] || category.toLowerCase();
+            },
+            
+            // Check if a building is an energy producer
+            isEnergyProducer: (building) => {
+                return building.resources?.energyDemand < 0;
+            },
+            
+            // Check if a building needs transport accessibility for revenue
+            needsTransportAccess: (building) => {
+                const normalizedCategory = this.buildingCategories.normalize(building.category);
+                return (normalizedCategory === 'commercial' || normalizedCategory === 'education') 
+                       && !this.buildingCategories.isEnergyProducer(building);
+            },
+            
+            // Check if a building needs road connectivity (different from population access)
+            needsRoadConnectivity: (building) => {
+                // Energy producers need roads for power distribution
+                // Commercial/education buildings need roads for customer/worker access
+                const normalizedCategory = this.buildingCategories.normalize(building.category);
+                return this.buildingCategories.isEnergyProducer(building) || 
+                       normalizedCategory === 'commercial' || 
+                       normalizedCategory === 'education';
+            }
+        };
+        
         // Vitality calculation caching
         this.vitalityCache = {
             supply: {},
@@ -45,6 +99,12 @@ class IsometricGrid {
             dirty: true, // Track if recalculation needed
             dirtyBuildings: new Set() // Track which buildings changed
         };
+        
+        // Building efficiency tracking for JEFH analysis
+        this.buildingEfficiencies = new Map();
+        
+        // JEFH warning indicators (static, no animation)
+        // Performance: removed animation for better frame rates
         
         // Prerequisite checking cache
         this.prereqCache = {
@@ -91,7 +151,6 @@ class IsometricGrid {
         this.dayLength = 3600000 / 365; // milliseconds per game day
         this.dayDuration = this.dayLength; // Alias for construction calculations
         this.currentDay = 0;
-        this.startGameTime();
 
         // Building manager handles all building data
         this.buildingManager = window.buildingManager;
@@ -118,13 +177,7 @@ class IsometricGrid {
                     type: 'grass', 
                     elevation: 0,
                     
-                    // Road infrastructure data for each edge
-                    roads: {
-                        northeast: null, // null or { type: 'local/arterial/highway', sidewalks: bool, bikeLanes: bool }
-                        northwest: null,
-                        southeast: null,
-                        southwest: null
-                    },
+                    // Transportation data - will be redesigned
                     owner: null, // null = unowned, 'player' = owned by player, 'competitor1', etc.
                     building: null,
                     buildingAge: 0, // Days since building was constructed
@@ -144,25 +197,19 @@ class IsometricGrid {
         
         // Clean slate - all parcels start unowned
         
+        // Edge parcels system - buildable spaces on grid lines
+        this.initializeEdgeParcels();
+        
         // Parcel selection and visualization
         this.hoveredTile = null; // {row, col} of currently hovered tile
         this.selectedParcel = null; // Currently selected parcel for reach display
         this.parcelReach = null; // Cached reach calculation for selected parcel
         
-        // Street edge interaction system
-        this.selectedStreetEdges = new Set(); // Set of selected street edges for mass editing
-        this.hoveredStreetEdge = null; // Currently hovered street edge in transportation mode
-        this.streetEdgeContextMenu = null; // Draggable context menu for road design
-        this.isDraggingMenu = false; // Track if context menu is being dragged
+        // Transportation System - Clean slate
+        this.transportationSystem = new TransportationSystem(this);
         
-        // Public transport system
-        this.transitStops = new Map(); // Map of stop IDs to stop data
-        this.transitRoutes = new Map(); // Map of route IDs to route data
-        this.selectedTransitStop = null; // Currently selected transit stop
-        this.transitContextMenu = null; // Context menu for transit management
-        
-        // Menu positioning
-        this.roadDesignMenuPosition = null; // Persistent position for road design menu
+        // Mobility Layer - New visualization system
+        this.mobilityLayer = new MobilityLayer(this);
         
         // Parcel selector fade system
         this.hoverStartTime = null; // When current hover began
@@ -189,19 +236,13 @@ class IsometricGrid {
         this.submenuTimer = null; // Timer for submenu hide delay
         
         // Map layer system
-        this.currentLayer = 'normal'; // 'normal', 'landvalue', 'cashflow', 'transportation'
+        this.currentLayer = 'normal'; // 'normal', 'landvalue', 'cashflow'
         
         // Auction system
         this.activeAuction = null;
         this.auctionHistory = [];
         this.auctionInterval = null;
         
-        // Transportation network system
-        this.transportationNetwork = {
-            roads: [], // Array of road segments
-            subways: [], // Array of subway segments
-            busRoutes: [] // Array of bus routes
-        };
         
         // Competitor names
         this.competitorNames = {
@@ -245,7 +286,6 @@ class IsometricGrid {
         });
         
         // Transportation building state
-        this.transportationMode = 'road'; // 'road', 'subway', 'bus'
         this.selectedRoadType = 'local_street';
         this.isBuilding = false;
         this.buildStart = null;
@@ -276,8 +316,8 @@ class IsometricGrid {
         
         // Action Manager System
         this.actionManager = {
-            monthlyAllowance: 10,  // Actions given per month
-            currentActions: 10,    // Player's current action balance
+            monthlyAllowance: this.calculateMonthlyActionAllowance(), // Dynamic based on month
+            currentActions: this.calculateMonthlyActionAllowance(),   // Player's current action balance
             usedThisMonth: 0,      // Track monthly usage
             
             // Action marketplace
@@ -317,7 +357,6 @@ class IsometricGrid {
         this.updateActionDisplay(); // Initialize action display
         this.updateMonthCountdown(); // Initialize countdown
         // Transportation network starts empty - players build from scratch
-        this.scheduleRender();
         
         // Update countdown every second
         setInterval(() => {
@@ -326,6 +365,11 @@ class IsometricGrid {
         
         // Setup marketplace button
         this.setupActionMarketplace();
+    }
+
+    startGame() {
+        this.startGameTime();
+        this.scheduleRender();
     }
     
     // Action Marketplace Functions
@@ -393,7 +437,7 @@ class IsometricGrid {
         // Update action balance display
         document.getElementById('modal-action-balance').textContent = this.actionManager.currentActions;
         document.getElementById('modal-actions-used').textContent = this.actionManager.usedThisMonth;
-        document.getElementById('modal-next-refresh').textContent = document.getElementById('month-countdown').textContent;
+        document.getElementById('modal-next-refresh').textContent = document.getElementById('month-progress-text')?.textContent || '--:--';
         
         // Update market stats
         const activeListings = this.actionManager.marketplace.listings.filter(l => l.status === 'active').length;
@@ -447,7 +491,7 @@ class IsometricGrid {
         document.getElementById('sell-reserve').value = '';
         document.getElementById('sell-buynow').value = '';
         
-        this.showNotification(`Listed ${quantity} actions for sale!`, 'success');
+        // Visual confirmation via UI update - notification removed to reduce clutter
         this.updateMarketplaceModal();
         this.switchMarketplaceTab('marketplace');
     }
@@ -496,337 +540,13 @@ class IsometricGrid {
     
     
     // Street edge interaction methods
-    getStreetEdgeFromClick(worldX, worldY) {
-        // Convert world coordinates to grid and determine which edge was clicked
-        const tile = this.fromIsometric(worldX, worldY);
-        if (!tile || tile.row < 0 || tile.row >= this.gridSize || tile.col < 0 || tile.col >= this.gridSize) {
-            return null;
-        }
-        
-        const iso = this.toIsometric(tile.col, tile.row);
-        const dx = worldX - iso.x;
-        const dy = worldY - iso.y;
-        
-        // Expanded clickable areas - double the detection zone
-        const clickThreshold = this.tileWidth * 0.4; // 40% of tile width for better clicking
-        
-        // Determine which quadrant/edge was clicked with expanded zones
-        if (Math.abs(dx) < clickThreshold && Math.abs(dy) < clickThreshold) {
-            // Near center - determine closest edge based on relative position
-            if (Math.abs(dx) > Math.abs(dy)) {
-                // Closer to left/right edges
-                if (dx > 0) {
-                    return dy < 0 ? 
-                        { row: tile.row, col: tile.col, edge: 'northeast' } :
-                        { row: tile.row, col: tile.col, edge: 'southeast' };
-                } else {
-                    return dy < 0 ? 
-                        { row: tile.row, col: tile.col, edge: 'northwest' } :
-                        { row: tile.row, col: tile.col, edge: 'southwest' };
-                }
-            } else {
-                // Closer to top/bottom edges
-                if (dy < 0) {
-                    return dx > 0 ? 
-                        { row: tile.row, col: tile.col, edge: 'northeast' } :
-                        { row: tile.row, col: tile.col, edge: 'northwest' };
-                } else {
-                    return dx > 0 ? 
-                        { row: tile.row, col: tile.col, edge: 'southeast' } :
-                        { row: tile.row, col: tile.col, edge: 'southwest' };
-                }
-            }
-        } else {
-            // Outside center zone - use quadrant-based detection
-            if (dy < 0) { // Top half
-                if (dx > 0) {
-                    return { row: tile.row, col: tile.col, edge: 'northeast' };
-                } else {
-                    return { row: tile.row, col: tile.col, edge: 'northwest' };
-                }
-            } else { // Bottom half
-                if (dx > 0) {
-                    return { row: tile.row, col: tile.col, edge: 'southeast' };
-                } else {
-                    return { row: tile.row, col: tile.col, edge: 'southwest' };
-                }
-            }
-        }
-    }
+    // Street edge methods moved to TransportationSystem
     
-    drawSelectedStreetEdges() {
-        if (this.selectedStreetEdges.size === 0) return;
-        
-        this.ctx.save();
-        this.ctx.strokeStyle = 'rgba(0, 255, 255, 0.8)'; // Cyan for selected edges
-        this.ctx.lineWidth = 3;
-        this.ctx.setLineDash([5, 3]);
-        
-        this.selectedStreetEdges.forEach(edgeKey => {
-            const [row, col, edge] = edgeKey.split('-');
-            this.drawStreetEdgeHighlight(parseInt(row), parseInt(col), edge);
-        });
-        
-        this.ctx.restore();
-    }
+    // Drawing methods moved to TransportationSystem
     
-    drawHoveredStreetEdge() {
-        if (!this.hoveredStreetEdge) return;
-        
-        const [row, col, edge] = this.hoveredStreetEdge.split('-');
-        
-        this.ctx.save();
-        this.ctx.strokeStyle = 'rgba(255, 255, 0, 0.7)'; // Yellow for hover
-        this.ctx.lineWidth = 4;
-        this.ctx.setLineDash([]); // Solid line for hover
-        
-        this.drawStreetEdgeHighlight(parseInt(row), parseInt(col), edge);
-        
-        this.ctx.restore();
-    }
+    // Road drawing methods moved to TransportationSystem
     
-    drawStreetEdgeHighlight(row, col, edge) {
-        const iso = this.toIsometric(col, row);
-        const tile = this.grid[row][col];
-        const elevation = tile ? tile.elevation * 8 : 0;
-        
-        this.ctx.beginPath();
-        
-        // Draw the specific edge based on which one was selected
-        switch (edge) {
-            case 'northeast':
-                this.ctx.moveTo(iso.x, iso.y - elevation - this.tileHeight / 2);
-                this.ctx.lineTo(iso.x + this.tileWidth / 2, iso.y - elevation);
-                break;
-            case 'southeast':
-                this.ctx.moveTo(iso.x + this.tileWidth / 2, iso.y - elevation);
-                this.ctx.lineTo(iso.x, iso.y - elevation + this.tileHeight / 2);
-                break;
-            case 'southwest':
-                this.ctx.moveTo(iso.x, iso.y - elevation + this.tileHeight / 2);
-                this.ctx.lineTo(iso.x - this.tileWidth / 2, iso.y - elevation);
-                break;
-            case 'northwest':
-                this.ctx.moveTo(iso.x - this.tileWidth / 2, iso.y - elevation);
-                this.ctx.lineTo(iso.x, iso.y - elevation - this.tileHeight / 2);
-                break;
-        }
-        
-        this.ctx.stroke();
-    }
-    
-    drawRoadInfrastructure() {
-        // Simple approach: draw each road segment independently
-        // Let them naturally overlap at intersections instead of complex intersection geometry
-        let roadCount = 0;
-        
-        for (let row = 0; row < this.gridSize; row++) {
-            for (let col = 0; col < this.gridSize; col++) {
-                const parcel = this.grid[row][col];
-                
-                // Check each edge for road data and draw it
-                ['northeast', 'northwest', 'southeast', 'southwest'].forEach(edge => {
-                    const road = parcel.roads[edge];
-                    if (road) {
-                        roadCount++;
-                        console.log(`Drawing road at ${row}-${col}-${edge}:`, road);
-                        this.drawRoadEdge(row, col, edge, road);
-                    }
-                });
-            }
-        }
-        
-        if (roadCount > 0) {
-            console.log(`Drew ${roadCount} road segments`);
-        }
-    }
-    
-    drawRoadEdge(row, col, edge, roadData) {
-        console.log(`Drawing road edge ${row}-${col}-${edge} with style:`, roadData);
-        this.ctx.save();
-        
-        // Set road style based on type with enhanced contrast colors
-        const roadStyles = {
-            local: { color: '#4A4A4A', width: 8 },     // Darker gray for better contrast
-            arterial: { color: '#707070', width: 12 }, // Medium gray 
-            highway: { color: '#909090', width: 16 }   // Lighter gray
-        };
-        
-        const style = roadStyles[roadData.type] || roadStyles.local;
-        
-        console.log(`Using road style:`, style, `for type: ${roadData.type}`);
-        
-        // Draw the road surface (filled polygon instead of just lines)
-        this.drawRoadSurface(row, col, edge, style, roadData);
-        
-        this.ctx.restore();
-        console.log(`Finished drawing road edge ${row}-${col}-${edge}`);
-    }
-
-
-    drawRoadSurface(row, col, edge, style, roadData) {
-        // Use EXACTLY the same positioning as the yellow selector line
-        const iso = this.toIsometric(col, row);
-        const tile = this.grid[row][col];
-        const elevation = tile ? tile.elevation * 8 : 0;
-        
-        // Get road endpoints for this edge - slightly extended to reach edges
-        let startX, startY, endX, endY;
-        const extend = 1.05; // Extend by 5% to ensure full coverage
-        switch (edge) {
-            case 'northeast':
-                startX = iso.x; startY = iso.y - elevation - this.tileHeight / 2;
-                endX = iso.x + this.tileWidth / 2 * extend; endY = iso.y - elevation;
-                break;
-            case 'southeast':
-                startX = iso.x + this.tileWidth / 2 * extend; startY = iso.y - elevation;
-                endX = iso.x; endY = iso.y - elevation + this.tileHeight / 2;
-                break;
-            case 'southwest':
-                startX = iso.x; startY = iso.y - elevation + this.tileHeight / 2;
-                endX = iso.x - this.tileWidth / 2 * extend; endY = iso.y - elevation;
-                break;
-            case 'northwest':
-                startX = iso.x - this.tileWidth / 2 * extend; startY = iso.y - elevation;
-                endX = iso.x; endY = iso.y - elevation - this.tileHeight / 2;
-                break;
-        }
-        
-        this.ctx.save();
-        
-        // Calculate road geometry with proper isometric perpendicular
-        const dx = endX - startX;
-        const dy = endY - startY;
-        const length = Math.sqrt(dx * dx + dy * dy);
-        const perpX = -dy / length;
-        const perpY = dx / length;
-        
-        // Road type-specific styling - widths adjusted for isometric perspective
-        let roadWidth, roadColor1, roadColor2;
-        switch (roadData.type) {
-            case 'local':
-                roadWidth = this.tileWidth * 0.15; // Scale with tile size
-                roadColor1 = '#5A5A5A'; // Slightly darker side
-                roadColor2 = '#606060'; // Slightly lighter side
-                break;
-            case 'arterial':
-                roadWidth = this.tileWidth * 0.18; // Slightly wider
-                roadColor1 = roadColor2 = '#4A4A4A'; // Single darker gray
-                break;
-            case 'highway':
-                roadWidth = this.tileWidth * 0.22; // Widest
-                roadColor1 = roadColor2 = '#3A3A3A'; // Darkest gray
-                break;
-            default:
-                roadWidth = this.tileWidth * 0.15;
-                roadColor1 = roadColor2 = style.color;
-        }
-        
-        const halfWidth = roadWidth / 2;
-        
-        // Draw sidewalks first (filled isometric parallelogram)
-        if (roadData.sidewalks) {
-            const sidewalkWidth = roadWidth * 1.3; // Proportional to road width
-            const sideHalf = sidewalkWidth / 2;
-            
-            this.ctx.fillStyle = '#8A8A8A';
-            this.ctx.beginPath();
-            this.ctx.moveTo(startX + perpX * sideHalf, startY + perpY * sideHalf);
-            this.ctx.lineTo(endX + perpX * sideHalf, endY + perpY * sideHalf);
-            this.ctx.lineTo(endX - perpX * sideHalf, endY - perpY * sideHalf);
-            this.ctx.lineTo(startX - perpX * sideHalf, startY - perpY * sideHalf);
-            this.ctx.closePath();
-            this.ctx.fill();
-        }
-        
-        // Draw road surface (filled parallelogram)
-        if (roadData.type === 'local') {
-            // Two-tone local road
-            const quarterWidth = roadWidth / 4;
-            
-            // Darker side
-            this.ctx.fillStyle = roadColor1;
-            this.ctx.beginPath();
-            this.ctx.moveTo(startX + perpX * halfWidth, startY + perpY * halfWidth);
-            this.ctx.lineTo(endX + perpX * halfWidth, endY + perpY * halfWidth);
-            this.ctx.lineTo(endX, endY);
-            this.ctx.lineTo(startX, startY);
-            this.ctx.closePath();
-            this.ctx.fill();
-            
-            // Lighter side
-            this.ctx.fillStyle = roadColor2;
-            this.ctx.beginPath();
-            this.ctx.moveTo(startX, startY);
-            this.ctx.lineTo(endX, endY);
-            this.ctx.lineTo(endX - perpX * halfWidth, endY - perpY * halfWidth);
-            this.ctx.lineTo(startX - perpX * halfWidth, startY - perpY * halfWidth);
-            this.ctx.closePath();
-            this.ctx.fill();
-        } else {
-            // Single color road
-            this.ctx.fillStyle = roadColor1;
-            this.ctx.beginPath();
-            this.ctx.moveTo(startX + perpX * halfWidth, startY + perpY * halfWidth);
-            this.ctx.lineTo(endX + perpX * halfWidth, endY + perpY * halfWidth);
-            this.ctx.lineTo(endX - perpX * halfWidth, endY - perpY * halfWidth);
-            this.ctx.lineTo(startX - perpX * halfWidth, startY - perpY * halfWidth);
-            this.ctx.closePath();
-            this.ctx.fill();
-        }
-        
-        // Draw road markings (lines that extend to edges)
-        if (roadData.type === 'arterial') {
-            // Single dotted yellow line
-            this.ctx.strokeStyle = '#FFD700';
-            this.ctx.lineWidth = 1.5;
-            this.ctx.setLineDash([6, 4]);
-            this.ctx.beginPath();
-            this.ctx.moveTo(startX, startY);
-            this.ctx.lineTo(endX, endY);
-            this.ctx.stroke();
-        } else if (roadData.type === 'highway') {
-            // Double solid yellow lines
-            this.ctx.strokeStyle = '#FFD700';
-            this.ctx.lineWidth = 1.5;
-            this.ctx.setLineDash([]);
-            
-            // Left line
-            this.ctx.beginPath();
-            this.ctx.moveTo(startX + perpX * 2, startY + perpY * 2);
-            this.ctx.lineTo(endX + perpX * 2, endY + perpY * 2);
-            this.ctx.stroke();
-            
-            // Right line
-            this.ctx.beginPath();
-            this.ctx.moveTo(startX - perpX * 2, startY - perpY * 2);
-            this.ctx.lineTo(endX - perpX * 2, endY - perpY * 2);
-            this.ctx.stroke();
-        }
-        
-        // Draw bike lanes (neon green lines extending to edges)
-        if (roadData.bikeLanes) {
-            this.ctx.strokeStyle = '#39FF14'; // Neon green
-            this.ctx.lineWidth = 2;
-            this.ctx.setLineDash([]);
-            
-            const bikeOffset = halfWidth - 2;
-            
-            // Left bike lane
-            this.ctx.beginPath();
-            this.ctx.moveTo(startX + perpX * bikeOffset, startY + perpY * bikeOffset);
-            this.ctx.lineTo(endX + perpX * bikeOffset, endY + perpY * bikeOffset);
-            this.ctx.stroke();
-            
-            // Right bike lane
-            this.ctx.beginPath();
-            this.ctx.moveTo(startX - perpX * bikeOffset, startY - perpY * bikeOffset);
-            this.ctx.lineTo(endX - perpX * bikeOffset, endY - perpY * bikeOffset);
-            this.ctx.stroke();
-        }
-        
-        this.ctx.restore();
-    }
+    // Road drawing methods moved to TransportationSystem
 
     drawDebugGrid() {
         // Debug visualization to understand parcel vs gap positioning
@@ -897,66 +617,7 @@ class IsometricGrid {
         this.ctx.restore();
     }
 
-    getRoadSegmentImage(edge) {
-        // Load and cache road segment images
-        if (!this.roadSegmentImages) {
-            this.roadSegmentImages = {};
-        }
-        
-        if (!this.roadSegmentImages[edge]) {
-            const img = new Image();
-            img.src = `road_segment_${edge}.svg`;
-            this.roadSegmentImages[edge] = img;
-        }
-        
-        return this.roadSegmentImages[edge];
-    }
-
-    drawRoadSegment(edge, roadWidth) {
-        // Simple road segments - rectangles extending from center
-        const roadLength = 50; // Fixed length for now
-        const roadThickness = roadWidth;
-        
-        console.log(`Drawing road segment: edge=${edge} roadLength=${roadLength} roadThickness=${roadThickness}`);
-        
-        // Draw simple rectangle based on edge direction - with detailed logging
-        let points = [];
-        switch (edge) {
-            case 'northeast':
-            case 'southwest':
-                // Horizontal-ish roads
-                points = [
-                    [-roadLength / 2, -roadThickness / 2],
-                    [roadLength / 2, -roadThickness / 2],
-                    [roadLength / 2, roadThickness / 2],
-                    [-roadLength / 2, roadThickness / 2]
-                ];
-                break;
-                
-            case 'southeast':
-            case 'northwest':
-                // Vertical-ish roads
-                points = [
-                    [-roadThickness / 2, -roadLength / 2],
-                    [roadThickness / 2, -roadLength / 2],
-                    [roadThickness / 2, roadLength / 2],
-                    [-roadThickness / 2, roadLength / 2]
-                ];
-                break;
-        }
-        
-        console.log(`Road segment points for ${edge}:`, points);
-        
-        if (points.length > 0) {
-            this.ctx.moveTo(points[0][0], points[0][1]);
-            for (let i = 1; i < points.length; i++) {
-                this.ctx.lineTo(points[i][0], points[i][1]);
-                console.log(`LineTo: ${points[i][0]}, ${points[i][1]}`);
-            }
-        }
-        
-        console.log(`Completed ${edge} road segment path`);
-    }
+    // Road segment methods moved to TransportationSystem
 
     getNeighborElevation(row, col, edge) {
         let neighborRow = row, neighborCol = col;
@@ -990,116 +651,9 @@ class IsometricGrid {
         return 0;
     }
     
-    drawRoadAmenities(row, col, edge, roadData, startPoint, endPoint) {
-        this.ctx.save();
-        
-        // Draw sidewalks as white edges on both sides of the road
-        if (roadData.sidewalks) {
-            this.ctx.strokeStyle = '#FFFFFF';
-            this.ctx.lineWidth = 2;
-            this.ctx.setLineDash([]);
-            
-            // Calculate perpendicular for sidewalk positioning
-            const dirX = endPoint.x - startPoint.x;
-            const dirY = endPoint.y - startPoint.y;
-            const length = Math.sqrt(dirX * dirX + dirY * dirY);
-            const perpX = -dirY / length;
-            const perpY = dirX / length;
-            
-            // Determine road width from roadData type
-            const roadStyles = {
-                local: { width: 8 },
-                arterial: { width: 12 },
-                highway: { width: 16 }
-            };
-            const roadWidth = (roadStyles[roadData.type] || roadStyles.local).width;
-            
-            // Draw sidewalks on both edges
-            const sidewalkOffset = roadWidth / 2;
-            
-            // Left sidewalk
-            this.ctx.beginPath();
-            this.ctx.moveTo(startPoint.x + perpX * sidewalkOffset, startPoint.y + perpY * sidewalkOffset);
-            this.ctx.lineTo(endPoint.x + perpX * sidewalkOffset, endPoint.y + perpY * sidewalkOffset);
-            this.ctx.stroke();
-            
-            // Right sidewalk  
-            this.ctx.beginPath();
-            this.ctx.moveTo(startPoint.x - perpX * sidewalkOffset, startPoint.y - perpY * sidewalkOffset);
-            this.ctx.lineTo(endPoint.x - perpX * sidewalkOffset, endPoint.y - perpY * sidewalkOffset);
-            this.ctx.stroke();
-        }
-        
-        // Draw bike lanes as green lines inset from road edges
-        if (roadData.bikeLanes) {
-            this.ctx.strokeStyle = '#00DD00';
-            this.ctx.lineWidth = 2;
-            this.ctx.setLineDash([4, 2]);
-            
-            // Calculate perpendicular for bike lane positioning
-            const dirX = endPoint.x - startPoint.x;
-            const dirY = endPoint.y - startPoint.y;
-            const length = Math.sqrt(dirX * dirX + dirY * dirY);
-            const perpX = -dirY / length;
-            const perpY = dirX / length;
-            
-            // Determine road width from roadData type
-            const roadStyles = {
-                local: { width: 8 },
-                arterial: { width: 12 },
-                highway: { width: 16 }
-            };
-            const roadWidth = (roadStyles[roadData.type] || roadStyles.local).width;
-            
-            // Bike lanes are inset 3 pixels from edge
-            const bikeOffset = (roadWidth / 2) - 3;
-            
-            // Left bike lane
-            this.ctx.beginPath();
-            this.ctx.moveTo(startPoint.x + perpX * bikeOffset, startPoint.y + perpY * bikeOffset);
-            this.ctx.lineTo(endPoint.x + perpX * bikeOffset, endPoint.y + perpY * bikeOffset);
-            this.ctx.stroke();
-            
-            // Right bike lane
-            this.ctx.beginPath();
-            this.ctx.moveTo(startPoint.x - perpX * bikeOffset, startPoint.y - perpY * bikeOffset);
-            this.ctx.lineTo(endPoint.x - perpX * bikeOffset, endPoint.y - perpY * bikeOffset);
-            this.ctx.stroke();
-        }
-        
-        this.ctx.restore();
-    }
+    // Road amenities drawing moved to TransportationSystem
     
-    drawTransitStops() {
-        // Draw all transit stops
-        this.transitStops.forEach((stop, stopId) => {
-            this.drawTransitStop(stop);
-        });
-    }
-    
-    drawTransitStop(stop) {
-        const iso = this.toIsometric(stop.col, stop.row);
-        const tile = this.grid[stop.row][stop.col];
-        const elevation = tile ? tile.elevation * 8 : 0;
-        
-        this.ctx.save();
-        this.ctx.translate(iso.x, iso.y - elevation);
-        
-        // Draw stop based on type with distinct emojis
-        this.ctx.font = '16px Arial';
-        this.ctx.textAlign = 'center';
-        this.ctx.textBaseline = 'middle';
-        
-        if (stop.type === 'bus') {
-            // Bus stop - bus emoji 🚌
-            this.ctx.fillText('🚌', 0, 0);
-        } else if (stop.type === 'subway') {
-            // Subway entrance - subway emoji 🚇
-            this.ctx.fillText('🚇', 0, 0);
-        }
-        
-        this.ctx.restore();
-    }
+    // Transit stops removed - will be redesigned from scratch
     
     // Cache frequently accessed DOM elements for performance
     initDOMCache() {
@@ -1111,6 +665,109 @@ class IsometricGrid {
         this.domCache.playerCashflow = document.getElementById('player-cashflow');
         this.domCache.totalResidents = document.getElementById('total-residents');
         this.domCache.cityTreasury = document.getElementById('city-treasury');
+    }
+
+    initializeEdgeParcels() {
+        // Create buildable spaces on grid lines between parcels
+        this.edgeParcels = {
+            horizontal: [], // Horizontal edges between rows
+            vertical: [],   // Vertical edges between columns
+            intersections: [] // Where grid lines cross
+        };
+
+        // Horizontal edges (between rows)
+        for (let row = 0; row < this.gridSize - 1; row++) {
+            this.edgeParcels.horizontal[row] = [];
+            for (let col = 0; col < this.gridSize; col++) {
+                this.edgeParcels.horizontal[row][col] = {
+                    type: 'edge_horizontal',
+                    // Public infrastructure - no ownership or land value
+                    infrastructure: {
+                        roadway: null, // 'local', 'arterial', 'highway'
+                        sidewalks: false, // boolean
+                        bikelanes: false, // boolean
+                        busStop: null, // null or {type, direction, builtBy, cost}
+                        subwayEntrance: null, // null or {type, direction, builtBy, cost}
+                        totalInvestment: 0 // Total money spent on this edge parcel
+                    }
+                };
+            }
+        }
+
+        // Vertical edges (between columns)
+        for (let row = 0; row < this.gridSize; row++) {
+            this.edgeParcels.vertical[row] = [];
+            for (let col = 0; col < this.gridSize - 1; col++) {
+                this.edgeParcels.vertical[row][col] = {
+                    type: 'edge_vertical',
+                    // Public infrastructure - no ownership or land value
+                    infrastructure: {
+                        roadway: null, // 'local', 'arterial', 'highway'
+                        sidewalks: false, // boolean
+                        bikelanes: false, // boolean
+                        busStop: null, // null or {type, direction, builtBy, cost}
+                        subwayEntrance: null, // null or {type, direction, builtBy, cost}
+                        totalInvestment: 0 // Total money spent on this edge parcel
+                    }
+                };
+            }
+        }
+
+        // Intersections (where grid lines cross)
+        for (let row = 0; row < this.gridSize - 1; row++) {
+            this.edgeParcels.intersections[row] = [];
+            for (let col = 0; col < this.gridSize - 1; col++) {
+                this.edgeParcels.intersections[row][col] = {
+                    type: 'edge_intersection',
+                    // Public infrastructure - intersections handle crosswalks and connections
+                    infrastructure: {
+                        crosswalks: [], // Array of crosswalk directions: 'north', 'south', 'east', 'west'
+                        trafficControl: null, // 'stop_sign', 'traffic_light', 'roundabout'
+                        totalInvestment: 0 // Total money spent on this intersection
+                    }
+                };
+            }
+        }
+
+        // Infrastructure costs (no actions required, only money)
+        this.infrastructureCosts = {
+            roadway: {
+                local: 50,      // $50 per block
+                arterial: 200,  // $200 per block  
+                highway: 500    // $500 per block
+            },
+            sidewalks: 25,      // $25 per block
+            bikelanes: 75,      // $75 per block
+            busStop: 100,       // $100 per stop
+            subwayEntrance: 1000, // $1000 per entrance
+            trafficControl: {
+                stop_sign: 50,      // $50 per sign
+                traffic_light: 500,  // $500 per light
+                roundabout: 2000    // $2000 per roundabout
+            }
+        };
+
+        console.log('Edge parcels initialized:', {
+            horizontal: `${this.gridSize - 1}x${this.gridSize}`,
+            vertical: `${this.gridSize}x${this.gridSize - 1}`,
+            intersections: `${this.gridSize - 1}x${this.gridSize - 1}`
+        });
+
+        // Test: Add some infrastructure for demonstration
+        if (this.edgeParcels.horizontal[0]) {
+            this.edgeParcels.horizontal[0][0].infrastructure.roadway = 'local';
+            this.edgeParcels.horizontal[0][0].infrastructure.sidewalks = true;
+            this.edgeParcels.horizontal[0][1].infrastructure.roadway = 'arterial';
+            this.edgeParcels.horizontal[0][1].infrastructure.bikelanes = true;
+        }
+        if (this.edgeParcels.vertical[0]) {
+            this.edgeParcels.vertical[0][0].infrastructure.roadway = 'highway';
+            this.edgeParcels.vertical[0][0].infrastructure.busStop = {type: 'standard', direction: 'both', builtBy: 'player'};
+        }
+        if (this.edgeParcels.intersections[0]) {
+            this.edgeParcels.intersections[0][0].infrastructure.crosswalks = ['north', 'south'];
+            this.edgeParcels.intersections[0][0].infrastructure.trafficControl = 'stop_sign';
+        }
     }
 
     populateBuildingCategories() {
@@ -1159,19 +816,38 @@ class IsometricGrid {
     }
 
     // Action Manager Methods
+    calculateMonthlyActionAllowance() {
+        // Start at 20 actions in month 1, reduce by 2 each month, bottom out at 10
+        const currentMonth = this.currentMonth || 1;
+        const baseActions = 20;
+        const reduction = (currentMonth - 1) * 2;
+        const minimumActions = 10;
+        
+        return Math.max(minimumActions, baseActions - reduction);
+    }
+    
     refreshMonthlyActions() {
-        // NEW: Purchased actions rollover, only add the monthly allowance
-        const previousActions = this.actionManager.currentActions;
-        this.actionManager.currentActions += this.actionManager.monthlyAllowance;
+        // Update monthly allowance based on current month
+        const currentActions = this.actionManager.currentActions;
+        const oldAllowance = this.actionManager.monthlyAllowance;
+        const newAllowance = this.calculateMonthlyActionAllowance();
+        
+        // Update the monthly allowance
+        this.actionManager.monthlyAllowance = newAllowance;
+        
+        // Calculate purchased actions (any actions beyond the old monthly allowance)
+        const purchasedActions = Math.max(0, currentActions - oldAllowance);
+        
+        // Reset to new monthly allowance + purchased actions only
+        this.actionManager.currentActions = newAllowance + purchasedActions;
         this.actionManager.usedThisMonth = 0;
         this.updateActionDisplay();
         
-        // Show notification
-        if (previousActions > 0) {
-            this.showNotification(`New month! ${this.actionManager.monthlyAllowance} actions added (${previousActions} rolled over)`, 'success');
-        } else {
-            this.showNotification(`New month! ${this.actionManager.monthlyAllowance} actions refreshed`, 'success');
-        }
+        // Add visual flair for actions refresh
+        this.addActionsRefreshAnimation();
+        
+        // Visual feedback via animations instead of notifications
+        // (Notifications removed to reduce clutter - visual effects provide feedback)
     }
     
     useAction(actionType, cost = 1) {
@@ -1186,15 +862,60 @@ class IsometricGrid {
         return true;
     }
     
+    addActionsRefreshAnimation() {
+        const actionsElement = document.getElementById('current-actions');
+        if (!actionsElement) return;
+        
+        // Get the parent row for full effect
+        const parentRow = actionsElement.closest('.action-stat-row');
+        if (!parentRow) return;
+        
+        // Apply governance-style glow effect
+        parentRow.style.transition = 'all 0.3s ease';
+        parentRow.style.backgroundColor = 'rgba(34, 197, 94, 0.15)'; // Green glow
+        parentRow.style.border = '1px solid rgba(34, 197, 94, 0.4)';
+        parentRow.style.borderRadius = '6px';
+        parentRow.style.boxShadow = '0 0 15px rgba(34, 197, 94, 0.3)';
+        
+        // Pulse the text color
+        actionsElement.style.color = '#22c55e';
+        actionsElement.style.fontWeight = '700';
+        
+        // Remove the effect after 3 seconds
+        setTimeout(() => {
+            parentRow.style.backgroundColor = '';
+            parentRow.style.border = '';
+            parentRow.style.borderRadius = '';
+            parentRow.style.boxShadow = '';
+            actionsElement.style.color = '';
+            actionsElement.style.fontWeight = '';
+        }, 3000);
+    }
+    
     updateActionDisplay() {
         const actionsElement = document.getElementById('current-actions');
         if (actionsElement) {
-            actionsElement.textContent = `${this.actionManager.currentActions}/${this.actionManager.monthlyAllowance}`;
+            const currentActions = this.actionManager.currentActions;
+            const monthlyAllowance = this.actionManager.monthlyAllowance;
+            
+            // Calculate expiring vs rolling over actions
+            const expiringActions = Math.min(currentActions, monthlyAllowance);
+            const rollingOverActions = Math.max(0, currentActions - monthlyAllowance);
+            
+            // Build display text
+            let displayText = '';
+            if (rollingOverActions > 0) {
+                displayText = `${expiringActions} expiring | ${rollingOverActions} rolling over`;
+            } else {
+                displayText = `${expiringActions} expiring`;
+            }
+            
+            actionsElement.textContent = displayText;
             
             // Color code based on remaining actions
-            if (this.actionManager.currentActions === 0) {
+            if (currentActions === 0) {
                 actionsElement.style.color = '#FF4444';
-            } else if (this.actionManager.currentActions <= 3) {
+            } else if (currentActions <= 3) {
                 actionsElement.style.color = '#FFD700';
             } else {
                 actionsElement.style.color = '#42B96E';
@@ -1224,8 +945,11 @@ class IsometricGrid {
     }
     
     updateMonthCountdown() {
-        const countdownElement = document.getElementById('month-countdown');
-        if (!countdownElement) return;
+        const progressBar = document.getElementById('month-progress-bar');
+        const progressText = document.getElementById('month-progress-text');
+        const progressContainer = document.getElementById('month-progress-container');
+        
+        if (!progressBar || !progressText || !progressContainer) return;
         
         // Month lengths in days
         const monthLengths = {
@@ -1250,12 +974,29 @@ class IsometricGrid {
         
         // Total seconds remaining in month
         const totalSecondsRemaining = (daysRemaining * secondsPerDay) + secondsRemainingInDay;
+        const totalSecondsInMonth = daysInMonth * secondsPerDay;
         
-        // Format as MM:SS
+        // Calculate progress percentage (100% to 0%)
+        const progressPercent = Math.max(0, Math.min(100, (totalSecondsRemaining / totalSecondsInMonth) * 100));
+        
+        // Update progress bar width
+        progressBar.style.width = `${progressPercent}%`;
+        
+        // Format time as MM:SS
         const minutes = Math.floor(totalSecondsRemaining / 60);
         const seconds = Math.floor(totalSecondsRemaining % 60);
+        const timeText = `${minutes}:${seconds.toString().padStart(2, '0')}`;
         
-        countdownElement.textContent = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+        progressText.textContent = timeText;
+        
+        // Update tooltip with detailed information
+        const daysText = daysRemaining === 1 ? 'day' : 'days';
+        progressContainer.setAttribute('data-tooltip', 
+            `Month End Progress\n` +
+            `📅 ${this.gameDate.month} ${this.gameDate.day}/${daysInMonth}\n` +
+            `⏱️ ${timeText} remaining\n` +
+            `📆 ${daysRemaining} ${daysText} left\n\n` +
+            `💼 Actions refresh when month ends`);
     }
     
     updateGameDate() {
@@ -1310,6 +1051,10 @@ class IsometricGrid {
             dailyLVT += stats.lvt;
         });
         
+        // Add road maintenance costs (until LVT funds infrastructure budget)
+        const roadMaintenance = this.calculateRoadMaintenance();
+        dailyMaintenance += roadMaintenance;
+        
         // Build UI breakdown from cache
         this.buildCashflowBreakdown();
         
@@ -1347,6 +1092,39 @@ class IsometricGrid {
     }
     
     // Helper method: Update player parcel tracking and mark aging buildings as dirty
+    calculateRoadMaintenance() {
+        // Calculate daily road maintenance costs
+        // TODO: Later this will be covered by infrastructure budget from LVT
+        if (!this.mobilityLayer || !this.mobilityLayer.roads) {
+            return 0;
+        }
+        
+        let totalMaintenance = 0;
+        
+        // Count roads by type
+        const roadCounts = { local: 0, arterial: 0, highway: 0 };
+        this.mobilityLayer.roads.forEach((road) => {
+            roadCounts[road.type] = (roadCounts[road.type] || 0) + 1;
+        });
+        
+        // Calculate maintenance costs based on road types
+        if (this.mobilityLayer.roadTypes) {
+            Object.entries(roadCounts).forEach(([type, count]) => {
+                const roadType = this.mobilityLayer.roadTypes[type];
+                if (roadType && roadType.maintenance) {
+                    totalMaintenance += count * roadType.maintenance;
+                }
+            });
+        }
+        
+        // Log if there's significant road maintenance
+        if (totalMaintenance > 0) {
+            console.log(`🛣️ Road maintenance: $${totalMaintenance}/day (${roadCounts.local} local, ${roadCounts.arterial} arterial, ${roadCounts.highway} highway)`);
+        }
+        
+        return totalMaintenance;
+    }
+    
     updatePlayerParcelsAndAging() {
         this.economicCache.playerParcels.clear();
         
@@ -1413,11 +1191,18 @@ class IsometricGrid {
                 buildingName = building.name;
                 
                 // NEW: Calculate transport accessibility for this building
-                // Commercial and office buildings need customer/worker access
-                if (building.category === 'commercial' || building.category === 'office' || 
-                    building.category === 'industrial' || building.category === 'mixed') {
+                if (this.buildingCategories.isEnergyProducer(building)) {
+                    // Energy producers need road connectivity for power distribution, not population access
+                    const hasRoadConnectivity = this.checkRoadConnectivity(row, col);
+                    transportMultiplier = hasRoadConnectivity ? 1.0 : 0.2; // 20% efficiency without roads, full with roads
                     
-                    // Calculate accessible population within transport network
+                    // Log for debugging
+                    if (this.gameDate.day % 7 === 0) { // Log weekly
+                        console.log(`⚡ ${buildingName} at (${row},${col}): road connectivity=${hasRoadConnectivity}, multiplier: ${transportMultiplier.toFixed(2)}`);
+                    }
+                    
+                } else if (this.buildingCategories.needsTransportAccess(building)) {
+                    // Commercial/education buildings need population accessibility
                     const accessiblePop = this.calculateAccessiblePopulation(row, col);
                     const optimalPop = building.jobs ? building.jobs * 10 : 100; // Buildings need 10x their job count in accessible population
                     
@@ -1433,7 +1218,8 @@ class IsometricGrid {
                 // Decay rate: 0.1% per day base, accelerating over time
                 const baseDecayRate = 0.001;
                 const ageMultiplier = 1 + (parcel.buildingAge / 1000); // Accelerates slowly
-                const dailyDecayIncrease = baseDecayRate * ageMultiplier;
+                const livabilityMultipliers = this.calculateLivabilityMultipliers(row, col);
+                const dailyDecayIncrease = baseDecayRate * ageMultiplier * livabilityMultipliers.decay;
                 parcel.decay = Math.min(1, parcel.decay + dailyDecayIncrease);
                 decay = parcel.decay;
                 
@@ -1455,10 +1241,11 @@ class IsometricGrid {
                 let supplyDemandMultiplier = 1.0;
                 if (this.supplyDemandEffects) {
                     // Apply different multipliers based on building type and resource shortages
-                    if (building.category === 'utilities' || building.resources?.energyDemand < 0) {
+                    const normalizedCategory = this.buildingCategories.normalize(building.category);
+                    if (this.buildingCategories.isEnergyProducer(building)) {
                         // Energy producers affected by energy oversupply/shortage
                         supplyDemandMultiplier *= this.supplyDemandEffects.energyMultiplier;
-                    } else if (building.category === 'commercial') {
+                    } else if (normalizedCategory === 'commercial') {
                         // Commercial buildings affected by energy shortages (higher costs)
                         if (building.resources?.energyDemand > 0) {
                             // Energy consumers pay more during shortages
@@ -1469,7 +1256,7 @@ class IsometricGrid {
                         if (building.resources?.foodProduction > 0) {
                             supplyDemandMultiplier *= this.supplyDemandEffects.foodMultiplier;
                         }
-                    } else if (building.category === 'housing') {
+                    } else if (normalizedCategory === 'housing') {
                         // Housing affected by housing shortage (higher rents/values)
                         supplyDemandMultiplier *= this.supplyDemandEffects.housingMultiplier;
                     }
@@ -1485,8 +1272,8 @@ class IsometricGrid {
                     }
                 }
                 
-                // NEW: Apply transport multiplier to revenue
-                buildingRevenue = maxRevenue * decayMultiplier * satisfactionMultiplier * efficiencyPenalty * growthModifier * supplyDemandMultiplier * transportMultiplier * this.economicMultipliers.baseRevenue;
+                // NEW: Apply transport multiplier and livability to revenue
+                buildingRevenue = maxRevenue * decayMultiplier * satisfactionMultiplier * efficiencyPenalty * growthModifier * supplyDemandMultiplier * transportMultiplier * livabilityMultipliers.revenue * this.economicMultipliers.baseRevenue;
                 
                 // Calculate maintenance (already daily, increases with decay)
                 const baseMaintenance = building.economics.maintenanceCost || 0;
@@ -1508,6 +1295,130 @@ class IsometricGrid {
             maintenance: buildingMaintenance,
             lvt: landTax,
             netCashflow: buildingRevenue - buildingMaintenance - landTax
+        };
+    }
+    
+    // Helper method: Get localized livability scores around a building location
+    getLivabilityScores(row, col) {
+        const livabilityScores = {};
+        const livabilityDomains = ['health', 'education', 'safety', 'culture', 'mobility', 'environment', 'affordability', 'resilience', 'noise'];
+        const searchRadius = 3; // Check buildings within 3 tiles for livability impacts
+        
+        livabilityDomains.forEach(domain => {
+            let totalImpact = 0;
+            
+            // Sum impacts from nearby buildings
+            for (let dr = -searchRadius; dr <= searchRadius; dr++) {
+                for (let dc = -searchRadius; dc <= searchRadius; dc++) {
+                    const checkRow = row + dr;
+                    const checkCol = col + dc;
+                    
+                    if (checkRow >= 0 && checkRow < this.gridSize && 
+                        checkCol >= 0 && checkCol < this.gridSize) {
+                        
+                        const parcel = this.grid[checkRow][checkCol];
+                        if (parcel && parcel.building) {
+                            const building = this.buildingManager.getBuildingById(parcel.building);
+                            if (building && building.domainImpacts && building.domainImpacts[domain]) {
+                                // Distance decay for impact (closer buildings have more effect)
+                                const distance = Math.sqrt(dr*dr + dc*dc);
+                                const distanceMultiplier = Math.max(0.1, 1 - distance / searchRadius);
+                                totalImpact += building.domainImpacts[domain] * distanceMultiplier;
+                            }
+                        }
+                    }
+                }
+            }
+            
+            livabilityScores[domain] = totalImpact;
+        });
+        
+        return livabilityScores;
+    }
+    
+    // Helper method: Check if a parcel has road connectivity
+    checkRoadConnectivity(row, col) {
+        // Check all 8 adjacent cells for roads
+        const directions = [
+            [-1, -1], [-1, 0], [-1, 1],
+            [0, -1],           [0, 1],
+            [1, -1],  [1, 0],  [1, 1]
+        ];
+        
+        for (const [dr, dc] of directions) {
+            const checkRow = row + dr;
+            const checkCol = col + dc;
+            
+            if (checkRow >= 0 && checkRow < this.gridSize && 
+                checkCol >= 0 && checkCol < this.gridSize) {
+                
+                const parcel = this.grid[checkRow][checkCol];
+                if (parcel && parcel.roadType) {
+                    return true; // Found adjacent road
+                }
+            }
+        }
+        
+        return false; // No adjacent roads found
+    }
+    
+    // Helper method: Calculate demographic breakdown from total population
+    calculateDemographics(totalPopulation) {
+        // Use realistic demographic distributions (US-based approximations)
+        const childrenPercent = 22; // Ages 0-17
+        const adultsPercent = 60;   // Ages 18-64 (working age)
+        const seniorsPercent = 18;  // Ages 65+
+        
+        const children = Math.round(totalPopulation * childrenPercent / 100);
+        const adults = Math.round(totalPopulation * adultsPercent / 100);
+        const seniors = totalPopulation - children - adults; // Ensure total adds up
+        
+        // Labor force is working age adults who are actually available to work (not all adults work)
+        const laborForceParticipation = 0.75; // 75% of working age adults
+        const laborForce = Math.round(adults * laborForceParticipation);
+        
+        return {
+            children,
+            adults,
+            seniors,
+            laborForce,
+            childrenPercent,
+            adultsPercent,
+            seniorsPercent: Math.round(seniors / totalPopulation * 100)
+        };
+    }
+    
+    // Helper method: Calculate livability-based multipliers for revenue and decay
+    calculateLivabilityMultipliers(row, col) {
+        // Get livability scores for this location
+        const livabilityScores = this.getLivabilityScores(row, col);
+        
+        // Calculate overall livability score (-1 to 1 range)
+        const livabilityDomains = ['health', 'education', 'safety', 'culture', 'mobility', 'environment', 'affordability', 'resilience', 'noise'];
+        let totalScore = 0;
+        let domainCount = 0;
+        
+        livabilityDomains.forEach(domain => {
+            if (livabilityScores[domain] !== undefined) {
+                totalScore += livabilityScores[domain];
+                domainCount++;
+            }
+        });
+        
+        const averageLivability = domainCount > 0 ? totalScore / domainCount : 0;
+        
+        // Convert to multipliers
+        // Revenue: 0.9x (max negative) to 1.15x (max positive)
+        const revenueMultiplier = 1.0 + (averageLivability * 0.125); // Range: 0.875 to 1.125
+        const clampedRevenueMultiplier = Math.max(0.9, Math.min(1.15, revenueMultiplier));
+        
+        // Decay: 1.1x (max negative livability = faster decay) to 0.9x (max positive = slower decay)  
+        const decayMultiplier = 1.0 - (averageLivability * 0.1); // Range: 1.1 to 0.9
+        const clampedDecayMultiplier = Math.max(0.9, Math.min(1.1, decayMultiplier));
+        
+        return {
+            revenue: clampedRevenueMultiplier,
+            decay: clampedDecayMultiplier
         };
     }
     
@@ -1615,6 +1526,23 @@ class IsometricGrid {
                     });
                 }
             }
+        }
+        
+        // Add road maintenance costs
+        const roadMaintenance = this.calculateRoadMaintenance();
+        dailyMaintenance += roadMaintenance;
+        
+        // Add road maintenance to breakdown for UI
+        if (roadMaintenance > 0) {
+            this.cashflowBreakdown.push({
+                location: 'Infrastructure',
+                buildingName: 'Road Network',
+                revenue: 0,
+                maintenance: roadMaintenance,
+                lvt: 0,
+                net: -roadMaintenance,
+                efficiency: 100
+            });
         }
         
         // Store preview totals for UI (don't overwrite real daily totals)
@@ -1869,7 +1797,64 @@ class IsometricGrid {
     }
     
     showNotification(message, type = 'info') {
-        // TODO: Add visual notification system
+        // Create or get notification container
+        let container = document.getElementById('notifications');
+        if (!container) {
+            container = document.createElement('div');
+            container.id = 'notifications';
+            container.style.cssText = `
+                position: fixed;
+                top: 20px;
+                right: 20px;
+                z-index: 1000;
+                max-width: 300px;
+                pointer-events: none;
+            `;
+            document.body.appendChild(container);
+        }
+        
+        // Create notification element
+        const notification = document.createElement('div');
+        const colors = {
+            'error': '#fee2e2 #dc2626',
+            'success': '#dcfce7 #16a34a', 
+            'info': '#dbeafe #2563eb'
+        };
+        const [bgColor, textColor] = colors[type]?.split(' ') || colors.info.split(' ');
+        
+        notification.style.cssText = `
+            background-color: ${bgColor};
+            color: ${textColor};
+            padding: 12px 16px;
+            border-radius: 6px;
+            margin-bottom: 8px;
+            font-size: 14px;
+            font-weight: 500;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            transform: translateX(100%);
+            transition: all 0.3s ease;
+            pointer-events: auto;
+            border-left: 4px solid ${textColor};
+        `;
+        notification.textContent = message;
+        
+        container.appendChild(notification);
+        
+        // Animate in
+        requestAnimationFrame(() => {
+            notification.style.transform = 'translateX(0)';
+        });
+        
+        // Auto remove after 4 seconds
+        setTimeout(() => {
+            notification.style.transform = 'translateX(100%)';
+            notification.style.opacity = '0';
+            setTimeout(() => {
+                if (notification.parentNode) {
+                    container.removeChild(notification);
+                }
+            }, 300);
+        }, 4000);
     }
 
     calculatePopulation() {
@@ -2013,9 +1998,21 @@ class IsometricGrid {
             }
         }
         
-        // Update residents count
+        // Calculate demographics breakdown
+        const demographics = this.calculateDemographics(population);
+        
+        // Update residents count with demographic tooltip
         if (this.domCache.totalResidents) {
             this.domCache.totalResidents.textContent = population.toLocaleString();
+            const residentsRow = document.getElementById('residents-row');
+            if (residentsRow) {
+                residentsRow.setAttribute('data-tooltip', 
+                    `Demographics Breakdown:\n` +
+                    `👶 Children (0-17): ${demographics.children.toLocaleString()} (${demographics.childrenPercent}%)\n` +
+                    `👨‍💼 Working Age (18-64): ${demographics.adults.toLocaleString()} (${demographics.adultsPercent}%)\n` +
+                    `👴 Seniors (65+): ${demographics.seniors.toLocaleString()} (${demographics.seniorsPercent}%)\n` +
+                    `💼 Labor Force: ${demographics.laborForce.toLocaleString()} available workers`);
+            }
         }
         
         // Calculate total city treasury (sum of all public coffers + unallocated funds)
@@ -2028,9 +2025,33 @@ class IsometricGrid {
             totalTreasury += this.governance.unallocatedFunds || 0;
         }
         
-        // Update city treasury display
+        // Update city treasury display with detailed breakdown
         if (this.domCache.cityTreasury) {
             this.domCache.cityTreasury.textContent = `$${Math.round(totalTreasury).toLocaleString()}`;
+            
+            // Create detailed treasury breakdown for tooltip
+            const allocatedFunds = totalTreasury - (this.governance.unallocatedFunds || 0);
+            const unallocatedAmount = this.governance.unallocatedFunds || 0;
+            
+            const treasuryRow = document.getElementById('treasury-row');
+            if (treasuryRow) {
+                treasuryRow.setAttribute('data-tooltip', 
+                    `City Treasury Breakdown:\n` +
+                    `💰 Total: $${Math.round(totalTreasury).toLocaleString()}\n` +
+                    `📂 Allocated to Budgets: $${Math.round(allocatedFunds).toLocaleString()}\n` +
+                    `🏛️ Unassigned Funds: $${Math.round(unallocatedAmount).toLocaleString()}\n\n` +
+                    `💡 Click to open Governance!`);
+                
+                // Always make treasury clickable and gold
+                treasuryRow.style.cursor = 'pointer';
+                treasuryRow.style.color = '#FFD700'; // Gold color for text
+                treasuryRow.style.backgroundColor = 'rgba(255, 215, 0, 0.1)'; // Subtle gold highlight
+                treasuryRow.style.border = '1px solid rgba(255, 215, 0, 0.3)';
+                treasuryRow.onclick = () => {
+                    // Open governance modal/section
+                    this.showGovernanceModal();
+                };
+            }
         }
         
         // Legacy: Update population in sidebar - target the CITIZENS row specifically (if it still exists)
@@ -2053,9 +2074,8 @@ class IsometricGrid {
     }
     
     getParcelPrice(row, col) {
-        // Fixed initial purchase prices
-        // Center 4 parcels (6,6), (6,7), (7,6), (7,7) are $150
-        // Price decreases by distance to minimum $90 at perimeter
+        // Updated pricing: $500 at center, $100 at perimeter
+        // Scales based on distance from center
         
         const centerRow = 6.5;
         const centerCol = 6.5;
@@ -2066,24 +2086,38 @@ class IsometricGrid {
             Math.abs(col - centerCol)
         );
         
-        // Price scale: $150 at center, down to $90 at edges
-        const ring = Math.floor(distanceFromCenter);
-        return Math.max(90, 150 - (ring * 10)); // Minimum $90
+        // Maximum distance is about 6.5 (from center to corner)
+        const maxDistance = 6.5;
+        
+        // Linear interpolation from $500 (center) to $100 (perimeter)
+        const priceRange = 500 - 100; // $400 range
+        const priceReduction = (distanceFromCenter / maxDistance) * priceRange;
+        
+        return Math.round(500 - priceReduction);
     }
     
     showTooltip(row, col, mouseX, mouseY) {
         // Don't show tooltip if context menu is open
-        if (this.contextMenu.classList.contains('visible')) {
+        if (this.contextMenu && this.contextMenu.classList && this.contextMenu.classList.contains('visible')) {
             return;
         }
         
         const parcel = this.grid[row][col];
         const coord = this.getParcelCoordinate(row, col);
         
-        this.tooltip.querySelector('.parcel-coord').textContent = coord;
+        if (!this.tooltip || !this.tooltip.querySelector) {
+            return;
+        }
+        
+        const parcelCoordEl = this.tooltip.querySelector('.parcel-coord');
+        if (parcelCoordEl) parcelCoordEl.textContent = coord;
         
         const tooltipPrice = this.tooltip.querySelector('.tooltip-price');
         const tooltipBuilding = this.tooltip.querySelector('.tooltip-building');
+        
+        if (!tooltipPrice || !tooltipBuilding) {
+            return;
+        }
         
         if (parcel.building) {
             // Show building information instead of price
@@ -2158,11 +2192,24 @@ class IsometricGrid {
                     // Show top needs if not at 100%
                     if (efficiencyInfo.efficiency < 100) {
                         stats.push(`<span style="color: #94a3b8">📋 Top Needs:</span>`);
-                        efficiencyInfo.topNeeds.forEach(need => {
+                        
+                        // Get custom ordered needs based on building type
+                        const orderedNeeds = this.getOrderedTooltipNeeds(building, efficiencyInfo.topNeeds);
+                        
+                        orderedNeeds.forEach(need => {
                             const needColor = need.satisfaction < 30 ? '#ef4444' : 
                                             need.satisfaction < 60 ? '#f97316' : '#f59e0b';
                             stats.push(`<span style="color: ${needColor}">  ${need.emoji} ${need.resource}: ${need.satisfaction}%</span>`);
                         });
+                        
+                        // Add concise JEFH analysis
+                        const jefhAnalysis = this.getJEFHAnalysis(row, col);
+                        if (jefhAnalysis.hasIssues) {
+                            stats.push(`<span style="color: #ef4444">Top Needs:</span>`);
+                            jefhAnalysis.issues.forEach(issue => {
+                                stats.push(`<span style="color: #ef4444; font-size: 11px;">${issue}</span>`);
+                            });
+                        }
                     }
                 } else {
                     // For buildings with no demands (like pure infrastructure)
@@ -2241,13 +2288,212 @@ class IsometricGrid {
             top = mouseY - 80;
         }
         
-        this.tooltip.style.left = `${left}px`;
-        this.tooltip.style.top = `${top}px`;
-        this.tooltip.classList.add('visible');
+        if (this.tooltip && this.tooltip.classList) {
+            this.tooltip.style.left = `${left}px`;
+            this.tooltip.style.top = `${top}px`;
+            this.tooltip.classList.add('visible');
+        }
     }
     
     hideTooltip() {
-        this.tooltip.classList.remove('visible');
+        if (this.tooltip && this.tooltip.classList) {
+            this.tooltip.classList.remove('visible');
+        }
+    }
+    
+    showMobilityTooltip(row, col, mouseX, mouseY) {
+        // Don't show tooltip if context menu is open
+        if (this.contextMenu && this.contextMenu.classList && this.contextMenu.classList.contains('visible')) {
+            return;
+        }
+        
+        if (!this.tooltip || !this.tooltip.querySelector) {
+            return;
+        }
+        
+        const parcel = this.grid[row][col];
+        const coord = this.getParcelCoordinate(row, col);
+        
+        const parcelCoordEl = this.tooltip.querySelector('.parcel-coord');
+        if (parcelCoordEl) parcelCoordEl.textContent = coord;
+        
+        const tooltipPrice = this.tooltip.querySelector('.tooltip-price');
+        const tooltipBuilding = this.tooltip.querySelector('.tooltip-building');
+        
+        if (!tooltipPrice || !tooltipBuilding) {
+            return;
+        }
+        
+        if (parcel.building) {
+            // Show mobility-focused building information
+            tooltipPrice.style.display = 'none';
+            tooltipBuilding.style.display = 'block';
+            
+            const building = this.buildingManager.getBuildingById(parcel.building);
+            if (building) {
+                const buildingNameEl = tooltipBuilding.querySelector('.building-name');
+                const buildingStatsEl = tooltipBuilding.querySelector('.building-stats');
+                
+                buildingNameEl.textContent = building.name;
+                
+                // Show mobility-relevant stats
+                const stats = [];
+                
+                // Supply type and category
+                const supplyType = this.getMobilitySupplyType(building.category);
+                stats.push(`Supply: ${supplyType}`);
+                
+                // Connectivity info
+                try {
+                    const connectivity = this.mobilityLayer.getParcelConnectivity(row, col);
+                    stats.push(`Road Access: ${connectivity.connected ? 'Connected' : 'Isolated'}`);
+                    
+                    if (connectivity.connected && connectivity.networkDistance) {
+                        stats.push(`Network Distance: ${connectivity.networkDistance}`);
+                    }
+                } catch (e) {
+                    stats.push(`Road Access: Checking...`);
+                }
+                
+                // Transportation info
+                try {
+                    const nearbyRoads = this.mobilityLayer.getNearbyRoads(row, col);
+                    if (nearbyRoads.length > 0) {
+                        stats.push(`Adjacent Roads: ${nearbyRoads.length}`);
+                    }
+                } catch (e) {
+                    // Skip if error
+                }
+                
+                // Owner information
+                if (parcel.owner === 'player') {
+                    const emoji = (this.playerSettings && this.playerSettings.emoji) || '🏠';
+                    stats.push(`${emoji} OWNED`);
+                } else if (parcel.owner) {
+                    stats.push(`🏢 ${parcel.owner.toUpperCase()}`);
+                }
+                
+                buildingStatsEl.innerHTML = stats.map(stat => `<div>${stat}</div>`).join('');
+            }
+        } else {
+            // Show empty parcel with mobility info
+            tooltipBuilding.style.display = 'none';
+            tooltipPrice.style.display = 'block';
+            
+            const price = this.getParcelPrice(row, col);
+            const priceValue = tooltipPrice.querySelector('.price-value');
+            if (priceValue) priceValue.textContent = `$${price}`;
+            
+            // Add connectivity info for empty parcels
+            let connectivityEl = tooltipPrice.querySelector('.connectivity-info');
+            if (!connectivityEl) {
+                connectivityEl = document.createElement('div');
+                connectivityEl.className = 'connectivity-info';
+                connectivityEl.style.fontSize = '11px';
+                connectivityEl.style.color = '#94a3b8';
+                connectivityEl.style.marginTop = '4px';
+                tooltipPrice.appendChild(connectivityEl);
+            }
+            
+            try {
+                const connectivity = this.mobilityLayer.getParcelConnectivity(row, col);
+                connectivityEl.textContent = connectivity.connected ? 'Connected to road network' : 'No road access';
+            } catch (e) {
+                connectivityEl.textContent = 'Checking connectivity...';
+            }
+        }
+        
+        // Position tooltip (reuse same logic as regular tooltip)
+        const tooltipHeight = 100;
+        let left, top;
+        
+        if (this.selectedTile) {
+            const tileIso = this.toIsometric(this.selectedTile.col, this.selectedTile.row);
+            const screenPos = this.worldToScreenCoords(tileIso.x, tileIso.y);
+            
+            const positions = [
+                { x: screenPos.x + 80, y: screenPos.y - tooltipHeight - 20, name: 'top-right' },
+                { x: screenPos.x - 220, y: screenPos.y - tooltipHeight - 20, name: 'top-left' },
+                { x: screenPos.x + 80, y: screenPos.y + 60, name: 'bottom-right' },
+                { x: screenPos.x - 220, y: screenPos.y + 60, name: 'bottom-left' }
+            ];
+            
+            let bestPosition = positions[0];
+            for (const pos of positions) {
+                if (pos.x >= 10 && pos.x <= window.innerWidth - 200 && 
+                    pos.y >= 10 && pos.y <= window.innerHeight - tooltipHeight - 10) {
+                    bestPosition = pos;
+                    break;
+                }
+            }
+            
+            left = bestPosition.x + 15;
+            top = bestPosition.y - (bestPosition.name.includes('bottom') ? tooltipHeight + 15 : -15);
+        } else {
+            left = mouseX + 30;
+            top = mouseY - 80;
+        }
+        
+        if (this.tooltip && this.tooltip.classList) {
+            this.tooltip.style.left = `${left}px`;
+            this.tooltip.style.top = `${top}px`;
+            this.tooltip.classList.add('visible');
+        }
+    }
+    
+    handleMobilityTooltips(tile, mouseEvent) {
+        // Clear any existing tooltip timer
+        if (this.mobilityTooltipTimer) {
+            clearTimeout(this.mobilityTooltipTimer);
+            this.mobilityTooltipTimer = null;
+        }
+        
+        // Always hide tooltip immediately when mouse moves
+        this.hideTooltip();
+        
+        // Update selected tile display
+        if (tile && tile.row >= 0 && tile.row < this.gridSize &&
+            tile.col >= 0 && tile.col < this.gridSize) {
+            
+            this.selectedTile = tile;
+            const coord = this.getParcelCoordinate(tile.row, tile.col);
+            if (this.domCache.selectedTile) {
+                this.domCache.selectedTile.textContent = coord;
+            }
+            
+            // Set timer to show tooltip after mouse stops for 500ms
+            this.mobilityTooltipTimer = setTimeout(() => {
+                // Double-check we're still in mobility mode and on the same tile
+                if (this.currentLayer === 'mobility' && 
+                    this.selectedTile && 
+                    this.selectedTile.row === tile.row && 
+                    this.selectedTile.col === tile.col) {
+                    
+                    this.showMobilityTooltip(tile.row, tile.col, mouseEvent.clientX, mouseEvent.clientY);
+                }
+            }, 500); // 500ms delay
+            
+        } else {
+            this.selectedTile = null;
+            if (this.domCache.selectedTile) {
+                this.domCache.selectedTile.textContent = '--';
+            }
+        }
+    }
+    
+    getMobilitySupplyType(category) {
+        const supplyTypes = {
+            'housing': 'Housing',
+            'commercial': 'Food/Goods',
+            'utilities': 'Energy',
+            'office': 'Jobs/Workers',
+            'education': 'Jobs/Workers',
+            'civic': 'Jobs/Workers',
+            'industrial': 'Mixed Supply',
+            'recreation': 'Culture/Recreation',
+            'emergency': 'Emergency Services'
+        };
+        return supplyTypes[category] || 'Other';
     }
     
     // Calculate and visualize parcel reach
@@ -2282,8 +2528,17 @@ class IsometricGrid {
         
         this.ctx.save();
         
-        // Very subtle fill for reachable area (60% less opacity)
-        this.ctx.fillStyle = 'rgba(255, 215, 0, 0.04)'; // Much more transparent yellow fill
+        // Calculate animation values using time
+        const time = Date.now() / 1000; // Convert to seconds
+        const pulseAmount = Math.sin(time * 2) * 0.5 + 0.5; // Oscillates between 0 and 1
+        const glowAmount = Math.sin(time * 3) * 0.3 + 0.7; // Faster, smaller oscillation for glow
+        
+        // Animated fill for reachable area with pulsing opacity
+        const baseOpacity = 0.04;
+        const maxOpacity = 0.08;
+        const fillOpacity = baseOpacity + (maxOpacity - baseOpacity) * pulseAmount;
+        this.ctx.fillStyle = `rgba(255, 215, 0, ${fillOpacity})`; // Pulsing yellow fill
+        
         allReachable.forEach(key => {
             const [r, c] = key.split(',').map(Number);
             const iso = this.toIsometric(c, r);
@@ -2299,21 +2554,37 @@ class IsometricGrid {
             this.ctx.fill();
         });
         
+        // Animated border with glow effect
+        this.ctx.shadowColor = 'rgba(255, 215, 0, 0.8)';
+        this.ctx.shadowBlur = 3 + (2 * glowAmount); // Animated glow
+        
         // Draw only the outer border of the reachable area
-        this.ctx.strokeStyle = 'rgba(255, 215, 0, 0.3)'; // Much softer yellow border
-        this.ctx.lineWidth = 1; // Thin line
+        const borderOpacity = 0.25 + (0.15 * glowAmount); // Oscillating border opacity
+        this.ctx.strokeStyle = `rgba(255, 215, 0, ${borderOpacity})`;
+        this.ctx.lineWidth = 1 + (0.5 * pulseAmount); // Subtle width animation
+        
+        // Animated dash pattern
+        const dashOffset = (time * 10) % 5; // Animate dash movement
+        this.ctx.lineDashOffset = dashOffset;
         this.ctx.setLineDash([3, 2]); // Subtle dashed line
         
         // Find and draw only the perimeter of the reachable area
         this.drawReachPerimeter(allReachable);
         
-        // Highlight the selected parcel itself with a slightly more visible border
+        // Reset shadow for selected parcel
+        this.ctx.shadowBlur = 0;
+        
+        // Highlight the selected parcel itself with animated glow
         const iso = this.toIsometric(this.selectedParcel.col, this.selectedParcel.row);
         const tile = this.grid[this.selectedParcel.row][this.selectedParcel.col];
         const elevation = tile ? tile.elevation * 8 : 0;
         
-        this.ctx.strokeStyle = 'rgba(255, 215, 0, 0.5)'; // Soft yellow for selected
-        this.ctx.lineWidth = 1.5;
+        // Strong glow for selected parcel to make it stand out
+        this.ctx.shadowColor = 'rgba(255, 215, 0, 1)';
+        this.ctx.shadowBlur = 5 + (3 * pulseAmount); // Stronger glow for selected
+        
+        this.ctx.strokeStyle = `rgba(255, 215, 0, ${0.6 + 0.2 * glowAmount})`; // Brighter yellow for selected
+        this.ctx.lineWidth = 2 + (0.5 * pulseAmount); // Thicker, animated line
         this.ctx.setLineDash([]);
         this.ctx.beginPath();
         this.ctx.moveTo(iso.x, iso.y - elevation - this.tileHeight / 2);
@@ -2325,8 +2596,16 @@ class IsometricGrid {
         
         this.ctx.restore();
         
-        // Draw road connections - DISABLED to test new road system
-        // this.drawRoadConnections();
+        // Request animation frame to keep the animation running
+        if (this.parcelReach) {
+            requestAnimationFrame(() => {
+                if (this.parcelReach) {
+                    this.scheduleRender();
+                }
+            });
+        }
+        
+        // Road rendering now handled by TransportationSystem
     }
     
     drawReachPerimeter(reachableParcels) {
@@ -2371,48 +2650,14 @@ class IsometricGrid {
         });
     }
     
-    drawRoadConnections() {
-        if (!this.transportationNetwork || !this.transportationNetwork.roads) return;
-        
-        // Draw all roads in their appropriate colors
-        this.transportationNetwork.roads.forEach(road => {
-            const color = this.getRoadColor(road.type);
-            this.drawRoadSegment(road, color);
-        });
-    }
-    
-    getRoadColor(roadType) {
-        const colors = {
-            'dirt_path': '#8B7355',
-            'local_street': '#696969',
-            'arterial': '#4169E1',
-            'highway': '#FF6347'
-        };
-        return colors[roadType] || '#696969';
-    }
-    
-    drawRoadSegment(road, color) {
-        const start = this.toIsometric(road.startCol, road.startRow);
-        const end = this.toIsometric(road.endCol, road.endRow);
-        
-        this.ctx.save();
-        this.ctx.strokeStyle = color;
-        this.ctx.lineWidth = road.type === 'highway' ? 5 : road.type === 'arterial' ? 4 : 3;
-        this.ctx.lineCap = 'round';
-        
-        // Add a subtle shadow for depth
-        this.ctx.shadowColor = 'rgba(0, 0, 0, 0.3)';
-        this.ctx.shadowBlur = 2;
-        this.ctx.shadowOffsetY = 1;
-        
-        this.ctx.beginPath();
-        this.ctx.moveTo(start.x, start.y);
-        this.ctx.lineTo(end.x, end.y);
-        this.ctx.stroke();
-        this.ctx.restore();
-    }
+    // Legacy road drawing functions removed - now using TransportationSystem
     
     showContextMenu(row, col, mouseX, mouseY) {
+        // Early return if context menu element doesn't exist or doesn't have querySelector
+        if (!this.contextMenu || typeof this.contextMenu.querySelector !== 'function') {
+            return;
+        }
+        
         // Set the selected tile and calculate reach
         this.selectedTile = { row, col };
         this.selectedParcel = { row, col };
@@ -2430,10 +2675,16 @@ class IsometricGrid {
         const parcel = this.grid[row][col];
         const price = this.getParcelPrice(row, col);
         
-        this.contextMenu.querySelector('.context-coord').textContent = coord;
+        const coordEl = this.contextMenu.querySelector('.context-coord');
+        if (coordEl) coordEl.textContent = coord;
         
         const statusEl = this.contextMenu.querySelector('.context-status');
         const contentEl = this.contextMenu.querySelector('.context-content');
+        
+        if (!statusEl || !contentEl) {
+            console.error('Context menu elements not found');
+            return;
+        }
         
         // Clear previous content
         contentEl.innerHTML = '';
@@ -2496,13 +2747,17 @@ class IsometricGrid {
         
         // Position the context menu to match tooltip position exactly  
         // Note: mouseX, mouseY here are page coordinates from e.clientX, e.clientY
-        this.contextMenu.style.left = `${mouseX + 30}px`;
-        this.contextMenu.style.top = `${mouseY - 80}px`;
-        this.contextMenu.classList.add('visible');
+        if (this.contextMenu && this.contextMenu.classList) {
+            this.contextMenu.style.left = `${mouseX + 30}px`;
+            this.contextMenu.style.top = `${mouseY - 80}px`;
+            this.contextMenu.classList.add('visible');
+        }
     }
     
     hideContextMenu() {
-        this.contextMenu.classList.remove('visible');
+        if (this.contextMenu && this.contextMenu.classList) {
+            this.contextMenu.classList.remove('visible');
+        }
         
         // Clear selection and reach visualization when context menu closes
         this.selectedTile = null;
@@ -2518,400 +2773,21 @@ class IsometricGrid {
     }
     
     showStreetEdgeContextMenu(mouseX, mouseY) {
-        // Create or get the street edge context menu
-        if (!this.streetEdgeContextMenu) {
-            this.streetEdgeContextMenu = document.createElement('div');
-            this.streetEdgeContextMenu.className = 'street-edge-context-menu';
-            this.streetEdgeContextMenu.innerHTML = `
-                <div class="menu-header draggable-handle">Road Design (${this.selectedStreetEdges.size} edges)</div>
-                
-                <div class="road-design-section">
-                    <label>Road Type:</label>
-                    <select id="road-type-select">
-                        <option value="local">Local Street ($50/segment)</option>
-                        <option value="arterial">Arterial Road ($150/segment)</option>
-                        <option value="highway">Highway ($400/segment)</option>
-                    </select>
-                </div>
-                
-                <div class="road-design-section">
-                    <label class="checkbox-label">
-                        <input type="checkbox" id="sidewalk-checkbox"> Sidewalks (+$25/segment)
-                    </label>
-                    <label class="checkbox-label">
-                        <input type="checkbox" id="bike-lane-checkbox"> Bike Lanes (+$75/segment)
-                    </label>
-                </div>
-                
-                <div class="road-design-section">
-                    <label>Infrastructure:</label>
-                    <label class="checkbox-label">
-                        <input type="checkbox" id="bus-stop-checkbox"> Bus Stop (+$200)
-                    </label>
-                    <label class="checkbox-label">
-                        <input type="checkbox" id="subway-entrance-checkbox"> Subway Entrance (+$1000)
-                    </label>
-                </div>
-                
-                <div class="road-design-actions">
-                    <div class="cost-display" id="total-cost">Total: $0</div>
-                    <button>Apply Design</button>
-                    <button>Remove Roads</button>
-                    <button>Clear Selection</button>
-                </div>
-            `;
-            document.body.appendChild(this.streetEdgeContextMenu);
-            this.makeDraggable(this.streetEdgeContextMenu);
-            this.setupRoadDesignEventListeners();
-        }
-        
-        // Update header with current selection count
-        const header = this.streetEdgeContextMenu.querySelector('.menu-header');
-        header.textContent = `Road Design (${this.selectedStreetEdges.size} edges)`;
-        
-        // Pre-populate form with existing road data if all selected edges have the same type
-        this.populateRoadDesignForm();
-        
-        // Position the menu - use persistent position if available, otherwise use mouse position
-        if (this.roadDesignMenuPosition) {
-            this.streetEdgeContextMenu.style.left = this.roadDesignMenuPosition.x + 'px';
-            this.streetEdgeContextMenu.style.top = this.roadDesignMenuPosition.y + 'px';
-        } else {
-            this.streetEdgeContextMenu.style.left = mouseX + 'px';
-            this.streetEdgeContextMenu.style.top = mouseY + 'px';
-            // Store initial position
-            this.roadDesignMenuPosition = { x: mouseX, y: mouseY };
-        }
-        this.streetEdgeContextMenu.style.display = 'block';
+        // Road design functionality removed
     }
     
     hideStreetEdgeContextMenu() {
-        if (this.streetEdgeContextMenu) {
-            this.streetEdgeContextMenu.style.display = 'none';
-        }
+        // Road design functionality removed
     }
     
-    setupRoadDesignEventListeners() {
-        // Cost update handlers
-        document.getElementById('road-type-select').addEventListener('change', () => this.updateRoadDesignCost());
-        document.getElementById('sidewalk-checkbox').addEventListener('change', () => this.updateRoadDesignCost());
-        document.getElementById('bike-lane-checkbox').addEventListener('change', () => this.updateRoadDesignCost());
-        document.getElementById('bus-stop-checkbox').addEventListener('change', () => this.updateRoadDesignCost());
-        document.getElementById('subway-entrance-checkbox').addEventListener('change', () => this.updateRoadDesignCost());
-        
-        // Button click handlers - replace onclick with proper event listeners
-        const applyBtn = this.streetEdgeContextMenu.querySelector('button');
-        const removeBtn = this.streetEdgeContextMenu.querySelectorAll('button')[1];
-        const clearBtn = this.streetEdgeContextMenu.querySelectorAll('button')[2];
-        
-        if (applyBtn) {
-            applyBtn.addEventListener('click', () => {
-                console.log('Apply Design button clicked!');
-                console.log('About to call this.applyRoadDesign()');
-                console.log('this.applyRoadDesign exists:', typeof this.applyRoadDesign);
-                console.log('this object in button handler:', this);
-                try {
-                    console.log('Calling function now...');
-                    const result = this.applyRoadDesign();
-                    console.log('Function call completed, result:', result);
-                } catch (error) {
-                    console.error('Error calling applyRoadDesign:', error);
-                    console.error('Error stack:', error.stack);
-                }
-                console.log('Button click handler finished');
-            });
-        } else {
-            console.log('ERROR: Apply button not found in setupRoadDesignEventListeners!');
-        }
-        
-        if (removeBtn) {
-            removeBtn.addEventListener('click', () => {
-                console.log('Remove Roads button clicked!');
-                this.removeRoadFromSelectedEdges();
-            });
-        }
-        
-        if (clearBtn) {
-            clearBtn.addEventListener('click', () => {
-                console.log('Clear Selection button clicked!');
-                this.clearSelectedStreetEdges();
-            });
-        }
-        
-        // Initial cost calculation
-        this.updateRoadDesignCost();
-    }
-    
-    populateRoadDesignForm() {
-        if (this.selectedStreetEdges.size === 0) return;
-        
-        // Analyze existing roads in selection to pre-populate form
-        const edgeData = [];
-        this.selectedStreetEdges.forEach(edgeKey => {
-            const [row, col, edge] = edgeKey.split('-');
-            const parcel = this.grid[parseInt(row)][parseInt(col)];
-            const roadData = parcel.roads[edge];
-            edgeData.push(roadData);
-        });
-        
-        // Check if all roads are the same type
-        const roadTypes = edgeData.filter(r => r !== null).map(r => r.type);
-        const uniqueTypes = [...new Set(roadTypes)];
-        
-        if (uniqueTypes.length === 1 && roadTypes.length === this.selectedStreetEdges.size) {
-            // All selected edges have the same road type - pre-populate form
-            const commonType = uniqueTypes[0];
-            const firstRoad = edgeData.find(r => r !== null);
-            
-            document.getElementById('road-type-select').value = commonType;
-            document.getElementById('sidewalk-checkbox').checked = firstRoad.sidewalks || false;
-            document.getElementById('bike-lane-checkbox').checked = firstRoad.bikeLanes || false;
-            
-            console.log(`Pre-populated form with ${commonType} road data`);
-        } else if (roadTypes.length > 0) {
-            // Mixed road types - show most common type as default
-            const typeCounts = {};
-            roadTypes.forEach(type => typeCounts[type] = (typeCounts[type] || 0) + 1);
-            const mostCommonType = Object.keys(typeCounts).reduce((a, b) => 
-                typeCounts[a] > typeCounts[b] ? a : b);
-            
-            document.getElementById('road-type-select').value = mostCommonType;
-            console.log(`Mixed road types - defaulting to most common: ${mostCommonType}`);
-        }
-        
-        // Update cost calculation with current form values
-        this.updateRoadDesignCost();
-    }
-    
-    updateRoadDesignCost() {
-        const roadType = document.getElementById('road-type-select').value;
-        const hasSidewalks = document.getElementById('sidewalk-checkbox').checked;
-        const hasBikeLanes = document.getElementById('bike-lane-checkbox').checked;
-        const hasBusStop = document.getElementById('bus-stop-checkbox').checked;
-        const hasSubwayEntrance = document.getElementById('subway-entrance-checkbox').checked;
-        
-        const roadCosts = { local: 50, arterial: 150, highway: 400 };
-        
-        let totalCost = 0;
-        const edgeCount = this.selectedStreetEdges.size;
-        
-        // Base road cost
-        totalCost += roadCosts[roadType] * edgeCount;
-        
-        // Add-on costs per segment
-        if (hasSidewalks) totalCost += 25 * edgeCount;
-        if (hasBikeLanes) totalCost += 75 * edgeCount;
-        
-        // Infrastructure costs (per selection, not per segment)
-        if (hasBusStop) totalCost += 200;
-        if (hasSubwayEntrance) totalCost += 1000;
-        
-        document.getElementById('total-cost').textContent = `Total: $${totalCost.toLocaleString()}`;
-    }
+    // Road design event listeners and form functions moved to TransportationSystem
     
     applyRoadDesign() {
-        console.log('=== APPLY ROAD DESIGN CALLED ===');
-        
-        try {
-            console.log('Selected edges:', Array.from(this.selectedStreetEdges));
-            console.log('Selected edges size:', this.selectedStreetEdges.size);
-            
-            if (this.selectedStreetEdges.size === 0) {
-                console.log('ERROR: No edges selected!');
-                this.showNotification('No road segments selected', 'error');
-                return;
-            }
-            
-            // Get form values
-            const roadType = document.getElementById('road-type-select').value;
-            const hasSidewalks = document.getElementById('sidewalk-checkbox').checked;
-            const hasBikeLanes = document.getElementById('bike-lane-checkbox').checked;
-            const hasBusStop = document.getElementById('bus-stop-checkbox').checked;
-            const hasSubwayEntrance = document.getElementById('subway-entrance-checkbox').checked;
-            
-            console.log('Road config:', { roadType, hasSidewalks, hasBikeLanes, hasBusStop, hasSubwayEntrance });
-            
-            // Calculate cost
-            const roadCosts = { local: 50, arterial: 150, highway: 400 };
-            let totalCost = roadCosts[roadType] * this.selectedStreetEdges.size;
-            if (hasSidewalks) totalCost += 25 * this.selectedStreetEdges.size;
-            if (hasBikeLanes) totalCost += 75 * this.selectedStreetEdges.size;
-            if (hasBusStop) totalCost += 200;
-            if (hasSubwayEntrance) totalCost += 1000;
-            
-            console.log('Total cost:', totalCost, 'Player funds:', this.economicCache.playerFunds);
-            
-            // Check funds
-            if (this.economicCache.playerFunds < totalCost) {
-                this.showNotification(`Insufficient funds. Need $${totalCost.toLocaleString()}`, 'error');
-                return;
-            }
-            
-            // Apply roads to grid
-            this.selectedStreetEdges.forEach(edgeKey => {
-                const [row, col, edge] = edgeKey.split('-');
-                const parcel = this.grid[parseInt(row)][parseInt(col)];
-                
-                console.log(`Applying ${roadType} to ${edgeKey}`);
-                
-                parcel.roads[edge] = {
-                    type: roadType,
-                    sidewalks: hasSidewalks,
-                    bikeLanes: hasBikeLanes,
-                    builtAt: Date.now()
-                };
-                
-                console.log('Road data stored:', parcel.roads[edge]);
-            });
-            
-            // Deduct cost
-            this.economicCache.playerFunds -= totalCost;
-            this.updatePlayerStats();
-            
-            this.showNotification(`Roads built for $${totalCost.toLocaleString()}!`, 'success');
-            
-            // Trigger visual update
-            console.log('Triggering render...');
-            this.scheduleRender();
-            
-            // Clear selection after delay
-            setTimeout(() => {
-                this.hideStreetEdgeContextMenu();
-                this.clearSelectedStreetEdges();
-            }, 1000);
-            
-        } catch (error) {
-            console.error('Error in applyRoadDesign:', error);
-            this.showNotification('Error applying roads: ' + error.message, 'error');
-        }
+        // Road design functionality removed
+        return false;
     }
     
-    applyRoadDesignOLD() {
-        try {
-            console.log('Selected edges:', Array.from(this.selectedStreetEdges));
-            console.log('Selected edges size:', this.selectedStreetEdges.size);
-            
-            if (this.selectedStreetEdges.size === 0) {
-                console.log('ERROR: No edges selected!');
-                this.showNotification('No road segments selected', 'error');
-                return;
-            }
-            
-            // Check if form elements exist
-            const roadTypeEl = document.getElementById('road-type-select');
-            const sidewalkEl = document.getElementById('sidewalk-checkbox');
-            const bikeLaneEl = document.getElementById('bike-lane-checkbox');
-            const busStopEl = document.getElementById('bus-stop-checkbox');
-            const subwayEl = document.getElementById('subway-entrance-checkbox');
-            const costEl = document.getElementById('total-cost');
-            
-            console.log('Form elements found:', {
-                roadType: !!roadTypeEl,
-                sidewalk: !!sidewalkEl, 
-                bikeLane: !!bikeLaneEl,
-                busStop: !!busStopEl,
-                subway: !!subwayEl,
-                cost: !!costEl
-            });
-            
-            if (!roadTypeEl) {
-                console.log('ERROR: Road type select not found!');
-                return;
-            }
-            
-            const roadType = roadTypeEl.value;
-            const hasSidewalks = sidewalkEl ? sidewalkEl.checked : false;
-            const hasBikeLanes = bikeLaneEl ? bikeLaneEl.checked : false;
-            const hasBusStop = busStopEl ? busStopEl.checked : false;
-            const hasSubwayEntrance = subwayEl ? subwayEl.checked : false;
-            
-            console.log('Road config:', { roadType, hasSidewalks, hasBikeLanes, hasBusStop, hasSubwayEntrance });
-            
-            // Check if player has enough money
-            const costText = costEl ? costEl.textContent : 'Total: $0';
-            const cost = parseInt(costText.replace(/[^0-9]/g, ''));
-            console.log('Cost calculation:', { costText, cost, playerFunds: this.economicCache.playerFunds });
-            
-            if (this.economicCache.playerFunds < cost) {
-                console.log('ERROR: Insufficient funds!');
-                this.showNotification(`Insufficient funds. Need $${cost.toLocaleString()}`, 'error');
-                return;
-            }
-            
-            console.log('All checks passed, proceeding with road application...');
-        
-        // Apply road design to selected edges
-        this.selectedStreetEdges.forEach(edgeKey => {
-            const [row, col, edge] = edgeKey.split('-');
-            const parcel = this.grid[parseInt(row)][parseInt(col)];
-            
-            const existingRoad = parcel.roads[edge];
-            
-            // If changing road type, destroy existing amenities
-            if (existingRoad && existingRoad.type !== roadType) {
-                console.log(`Upgrading road ${edgeKey} from ${existingRoad.type} to ${roadType} - destroying existing amenities`);
-            }
-            
-            // Create or upgrade road
-            parcel.roads[edge] = {
-                type: roadType,
-                sidewalks: existingRoad && existingRoad.type === roadType ? 
-                    (hasSidewalks || existingRoad.sidewalks) : hasSidewalks,
-                bikeLanes: existingRoad && existingRoad.type === roadType ? 
-                    (hasBikeLanes || existingRoad.bikeLanes) : hasBikeLanes,
-                builtAt: Date.now()
-            };
-            
-            console.log(`Applied ${roadType} road to edge ${edgeKey}:`, parcel.roads[edge]);
-            console.log('Grid parcel after update:', parcel);
-        });
-        
-        // Create transit stops if requested
-        if (hasBusStop || hasSubwayEntrance) {
-            // Use the center of the selection for the stop location
-            const firstEdge = Array.from(this.selectedStreetEdges)[0];
-            const [row, col] = firstEdge.split('-');
-            
-            const stopId = this.generateTransitStopId();
-            const stopData = {
-                id: stopId,
-                row: parseInt(row),
-                col: parseInt(col),
-                type: hasBusStop ? 'bus' : 'subway',
-                name: `${hasBusStop ? 'Bus' : 'Subway'} Stop ${stopId}`,
-                routes: new Set(),
-                serviceLevel: null, // Will be set when route is created
-                createdAt: Date.now()
-            };
-            
-            this.transitStops.set(stopId, stopData);
-            console.log(`Created ${stopData.type} stop ${stopId} at (${row}, ${col})`);
-        }
-        
-        // Deduct cost
-        this.economicCache.playerFunds -= cost;
-        this.updatePlayerStats();
-        
-        this.showNotification(`Road design applied to ${this.selectedStreetEdges.size} segments for $${cost.toLocaleString()}`, 'success');
-        
-        console.log('About to clear selection and hide menu...');
-        
-        // Trigger render to show the new roads first
-        this.scheduleRender();
-        
-        // Delay clearing to allow user to see the roads were applied
-        setTimeout(() => {
-            console.log('Clearing selection and hiding menu after delay');
-            this.hideStreetEdgeContextMenu();
-            this.clearSelectedStreetEdges();
-        }, 1000); // 1 second delay
-        
-        } catch (error) {
-            console.error('Error in applyRoadDesign:', error);
-            console.error('Error stack:', error.stack);
-            this.showNotification('Error applying road design: ' + error.message, 'error');
-        }
-    }
+    // applyRoadDesignOLD removed - using modular transportation system
     
     buildRoadOnSelectedEdges() {
         // Legacy function - redirect to new design system
@@ -2919,32 +2795,11 @@ class IsometricGrid {
     }
     
     removeRoadFromSelectedEdges() {
-        // Remove roads from selected edges
-        this.selectedStreetEdges.forEach(edgeKey => {
-            const [row, col, edge] = edgeKey.split('-');
-            const parcel = this.grid[parseInt(row)][parseInt(col)];
-            
-            if (parcel.roads[edge]) {
-                console.log(`Removed ${parcel.roads[edge].type} road from edge ${edgeKey}`);
-                parcel.roads[edge] = null;
-            }
-        });
-        
-        this.showNotification(`Removed roads from ${this.selectedStreetEdges.size} segments`, 'success');
-        
-        // Trigger render to show the road removal
-        this.scheduleRender();
-        
-        this.hideStreetEdgeContextMenu();
-        this.clearSelectedStreetEdges();
+        // Road removal functionality removed
     }
     
     clearSelectedStreetEdges() {
-        this.selectedStreetEdges.clear();
-        this.hideStreetEdgeContextMenu();
-        // Reset menu position when clearing selection (end of session)
-        this.roadDesignMenuPosition = null;
-        this.scheduleRender();
+        // Clear selection functionality removed
     }
     
     generateTransitStopId() {
@@ -2952,192 +2807,11 @@ class IsometricGrid {
         return Date.now().toString(36) + Math.random().toString(36).substr(2);
     }
     
-    showTransitContextMenu(stopId, mouseX, mouseY) {
-        const stop = this.transitStops.get(stopId);
-        if (!stop) return;
-        
-        // Create or get the transit context menu
-        if (!this.transitContextMenu) {
-            this.transitContextMenu = document.createElement('div');
-            this.transitContextMenu.className = 'transit-context-menu';
-            document.body.appendChild(this.transitContextMenu);
-            this.makeDraggable(this.transitContextMenu);
-        }
-        
-        this.transitContextMenu.innerHTML = `
-            <div class="menu-header draggable-handle">${stop.name}</div>
-            
-            <div class="transit-section">
-                <label>Stop Name:</label>
-                <input type="text" id="stop-name-input" value="${stop.name}" />
-            </div>
-            
-            <div class="transit-section">
-                <label>Service Level:</label>
-                <select id="transit-service-select">
-                    <option value="rush">Rush Hour ($0.10/block/month)</option>
-                    <option value="daytime">Daytime ($0.50/block/month)</option>
-                    <option value="24hour">24 Hour ($1.00/block/month)</option>
-                </select>
-            </div>
-            
-            <div class="transit-section">
-                <label>Connected Routes:</label>
-                <div id="route-list">${this.renderRouteList(stop)}</div>
-                <button onclick="game.createNewRoute('${stopId}')">Create New Route</button>
-            </div>
-            
-            <div class="transit-actions">
-                <div class="revenue-display" id="transit-revenue">Monthly Revenue: $${this.calculateStopRevenue(stop)}</div>
-                <button onclick="game.updateTransitStop('${stopId}')">Update Stop</button>
-                <button onclick="game.deleteTransitStop('${stopId}')">Delete Stop</button>
-                <button onclick="game.hideTransitContextMenu()">Close</button>
-            </div>
-        `;
-        
-        // Position the menu
-        this.transitContextMenu.style.left = mouseX + 'px';
-        this.transitContextMenu.style.top = mouseY + 'px';
-        this.transitContextMenu.style.display = 'block';
-        
-        this.selectedTransitStop = stopId;
-    }
-    
-    hideTransitContextMenu() {
-        if (this.transitContextMenu) {
-            this.transitContextMenu.style.display = 'none';
-        }
-        this.selectedTransitStop = null;
-    }
-    
-    renderRouteList(stop) {
-        if (stop.routes.size === 0) {
-            return '<div class="no-routes">No routes connected</div>';
-        }
-        
-        let html = '';
-        stop.routes.forEach(routeId => {
-            const route = this.transitRoutes.get(routeId);
-            if (route) {
-                html += `<div class="route-item">${route.name} (${route.stops.length} stops)</div>`;
-            }
-        });
-        return html;
-    }
-    
-    calculateStopRevenue(stop) {
-        // TODO: Implement revenue calculation based on ridership demand
-        return stop.routes.size * 100; // Placeholder
-    }
+    // Legacy transit system functions removed - will be redesigned from scratch
     
     getTransitStopAt(row, col) {
-        // Find transit stop at the given grid coordinates
-        for (const [stopId, stop] of this.transitStops) {
-            if (stop.row === row && stop.col === col) {
-                return stopId;
-            }
-        }
+        // Placeholder - transit stops will be redesigned
         return null;
-    }
-    
-    createNewRoute(startingStopId) {
-        const routeId = this.generateTransitRouteId();
-        const startingStop = this.transitStops.get(startingStopId);
-        
-        const routeData = {
-            id: routeId,
-            name: `Route ${routeId.substr(-4).toUpperCase()}`,
-            type: startingStop.type, // bus or subway
-            stops: [startingStopId],
-            serviceLevel: 'daytime', // default service level
-            monthlyMaintenanceCost: 0,
-            monthlyRevenue: 0,
-            createdAt: Date.now()
-        };
-        
-        this.transitRoutes.set(routeId, routeData);
-        startingStop.routes.add(routeId);
-        
-        console.log(`Created new ${routeData.type} route ${routeId} starting at stop ${startingStopId}`);
-        this.showNotification(`Created new ${routeData.type} route: ${routeData.name}`, 'success');
-        
-        // Refresh the transit context menu to show the new route
-        const stop = this.transitStops.get(this.selectedTransitStop);
-        if (stop) {
-            const mouseX = parseInt(this.transitContextMenu.style.left);
-            const mouseY = parseInt(this.transitContextMenu.style.top);
-            this.showTransitContextMenu(this.selectedTransitStop, mouseX, mouseY);
-        }
-    }
-    
-    generateTransitRouteId() {
-        return 'route_' + Date.now().toString(36) + Math.random().toString(36).substr(2, 4);
-    }
-    
-    updateTransitStop(stopId) {
-        const stop = this.transitStops.get(stopId);
-        if (!stop) return;
-        
-        // Get values from the form
-        const newName = document.getElementById('stop-name-input').value;
-        const serviceLevel = document.getElementById('transit-service-select').value;
-        
-        // Update stop data
-        stop.name = newName;
-        stop.serviceLevel = serviceLevel;
-        
-        // Update all routes that use this stop
-        stop.routes.forEach(routeId => {
-            const route = this.transitRoutes.get(routeId);
-            if (route) {
-                route.serviceLevel = serviceLevel;
-                this.updateRouteMaintenanceCost(routeId);
-            }
-        });
-        
-        this.showNotification(`Updated stop: ${newName}`, 'success');
-        console.log(`Updated transit stop ${stopId}:`, stop);
-    }
-    
-    updateRouteMaintenanceCost(routeId) {
-        const route = this.transitRoutes.get(routeId);
-        if (!route) return;
-        
-        const serviceLevelCosts = { rush: 0.10, daytime: 0.50, '24hour': 1.00 };
-        const costPerBlock = serviceLevelCosts[route.serviceLevel] || 0.50;
-        
-        // Calculate route length (approximate)
-        const routeLength = route.stops.length - 1; // blocks between stops
-        route.monthlyMaintenanceCost = costPerBlock * routeLength * 30; // 30 days per month
-        
-        console.log(`Route ${routeId} monthly cost: $${route.monthlyMaintenanceCost}`);
-    }
-    
-    deleteTransitStop(stopId) {
-        const stop = this.transitStops.get(stopId);
-        if (!stop) return;
-        
-        // Remove stop from all routes
-        stop.routes.forEach(routeId => {
-            const route = this.transitRoutes.get(routeId);
-            if (route) {
-                route.stops = route.stops.filter(id => id !== stopId);
-                // If route has no stops left, delete it
-                if (route.stops.length === 0) {
-                    this.transitRoutes.delete(routeId);
-                    console.log(`Deleted empty route ${routeId}`);
-                } else {
-                    this.updateRouteMaintenanceCost(routeId);
-                }
-            }
-        });
-        
-        // Remove the stop
-        this.transitStops.delete(stopId);
-        
-        this.showNotification(`Deleted transit stop: ${stop.name}`, 'success');
-        this.hideTransitContextMenu();
-        this.scheduleRender(); // Redraw to remove visual representation
     }
     
     selectAllStreetEdges() {
@@ -3237,268 +2911,6 @@ class IsometricGrid {
         return progressHtml;
     }
     
-    showTransportationModal(row, col) {
-        const parcel = this.grid[row][col];
-        const coord = this.getParcelCoordinate(row, col);
-        const landValue = Math.max(parcel.landValue.paidPrice, parcel.landValue.calculatedValue);
-        
-        // Update modal content
-        document.getElementById('modal-parcel-coord').textContent = coord;
-        document.getElementById('modal-land-value').textContent = landValue >= 1000 ? 
-            `$${(landValue/1000).toFixed(1)}k` : `$${landValue.toFixed(0)}`;
-        
-        // Load current road configuration for this parcel
-        this.loadParcelRoadConfiguration(row, col);
-        
-        // Show modal
-        document.getElementById('transportation-modal').classList.add('visible');
-        
-        // Store current parcel for later use
-        this.currentModalParcel = { row, col };
-    }
-    
-    hideTransportationModal() {
-        document.getElementById('transportation-modal').classList.remove('visible');
-        this.currentModalParcel = null;
-    }
-    
-    loadParcelRoadConfiguration(row, col) {
-        // Reset all selects to "none"
-        ['north', 'east', 'south', 'west'].forEach(side => {
-            document.getElementById(`road-${side}`).value = 'none';
-        });
-        
-        // Load existing roads that connect to this parcel's edges
-        this.transportationNetwork.roads.forEach(road => {
-            const roadSide = this.getRoadSideForParcel(road, row, col);
-            if (roadSide) {
-                document.getElementById(`road-${roadSide}`).value = road.type;
-            }
-        });
-        
-        // Update cost calculation
-        this.updateRoadCostDisplay();
-    }
-    
-    getRoadSideForParcel(road, row, col) {
-        // Determine which side of the parcel this road affects
-        const { startRow, startCol, endRow, endCol } = road;
-        
-        // Check if road runs along parcel edges
-        if (startRow === endRow) {
-            // Horizontal road
-            if (startRow === row - 0.5) return 'north';
-            if (startRow === row + 0.5) return 'south';
-        } else if (startCol === endCol) {
-            // Vertical road
-            if (startCol === col - 0.5) return 'west';
-            if (startCol === col + 0.5) return 'east';
-        }
-        
-        return null;
-    }
-    
-    updateRoadCostDisplay() {
-        let totalCost = 0;
-        
-        ['north', 'east', 'south', 'west'].forEach(side => {
-            const roadType = document.getElementById(`road-${side}`).value;
-            if (roadType !== 'none') {
-                totalCost += this.getRoadCost(roadType);
-            }
-            
-            // Add amenity costs for this side
-            const amenitiesContainer = document.getElementById(`amenities-${side}`);
-            if (amenitiesContainer) {
-                const checkedAmenities = amenitiesContainer.querySelectorAll('input[type="checkbox"]:checked');
-                checkedAmenities.forEach(checkbox => {
-                    const cost = parseInt(checkbox.getAttribute('data-cost')) || 0;
-                    totalCost += cost;
-                });
-            }
-        });
-        
-        document.getElementById('total-road-cost').textContent = `$${totalCost.toLocaleString()}`;
-        
-        // Update road visuals
-        this.updateRoadVisuals();
-    }
-    
-    updateRoadVisuals() {
-        ['north', 'east', 'south', 'west'].forEach(side => {
-            const roadType = document.getElementById(`road-${side}`).value;
-            const visualElement = document.getElementById(`road-visual-${side}`);
-            
-            if (visualElement) {
-                // Clear existing classes
-                visualElement.className = 'road-visual';
-                
-                // Add road type class
-                if (roadType !== 'none') {
-                    visualElement.classList.add(roadType);
-                }
-            }
-        });
-    }
-    
-    getRoadCost(roadType) {
-        const costs = {
-            'dirt_path': 25,
-            'local_street': 100,
-            'arterial': 250,
-            'highway': 1000
-        };
-        
-        return costs[roadType] || 0;
-    }
-    
-    getAmenityCost(amenityType) {
-        const costs = {
-            'sidewalk': 25,
-            'bike_lane': 50,
-            'bus_stop': 75,
-            'subway_entrance': 200
-        };
-        
-        return costs[amenityType] || 0;
-    }
-    
-    applyRoadDesignOldModal() {
-        if (!this.currentModalParcel) return;
-        
-        const { row, col } = this.currentModalParcel;
-        
-        // Calculate total cost
-        let totalCost = 0;
-        const roadChanges = [];
-        
-        ['north', 'east', 'south', 'west'].forEach(side => {
-            const roadType = document.getElementById(`road-${side}`).value;
-            if (roadType !== 'none') {
-                totalCost += this.getRoadCost(roadType);
-                
-                // Collect amenities for this side
-                const amenities = [];
-                const amenitiesContainer = document.getElementById(`amenities-${side}`);
-                if (amenitiesContainer) {
-                    const checkedAmenities = amenitiesContainer.querySelectorAll('input[type="checkbox"]:checked');
-                    checkedAmenities.forEach(checkbox => {
-                        const amenityType = checkbox.getAttribute('data-amenity');
-                        const cost = parseInt(checkbox.getAttribute('data-cost')) || 0;
-                        totalCost += cost;
-                        amenities.push(amenityType);
-                    });
-                }
-                
-                roadChanges.push({ side, roadType, amenities, row, col });
-            }
-        });
-        
-        // Check if player can afford the total cost
-        if (totalCost > this.money) {
-            alert(`Insufficient funds! Total cost: $${totalCost.toLocaleString()}, Available: $${this.money.toLocaleString()}`);
-            return;
-        }
-        
-        // Remove existing roads for this parcel
-        this.transportationNetwork.roads = this.transportationNetwork.roads.filter(road => {
-            const roadSide = this.getRoadSideForParcel(road, row, col);
-            return !roadSide;
-        });
-        
-        // Add new roads with amenities
-        roadChanges.forEach(change => {
-            const roadCoords = this.getParcelSideCoordinates(row, col, change.side);
-            if (roadCoords) {
-                this.transportationNetwork.roads.push({
-                    id: `road_${Date.now()}_${Math.random()}`,
-                    type: change.roadType,
-                    amenities: change.amenities,
-                    startRow: roadCoords.startRow,
-                    startCol: roadCoords.startCol,
-                    endRow: roadCoords.endRow,
-                    endCol: roadCoords.endCol
-                });
-            }
-        });
-        
-        // Deduct cost from money
-        this.money -= totalCost;
-        this.updatePlayerStats();
-        
-        // Hide modal
-        this.hideTransportationModal();
-        
-        // Trigger re-render
-        this.scheduleRender();
-    }
-    
-    getParcelSideCoordinates(row, col, side) {
-        // Calculate road coordinates for each side of a parcel
-        // Roads occupy the spaces between parcels
-        switch (side) {
-            case 'north':
-                return {
-                    startRow: row - 0.5,
-                    startCol: col - 0.5,
-                    endRow: row - 0.5,
-                    endCol: col + 0.5
-                };
-            case 'south':
-                return {
-                    startRow: row + 0.5,
-                    startCol: col - 0.5,
-                    endRow: row + 0.5,
-                    endCol: col + 0.5
-                };
-            case 'west':
-                return {
-                    startRow: row - 0.5,
-                    startCol: col - 0.5,
-                    endRow: row + 0.5,
-                    endCol: col - 0.5
-                };
-            case 'east':
-                return {
-                    startRow: row - 0.5,
-                    startCol: col + 0.5,
-                    endRow: row + 0.5,
-                    endCol: col + 0.5
-                };
-            default:
-                return null;
-        }
-    }
-    
-    switchTransportMode(mode) {
-        // Update active button
-        document.querySelectorAll('.transport-mode-btn').forEach(btn => {
-            btn.classList.remove('active');
-        });
-        document.getElementById(`${mode}-mode`).classList.add('active');
-        
-        // Hide all panels
-        document.getElementById('road-design-panel').style.display = 'none';
-        document.getElementById('bus-design-panel').style.display = 'none';
-        document.getElementById('subway-design-panel').style.display = 'none';
-        
-        // Show selected panel
-        switch (mode) {
-            case 'road':
-                document.getElementById('road-design-panel').style.display = 'block';
-                break;
-            case 'bus':
-                document.getElementById('bus-design-panel').style.display = 'block';
-                this.initBusRouteBuilder();
-                break;
-            case 'subway':
-                document.getElementById('subway-design-panel').style.display = 'block';
-                this.initSubwayRouteBuilder();
-                break;
-        }
-        
-        this.currentTransportMode = mode;
-    }
     
     initBusRouteBuilder() {
         const canvas = document.getElementById('bus-route-canvas');
@@ -3640,8 +3052,9 @@ class IsometricGrid {
             const roadCoords = this.getParcelSideCoordinates(row, col, side);
             if (!roadCoords) continue;
             
-            // Check if there's a road with the appropriate amenity
-            const road = this.transportationNetwork.roads.find(r => {
+            // TODO: Check if there's a road with the appropriate amenity
+            // Temporarily disabled - old road system removed
+            const road = null; /* this.transportationNetwork.roads.find(r => {
                 return (r.startRow === roadCoords.startRow && 
                         r.startCol === roadCoords.startCol &&
                         r.endRow === roadCoords.endRow && 
@@ -3650,7 +3063,7 @@ class IsometricGrid {
                         r.startCol === roadCoords.endCol &&
                         r.endRow === roadCoords.startRow && 
                         r.endCol === roadCoords.startCol);
-            });
+            }); */
             
             if (road && road.amenities) {
                 if (type === 'bus' && road.amenities.includes('bus_stop')) {
@@ -3665,414 +3078,9 @@ class IsometricGrid {
         return false;
     }
     
-    drawExistingBusRoutes(ctx, cellSize) {
-        ctx.strokeStyle = 'rgba(255, 204, 0, 0.5)';
-        ctx.lineWidth = 2;
-        
-        this.transportationNetwork.busRoutes.forEach(route => {
-            if (route.stops.length < 2) return;
-            
-            ctx.beginPath();
-            for (let i = 0; i < route.stops.length; i++) {
-                const stop = route.stops[i];
-                const x = stop.col * cellSize + cellSize / 2;
-                const y = stop.row * cellSize + cellSize / 2;
-                
-                if (i === 0) {
-                    ctx.moveTo(x, y);
-                } else {
-                    ctx.lineTo(x, y);
-                }
-            }
-            ctx.stroke();
-        });
-    }
     
-    drawExistingSubwayLines(ctx, cellSize) {
-        ctx.strokeStyle = 'rgba(255, 0, 0, 0.5)';
-        ctx.lineWidth = 3;
-        
-        this.transportationNetwork.subways.forEach(line => {
-            if (line.entrances.length < 2) return;
-            
-            ctx.beginPath();
-            for (let i = 0; i < line.entrances.length; i++) {
-                const entrance = line.entrances[i];
-                const x = entrance.col * cellSize + cellSize / 2;
-                const y = entrance.row * cellSize + cellSize / 2;
-                
-                if (i === 0) {
-                    ctx.moveTo(x, y);
-                } else {
-                    ctx.lineTo(x, y);
-                }
-            }
-            ctx.stroke();
-        });
-    }
     
-    updateBusRoutesList() {
-        const listEl = document.getElementById('bus-route-list');
-        if (!listEl) return;
-        
-        listEl.innerHTML = '';
-        
-        this.transportationNetwork.busRoutes.forEach((route, index) => {
-            const routeEl = document.createElement('div');
-            routeEl.className = 'route-item';
-            
-            const cost = this.calculateRouteCost(route.length, route.serviceLevel);
-            
-            routeEl.innerHTML = `
-                <div>
-                    <div class="route-name">${route.name}</div>
-                    <div class="route-details">${route.stops.length} stops, ${route.length} parcels</div>
-                </div>
-                <div>
-                    <span class="route-cost">$${cost.toFixed(2)}/day</span>
-                    <button class="delete-route" data-index="${index}" data-type="bus">Delete</button>
-                </div>
-            `;
-            
-            listEl.appendChild(routeEl);
-        });
-    }
-    
-    updateSubwayRoutesList() {
-        const listEl = document.getElementById('subway-route-list');
-        if (!listEl) return;
-        
-        listEl.innerHTML = '';
-        
-        this.transportationNetwork.subways.forEach((line, index) => {
-            const lineEl = document.createElement('div');
-            lineEl.className = 'route-item';
-            
-            const cost = this.calculateRouteCost(line.length, line.serviceLevel);
-            
-            lineEl.innerHTML = `
-                <div>
-                    <div class="route-name">${line.name}</div>
-                    <div class="route-details">${line.entrances.length} entrances, ${line.length} parcels</div>
-                </div>
-                <div>
-                    <span class="route-cost">$${cost.toFixed(2)}/day</span>
-                    <button class="delete-route" data-index="${index}" data-type="subway">Delete</button>
-                </div>
-            `;
-            
-            listEl.appendChild(lineEl);
-        });
-    }
-    
-    calculateRouteCost(length, serviceLevel) {
-        const costPerParcel = {
-            'rush_hour': 0.01,
-            'daytime': 0.10,
-            'late_night': 0.50,
-            '24_hour': 1.00
-        };
-        
-        return length * (costPerParcel[serviceLevel] || 0.01);
-    }
-    
-    handleBusCanvasClick(e) {
-        const canvas = e.target;
-        const rect = canvas.getBoundingClientRect();
-        const x = e.clientX - rect.left;
-        const y = e.clientY - rect.top;
-        
-        const cellSize = 400 / this.gridSize;
-        const col = Math.floor(x / cellSize);
-        const row = Math.floor(y / cellSize);
-        
-        // Check if this parcel has a bus stop
-        if (!this.hasTransitStop(row, col, 'bus')) {
-            return; // No bus stop here
-        }
-        
-        // Check if already selected
-        const existingIndex = this.busRouteSelection.stops.findIndex(
-            stop => stop.row === row && stop.col === col
-        );
-        
-        if (existingIndex >= 0) {
-            // Remove from selection
-            this.busRouteSelection.stops.splice(existingIndex, 1);
-        } else {
-            // Add to selection
-            this.busRouteSelection.stops.push({ row, col });
-        }
-        
-        // Redraw map with selection
-        this.initBusRouteBuilder();
-        this.drawBusRouteSelection();
-        
-        // Update UI
-        this.updateBusRouteInfo();
-    }
-    
-    handleSubwayCanvasClick(e) {
-        const canvas = e.target;
-        const rect = canvas.getBoundingClientRect();
-        const x = e.clientX - rect.left;
-        const y = e.clientY - rect.top;
-        
-        const cellSize = 400 / this.gridSize;
-        const col = Math.floor(x / cellSize);
-        const row = Math.floor(y / cellSize);
-        
-        // Check if this parcel has a subway entrance
-        if (!this.hasTransitStop(row, col, 'subway')) {
-            return; // No subway entrance here
-        }
-        
-        // Check if already selected
-        const existingIndex = this.subwayRouteSelection.entrances.findIndex(
-            entrance => entrance.row === row && entrance.col === col
-        );
-        
-        if (existingIndex >= 0) {
-            // Remove from selection
-            this.subwayRouteSelection.entrances.splice(existingIndex, 1);
-        } else {
-            // Add to selection
-            this.subwayRouteSelection.entrances.push({ row, col });
-        }
-        
-        // Redraw map with selection
-        this.initSubwayRouteBuilder();
-        this.drawSubwayRouteSelection();
-        
-        // Update UI
-        this.updateSubwayRouteInfo();
-    }
-    
-    drawBusRouteSelection() {
-        const canvas = document.getElementById('bus-route-canvas');
-        if (!canvas) return;
-        
-        const ctx = canvas.getContext('2d');
-        const cellSize = 400 / this.gridSize;
-        
-        // Draw selection connections
-        if (this.busRouteSelection.stops.length > 1) {
-            ctx.strokeStyle = '#ffcc00';
-            ctx.lineWidth = 3;
-            ctx.setLineDash([5, 5]);
-            
-            ctx.beginPath();
-            for (let i = 0; i < this.busRouteSelection.stops.length; i++) {
-                const stop = this.busRouteSelection.stops[i];
-                const x = stop.col * cellSize + cellSize / 2;
-                const y = stop.row * cellSize + cellSize / 2;
-                
-                if (i === 0) {
-                    ctx.moveTo(x, y);
-                } else {
-                    ctx.lineTo(x, y);
-                }
-            }
-            ctx.stroke();
-            ctx.setLineDash([]);
-        }
-        
-        // Highlight selected stops
-        this.busRouteSelection.stops.forEach(stop => {
-            const x = stop.col * cellSize + cellSize / 2;
-            const y = stop.row * cellSize + cellSize / 2;
-            
-            ctx.strokeStyle = '#00ff00';
-            ctx.lineWidth = 2;
-            ctx.beginPath();
-            ctx.arc(x, y, 8, 0, Math.PI * 2);
-            ctx.stroke();
-        });
-    }
-    
-    drawSubwayRouteSelection() {
-        const canvas = document.getElementById('subway-route-canvas');
-        if (!canvas) return;
-        
-        const ctx = canvas.getContext('2d');
-        const cellSize = 400 / this.gridSize;
-        
-        // Draw selection connections
-        if (this.subwayRouteSelection.entrances.length > 1) {
-            ctx.strokeStyle = '#ff0000';
-            ctx.lineWidth = 4;
-            ctx.setLineDash([5, 5]);
-            
-            ctx.beginPath();
-            for (let i = 0; i < this.subwayRouteSelection.entrances.length; i++) {
-                const entrance = this.subwayRouteSelection.entrances[i];
-                const x = entrance.col * cellSize + cellSize / 2;
-                const y = entrance.row * cellSize + cellSize / 2;
-                
-                if (i === 0) {
-                    ctx.moveTo(x, y);
-                } else {
-                    ctx.lineTo(x, y);
-                }
-            }
-            ctx.stroke();
-            ctx.setLineDash([]);
-        }
-        
-        // Highlight selected entrances
-        this.subwayRouteSelection.entrances.forEach(entrance => {
-            const x = entrance.col * cellSize + cellSize / 2;
-            const y = entrance.row * cellSize + cellSize / 2;
-            
-            ctx.strokeStyle = '#00ff00';
-            ctx.lineWidth = 2;
-            ctx.strokeRect(x - 6, y - 6, 12, 12);
-        });
-    }
-    
-    updateBusRouteInfo() {
-        const stopCount = this.busRouteSelection.stops.length;
-        document.getElementById('bus-stop-count').textContent = stopCount;
-        
-        // Show config if 2+ stops selected
-        if (stopCount >= 2) {
-            document.getElementById('bus-route-config').style.display = 'block';
-            this.updateBusRouteCost();
-        } else {
-            document.getElementById('bus-route-config').style.display = 'none';
-        }
-    }
-    
-    updateSubwayRouteInfo() {
-        const entranceCount = this.subwayRouteSelection.entrances.length;
-        document.getElementById('subway-stop-count').textContent = entranceCount;
-        
-        // Show config if 2+ entrances selected
-        if (entranceCount >= 2) {
-            document.getElementById('subway-route-config').style.display = 'block';
-            this.updateSubwayRouteCost();
-        } else {
-            document.getElementById('subway-route-config').style.display = 'none';
-        }
-    }
-    
-    updateBusRouteCost() {
-        const stops = this.busRouteSelection.stops;
-        if (stops.length < 2) return;
-        
-        // Calculate route length (Manhattan distance)
-        let totalLength = 0;
-        for (let i = 1; i < stops.length; i++) {
-            const dist = Math.abs(stops[i].row - stops[i-1].row) + 
-                        Math.abs(stops[i].col - stops[i-1].col);
-            totalLength += dist;
-        }
-        
-        const serviceLevel = document.getElementById('bus-service-level').value;
-        const cost = this.calculateRouteCost(totalLength, serviceLevel);
-        
-        document.getElementById('bus-route-length').textContent = totalLength;
-        document.getElementById('bus-route-cost').textContent = cost.toFixed(2);
-    }
-    
-    updateSubwayRouteCost() {
-        const entrances = this.subwayRouteSelection.entrances;
-        if (entrances.length < 2) return;
-        
-        // Calculate route length (Manhattan distance)
-        let totalLength = 0;
-        for (let i = 1; i < entrances.length; i++) {
-            const dist = Math.abs(entrances[i].row - entrances[i-1].row) + 
-                        Math.abs(entrances[i].col - entrances[i-1].col);
-            totalLength += dist;
-        }
-        
-        const serviceLevel = document.getElementById('subway-service-level').value;
-        const cost = this.calculateRouteCost(totalLength, serviceLevel);
-        
-        document.getElementById('subway-route-length').textContent = totalLength;
-        document.getElementById('subway-route-cost').textContent = cost.toFixed(2);
-    }
-    
-    clearBusRouteSelection() {
-        this.busRouteSelection = { stops: [], connections: [] };
-        this.initBusRouteBuilder();
-        this.updateBusRouteInfo();
-    }
-    
-    clearSubwayRouteSelection() {
-        this.subwayRouteSelection = { entrances: [], connections: [] };
-        this.initSubwayRouteBuilder();
-        this.updateSubwayRouteInfo();
-    }
-    
-    createBusRoute() {
-        if (this.busRouteSelection.stops.length < 2) return;
-        
-        const name = document.getElementById('bus-route-name').value || 'Bus Route';
-        const serviceLevel = document.getElementById('bus-service-level').value;
-        
-        // Calculate route length
-        let totalLength = 0;
-        for (let i = 1; i < this.busRouteSelection.stops.length; i++) {
-            const dist = Math.abs(this.busRouteSelection.stops[i].row - this.busRouteSelection.stops[i-1].row) + 
-                        Math.abs(this.busRouteSelection.stops[i].col - this.busRouteSelection.stops[i-1].col);
-            totalLength += dist;
-        }
-        
-        // Add route to network
-        this.transportationNetwork.busRoutes.push({
-            id: `bus_route_${Date.now()}`,
-            name: name,
-            stops: [...this.busRouteSelection.stops],
-            length: totalLength,
-            serviceLevel: serviceLevel,
-            owner: 'player'
-        });
-        
-        // Clear selection
-        this.clearBusRouteSelection();
-        
-        // Update list
-        this.updateBusRoutesList();
-        
-        // Reset name input
-        document.getElementById('bus-route-name').value = '';
-    }
-    
-    createSubwayRoute() {
-        if (this.subwayRouteSelection.entrances.length < 2) return;
-        
-        const name = document.getElementById('subway-route-name').value || 'Subway Line';
-        const serviceLevel = document.getElementById('subway-service-level').value;
-        
-        // Calculate route length
-        let totalLength = 0;
-        for (let i = 1; i < this.subwayRouteSelection.entrances.length; i++) {
-            const dist = Math.abs(this.subwayRouteSelection.entrances[i].row - this.subwayRouteSelection.entrances[i-1].row) + 
-                        Math.abs(this.subwayRouteSelection.entrances[i].col - this.subwayRouteSelection.entrances[i-1].col);
-            totalLength += dist;
-        }
-        
-        // Add route to network
-        this.transportationNetwork.subways.push({
-            id: `subway_line_${Date.now()}`,
-            name: name,
-            entrances: [...this.subwayRouteSelection.entrances],
-            length: totalLength,
-            serviceLevel: serviceLevel,
-            owner: 'player'
-        });
-        
-        // Clear selection
-        this.clearSubwayRouteSelection();
-        
-        // Update list
-        this.updateSubwayRoutesList();
-        
-        // Reset name input
-        document.getElementById('subway-route-name').value = '';
-    }
+    // Legacy transportation functions removed - will be redesigned from scratch
     
     // Governance System Methods
     showGovernanceModal() {
@@ -4490,8 +3498,21 @@ class IsometricGrid {
         
         const destroyBtn = document.createElement('button');
         destroyBtn.className = 'context-btn';
-        destroyBtn.textContent = 'DESTROY BUILDING';
+        
+        // Calculate and show demolition fee
+        const building = this.buildingManager.getBuildingById(parcel.building);
+        const currentValue = this.calculateCurrentBuildingValue(parcel, building);
+        const demolitionFee = Math.round(currentValue * 0.1);
+        
+        destroyBtn.textContent = `DESTROY BUILDING - $${demolitionFee}`;
         destroyBtn.onclick = () => this.destroyBuilding(row, col);
+        
+        // Disable if player can't afford demolition fee
+        if (this.playerCash < demolitionFee) {
+            destroyBtn.disabled = true;
+            destroyBtn.classList.add('disabled');
+        }
+        
         actionsSection.appendChild(destroyBtn);
         
         contentEl.appendChild(actionsSection);
@@ -4534,43 +3555,106 @@ class IsometricGrid {
         
         contentEl.appendChild(upgradeSection);
         
-        // Amenities section
-        const amenitySection = document.createElement('div');
-        amenitySection.className = 'context-section';
+        // Repair Building section
+        const repairSection = document.createElement('div');
+        repairSection.className = 'context-section';
         
-        const amenityTitle = document.createElement('div');
-        amenityTitle.className = 'build-menu-title';
-        amenityTitle.textContent = 'AMENITIES';
-        amenitySection.appendChild(amenityTitle);
+        const repairBtn = document.createElement('button');
+        repairBtn.className = 'context-btn';
         
-        // Get available amenities
-        const amenities = this.getAvailableAmenities(parcel);
-        if (amenities.length > 0) {
-            amenities.slice(0, 5).forEach(amenity => { // Show max 5
-                const amenityBtn = document.createElement('button');
-                amenityBtn.className = 'context-btn';
-                const amenityCost = amenity.economics?.buildCost || amenity.cost || 0;
-                
-                // Calculate public funding for amenities
-                const amenityCategory = amenity.category;
-                const fundingInfo = this.calculateBuildingCostWithFunding({category: amenityCategory}, amenityCost);
-                const playerCost = fundingInfo.playerCost;
-                const publicFunding = fundingInfo.publicFunding;
-                
-                amenityBtn.textContent = `+ ${amenity.name} - $${playerCost.toLocaleString()}`;
-                amenityBtn.onclick = () => this.addAmenity(row, col, amenity.id);
-                amenitySection.appendChild(amenityBtn);
-            });
+        // Calculate repair cost based on building age/decay
+        const buildingData = this.buildingManager.getBuildingById(parcel.building);
+        const repairCost = this.calculateRepairCost(parcel, buildingData);
+        
+        if (repairCost > 0) {
+            repairBtn.textContent = `Repair Building - $${repairCost}`;
+            repairBtn.onclick = () => this.repairBuilding(row, col);
+            
+            // Disable if player can't afford
+            if (this.playerCash < repairCost) {
+                repairBtn.disabled = true;
+                repairBtn.classList.add('disabled');
+            }
         } else {
-            const noAmenities = document.createElement('div');
-            noAmenities.textContent = 'No amenities available';
-            noAmenities.style.color = '#666666';
-            noAmenities.style.fontSize = '9px';
-            noAmenities.style.padding = '4px 8px';
-            amenitySection.appendChild(noAmenities);
+            repairBtn.textContent = 'Building in Good Condition';
+            repairBtn.disabled = true;
+            repairBtn.classList.add('disabled');
         }
         
-        contentEl.appendChild(amenitySection);
+        repairSection.appendChild(repairBtn);
+        contentEl.appendChild(repairSection);
+    }
+    
+    calculateRepairCost(parcel, building) {
+        // Calculate cost to repair building based on maintenance increase due to decay
+        // Cost = 200 × (current_maintenance - original_maintenance)
+        if (!parcel || !building || !parcel.decay || parcel.decay <= 0) {
+            return 0;
+        }
+        
+        // Get base maintenance cost
+        const baseMaintenance = building.economics.maintenanceCost || 0;
+        
+        // Calculate current maintenance with decay (same formula as in calculateBuildingEconomics)
+        const maintenanceMultiplier = 1 + (parcel.decay * 2); // Doubles at full decay
+        const currentMaintenance = baseMaintenance * maintenanceMultiplier;
+        
+        // Calculate maintenance increase due to decay
+        const maintenanceIncrease = currentMaintenance - baseMaintenance;
+        
+        // Repair cost is 200x the maintenance increase
+        const repairCost = maintenanceIncrease * 200;
+        
+        return Math.round(repairCost * 100) / 100; // Round to nearest cent
+    }
+    
+    calculateCurrentBuildingValue(parcel, building) {
+        // Calculate current building value accounting for decay
+        if (!building || !building.economics) return 0;
+        
+        const baseCost = building.economics.buildCost || 0;
+        const decayFactor = 1 - (parcel.decay || 0);
+        
+        // Current value is base cost reduced by decay
+        return Math.round(baseCost * decayFactor);
+    }
+    
+    repairBuilding(row, col) {
+        const parcel = this.grid[row][col];
+        if (!parcel || !parcel.building) return;
+        
+        const building = this.buildingManager.getBuildingById(parcel.building);
+        const repairCost = this.calculateRepairCost(parcel, building);
+        
+        if (this.playerCash < repairCost) {
+            console.log('❌ Insufficient funds to repair building');
+            return;
+        }
+        
+        // Deduct repair cost
+        this.playerCash -= repairCost;
+        
+        // Reset decay to 0 (fully repaired) but keep building age for history
+        const oldDecay = parcel.decay;
+        const oldMaintenance = building.economics.maintenanceCost * (1 + (oldDecay * 2));
+        const newMaintenance = building.economics.maintenanceCost;
+        
+        parcel.decay = 0;
+        
+        // Mark building for economic recalculation
+        this.markBuildingEconomicsDirty(row, col);
+        
+        // Update cashflow preview immediately
+        this.calculateCurrentCashflow();
+        this.updatePlayerStats();
+        
+        console.log(`🔧 Repaired ${building.name} at ${this.getParcelCoordinate(row, col)}: maintenance $${oldMaintenance.toFixed(2)}/day → $${newMaintenance}/day (Cost: $${repairCost})`);
+        
+        // Hide context menu after repair
+        this.hideContextMenu();
+        
+        // Re-render to show repaired state
+        this.scheduleRender();
     }
     
     buyParcel(row, col) {
@@ -4808,7 +3892,7 @@ class IsometricGrid {
         
         // Check if parcel is owned by player
         if (this.grid[row][col].owner !== 'player') {
-            reasons.push('Must own this parcel');
+            // Skip - players can only access building menu on owned parcels
         }
         
         // Check if parcel already has a building
@@ -4861,30 +3945,53 @@ class IsometricGrid {
 
     destroyBuilding(row, col) {
         const coord = this.getParcelCoordinate(row, col);
-        const building = this.grid[row][col].building;
+        const parcel = this.grid[row][col];
+        const buildingId = parcel.building;
         
-        // Destroy building silently
-        if (true) {
-            
-            // Remove building and amenities
-            this.grid[row][col].building = null;
-            this.grid[row][col].amenities = [];
-            
-            // Mark building for economic recalculation removal
-            this.markBuildingEconomicsDirty(row, col);
-            
-            // Mark region as dirty for cache invalidation (performance optimization)
-            this.markRegionDirty(row, col, 3);
-            
-            // Update vitality, cashflow and re-render
-            this.updateVitalityDisplay();
-            this.calculateCurrentCashflow();
-            this.updatePlayerStats();
-            this.scheduleRender();
+        if (!buildingId) return;
+        
+        // Calculate demolition fee (10% of current building value)
+        const building = this.buildingManager.getBuildingById(buildingId);
+        const currentValue = this.calculateCurrentBuildingValue(parcel, building);
+        const demolitionFee = Math.round(currentValue * 0.1);
+        
+        // Check if player can afford demolition fee
+        if (this.playerCash < demolitionFee) {
+            console.log(`❌ Insufficient funds for demolition fee: $${demolitionFee}`);
             this.hideContextMenu();
-            
-            // Building destroyed silently
+            return;
         }
+        
+        // Deduct demolition fee from player
+        this.playerCash -= demolitionFee;
+        
+        // Add demolition fee to city treasury
+        if (this.governance && this.governance.unallocatedFunds !== undefined) {
+            this.governance.unallocatedFunds += demolitionFee;
+        }
+        
+        console.log(`🏗️ Demolished ${building.name} at ${coord}: Fee $${demolitionFee} → City Treasury`);
+        
+        // Remove building and amenities
+        parcel.building = null;
+        parcel.amenities = [];
+        
+        // Reset building-specific properties
+        parcel.buildingAge = 0;
+        parcel.decay = 0;
+        
+        // Mark building for economic recalculation removal
+        this.markBuildingEconomicsDirty(row, col);
+        
+        // Mark region as dirty for cache invalidation (performance optimization)
+        this.markRegionDirty(row, col, 3);
+        
+        // Update vitality, cashflow and re-render
+        this.updateVitalityDisplay();
+        this.calculateCurrentCashflow();
+        this.updatePlayerStats();
+        this.scheduleRender();
+        this.hideContextMenu();
     }
 
     getPotentialUpgrades(currentBuildingId) {
@@ -5021,6 +4128,9 @@ class IsometricGrid {
         // Update soft metric impacts (livability)
         this.updateBuildingImpacts(buildingData.impacts);
 
+        // Add Investment Score
+        this.updateInvestmentScore(buildingData);
+
         // Show panel
         panel.classList.add('visible');
     }
@@ -5028,6 +4138,117 @@ class IsometricGrid {
     hideBuildingInfo() {
         const panel = document.getElementById('building-info-panel');
         panel.classList.remove('visible');
+    }
+
+    calculateInvestmentScore(buildingData) {
+        // Get all buildings to find max/min values for normalization
+        const allBuildings = this.buildingManager.getAllBuildings();
+        
+        // Extract financial metrics from all buildings
+        const revenues = allBuildings.map(b => b.economics?.maxRevenue || 0);
+        const maintenances = allBuildings.map(b => b.economics?.maintenanceCost || 0);
+        const decayRates = allBuildings.map(b => b.economics?.decayRate || 0);
+        
+        const maxRevenue = Math.max(...revenues);
+        const minRevenue = Math.min(...revenues);
+        const maxMaintenance = Math.max(...maintenances);
+        const minMaintenance = Math.min(...maintenances);
+        const maxDecayRate = Math.max(...decayRates);
+        const minDecayRate = Math.min(...decayRates);
+        
+        // Current building's metrics
+        const revenue = buildingData.economics?.maxRevenue || 0;
+        const maintenance = buildingData.economics?.maintenanceCost || 0;
+        const decayRate = buildingData.economics?.decayRate || 0;
+        
+        // Calculate normalized scores (0-1)
+        const revenueScore = maxRevenue > minRevenue ? 
+            (revenue - minRevenue) / (maxRevenue - minRevenue) : 0.5;
+        
+        // Lower maintenance is better, so invert the score
+        const maintenanceScore = maxMaintenance > minMaintenance ? 
+            1 - (maintenance - minMaintenance) / (maxMaintenance - minMaintenance) : 0.5;
+        
+        // Lower decay rate is better, so invert the score
+        const decayScore = maxDecayRate > minDecayRate ? 
+            1 - (decayRate - minDecayRate) / (maxDecayRate - minDecayRate) : 0.5;
+        
+        // Weighted average (revenue is most important, then maintenance, then decay)
+        const weightedScore = (revenueScore * 0.5) + (maintenanceScore * 0.3) + (decayScore * 0.2);
+        
+        // Convert to 1-100 scale
+        const investmentScore = Math.max(1, Math.min(100, Math.round(weightedScore * 100)));
+        
+        return {
+            score: investmentScore,
+            revenue: revenue,
+            maintenance: maintenance,
+            decayRate: decayRate
+        };
+    }
+
+    updateInvestmentScore(buildingData) {
+        // Find or create investment score container
+        let container = document.querySelector('.investment-score-container');
+        if (!container) {
+            container = document.createElement('div');
+            container.className = 'investment-score-container';
+            
+            // Insert after supply-demand section
+            const supplyDemandSection = document.querySelector('.building-supply-demand');
+            if (supplyDemandSection && supplyDemandSection.parentNode) {
+                supplyDemandSection.parentNode.insertBefore(container, supplyDemandSection.nextSibling);
+            } else {
+                // Fallback - add to building-info-content
+                const infoContent = document.querySelector('.building-info-content');
+                if (infoContent) infoContent.appendChild(container);
+            }
+        }
+        
+        const scoreData = this.calculateInvestmentScore(buildingData);
+        
+        // Determine score color and label
+        let scoreColor, scoreLabel;
+        if (scoreData.score >= 80) {
+            scoreColor = '#4CAF50'; // Green
+            scoreLabel = 'EXCELLENT';
+        } else if (scoreData.score >= 60) {
+            scoreColor = '#8BC34A'; // Light green
+            scoreLabel = 'GOOD';
+        } else if (scoreData.score >= 40) {
+            scoreColor = '#FFC107'; // Amber
+            scoreLabel = 'FAIR';
+        } else if (scoreData.score >= 20) {
+            scoreColor = '#FF9800'; // Orange
+            scoreLabel = 'POOR';
+        } else {
+            scoreColor = '#F44336'; // Red
+            scoreLabel = 'VERY POOR';
+        }
+        
+        container.innerHTML = `
+            <div class="vitality-group-title">INVESTMENT SCORE</div>
+            <div class="investment-score-main">
+                <div class="investment-score-circle" style="border-color: ${scoreColor};">
+                    <div class="investment-score-number" style="color: ${scoreColor};">${scoreData.score}</div>
+                    <div class="investment-score-label" style="color: ${scoreColor};">${scoreLabel}</div>
+                </div>
+                <div class="investment-score-breakdown">
+                    <div class="investment-metric">
+                        <span class="metric-label">Max Revenue</span>
+                        <span class="metric-value">$${scoreData.revenue}/day</span>
+                    </div>
+                    <div class="investment-metric">
+                        <span class="metric-label">Maintenance</span>
+                        <span class="metric-value">$${scoreData.maintenance}/day</span>
+                    </div>
+                    <div class="investment-metric">
+                        <span class="metric-label">Decay Rate</span>
+                        <span class="metric-value">${scoreData.decayRate}%/day</span>
+                    </div>
+                </div>
+            </div>
+        `;
     }
 
     getBuildingDataByName(buildingName) {
@@ -5101,7 +4322,8 @@ class IsometricGrid {
                 category: building.category,
                 supplyDemand: supplyDemand,
                 impacts: softMetrics,
-                image: building.images?.built || null
+                image: building.images?.built || null,
+                economics: building.economics
             };
         }
         
@@ -5507,7 +4729,7 @@ class IsometricGrid {
         let residentialCapacity = 0;
         if (parcel.building) {
             const building = this.buildingManager.getBuildingById(parcel.building);
-            if (building && building.category === 'housing') {
+            if (building && this.buildingCategories.normalize(building.category) === 'housing') {
                 residentialCapacity = building.bedrooms || 0;
             }
         }
@@ -5659,7 +4881,7 @@ class IsometricGrid {
                     const parcel = this.grid[r][c];
                     if (parcel.building) {
                         const building = this.buildingManager.getBuildingById(parcel.building);
-                        if (building && building.category === 'housing') {
+                        if (building && this.buildingCategories.normalize(building.category) === 'housing') {
                             // Weight population by inverse distance
                             const weight = 1.0 / (1 + distance * 0.5);
                             population += (building.bedrooms || 0) * weight;
@@ -5746,9 +4968,9 @@ class IsometricGrid {
             });
         });
         
-        // Overall efficiency as percentage (50% to 120%)
+        // Overall efficiency as percentage (0% to 100%)
         const avgSatisfaction = needCount > 0 ? totalSatisfaction / needCount : 1.0;
-        const efficiency = Math.round((0.5 + avgSatisfaction * 0.7) * 100);
+        const efficiency = Math.round(avgSatisfaction * 100);
         
         // Sort needs by worst satisfaction first
         needsList.sort((a, b) => a.satisfaction - b.satisfaction);
@@ -5793,6 +5015,47 @@ class IsometricGrid {
         };
     }
     
+    getOrderedTooltipNeeds(building, topNeeds) {
+        // Create a map of needs for easy lookup
+        const needsMap = new Map();
+        topNeeds.forEach(need => {
+            needsMap.set(need.resource.toLowerCase(), need);
+        });
+        
+        // Define priority orders for different building types
+        let priorityOrder = [];
+        
+        // Determine building type and set priority order
+        if (building.category === 'residential') {
+            // Residential: food, housing, jobs, energy
+            priorityOrder = ['food', 'housing', 'jobs', 'energy', 'workers', 'residents'];
+        } else if (this.buildingCategories.normalize(building.category) === 'commercial' || building.category === 'industrial') {
+            // Commercial/Industrial: energy, workers, food
+            priorityOrder = ['energy', 'workers', 'food', 'jobs', 'housing', 'residents'];
+        } else {
+            // All others: energy, workers, food, housing
+            priorityOrder = ['energy', 'workers', 'food', 'housing', 'jobs', 'residents'];
+        }
+        
+        // Build ordered list based on priority, then add any remaining needs
+        const orderedNeeds = [];
+        
+        // Add needs in priority order
+        priorityOrder.forEach(resource => {
+            if (needsMap.has(resource)) {
+                orderedNeeds.push(needsMap.get(resource));
+                needsMap.delete(resource);
+            }
+        });
+        
+        // Add any remaining needs that weren't in the priority list
+        needsMap.forEach(need => {
+            orderedNeeds.push(need);
+        });
+        
+        return orderedNeeds;
+    }
+    
     // Supply/Demand System with Transport Networks
     calculateSupplyDemandBalance() {
         const balance = {
@@ -5806,17 +5069,44 @@ class IsometricGrid {
             recreation: { supply: [], demand: [], balance: 0, satisfaction: 0 } // For parks/culture
         };
         
-        // Track individual building efficiency and needs
-        this.buildingEfficiencies = new Map();
+        // Track individual building efficiency and needs (initialized in constructor)
+        
+        // Clear previous efficiency tracking
+        this.buildingEfficiencies.clear();
+        
+        // BUILD TRANSPORT NETWORK FIRST - before all calculations
+        const transportNetwork = this.buildTransportNetwork();
         
         // First pass: Identify all supply and demand points
+        let buildingsFound = 0;
+        console.log('🔍 Starting grid scan, gridSize:', this.gridSize, 'grid exists:', !!this.grid);
+        if (!this.grid) {
+            console.log('❌ Grid is null/undefined!');
+            return;
+        }
         for (let row = 0; row < this.gridSize; row++) {
             for (let col = 0; col < this.gridSize; col++) {
                 const parcel = this.grid[row][col];
+                
+                // Debug: Check what's in parcels that should have buildings
+                if ((row === 11 && col === 11) || parcel?.building) {
+                    console.log(`🔍 Parcel at ${row},${col}:`, {
+                        hasBuilding: !!parcel?.building,
+                        buildingId: parcel?.building,
+                        parcelKeys: parcel ? Object.keys(parcel) : 'null parcel'
+                    });
+                }
+                
                 if (!parcel.building) continue;
+                buildingsFound++;
                 
                 const building = this.buildingManager.getBuildingById(parcel.building);
-                if (!building) continue;
+                if (!building) {
+                    console.log(`⚠️ Building ${parcel.building} not found at ${row},${col}`);
+                    continue;
+                }
+                
+                console.log(`🏢 Found building ${building.name} at ${row},${col}`);
                 
                 const key = `${row},${col}`;
                 
@@ -5828,8 +5118,13 @@ class IsometricGrid {
                     needs: {}
                 });
                 
+                // Debug: Log building efficiency initialization
+                if (Math.random() < 0.1) { // Log 10% of buildings to avoid spam
+                    console.log(`Building efficiency tracking initialized for ${building.name} at ${key}`);
+                }
+                
                 // Housing supplies workers and residents, demands food/energy/jobs/recreation
-                if (building.category === 'housing') {
+                if (this.buildingCategories.normalize(building.category) === 'housing') {
                     const residents = building.bedrooms || 0;
                     
                     // Supply housing capacity
@@ -5891,7 +5186,7 @@ class IsometricGrid {
                 }
                 
                 // Commercial buildings need workers, customers and energy
-                if (building.category === 'commercial') {
+                if (this.buildingCategories.normalize(building.category) === 'commercial') {
                     // Supply jobs
                     if (building.jobs > 0) {
                         balance.jobs.supply.push({
@@ -6081,16 +5376,21 @@ class IsometricGrid {
             }
         }
         
-        // Build transport network connectivity map
-        const transportNetwork = this.buildTransportNetwork();
+        console.log(`🔍 Grid scan complete: ${buildingsFound} buildings found in grid`);
         
         // Second pass: Match supply with demand using distance-attenuated distribution
+        // (Transport network already built at beginning of method)
         ['energy', 'food', 'jobs', 'workers', 'residents', 'students', 'recreation'].forEach(resource => {
             const resourceBalance = balance[resource];
             
             // Calculate satisfaction for each demand point
             resourceBalance.demand.forEach(demandPoint => {
                 let fulfilledDemand = 0;
+                
+                // Debug: Log JEFH demand processing
+                if (['jobs', 'education', 'food', 'housing'].includes(resource)) {
+                    console.log(`📊 Processing ${resource} demand at ${demandPoint.row},${demandPoint.col}, amount: ${demandPoint.amount}`);
+                }
                 
                 resourceBalance.supply.forEach(supplyPoint => {
                     // Calculate effective distance considering transport
@@ -6100,14 +5400,83 @@ class IsometricGrid {
                         transportNetwork
                     );
                     
-                    // Distance attenuation function
-                    // Full access within 2 tiles, 50% at 5 tiles, 10% at 10 tiles, 0% beyond 15
+                    // Enhanced distance attenuation based on road type and resource
                     let accessibility = 0;
-                    if (effectiveDistance <= 2) {
+                    
+                    // Check if connected by roads and get the road type
+                    const roadConnection = transportNetwork.roads ? 
+                        this.hasRoadConnection(demandPoint.row, demandPoint.col, 
+                                             supplyPoint.row, supplyPoint.col, 
+                                             transportNetwork.roads) : { connected: false };
+                    
+                    // Debug logging for road connections
+                    if (resource === 'food' && Math.random() < 0.1) { // Log 10% of food connections
+                        console.log(`🔍 Road check: (${demandPoint.row},${demandPoint.col}) → (${supplyPoint.row},${supplyPoint.col}): ${roadConnection.connected ? 'CONNECTED via ' + roadConnection.bestRoadType : 'NOT CONNECTED'}`);
+                        if (transportNetwork.roads.size > 0) {
+                            console.log(`📍 Transport network has ${transportNetwork.roads.size} parcel connections`);
+                            const sample = Array.from(transportNetwork.roads.entries()).slice(0, 2);
+                            sample.forEach(([key, connections]) => {
+                                console.log(`  ${key} → [${connections.map(c => `(${c.row},${c.col})`).join(', ')}]`);
+                            });
+                        }
+                    }
+                    
+                    if (roadConnection.connected) {
+                        const roadType = roadConnection.bestRoadType;
+                        const actualDistance = Math.abs(demandPoint.row - supplyPoint.row) + 
+                                             Math.abs(demandPoint.col - supplyPoint.col);
+                        
+                        // Different resources travel differently on roads
+                        if (resource === 'food' || resource === 'workers' || resource === 'residents') {
+                            // Food and people can travel far on highways
+                            if (roadType === 'highway') {
+                                // Highways: minimal distance penalty for food/people
+                                accessibility = 1.0 - (actualDistance * 0.01); // Only 1% loss per tile
+                                accessibility = Math.max(0.8, accessibility); // Minimum 80% efficiency
+                                
+                                // Check capacity constraints for people movement
+                                if (resource === 'workers' || resource === 'residents') {
+                                    // Highway capacity is limited for people (1000 capacity)
+                                    const roadCapacity = 1000;
+                                    const currentFlow = supplyPoint.amount;
+                                    if (currentFlow > roadCapacity) {
+                                        // Reduce efficiency if over capacity
+                                        accessibility *= (roadCapacity / currentFlow);
+                                        console.log(`🚗 Highway capacity limit: ${roadCapacity} people, reducing efficiency`);
+                                    }
+                                }
+                                console.log(`🛣️ Highway ${resource} transport: ${Math.round(accessibility * 100)}% efficient over ${actualDistance} tiles`);
+                            } else if (roadType === 'arterial') {
+                                // Arterials: moderate distance penalty
+                                accessibility = 1.0 - (actualDistance * 0.03); // 3% loss per tile
+                                accessibility = Math.max(0.6, accessibility); // Minimum 60% efficiency
+                            } else {
+                                // Local roads: significant distance penalty
+                                accessibility = 1.0 - (actualDistance * 0.06); // 6% loss per tile
+                                accessibility = Math.max(0.4, accessibility); // Minimum 40% efficiency
+                            }
+                        } else {
+                            // Other resources (energy, jobs, etc.) use standard road efficiency
+                            if (roadType === 'highway') {
+                                accessibility = 0.95; // Highways still best
+                            } else if (roadType === 'arterial') {
+                                accessibility = 0.85; // Arterials decent
+                            } else {
+                                accessibility = 0.75; // Local roads basic
+                            }
+                        }
+                        
+                        // Boost for very close connections
+                        if (effectiveDistance <= 2) {
+                            accessibility = Math.min(1.0, accessibility * 1.1);
+                        }
+                        
+                    } else if (effectiveDistance <= 2) {
+                        // Walking distance - full access
                         accessibility = 1.0;
                     } else if (effectiveDistance <= 15) {
-                        // Exponential decay
-                        accessibility = Math.exp(-0.3 * (effectiveDistance - 2));
+                        // No road connection and too far to walk - very limited access
+                        accessibility = Math.exp(-0.5 * (effectiveDistance - 2)); // Steeper decay without roads
                     }
                     
                     // Amount of supply accessible from this point
@@ -6117,6 +5486,11 @@ class IsometricGrid {
                 
                 // Calculate satisfaction ratio for this demand point
                 demandPoint.satisfaction = Math.min(1.0, fulfilledDemand / demandPoint.amount);
+                
+                // Debug: Log low satisfaction for JEFH resources
+                if (['jobs', 'education', 'food', 'housing'].includes(resource) && demandPoint.satisfaction < 0.8) {
+                    console.log(`Low JEFH satisfaction: ${resource} at ${demandPoint.row},${demandPoint.col} = ${Math.round(demandPoint.satisfaction * 100)}%`);
+                }
                 
                 // Store building-specific satisfaction
                 const key = `${demandPoint.row},${demandPoint.col}`;
@@ -6159,103 +5533,167 @@ class IsometricGrid {
     }
     
     buildTransportNetwork() {
+        // Build transport network using mobility layer roads
+        if (!this.mobilityLayer) {
+            // Fallback for when mobility layer is not available
+            return {
+                nodes: [],
+                connections: new Map()
+            };
+        }
+        
         const network = {
             nodes: [],
-            connections: new Map(), // Map of "row,col" -> [{row, col, capacity}]
-            roads: new Map() // Map of edge connections for road network
+            connections: new Map(),
+            roads: new Map() // Parcel-based road connections for hasRoadConnection method
         };
         
-        // Add transit stops as nodes
-        this.transitStops.forEach((stop, stopId) => {
-            let capacity = 50; // Default bus capacity
-            if (stop.type === 'subway') {
-                capacity = 500;
-            }
-            
+        // Get all intersections from mobility layer as network nodes
+        this.mobilityLayer.intersections.forEach((intersection, key) => {
             network.nodes.push({
-                row: stop.row,
-                col: stop.col,
-                type: stop.type,
-                capacity: capacity,
-                stopId: stopId
+                id: key,
+                row: intersection.row,
+                col: intersection.col,
+                x: intersection.x,
+                y: intersection.y
             });
         });
         
-        // Build road network connections
+        // Build parcel-based road connectivity map using a different approach
+        // Create a map of which parcels are connected to which intersections
+        console.log(`🛣️ Building transport network from ${this.mobilityLayer.roads.size} road segments`);
+        
+        // First, map parcels to their adjacent intersections
+        const parcelToIntersections = new Map();
+        
         for (let row = 0; row < this.gridSize; row++) {
             for (let col = 0; col < this.gridSize; col++) {
-                const parcel = this.grid[row][col];
+                const parcelKey = `${row},${col}`;
+                const adjacentIntersections = [];
                 
-                // Check each edge for road connections
-                ['northeast', 'northwest', 'southeast', 'southwest'].forEach(edge => {
-                    const road = parcel.roads[edge];
-                    if (road) {
-                        // Determine connected parcel based on edge direction
-                        let connectedRow, connectedCol;
-                        switch(edge) {
-                            case 'northeast':
-                                connectedRow = row - 1;
-                                connectedCol = col + 1;
-                                break;
-                            case 'northwest':
-                                connectedRow = row - 1;
-                                connectedCol = col - 1;
-                                break;
-                            case 'southeast':
-                                connectedRow = row + 1;
-                                connectedCol = col + 1;
-                                break;
-                            case 'southwest':
-                                connectedRow = row + 1;
-                                connectedCol = col - 1;
-                                break;
-                        }
-                        
-                        // Only add connection if target is within grid bounds
-                        if (connectedRow >= 0 && connectedRow < this.gridSize && 
-                            connectedCol >= 0 && connectedCol < this.gridSize) {
-                            
-                            const key = `${row},${col}`;
-                            if (!network.roads.has(key)) {
-                                network.roads.set(key, []);
-                            }
-                            
-                            // Add bidirectional road connection
-                            network.roads.get(key).push({
-                                row: connectedRow,
-                                col: connectedCol,
-                                roadType: road.type
-                            });
-                        }
+                // A parcel at (r,c) is adjacent to intersections at:
+                // (r,c), (r,c+1), (r+1,c), (r+1,c+1)
+                const intersectionPositions = [
+                    { iRow: row, iCol: col },           // top-left
+                    { iRow: row, iCol: col + 1 },       // top-right
+                    { iRow: row + 1, iCol: col },       // bottom-left
+                    { iRow: row + 1, iCol: col + 1 }    // bottom-right
+                ];
+                
+                intersectionPositions.forEach(pos => {
+                    if (pos.iRow >= 0 && pos.iRow <= this.gridSize && 
+                        pos.iCol >= 0 && pos.iCol <= this.gridSize) {
+                        adjacentIntersections.push(`${pos.iRow},${pos.iCol}`);
                     }
                 });
+                
+                parcelToIntersections.set(parcelKey, adjacentIntersections);
             }
         }
         
-        // Build connections between nearby transport nodes
-        // Simplified: connect nodes within 10 tiles of each other
-        network.nodes.forEach((node1, i) => {
-            const key1 = `${node1.row},${node1.col}`;
-            if (!network.connections.has(key1)) {
-                network.connections.set(key1, []);
-            }
+        // Now, for each road segment, connect all parcels that share connected intersections
+        this.mobilityLayer.roads.forEach((road, edgeKey) => {
+            const [fromIntersection, toIntersection] = edgeKey.split('-');
             
-            network.nodes.forEach((node2, j) => {
-                if (i === j) return;
-                
-                const distance = Math.max(
-                    Math.abs(node1.row - node2.row),
-                    Math.abs(node1.col - node2.col)
-                );
-                
-                if (distance <= 10) {
-                    network.connections.get(key1).push({
-                        row: node2.row,
-                        col: node2.col,
-                        capacity: Math.min(node1.capacity, node2.capacity)
-                    });
+            // Find all parcels adjacent to these intersections
+            const fromParcels = [];
+            const toParcels = [];
+            
+            parcelToIntersections.forEach((intersections, parcelKey) => {
+                if (intersections.includes(fromIntersection)) {
+                    fromParcels.push(parcelKey);
+                }
+                if (intersections.includes(toIntersection)) {
+                    toParcels.push(parcelKey);
                 }
             });
+            
+            // Connect all parcels at the 'from' end to all parcels at the 'to' end
+            fromParcels.forEach(fromParcel => {
+                if (!network.roads.has(fromParcel)) {
+                    network.roads.set(fromParcel, []);
+                }
+                
+                toParcels.forEach(toParcel => {
+                    if (fromParcel !== toParcel) {
+                        const [row, col] = toParcel.split(',').map(Number);
+                        const existing = network.roads.get(fromParcel);
+                        
+                        // Avoid duplicates
+                        if (!existing.some(conn => conn.row === row && conn.col === col)) {
+                            existing.push({ row, col, roadType: road.type });
+                        }
+                    }
+                });
+            });
+            
+            // Also connect toParcels back to fromParcels (bidirectional)
+            toParcels.forEach(toParcel => {
+                if (!network.roads.has(toParcel)) {
+                    network.roads.set(toParcel, []);
+                }
+                
+                fromParcels.forEach(fromParcel => {
+                    if (toParcel !== fromParcel) {
+                        const [row, col] = fromParcel.split(',').map(Number);
+                        const existing = network.roads.get(toParcel);
+                        
+                        // Avoid duplicates
+                        if (!existing.some(conn => conn.row === row && conn.col === col)) {
+                            existing.push({ row, col, roadType: road.type });
+                        }
+                    }
+                });
+            });
+        });
+        
+        console.log(`📍 Final transport network: ${network.roads.size} parcel connections`);
+        if (network.roads.size > 0) {
+            const sample = Array.from(network.roads.entries()).slice(0, 3);
+            sample.forEach(([key, connections]) => {
+                console.log(`  Parcel ${key} connects to: ${connections.map(c => `(${c.row},${c.col})`).join(', ')}`);
+            });
+        }
+        
+        // Get all roads from mobility layer as intersection-based network connections  
+        this.mobilityLayer.roads.forEach((road, edgeKey) => {
+            const [from, to] = edgeKey.split('-');
+            const fromNode = network.nodes.find(n => n.id === from);
+            const toNode = network.nodes.find(n => n.id === to);
+            
+            if (fromNode && toNode) {
+                // Calculate road distance and capacity
+                const distance = Math.sqrt(
+                    Math.pow(toNode.x - fromNode.x, 2) + 
+                    Math.pow(toNode.y - fromNode.y, 2)
+                );
+                
+                // Road capacity affects transport efficiency
+                const roadType = this.mobilityLayer.roadTypes[road.type];
+                const capacity = roadType ? roadType.capacity : 100;
+                
+                // Store bidirectional connections
+                if (!network.connections.has(from)) {
+                    network.connections.set(from, []);
+                }
+                if (!network.connections.has(to)) {
+                    network.connections.set(to, []);
+                }
+                
+                network.connections.get(from).push({
+                    to: to,
+                    distance: distance,
+                    capacity: capacity,
+                    roadType: road.type
+                });
+                
+                network.connections.get(to).push({
+                    to: from,
+                    distance: distance,
+                    capacity: capacity,
+                    roadType: road.type
+                });
+            }
         });
         
         return network;
@@ -6300,51 +5738,79 @@ class IsometricGrid {
     }
     
     hasRoadConnection(row1, col1, row2, col2, roads) {
-        // Simple BFS to check if two points are connected by roads
-        if (row1 === row2 && col1 === col2) return true;
+        // Enhanced BFS to find connection and track the best road type in the path
+        if (row1 === row2 && col1 === col2) return { connected: true, bestRoadType: 'highway' };
         
         const visited = new Set();
-        const queue = [`${row1},${col1}`];
+        const queue = [{
+            key: `${row1},${col1}`,
+            depth: 0,
+            worstRoadType: 'highway' // Track the worst road in the path (bottleneck)
+        }];
         const maxDepth = 20; // Prevent infinite loops
-        let depth = 0;
         
-        while (queue.length > 0 && depth < maxDepth) {
+        // Road type hierarchy (higher number = better)
+        const roadHierarchy = { 'local': 1, 'arterial': 2, 'highway': 3 };
+        
+        while (queue.length > 0) {
             const current = queue.shift();
-            const [row, col] = current.split(',').map(Number);
+            const [row, col] = current.key.split(',').map(Number);
             
             if (row === row2 && col === col2) {
-                return true;
+                return { connected: true, bestRoadType: current.worstRoadType };
             }
             
-            if (visited.has(current)) continue;
-            visited.add(current);
+            if (visited.has(current.key) || current.depth >= maxDepth) continue;
+            visited.add(current.key);
             
             // Check all road connections from current position
-            const connections = roads.get(current) || [];
+            const connections = roads.get(current.key) || [];
             connections.forEach(conn => {
                 const connKey = `${conn.row},${conn.col}`;
                 if (!visited.has(connKey)) {
-                    queue.push(connKey);
+                    // Track the worst road type in the path (bottleneck principle)
+                    const connRoadLevel = roadHierarchy[conn.roadType] || 1;
+                    const currentWorstLevel = roadHierarchy[current.worstRoadType] || 1;
+                    const newWorstLevel = Math.min(connRoadLevel, currentWorstLevel);
+                    
+                    // Convert back to road type name
+                    let newWorstType = 'local';
+                    if (newWorstLevel === 2) newWorstType = 'arterial';
+                    if (newWorstLevel === 3) newWorstType = 'highway';
+                    
+                    queue.push({
+                        key: connKey,
+                        depth: current.depth + 1,
+                        worstRoadType: newWorstType
+                    });
                 }
             });
-            
-            depth++;
         }
         
-        return false;
+        return { connected: false, bestRoadType: null };
     }
     
     calculateEffectiveDistance(row1, col1, row2, col2, transportNetwork) {
-        // Base Manhattan distance
-        const directDistance = Math.abs(row1 - row2) + Math.abs(col1 - col2);
+        // Use Chebyshev distance (max of row/col differences) for walking
+        // This makes all 8 surrounding parcels distance 1
+        const chebyshevDistance = Math.max(
+            Math.abs(row1 - row2), 
+            Math.abs(col1 - col2)
+        );
         
-        // NEW: Much more punishing distance without transport
+        // Manhattan distance for transport calculations
+        const manhattanDistance = Math.abs(row1 - row2) + Math.abs(col1 - col2);
+        
+        // Walking is limited to immediate neighbors (Chebyshev distance 1)
         const WALKING_LIMIT = 1;
         
         // First check if there's a road connection path (basic pathfinding)
-        if (transportNetwork.roads && this.hasRoadConnection(row1, col1, row2, col2, transportNetwork.roads)) {
-            // Roads provide 50% distance reduction
-            return Math.max(1, Math.floor(directDistance * 0.5));
+        if (transportNetwork.roads) {
+            const roadConnection = this.hasRoadConnection(row1, col1, row2, col2, transportNetwork.roads);
+            if (roadConnection.connected) {
+                // Roads provide significant distance reduction for farther parcels
+                return Math.max(1, Math.floor(manhattanDistance * 0.5));
+            }
         }
         
         // Check if both points are near transport nodes
@@ -6388,13 +5854,15 @@ class IsometricGrid {
             }
         }
         
-        // NEW: Without transport, distances beyond walking limit are heavily penalized
-        if (directDistance > WALKING_LIMIT) {
-            // Exponentially increase distance for non-transport connections
-            return directDistance * 3; // Triple the effective distance without transport
+        // Without transport, only immediate neighbors (Chebyshev distance 1) are accessible
+        if (chebyshevDistance > WALKING_LIMIT) {
+            // Beyond walking distance without transport = effectively unreachable
+            // Return a very high value to indicate no connection
+            return 999; // Effectively infinite distance without transport
         }
         
-        return directDistance;
+        // Within walking distance (the 8 surrounding parcels)
+        return chebyshevDistance;
     }
     
     // Update building revenues based on supply/demand satisfaction
@@ -6579,21 +6047,67 @@ class IsometricGrid {
         // Update current layer
         this.currentLayer = layerName;
         
-        // Hide road design menu when switching away from transportation layer
-        if (layerName !== 'transportation') {
-            this.hideStreetEdgeContextMenu();
-            this.clearSelectedStreetEdges();
+        // Clear any layer-specific menus when switching layers
+        this.hideStreetEdgeContextMenu();
+        this.clearSelectedStreetEdges();
+        
+        // Clear mobility tooltip timer when switching layers
+        if (this.mobilityTooltipTimer) {
+            clearTimeout(this.mobilityTooltipTimer);
+            this.mobilityTooltipTimer = null;
         }
         
         // Update active states in dropdown
         document.querySelectorAll('.layer-option').forEach(option => option.classList.remove('active'));
         document.getElementById(`layer-${layerName}`).classList.add('active');
         
+        // Handle panel visibility based on layer
+        this.handlePanelTransitions(layerName);
+        
         // Update cursor style based on layer - remove 3D rotation for cashflow now
         this.canvas.style.cursor = this.zoomScale > 1.1 ? 'grab' : 'default';
         
         // Re-render with new layer
         this.scheduleRender();
+    }
+    
+    handlePanelTransitions(layerName) {
+        const vitalitySection = document.querySelector('[data-target="vitality"]').parentElement;
+        const mobilitySection = document.querySelector('[data-target="mobility-panel"]').parentElement;
+        
+        if (layerName === 'mobility') {
+            // Entering mobility view - open mobility panel, optionally close vitality
+            this.openSidebarSection(mobilitySection);
+            
+            // Auto-close vitality panel when entering mobility (can be reopened manually)
+            if (!vitalitySection.classList.contains('collapsed')) {
+                this.closeSidebarSection(vitalitySection);
+            }
+        } else {
+            // Leaving mobility view - open vitality panel, optionally close mobility
+            this.openSidebarSection(vitalitySection);
+            
+            // Auto-close mobility panel when leaving mobility view (can be reopened manually)  
+            if (!mobilitySection.classList.contains('collapsed')) {
+                this.closeSidebarSection(mobilitySection);
+            }
+        }
+    }
+    
+    openSidebarSection(sectionElement) {
+        if (sectionElement) {
+            sectionElement.classList.remove('collapsed');
+            const icon = sectionElement.querySelector('.collapse-icon');
+            if (icon) icon.textContent = '▼';
+        }
+    }
+    
+    closeSidebarSection(sectionElement) {
+        if (sectionElement) {
+            sectionElement.classList.add('collapsed');
+            const icon = sectionElement.querySelector('.collapse-icon');
+            if (icon) icon.textContent = '▶';
+        }
     }
 
     updateZoom() {
@@ -6623,6 +6137,14 @@ class IsometricGrid {
         return {
             x: (screenX - this.panOffset.x) / this.zoomScale,
             y: (screenY - this.panOffset.y) / this.zoomScale
+        };
+    }
+    
+    // Convert world coordinates to screen coordinates accounting for zoom and pan
+    worldToScreenCoords(worldX, worldY) {
+        return {
+            x: worldX * this.zoomScale + this.panOffset.x,
+            y: worldY * this.zoomScale + this.panOffset.y
         };
     }
     
@@ -6704,18 +6226,26 @@ class IsometricGrid {
     }
     
     calculateCityVitality() {
+        // Debug: Log vitality calculation
+        console.log('🏙️ Calculating city vitality, buildings map size:', this.buildingEfficiencies.size);
+        
         // Check if we can use cached values
         const now = performance.now();
         const cacheAge = now - this.vitalityCache.lastCalculated;
         
+        console.log('🔍 Cache status - dirty:', this.vitalityCache.dirty, 'age:', cacheAge);
+        
         // Use cache if it's recent and not dirty (refresh every 100ms max)
         if (!this.vitalityCache.dirty && cacheAge < 100) {
             // Update vitality from cache
+            console.log('🔄 Using cached vitality data - RETURNING EARLY');
             this.vitalitySupply = { ...this.vitalityCache.supply };
             this.vitalityDemand = { ...this.vitalityCache.demand };
             this.vitality = { ...this.vitalityCache.netVitality };
             return;
         }
+        
+        console.log('🔄 Cache invalid - proceeding with full calculation');
         
         // Initialize supply and demand tracking
         this.vitalitySupply = {};
@@ -6735,6 +6265,7 @@ class IsometricGrid {
         let totalFoodProduction = 0;
         
         // Calculate supply from completed buildings only
+        console.log('🏗️ First loop - counting completed buildings');
         for (let row = 0; row < this.gridSize; row++) {
             for (let col = 0; col < this.gridSize; col++) {
                 const parcel = this.grid[row][col];
@@ -6746,6 +6277,7 @@ class IsometricGrid {
                 
                 if (parcel.building && !isUnderConstruction) {
                     const building = this.buildingManager.getBuildingById(parcel.building);
+                    console.log(`🏗️ Found completed building: ${building?.name || parcel.building} at ${row},${col}`);
                     if (building) {
                         // Count bedrooms and jobs
                         const bedrooms = building.population?.bedroomsAdded || 0;
@@ -6863,6 +6395,210 @@ class IsometricGrid {
         this.vitalityCache.lastCalculated = now;
         this.vitalityCache.dirty = false;
         this.vitalityCache.dirtyBuildings.clear();
+        
+        // Building efficiency tracking and JEFH satisfaction calculation
+        this.buildingEfficiencies.clear();
+        console.log('🔍 Starting building efficiency tracking and JEFH calculation');
+        
+        // Build transport network for JEFH calculations
+        const transportNetwork = this.buildTransportNetwork();
+        
+        // Step 1: Initialize building efficiency tracking
+        const buildingDemands = [];
+        for (let row = 0; row < this.gridSize; row++) {
+            for (let col = 0; col < this.gridSize; col++) {
+                const parcel = this.grid[row][col];
+                if (!parcel.building) continue;
+                
+                const building = this.buildingManager.getBuildingById(parcel.building);
+                if (!building) continue;
+                
+                const key = `${row},${col}`;
+                this.buildingEfficiencies.set(key, {
+                    row, col,
+                    building: building.name,
+                    category: building.category,
+                    needs: {}
+                });
+                
+                // Create demand points for JEFH resources
+                if (this.buildingCategories.normalize(building.category) === 'housing') {
+                    const residents = building.population?.bedroomsAdded || building.population?.residents || building.residents || 0;
+                    console.log(`🏠 Housing building ${building.name} at ${row},${col}: residents=${residents}, population:`, building.population);
+                    if (residents > 0) {
+                        // Housing demands jobs and food
+                        buildingDemands.push({
+                            row, col, building: building.name,
+                            resource: 'jobs', amount: residents * 0.6
+                        });
+                        buildingDemands.push({
+                            row, col, building: building.name,
+                            resource: 'food', amount: residents * 3
+                        });
+                        // Housing demands energy (use actual building energy demand)
+                        const energyDemand = building.resources?.energyDemand || 0;
+                        if (energyDemand > 0) { // Only positive values are actual demand
+                            buildingDemands.push({
+                                row, col, building: building.name,
+                                resource: 'energy', amount: energyDemand
+                            });
+                        }
+                    }
+                } else if (this.buildingCategories.normalize(building.category) === 'commercial') {
+                    const jobs = building.population?.jobsCreated || building.jobs || 0;
+                    console.log(`🏪 Commercial building ${building.name} at ${row},${col}: jobs=${jobs}, population:`, building.population);
+                    if (jobs > 0) {
+                        // Commercial buildings need workers (housing provides workers)
+                        buildingDemands.push({
+                            row, col, building: building.name,
+                            resource: 'housing', amount: jobs // 1 worker per job
+                        });
+                        // Commercial buildings demand energy (use actual building energy demand)
+                        const energyDemand = building.resources?.energyDemand || 0;
+                        if (energyDemand > 0) { // Only positive values are actual demand
+                            buildingDemands.push({
+                                row, col, building: building.name,
+                                resource: 'energy', amount: energyDemand
+                            });
+                        }
+                    }
+                } else if (this.buildingCategories.normalize(building.category) === 'education') {
+                    const jobs = building.population?.jobsCreated || 0;
+                    if (jobs > 0) {
+                        // Education buildings need workers too
+                        buildingDemands.push({
+                            row, col, building: building.name,
+                            resource: 'housing', amount: jobs
+                        });
+                        // Education buildings demand energy - use actual energyDemand from building data
+                        const energyDemand = building.resources?.energyDemand || 0;
+                        if (energyDemand > 0) {
+                            buildingDemands.push({
+                                row, col, building: building.name,
+                                resource: 'energy', amount: energyDemand
+                            });
+                        }
+                    }
+                }
+                
+                console.log(`🔧 Building efficiency tracking added for ${building.name} at ${key}`);
+            }
+        }
+        
+        // Step 2: Calculate satisfaction using proper supply allocation
+        // Group demands by resource type for allocation
+        const demandsByResource = {};
+        buildingDemands.forEach(demand => {
+            if (!demandsByResource[demand.resource]) {
+                demandsByResource[demand.resource] = [];
+            }
+            demandsByResource[demand.resource].push(demand);
+        });
+        
+        // Process each resource type
+        Object.keys(demandsByResource).forEach(resourceType => {
+            const demands = demandsByResource[resourceType];
+            
+            // Find all supply sources for this resource
+            const supplySources = [];
+            for (let sRow = 0; sRow < this.gridSize; sRow++) {
+                for (let sCol = 0; sCol < this.gridSize; sCol++) {
+                    const supplyParcel = this.grid[sRow][sCol];
+                    if (!supplyParcel.building) continue;
+                    
+                    // Skip buildings under construction
+                    const isUnderConstruction = supplyParcel.constructionStartDay !== null && 
+                        supplyParcel.constructionDays > 0 && 
+                        (this.currentDay - supplyParcel.constructionStartDay) < supplyParcel.constructionDays;
+                    if (isUnderConstruction) continue;
+                    
+                    const supplyBuilding = this.buildingManager.getBuildingById(supplyParcel.building);
+                    if (!supplyBuilding) continue;
+                    
+                    let supply = 0;
+                    if (resourceType === 'jobs' && supplyBuilding.population?.jobsCreated) {
+                        supply = supplyBuilding.population.jobsCreated;
+                    } else if (resourceType === 'food' && supplyBuilding.resources?.foodProduction) {
+                        supply = supplyBuilding.resources.foodProduction;
+                    } else if (resourceType === 'housing' && supplyBuilding.population?.bedroomsAdded) {
+                        // Housing supplies workers (0.6 workers per bedroom)
+                        supply = supplyBuilding.population.bedroomsAdded * 0.6;
+                    } else if (resourceType === 'energy') {
+                        // Add energy supply check for power plants/utilities
+                        // Negative energyDemand means energy production
+                        const energyDemand = supplyBuilding.resources?.energyDemand || 0;
+                        supply = energyDemand < 0 ? Math.abs(energyDemand) : 0;
+                    }
+                    
+                    if (supply > 0) {
+                        supplySources.push({
+                            row: sRow, col: sCol,
+                            building: supplyBuilding.name,
+                            supply: supply,
+                            remainingSupply: supply // Track remaining supply for allocation
+                        });
+                    }
+                }
+            }
+            
+            // Allocate supply to demands based on distance and priority
+            demands.forEach(demand => {
+                let fulfilledDemand = 0;
+                
+                // Calculate accessibility to each supply source
+                const accessibleSources = supplySources.map(source => {
+                    const effectiveDistance = this.calculateEffectiveDistance(
+                        demand.row, demand.col,
+                        source.row, source.col,
+                        transportNetwork
+                    );
+                    
+                    return {
+                        ...source,
+                        distance: effectiveDistance,
+                        accessible: effectiveDistance <= 3
+                    };
+                }).filter(source => source.accessible)
+                  .sort((a, b) => a.distance - b.distance); // Prefer closer sources
+                
+                // Allocate from closest sources first
+                for (const source of accessibleSources) {
+                    if (fulfilledDemand >= demand.amount) break;
+                    
+                    const neededAmount = demand.amount - fulfilledDemand;
+                    const allocatedAmount = Math.min(neededAmount, source.remainingSupply);
+                    
+                    if (allocatedAmount > 0) {
+                        fulfilledDemand += allocatedAmount;
+                        source.remainingSupply -= allocatedAmount;
+                        
+                        console.log(`🚶 ${demand.building} gets ${allocatedAmount} ${resourceType} from ${source.building} (distance: ${source.distance})`);
+                    }
+                }
+                
+                // Calculate satisfaction ratio
+                const satisfaction = Math.min(1.0, fulfilledDemand / demand.amount);
+                
+                // Store in building efficiency data
+                const key = `${demand.row},${demand.col}`;
+                const efficiencyData = this.buildingEfficiencies.get(key);
+                if (efficiencyData) {
+                    efficiencyData.needs[resourceType] = {
+                        satisfaction: satisfaction,
+                        demand: demand.amount,
+                        fulfilled: fulfilledDemand
+                    };
+                    
+                    console.log(`📊 ${demand.building} ${resourceType}: ${Math.round(satisfaction * 100)}% satisfied (${fulfilledDemand}/${demand.amount})`);
+                }
+            });
+            
+            // Log remaining unused supply
+            const totalRemainingSupply = supplySources.reduce((sum, source) => sum + source.remainingSupply, 0);
+            if (totalRemainingSupply > 0) {
+                console.log(`⚡ ${totalRemainingSupply} units of ${resourceType} remain unused`);
+            }
+        });
         
         // Calculate city satisfaction based on met needs
         this.calculateCitySatisfaction();
@@ -7290,6 +7026,71 @@ class IsometricGrid {
         
         return { row: row, col: col };
     }
+
+    fromIsometricToEdge(screenX, screenY) {
+        // Convert screen coordinates to detect edge parcels
+        const x = screenX - this.offsetX;
+        const y = screenY - this.offsetY;
+        
+        // Calculate precise position without rounding
+        const preciseCol = (x / (this.tileWidth / 2) + y / (this.tileHeight / 2)) / 2;
+        const preciseRow = (y / (this.tileHeight / 2) - x / (this.tileWidth / 2)) / 2;
+        
+        // Check if we're close to a grid line (edge)
+        const tolerance = 0.15; // How close to a grid line to detect edge
+        
+        // Check for horizontal edges (between rows)
+        const nearHorizontalEdge = Math.abs(preciseRow - Math.floor(preciseRow + 0.5)) > (0.5 - tolerance);
+        const nearVerticalEdge = Math.abs(preciseCol - Math.floor(preciseCol + 0.5)) > (0.5 - tolerance);
+        
+        if (nearHorizontalEdge || nearVerticalEdge) {
+            const baseRow = Math.floor(preciseRow);
+            const baseCol = Math.floor(preciseCol);
+            
+            if (nearHorizontalEdge && nearVerticalEdge) {
+                // Intersection
+                const intersectionRow = Math.floor(preciseRow + 0.5);
+                const intersectionCol = Math.floor(preciseCol + 0.5);
+                
+                if (intersectionRow >= 0 && intersectionRow < this.gridSize - 1 && 
+                    intersectionCol >= 0 && intersectionCol < this.gridSize - 1) {
+                    return {
+                        type: 'intersection',
+                        row: intersectionRow,
+                        col: intersectionCol
+                    };
+                }
+            } else if (nearHorizontalEdge) {
+                // Horizontal edge
+                const edgeRow = Math.round(preciseRow - 0.5);
+                const edgeCol = Math.round(preciseCol);
+                
+                if (edgeRow >= 0 && edgeRow < this.gridSize - 1 && 
+                    edgeCol >= 0 && edgeCol < this.gridSize) {
+                    return {
+                        type: 'horizontal',
+                        row: edgeRow,
+                        col: edgeCol
+                    };
+                }
+            } else if (nearVerticalEdge) {
+                // Vertical edge
+                const edgeRow = Math.round(preciseRow);
+                const edgeCol = Math.round(preciseCol - 0.5);
+                
+                if (edgeRow >= 0 && edgeRow < this.gridSize && 
+                    edgeCol >= 0 && edgeCol < this.gridSize - 1) {
+                    return {
+                        type: 'vertical',
+                        row: edgeRow,
+                        col: edgeCol
+                    };
+                }
+            }
+        }
+        
+        return null; // Not on an edge
+    }
     
     drawTile(col, row, color, elevation = 0) {
         const iso = this.toIsometric(col, row);
@@ -7299,8 +7100,8 @@ class IsometricGrid {
         this.ctx.save();
         this.ctx.translate(iso.x, adjustedY);
         
-        // Calculate tile size based on layer (50% smaller for transportation, so 50% of original)
-        const sizeMultiplier = this.currentLayer === 'transportation' ? 0.5 : 1.0;
+        // Calculate tile size based on layer
+        const sizeMultiplier = 1.0;
         const tileWidth = this.tileWidth * sizeMultiplier;
         const tileHeight = this.tileHeight * sizeMultiplier;
         
@@ -7315,6 +7116,10 @@ class IsometricGrid {
         this.ctx.fillStyle = color;
         this.ctx.fill();
         
+        // Check if this parcel has roads along its edges and draw white lines accordingly
+        this.drawParcelBorders(row, col, tileWidth, tileHeight);
+        
+        // Default border for areas without roads
         this.ctx.strokeStyle = '#1a1a1a';
         this.ctx.lineWidth = 0.5;
         this.ctx.stroke();
@@ -7347,6 +7152,57 @@ class IsometricGrid {
         if (parcel && parcel.building && this.currentLayer === 'normal') {
             this.drawBuilding(parcel.building, 0, -this.tileHeight / 4, row, col);
         }
+        
+        this.ctx.restore();
+    }
+    
+    drawParcelBorders(row, col, tileWidth, tileHeight) {
+        // Draw white lines where roads exist instead of black parcel borders
+        if (!this.mobilityLayer || !this.mobilityLayer.roads) return;
+        
+        this.ctx.save();
+        
+        // Check each edge of the parcel for roads
+        const edges = [
+            { name: 'north', from: `${row},${col}`, to: `${row},${col+1}` },
+            { name: 'east', from: `${row},${col+1}`, to: `${row+1},${col+1}` },
+            { name: 'south', from: `${row+1},${col+1}`, to: `${row+1},${col}` },
+            { name: 'west', from: `${row+1},${col}`, to: `${row},${col}` }
+        ];
+        
+        edges.forEach(edge => {
+            const edgeKey = `${edge.from}-${edge.to}`;
+            const reverseEdgeKey = `${edge.to}-${edge.from}`;
+            
+            // Check if there's a road on this edge
+            if (this.mobilityLayer.roads.has(edgeKey) || this.mobilityLayer.roads.has(reverseEdgeKey)) {
+                // Draw white line for this edge
+                this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.8)';
+                this.ctx.lineWidth = 1.5;
+                this.ctx.beginPath();
+                
+                // Draw the specific edge with white
+                switch(edge.name) {
+                    case 'north':
+                        this.ctx.moveTo(0, -tileHeight / 2);
+                        this.ctx.lineTo(tileWidth / 2, 0);
+                        break;
+                    case 'east':
+                        this.ctx.moveTo(tileWidth / 2, 0);
+                        this.ctx.lineTo(0, tileHeight / 2);
+                        break;
+                    case 'south':
+                        this.ctx.moveTo(0, tileHeight / 2);
+                        this.ctx.lineTo(-tileWidth / 2, 0);
+                        break;
+                    case 'west':
+                        this.ctx.moveTo(-tileWidth / 2, 0);
+                        this.ctx.lineTo(0, -tileHeight / 2);
+                        break;
+                }
+                this.ctx.stroke();
+            }
+        });
         
         this.ctx.restore();
     }
@@ -7402,6 +7258,402 @@ class IsometricGrid {
         }
         
         this.ctx.restore();
+    }
+
+    drawEdgeParcels() {
+        // Draw public infrastructure on grid lines
+        if (!this.edgeParcels) return;
+
+        this.ctx.save();
+        
+        // Draw horizontal edge infrastructure
+        for (let row = 0; row < this.edgeParcels.horizontal.length; row++) {
+            for (let col = 0; col < this.edgeParcels.horizontal[row].length; col++) {
+                const edgeParcel = this.edgeParcels.horizontal[row][col];
+                if (this.hasInfrastructure(edgeParcel)) {
+                    this.drawHorizontalInfrastructure(row, col, edgeParcel);
+                }
+            }
+        }
+
+        // Draw vertical edge infrastructure
+        for (let row = 0; row < this.edgeParcels.vertical.length; row++) {
+            for (let col = 0; col < this.edgeParcels.vertical[row].length; col++) {
+                const edgeParcel = this.edgeParcels.vertical[row][col];
+                if (this.hasInfrastructure(edgeParcel)) {
+                    this.drawVerticalInfrastructure(row, col, edgeParcel);
+                }
+            }
+        }
+
+        // Draw intersection infrastructure
+        for (let row = 0; row < this.edgeParcels.intersections.length; row++) {
+            for (let col = 0; col < this.edgeParcels.intersections[row].length; col++) {
+                const edgeParcel = this.edgeParcels.intersections[row][col];
+                if (this.hasIntersectionInfrastructure(edgeParcel)) {
+                    this.drawIntersectionInfrastructure(row, col, edgeParcel);
+                }
+            }
+        }
+
+        this.ctx.restore();
+    }
+
+    hasInfrastructure(edgeParcel) {
+        const infra = edgeParcel.infrastructure;
+        return infra.roadway || infra.sidewalks || infra.bikelanes || infra.busStop || infra.subwayEntrance;
+    }
+
+    hasIntersectionInfrastructure(edgeParcel) {
+        const infra = edgeParcel.infrastructure;
+        return infra.crosswalks.length > 0 || infra.trafficControl;
+    }
+
+    drawHorizontalInfrastructure(row, col, edgeParcel) {
+        // Draw horizontal infrastructure between row and row+1
+        const startIso = this.toIsometric(col, row);
+        const endIso = this.toIsometric(col, row + 1);
+        
+        const centerX = (startIso.x + endIso.x) / 2;
+        const centerY = (startIso.y + endIso.y) / 2;
+
+        this.ctx.save();
+        this.ctx.translate(centerX, centerY);
+        
+        const infra = edgeParcel.infrastructure;
+        let yOffset = 0;
+        
+        // Draw roadway (bottom layer)
+        if (infra.roadway) {
+            this.drawRoadway(infra.roadway, 'horizontal');
+        }
+        
+        // Draw bike lanes (vibrant green, end to end)
+        if (infra.bikelanes) {
+            this.ctx.fillStyle = '#00ff00';
+            this.ctx.fillRect(-this.tileWidth * 0.45, -1, this.tileWidth * 0.9, 2);
+            yOffset += 3;
+        }
+        
+        // Draw sidewalks (gray, stop short of intersections)
+        if (infra.sidewalks) {
+            this.ctx.fillStyle = '#888888';
+            // Stop short of intersections
+            this.ctx.fillRect(-this.tileWidth * 0.35, yOffset - 1, this.tileWidth * 0.7, 2);
+            yOffset += 3;
+        }
+        
+        // Draw transit stops
+        if (infra.busStop) {
+            this.drawBusStop(infra.busStop, 'horizontal');
+        }
+        
+        if (infra.subwayEntrance) {
+            this.drawSubwayEntrance(infra.subwayEntrance, 'horizontal');
+        }
+        
+        this.ctx.restore();
+    }
+
+    drawVerticalInfrastructure(row, col, edgeParcel) {
+        // Draw vertical infrastructure between col and col+1
+        const startIso = this.toIsometric(col, row);
+        const endIso = this.toIsometric(col + 1, row);
+        
+        const centerX = (startIso.x + endIso.x) / 2;
+        const centerY = (startIso.y + endIso.y) / 2;
+
+        this.ctx.save();
+        this.ctx.translate(centerX, centerY);
+        this.ctx.rotate(Math.PI / 2); // Rotate for vertical edge
+        
+        const infra = edgeParcel.infrastructure;
+        let yOffset = 0;
+        
+        // Draw roadway (bottom layer)
+        if (infra.roadway) {
+            this.drawRoadway(infra.roadway, 'vertical');
+        }
+        
+        // Draw bike lanes (vibrant green, end to end)
+        if (infra.bikelanes) {
+            this.ctx.fillStyle = '#00ff00';
+            this.ctx.fillRect(-this.tileWidth * 0.45, -1, this.tileWidth * 0.9, 2);
+            yOffset += 3;
+        }
+        
+        // Draw sidewalks (gray, stop short of intersections)
+        if (infra.sidewalks) {
+            this.ctx.fillStyle = '#888888';
+            // Stop short of intersections
+            this.ctx.fillRect(-this.tileWidth * 0.35, yOffset - 1, this.tileWidth * 0.7, 2);
+            yOffset += 3;
+        }
+        
+        // Draw transit stops (rotate back to normal orientation for icons)
+        this.ctx.rotate(-Math.PI / 2);
+        if (infra.busStop) {
+            this.drawBusStop(infra.busStop, 'vertical');
+        }
+        
+        if (infra.subwayEntrance) {
+            this.drawSubwayEntrance(infra.subwayEntrance, 'vertical');
+        }
+        
+        this.ctx.restore();
+    }
+
+    drawIntersectionInfrastructure(row, col, edgeParcel) {
+        // Draw intersection infrastructure where grid lines cross
+        const iso = this.toIsometric(col + 0.5, row + 0.5);
+
+        this.ctx.save();
+        this.ctx.translate(iso.x, iso.y);
+        
+        const infra = edgeParcel.infrastructure;
+        
+        // Draw crosswalks as zebra stripes
+        if (infra.crosswalks.length > 0) {
+            this.ctx.strokeStyle = '#ffffff';
+            this.ctx.lineWidth = 2;
+            
+            infra.crosswalks.forEach(direction => {
+                this.drawCrosswalk(direction);
+            });
+        }
+        
+        // Draw traffic control
+        if (infra.trafficControl) {
+            this.drawTrafficControl(infra.trafficControl);
+        }
+        
+        this.ctx.restore();
+    }
+
+    // Helper methods for drawing infrastructure elements
+    drawRoadway(type, orientation) {
+        const widths = { local: 6, arterial: 8, highway: 12 };
+        const colors = { local: '#444444', arterial: '#555555', highway: '#666666' };
+        
+        this.ctx.fillStyle = colors[type];
+        const width = widths[type];
+        this.ctx.fillRect(-this.tileWidth * 0.45, -width/2, this.tileWidth * 0.9, width);
+        
+        // Add center lines for arterial and highway
+        if (type !== 'local') {
+            this.ctx.strokeStyle = '#ffff00';
+            this.ctx.lineWidth = 1;
+            this.ctx.setLineDash([4, 4]);
+            this.ctx.beginPath();
+            this.ctx.moveTo(-this.tileWidth * 0.45, 0);
+            this.ctx.lineTo(this.tileWidth * 0.45, 0);
+            this.ctx.stroke();
+            this.ctx.setLineDash([]);
+        }
+    }
+
+    drawBusStop(busStop, orientation) {
+        // Draw as a blue square with 'B' icon
+        this.ctx.fillStyle = '#0066cc';
+        this.ctx.fillRect(-6, -6, 12, 12);
+        this.ctx.fillStyle = '#ffffff';
+        this.ctx.font = '8px Arial';
+        this.ctx.textAlign = 'center';
+        this.ctx.textBaseline = 'middle';
+        this.ctx.fillText('B', 0, 0);
+    }
+
+    drawSubwayEntrance(entrance, orientation) {
+        // Draw as a red circle with 'S' icon
+        this.ctx.beginPath();
+        this.ctx.arc(0, 0, 6, 0, Math.PI * 2);
+        this.ctx.fillStyle = '#cc0000';
+        this.ctx.fill();
+        this.ctx.fillStyle = '#ffffff';
+        this.ctx.font = '8px Arial';
+        this.ctx.textAlign = 'center';
+        this.ctx.textBaseline = 'middle';
+        this.ctx.fillText('S', 0, 0);
+    }
+
+    drawCrosswalk(direction) {
+        // Draw zebra crosswalk in specified direction
+        this.ctx.save();
+        this.ctx.strokeStyle = '#ffffff';
+        this.ctx.lineWidth = 1;
+        
+        let angle = 0;
+        if (direction === 'east') angle = 0;
+        else if (direction === 'south') angle = Math.PI / 2;
+        else if (direction === 'west') angle = Math.PI;
+        else if (direction === 'north') angle = -Math.PI / 2;
+        
+        this.ctx.rotate(angle);
+        
+        // Draw zebra stripes
+        for (let i = -8; i <= 8; i += 2) {
+            this.ctx.beginPath();
+            this.ctx.moveTo(-12, i);
+            this.ctx.lineTo(12, i);
+            this.ctx.stroke();
+        }
+        
+        this.ctx.restore();
+    }
+
+    drawTrafficControl(type) {
+        if (type === 'stop_sign') {
+            // Draw red octagon
+            this.ctx.fillStyle = '#cc0000';
+            this.ctx.beginPath();
+            this.ctx.arc(0, 0, 4, 0, Math.PI * 2);
+            this.ctx.fill();
+            this.ctx.strokeStyle = '#ffffff';
+            this.ctx.lineWidth = 1;
+            this.ctx.stroke();
+        } else if (type === 'traffic_light') {
+            // Draw traffic light pole
+            this.ctx.fillStyle = '#333333';
+            this.ctx.fillRect(-1, -8, 2, 16);
+            this.ctx.fillRect(-3, -6, 6, 4);
+        }
+    }
+
+    // Infrastructure building methods with cost validation
+    buildInfrastructure(edgeType, row, col, infrastructureType, value, playerId = 'player') {
+        // Only allow infrastructure building in mobility layer
+        if (this.currentLayer !== 'mobility') {
+            this.showNotification('Switch to Mobility View to build infrastructure', 'error');
+            return false;
+        }
+        
+        // Check if player has enough money
+        const cost = this.getInfrastructureCost(infrastructureType, value);
+        if (this.playerData.cash < cost) {
+            this.showNotification(`Not enough cash! Need $${cost}`, 'error');
+            return false;
+        }
+
+        // Get the edge parcel
+        let edgeParcel;
+        if (edgeType === 'horizontal') {
+            edgeParcel = this.edgeParcels.horizontal[row][col];
+        } else if (edgeType === 'vertical') {
+            edgeParcel = this.edgeParcels.vertical[row][col];
+        } else if (edgeType === 'intersection') {
+            edgeParcel = this.edgeParcels.intersections[row][col];
+        }
+
+        if (!edgeParcel) {
+            this.showNotification('Invalid edge parcel', 'error');
+            return false;
+        }
+
+        // Build the infrastructure
+        const success = this.addInfrastructureToParcel(edgeParcel, infrastructureType, value, cost, playerId);
+        
+        if (success) {
+            // Deduct cost from player
+            this.playerData.cash -= cost;
+            this.updatePlayerDisplay();
+            // Visual confirmation via UI update - notification removed to reduce clutter
+            this.scheduleRender();
+            return true;
+        }
+
+        return false;
+    }
+
+    getInfrastructureCost(infrastructureType, value) {
+        const costs = this.infrastructureCosts;
+        
+        switch (infrastructureType) {
+            case 'roadway':
+                return costs.roadway[value] || 0;
+            case 'sidewalks':
+                return costs.sidewalks;
+            case 'bikelanes':
+                return costs.bikelanes;
+            case 'busStop':
+                return costs.busStop;
+            case 'subwayEntrance':
+                return costs.subwayEntrance;
+            case 'trafficControl':
+                return costs.trafficControl[value] || 0;
+            default:
+                return 0;
+        }
+    }
+
+    addInfrastructureToParcel(edgeParcel, infrastructureType, value, cost, playerId) {
+        const infra = edgeParcel.infrastructure;
+
+        switch (infrastructureType) {
+            case 'roadway':
+                if (infra.roadway) {
+                    this.showNotification('Road already exists here', 'error');
+                    return false;
+                }
+                infra.roadway = value;
+                break;
+
+            case 'sidewalks':
+                if (infra.sidewalks) {
+                    this.showNotification('Sidewalks already exist here', 'error');
+                    return false;
+                }
+                infra.sidewalks = true;
+                break;
+
+            case 'bikelanes':
+                if (infra.bikelanes) {
+                    this.showNotification('Bike lanes already exist here', 'error');
+                    return false;
+                }
+                infra.bikelanes = true;
+                break;
+
+            case 'busStop':
+                if (infra.busStop) {
+                    this.showNotification('Bus stop already exists here', 'error');
+                    return false;
+                }
+                infra.busStop = {
+                    type: 'standard',
+                    direction: 'both',
+                    builtBy: playerId,
+                    cost: cost
+                };
+                break;
+
+            case 'subwayEntrance':
+                if (infra.subwayEntrance) {
+                    this.showNotification('Subway entrance already exists here', 'error');
+                    return false;
+                }
+                infra.subwayEntrance = {
+                    type: 'standard',
+                    direction: 'both',
+                    builtBy: playerId,
+                    cost: cost
+                };
+                break;
+
+            case 'trafficControl':
+                if (infra.trafficControl) {
+                    this.showNotification('Traffic control already exists here', 'error');
+                    return false;
+                }
+                infra.trafficControl = value;
+                break;
+
+            default:
+                return false;
+        }
+
+        // Track total investment
+        infra.totalInvestment += cost;
+        return true;
     }
 
     drawBuilding(buildingId, offsetX = 0, offsetY = 0, row = 0, col = 0) {
@@ -7491,6 +7743,12 @@ class IsometricGrid {
         }
         
         
+        // Add visual indicators for buildings with unsatisfied JEFH needs
+        this.drawJEFHWarningIndicators(buildingId, offsetX, offsetY - elevation, row, col);
+        
+        // Force cache refresh
+        if (Math.random() < 0.001) console.log('JEFH system active');
+        
         // Restore transformation
         if (scale !== 1.0) {
             this.ctx.restore();
@@ -7511,12 +7769,17 @@ class IsometricGrid {
                 // Re-render when image loads
                 this.scheduleRender();
             };
+            img.onerror = () => {
+                console.warn(`Failed to load building image: ${imageSrc}`);
+                // Mark image as broken to avoid repeated attempts
+                img.broken = true;
+            };
             img.src = imageSrc;
             this.buildingImageCache.set(imageSrc, img);
             return; // Skip drawing until image loads
         }
         
-        if (img.complete) {
+        if (img.complete && !img.broken && img.naturalWidth > 0) {
             // Get adjustable building parameters (same as simple buildings)
             const yOffset = window.buildingPositionControls?.yOffset || 12;
             const heightMultiplier = window.buildingPositionControls?.heightMultiplier || 1.0;
@@ -7550,6 +7813,48 @@ class IsometricGrid {
                 }
             } else {
                 // Draw at full height (construction complete)
+                
+                // Get efficiency data for desaturation effect
+                const efficiencyKey = `${row},${col}`;
+                const efficiencyData = this.buildingEfficiencies?.get(efficiencyKey);
+                let overallEfficiency = 1.0; // Default to full efficiency
+                
+                if (efficiencyData && efficiencyData.needs) {
+                    // Calculate overall efficiency from JEFH satisfaction levels
+                    const jefhCategories = ['jobs', 'education', 'food', 'housing'];
+                    let totalSatisfaction = 0;
+                    let countCategories = 0;
+                    
+                    jefhCategories.forEach(category => {
+                        const need = efficiencyData.needs[category];
+                        if (need && need.satisfaction !== undefined) {
+                            totalSatisfaction += need.satisfaction;
+                            countCategories++;
+                        }
+                    });
+                    
+                    if (countCategories > 0) {
+                        overallEfficiency = totalSatisfaction / countCategories;
+                        // Clamp between 0.0 (completely desaturated) and 1.0 (full color)
+                        overallEfficiency = Math.max(0.0, Math.min(1.0, overallEfficiency));
+                    }
+                }
+                
+                // Apply 2D visual effects: brightness for efficiency, color tint for decay
+                // Get decay data for this building
+                const parcelKey = `${row}-${col}`;
+                const parcel = this.grid[row] && this.grid[row][col];
+                const decayLevel = parcel?.decay || 0; // 0 = new, 1 = fully decayed
+                
+                // Calculate visual effects
+                const brightness = 0.5 + (overallEfficiency * 0.5); // Range: 0.5 to 1.0 (50% to 100%)
+                const redTint = decayLevel * 0.3; // Range: 0 to 0.3 red tint for high decay
+                const saturation = 1.0 - (decayLevel * 0.4); // Range: 1.0 to 0.6 (less saturated = more decayed)
+                
+                // Apply CSS-style filters using canvas
+                this.ctx.filter = `brightness(${brightness}) saturate(${saturation}) sepia(${redTint}) hue-rotate(350deg)`;
+                
+                // Draw building with visual effects
                 this.ctx.drawImage(
                     img, 
                     offsetX - baseDrawWidth/2, 
@@ -7557,6 +7862,9 @@ class IsometricGrid {
                     baseDrawWidth, 
                     baseDrawHeight
                 );
+                
+                // Reset filter for subsequent drawing operations
+                this.ctx.filter = 'none';
             }
         }
     }
@@ -7644,6 +7952,234 @@ class IsometricGrid {
         this.ctx.strokeRect(offsetX - width/2, buildingY, width, height);
     }
     
+    drawJEFHWarningIndicators(buildingId, offsetX, offsetY, row, col) {
+        // Don't show indicators for buildings under construction
+        const parcel = this.grid[row][col];
+        if (parcel?.constructionStartDay !== null && parcel?.constructionDays > 0) {
+            const isUnderConstruction = (this.currentDay - parcel.constructionStartDay) < parcel.constructionDays;
+            if (isUnderConstruction) {
+                return; // Hide indicators during construction
+            }
+        }
+        
+        // Get building efficiency data
+        const key = `${row},${col}`;
+        const efficiencyData = this.buildingEfficiencies?.get(key);
+        
+        if (!efficiencyData || !efficiencyData.needs) {
+            return; // No efficiency data available
+        }
+        
+        // Check satisfaction levels for JEFH categories
+        const jefhCategories = ['jobs', 'education', 'food', 'housing'];
+        const warningThreshold = 0.6; // Show warnings when satisfaction < 60%
+        const criticalThreshold = 0.3; // Critical level < 30%
+        
+        const warnings = [];
+        jefhCategories.forEach(category => {
+            const need = efficiencyData.needs[category];
+            if (need && need.satisfaction < warningThreshold) {
+                warnings.push({
+                    category,
+                    satisfaction: need.satisfaction,
+                    critical: need.satisfaction < criticalThreshold
+                });
+            }
+        });
+        
+        
+        if (warnings.length === 0) {
+            return; // No warnings to display
+        }
+        
+        // Show only the MOST critical indicator - find worst satisfaction level
+        let mostCritical = warnings[0];
+        for (let i = 1; i < warnings.length; i++) {
+            if (warnings[i].satisfaction < mostCritical.satisfaction) {
+                mostCritical = warnings[i];
+            }
+        }
+        
+        // Check if this is a workplace building for worker indicator display
+        const building = this.buildingManager.getBuildingById(buildingId);
+        const isWorkplace = building && (this.buildingCategories.normalize(building.category) === 'commercial' || building.category === 'education');
+        
+        // Draw single warning indicator (most critical)
+        this.ctx.save();
+        
+        const indicatorSize = 8;
+        const x = offsetX - indicatorSize / 2; // Center horizontally
+        
+        // Static Y position based on severity
+        const severityOffset = mostCritical.critical ? -8 : 0; // Critical issues higher up
+        const y = offsetY - 25 + severityOffset;
+        
+        // Choose color based on severity
+        const color = mostCritical.critical ? '#ff4444' : '#ffaa00';
+        this.ctx.fillStyle = color;
+        this.ctx.strokeStyle = '#ffffff';
+        this.ctx.lineWidth = 1;
+        
+        if (mostCritical.critical) {
+            // Draw triangle for critical warnings
+            this.ctx.beginPath();
+            this.ctx.moveTo(x + indicatorSize / 2, y);
+            this.ctx.lineTo(x, y + indicatorSize);
+            this.ctx.lineTo(x + indicatorSize, y + indicatorSize);
+            this.ctx.closePath();
+            this.ctx.fill();
+            this.ctx.stroke();
+            
+            // Add exclamation mark
+            this.ctx.fillStyle = '#ffffff';
+            this.ctx.font = '6px Arial';
+            this.ctx.textAlign = 'center';
+            this.ctx.fillText('!', x + indicatorSize / 2, y + indicatorSize - 2);
+        } else {
+            // Draw circle for regular warnings
+            this.ctx.beginPath();
+            this.ctx.arc(x + indicatorSize / 2, y + indicatorSize / 2, indicatorSize / 2, 0, Math.PI * 2);
+            this.ctx.fill();
+            this.ctx.stroke();
+            
+            // Add letter based on category
+            this.ctx.fillStyle = '#ffffff';
+            this.ctx.font = '5px Arial';
+            this.ctx.textAlign = 'center';
+            
+            // Show 'W' for workers when housing represents worker need
+            let displayLetter = mostCritical.category[0].toUpperCase();
+            if (mostCritical.category === 'housing' && isWorkplace) {
+                displayLetter = 'W'; // Workers
+            }
+            
+            this.ctx.fillText(displayLetter, x + indicatorSize / 2, y + indicatorSize / 2 + 2);
+        }
+        
+        this.ctx.restore();
+    }
+    
+    getJEFHAnalysis(row, col) {
+        const key = `${row},${col}`;
+        const efficiencyData = this.buildingEfficiencies?.get(key);
+        
+        if (!efficiencyData || !efficiencyData.needs) {
+            return { hasIssues: false, issues: [] };
+        }
+        
+        const issues = [];
+        const jefhCategories = ['jobs', 'education', 'food', 'housing'];
+        const warningThreshold = 0.6;
+        
+        jefhCategories.forEach(category => {
+            const need = efficiencyData.needs[category];
+            if (need && need.satisfaction < warningThreshold) {
+                const satisfactionPercent = Math.round(need.satisfaction * 100);
+                const resourceAnalysis = this.analyzeResourceAccess(row, col, category);
+                
+                // For commercial/education buildings, "housing" need means "workers" need
+                const building = this.buildingManager.getBuildingById(efficiencyData.building);
+                const isWorkplace = building && (this.buildingCategories.normalize(building.category) === 'commercial' || building.category === 'education');
+                const needsWorkers = category === 'housing' && isWorkplace;
+                
+                let displayName, reason;
+                if (needsWorkers) {
+                    displayName = 'Workers';
+                    if (resourceAnalysis.totalAvailable === 0) {
+                        reason = `No housing available in ${this.getCityName()}`;
+                    } else if (resourceAnalysis.withinWalking === 0) {
+                        reason = `No housing accessible`;
+                    } else {
+                        reason = `Worker demand exceeds supply`;
+                    }
+                } else {
+                    displayName = category.charAt(0).toUpperCase() + category.slice(1);
+                    if (resourceAnalysis.totalAvailable === 0) {
+                        reason = `No ${category} available in ${this.getCityName()}`;
+                    } else if (resourceAnalysis.withinWalking === 0) {
+                        reason = `No ${category} accessible`;
+                    } else {
+                        reason = `${category} demand exceeds supply`;
+                    }
+                }
+                
+                // Format: "Workers: 0% (No housing accessible)" or "Jobs: 0% (No jobs accessible)"
+                issues.push(`${displayName}: ${satisfactionPercent}% (${reason})`);
+            }
+        });
+        
+        return {
+            hasIssues: issues.length > 0,
+            issues
+        };
+    }
+    
+    analyzeResourceAccess(row, col, resource) {
+        let withinWalking = 0;
+        let totalAvailable = 0;
+        
+        for (let r = 0; r < this.gridSize; r++) {
+            for (let c = 0; c < this.gridSize; c++) {
+                const parcel = this.grid[r][c];
+                if (parcel?.building) {
+                    // Skip buildings under construction
+                    const isUnderConstruction = parcel.constructionStartDay !== null && 
+                        parcel.constructionDays > 0 && 
+                        (this.currentDay - parcel.constructionStartDay) < parcel.constructionDays;
+                    if (isUnderConstruction) continue;
+                    
+                    const building = this.buildingManager.getBuildingById(parcel.building);
+                    const supply = this.getBuildingSupply(building, resource);
+                    
+                    if (supply > 0) {
+                        totalAvailable += supply;
+                        
+                        // Check if within walking distance (Chebyshev distance <= 1)
+                        const distance = Math.max(Math.abs(row - r), Math.abs(col - c));
+                        if (distance <= 1) {
+                            withinWalking += supply;
+                        }
+                    }
+                }
+            }
+        }
+        
+        return { withinWalking, totalAvailable };
+    }
+    
+    getBuildingSupply(building, resource) {
+        if (!building) return 0;
+        
+        switch (resource) {
+            case 'jobs':
+                return building.population?.jobsCreated || 0;
+            case 'education':
+                return building.population?.schoolCapacity || 0;
+            case 'food':
+                return building.resources?.foodProduction || 0;
+            case 'housing':
+                return building.population?.bedroomsAdded || 0;
+            default:
+                return 0;
+        }
+    }
+    
+    getJEFHEmoji(category) {
+        const emojis = {
+            'jobs': '💼',
+            'education': '🏫',
+            'food': '🍎',
+            'housing': '👥' // Use people emoji when housing represents workers
+        };
+        return emojis[category] || '❓';
+    }
+    
+    getCityName() {
+        // Get city name from the DOM or return default
+        const cityNameEl = document.getElementById('city-name');
+        return cityNameEl?.textContent || 'the city';
+    }
+    
     getTileColor(row, col) {
         const parcel = this.grid[row][col];
         
@@ -7653,8 +8189,8 @@ class IsometricGrid {
                 return this.getLandValueHeatmapColor(row, col);
             case 'cashflow':
                 return this.getCashflowHeatmapColor(row, col);
-            case 'transportation':
-                return this.getTransportationLayerColor(row, col);
+            case 'mobility':
+                return this.getMobilityLayerColor(row, col);
             case 'normal':
             default:
                 // Original logic for normal view
@@ -7748,7 +8284,7 @@ class IsometricGrid {
         }
     }
     
-    getTransportationLayerColor(row, col) {
+    getMobilityLayerColor(row, col) {
         const parcel = this.grid[row][col];
         
         // Show ownership with clear colors for better visibility
@@ -7758,9 +8294,9 @@ class IsometricGrid {
             // Use player's selected color with higher opacity for better visibility
             if (this.playerSettings && this.playerSettings.color) {
                 const hex = this.playerSettings.color.replace('#', '');
-                const r = parseInt(hex.substr(0, 2), 16);
-                const g = parseInt(hex.substr(2, 2), 16);
-                const b = parseInt(hex.substr(4, 2), 16);
+                const r = parseInt(hex.substring(0, 2), 16);
+                const g = parseInt(hex.substring(2, 4), 16);
+                const b = parseInt(hex.substring(4, 6), 16);
                 return `rgba(${r}, ${g}, ${b}, 0.6)`;
             }
             return 'rgba(255, 255, 255, 0.6)'; // Fallback
@@ -7770,9 +8306,9 @@ class IsometricGrid {
             // Convert hex to rgba with 0.6 opacity for consistency
             if (competitorColor.startsWith('#')) {
                 const hex = competitorColor.replace('#', '');
-                const r = parseInt(hex.substr(0, 2), 16);
-                const g = parseInt(hex.substr(2, 2), 16);
-                const b = parseInt(hex.substr(4, 2), 16);
+                const r = parseInt(hex.substring(0, 2), 16);
+                const g = parseInt(hex.substring(2, 4), 16);
+                const b = parseInt(hex.substring(4, 6), 16);
                 return `rgba(${r}, ${g}, ${b}, 0.6)`;
             }
             return competitorColor;
@@ -7852,135 +8388,8 @@ class IsometricGrid {
         this.ctx.restore();
     }
     
-    drawTransportationNetwork() {
-        // Draw roads
-        this.transportationNetwork.roads.forEach(road => {
-            this.drawRoad(road);
-        });
-        
-        // Draw subway entrances and lines
-        this.transportationNetwork.subways.forEach(subway => {
-            this.drawSubway(subway);
-        });
-        
-        // Draw bus routes
-        this.transportationNetwork.busRoutes.forEach(route => {
-            this.drawBusRoute(route);
-        });
-    }
     
-    drawRoad(road) {
-        this.ctx.save();
-        
-        const startIso = this.toIsometric(road.startCol, road.startRow);
-        const endIso = this.toIsometric(road.endCol, road.endRow);
-        
-        // Set road appearance based on type
-        const roadStyles = this.getRoadStyle(road.type);
-        this.ctx.strokeStyle = roadStyles.color;
-        this.ctx.lineWidth = roadStyles.width;
-        this.ctx.setLineDash(roadStyles.dash || []);
-        
-        // Draw road line
-        this.ctx.beginPath();
-        this.ctx.moveTo(startIso.x, startIso.y);
-        this.ctx.lineTo(endIso.x, endIso.y);
-        this.ctx.stroke();
-        
-        this.ctx.restore();
-    }
-    
-    drawSubway(subway) {
-        this.ctx.save();
-        
-        if (subway.type === 'entrance') {
-            // Draw subway entrance
-            const iso = this.toIsometric(subway.col, subway.row);
-            this.ctx.fillStyle = '#8b5cf6'; // Purple for subway
-            this.ctx.beginPath();
-            this.ctx.arc(iso.x, iso.y, 4, 0, 2 * Math.PI);
-            this.ctx.fill();
-            
-            // Add entrance symbol
-            this.ctx.fillStyle = '#ffffff';
-            this.ctx.font = '8px Arial';
-            this.ctx.textAlign = 'center';
-            this.ctx.textBaseline = 'middle';
-            this.ctx.fillText('M', iso.x, iso.y);
-        } else if (subway.type === 'line') {
-            // Draw subway line (dashed, below grade)
-            const startIso = this.toIsometric(subway.startCol, subway.startRow);
-            const endIso = this.toIsometric(subway.endCol, subway.endRow);
-            
-            this.ctx.strokeStyle = '#8b5cf6';
-            this.ctx.lineWidth = 3;
-            this.ctx.setLineDash([5, 5]);
-            this.ctx.globalAlpha = 0.7;
-            
-            this.ctx.beginPath();
-            this.ctx.moveTo(startIso.x, startIso.y);
-            this.ctx.lineTo(endIso.x, endIso.y);
-            this.ctx.stroke();
-        }
-        
-        this.ctx.restore();
-    }
-    
-    drawBusRoute(route) {
-        this.ctx.save();
-        
-        // Draw bus route as dotted line
-        this.ctx.strokeStyle = '#f59e0b'; // Orange for bus
-        this.ctx.lineWidth = 2;
-        this.ctx.setLineDash([3, 3]);
-        this.ctx.globalAlpha = 0.8;
-        
-        // Draw lines between stops
-        for (let i = 0; i < route.stops.length - 1; i++) {
-            const startStop = route.stops[i];
-            const endStop = route.stops[i + 1];
-            const startIso = this.toIsometric(startStop.col, startStop.row);
-            const endIso = this.toIsometric(endStop.col, endStop.row);
-            
-            this.ctx.beginPath();
-            this.ctx.moveTo(startIso.x, startIso.y);
-            this.ctx.lineTo(endIso.x, endIso.y);
-            this.ctx.stroke();
-        }
-        
-        // Draw bus stops
-        route.stops.forEach(stop => {
-            const iso = this.toIsometric(stop.col, stop.row);
-            this.ctx.fillStyle = '#f59e0b';
-            this.ctx.beginPath();
-            this.ctx.arc(iso.x, iso.y, 3, 0, 2 * Math.PI);
-            this.ctx.fill();
-            
-            // Add bus stop symbol
-            this.ctx.fillStyle = '#ffffff';
-            this.ctx.font = '6px Arial';
-            this.ctx.textAlign = 'center';
-            this.ctx.textBaseline = 'middle';
-            this.ctx.fillText('B', iso.x, iso.y);
-        });
-        
-        this.ctx.restore();
-    }
-    
-    getRoadStyle(roadType) {
-        const styles = {
-            'pedestrian_plaza': { color: '#94a3b8', width: 8, dash: [] },
-            'walkway': { color: '#cbd5e1', width: 2, dash: [] },
-            'bike_lane': { color: '#22c55e', width: 3, dash: [2, 2] },
-            'local_street': { color: '#64748b', width: 4, dash: [] },
-            'collector_road': { color: '#475569', width: 6, dash: [] },
-            'arterial': { color: '#334155', width: 8, dash: [] },
-            'highway': { color: '#1e293b', width: 12, dash: [] },
-            'expressway': { color: '#0f172a', width: 16, dash: [] }
-        };
-        
-        return styles[roadType] || styles['local_street'];
-    }
+    // Legacy transportation drawing functions removed - will be redesigned from scratch
     
     drawParcelLandValues() {
         // Draw land values on each parcel in transportation mode
@@ -8087,20 +8496,31 @@ class IsometricGrid {
     }
     
     drawScene() {
-        // Apply zoom and pan transformations
+        // Check if we're in mobility layer mode - use completely different rendering
+        if (this.currentLayer === 'mobility') {
+            // Use the new mobility layer rendering system
+            this.mobilityLayer.render(this.ctx);
+            return;
+        }
+        
+        // Apply zoom and pan transformations for normal rendering
         this.ctx.save();
         this.ctx.translate(this.panOffset.x, this.panOffset.y);
         this.ctx.scale(this.zoomScale, this.zoomScale);
         
-        // Batch canvas operations for better performance
-        this.ctx.beginPath();
-        
-        // Normal rendering (no blur for performance)
-        for (let row = 0; row < this.gridSize; row++) {
-            for (let col = 0; col < this.gridSize; col++) {
-                const tile = this.grid[row][col];
-                if (tile) {
-                    this.drawTile(col, row, this.getTileColor(row, col), tile.elevation);
+        // Check if we're in special layer mode
+        if (false) {
+            // Future special layer rendering
+        } else {
+            // Normal isometric rendering
+            this.ctx.beginPath();
+            
+            for (let row = 0; row < this.gridSize; row++) {
+                for (let col = 0; col < this.gridSize; col++) {
+                    const tile = this.grid[row][col];
+                    if (tile) {
+                        this.drawTile(col, row, this.getTileColor(row, col), tile.elevation);
+                    }
                 }
             }
         }
@@ -8110,23 +8530,11 @@ class IsometricGrid {
             this.drawParcelReach();
         }
         
-        // NEW: Draw selected street edges in transportation mode
-        if (this.currentLayer === 'transportation') {
-            this.drawSelectedStreetEdges();
-            this.drawHoveredStreetEdge();
-        }
+        // Street edge drawing removed
         
         // Draw cashflow numbers if in cashflow layer mode
         if (this.currentLayer === 'cashflow') {
             this.drawCashflowNumbers();
-        }
-        
-        // Always draw road infrastructure (not just in transportation layer mode)
-        this.drawRoadInfrastructure();
-        
-        // Draw transit stops only in transportation layer mode
-        if (this.currentLayer === 'transportation') {
-            this.drawTransitStops();
         }
         
         // Draw selection highlight (ensure it's drawn last, on top of everything)
@@ -8168,9 +8576,9 @@ class IsometricGrid {
         this.ctx.fillStyle = color;
         this.ctx.fill();
         
-        this.ctx.strokeStyle = '#1a1a1a';
-        this.ctx.lineWidth = 0.5;
-        this.ctx.stroke();
+        // this.ctx.strokeStyle = '#1a1a1a';
+        // this.ctx.lineWidth = 0.5;
+        // this.ctx.stroke();
         
         // Draw elevation sides if elevated
         if (elevation > 0) {
@@ -8677,40 +9085,21 @@ class IsometricGrid {
         const worldCoords = this.screenToWorldCoords(screenX, screenY);
         const tile = this.fromIsometric(worldCoords.x, worldCoords.y);
         
-        // In transportation mode, prioritize street edge hover detection
-        if (this.currentLayer === 'transportation' && tile) {
-            const streetEdge = this.getStreetEdgeFromClick(worldCoords.x, worldCoords.y);
-            const edgeKey = streetEdge ? `${streetEdge.row}-${streetEdge.col}-${streetEdge.edge}` : null;
-            
-            // Update hovered street edge
-            if (edgeKey !== this.hoveredStreetEdge) {
-                this.hoveredStreetEdge = edgeKey;
-                this.scheduleRender(); // Trigger render to show/hide hover highlight
+        // In mobility mode, use the mobility layer's mouse handling
+        if (this.currentLayer === 'mobility') {
+            // Delegate to mobility layer for road building
+            const needsRender = this.mobilityLayer.handleMouseMove(worldCoords.x, worldCoords.y);
+            if (needsRender) {
+                this.scheduleRender();
             }
             
-            // Only show tooltip for parcel center (heavily shrunk in transport view)
-            const parcelCenter = this.toIsometric(tile.col, tile.row);
-            const distanceFromCenter = Math.sqrt(
-                Math.pow(worldCoords.x - parcelCenter.x, 2) + 
-                Math.pow(worldCoords.y - parcelCenter.y, 2)
-            );
-            
-            // Show tooltip only if very close to parcel center (smaller activation area)
-            if (distanceFromCenter < this.tileWidth * 0.15) { // 15% of tile width
-                this.selectedTile = tile;
-                if (this.lastMouseEvent) {
-                    this.showTooltip(tile.row, tile.col, this.lastMouseEvent.clientX, this.lastMouseEvent.clientY);
-                }
-            } else {
-                this.hideTooltip();
-                this.selectedTile = null;
-            }
-            
-            if (this.domCache.selectedTile) {
-                const coord = this.selectedTile ? this.getParcelCoordinate(this.selectedTile.row, this.selectedTile.col) : '--';
-                this.domCache.selectedTile.textContent = coord;
-            }
-        } else if (tile) {
+            // Handle delayed tooltips in mobility mode
+            const mockEvent = { clientX: screenX, clientY: screenY };
+            this.handleMobilityTooltips(tile, mockEvent);
+            return; // Early return to prevent normal tooltip logic
+        }
+        
+        if (tile) {
             this.selectedTile = tile;
             const coord = this.getParcelCoordinate(tile.row, tile.col);
             if (this.domCache.selectedTile) {
@@ -8788,11 +9177,12 @@ class IsometricGrid {
         this.ctx.restore();
     }
     
+    
     setupEventListeners() {
         // Debounced mouse move handler for optimal performance  
         const debouncedMouseMove = (e) => {
             // Don't process mouse moves if context menu is open - preserve current selection
-            if (this.contextMenu.classList.contains('visible')) {
+            if (this.contextMenu && this.contextMenu.classList && this.contextMenu.classList.contains('visible')) {
                 return;
             }
             
@@ -8857,54 +9247,30 @@ class IsometricGrid {
             const worldCoords = this.screenToWorldCoords(screenX, screenY);
             const tile = this.fromIsometric(worldCoords.x, worldCoords.y);
             
+            // Handle mobility layer clicks first (including UI areas)
+            if (this.currentLayer === 'mobility') {
+                const handled = this.mobilityLayer.handleClick(worldCoords.x, worldCoords.y, screenX, screenY);
+                if (handled) {
+                    this.scheduleRender(); // Update the display
+                }
+                return; // Don't process other clicks in mobility mode
+            }
+            
             if (tile && tile.row >= 0 && tile.row < this.gridSize &&
                 tile.col >= 0 && tile.col < this.gridSize) {
                 
-                if (this.currentLayer === 'transportation') {
-                    // First check if there's a transit stop at this location
-                    const transitStopId = this.getTransitStopAt(tile.row, tile.col);
-                    if (transitStopId) {
-                        // Show transit context menu
-                        console.log(`Clicked transit stop ${transitStopId}`);
-                        this.showTransitContextMenu(transitStopId, e.clientX, e.clientY);
-                        return;
-                    }
-                    
-                    // If no transit stop, proceed with street edge detection
-                    const streetEdge = this.getStreetEdgeFromClick(worldCoords.x, worldCoords.y);
-                    if (streetEdge) {
-                        const edgeKey = `${streetEdge.row}-${streetEdge.col}-${streetEdge.edge}`;
-                        
-                        // Default behavior: toggle individual edge selection (no Ctrl required)
-                        if (this.selectedStreetEdges.has(edgeKey)) {
-                            this.selectedStreetEdges.delete(edgeKey);
-                            console.log(`Deselected edge ${edgeKey}. Total: ${this.selectedStreetEdges.size}`);
-                        } else {
-                            this.selectedStreetEdges.add(edgeKey);
-                            console.log(`Selected edge ${edgeKey}. Total: ${this.selectedStreetEdges.size}`);
-                        }
-                        
-                        // Show context menu if there are selections, otherwise hide it
-                        if (this.selectedStreetEdges.size > 0) {
-                            this.showStreetEdgeContextMenu(e.clientX, e.clientY);
-                        } else {
-                            this.hideStreetEdgeContextMenu();
-                        }
-                    }
+                // Check if clicking the same selected tile - toggle it off
+                if (this.selectedTile && 
+                    this.selectedTile.row === tile.row && 
+                    this.selectedTile.col === tile.col &&
+                    this.contextMenu && this.contextMenu.classList && this.contextMenu.classList.contains('visible')) {
+                    this.hideContextMenu();
                 } else {
-                    // Check if clicking the same selected tile - toggle it off
-                    if (this.selectedTile && 
-                        this.selectedTile.row === tile.row && 
-                        this.selectedTile.col === tile.col &&
-                        this.contextMenu.classList.contains('visible')) {
+                    // Clicking any other parcel: hide previous menu and show new one
+                    if (this.contextMenu && this.contextMenu.classList && this.contextMenu.classList.contains('visible')) {
                         this.hideContextMenu();
-                    } else {
-                        // Clicking any other parcel: hide previous menu and show new one
-                        if (this.contextMenu.classList.contains('visible')) {
-                            this.hideContextMenu();
-                        }
-                        this.showContextMenu(tile.row, tile.col, e.clientX, e.clientY);
                     }
+                    this.showContextMenu(tile.row, tile.col, e.clientX, e.clientY);
                 }
                 this.hideTooltip();
             } else {
@@ -8927,10 +9293,17 @@ class IsometricGrid {
             this.scheduleRender();
         });
         
-        // Keyboard shortcuts for street edge mass selection
+        // Keyboard shortcuts for mobility layer
         document.addEventListener('keydown', (e) => {
-            // Only handle shortcuts when in transportation mode
-            if (this.currentLayer !== 'transportation') return;
+            // Handle mobility layer shortcuts
+            if (this.currentLayer === 'mobility') {
+                const handled = this.mobilityLayer.handleKeyPress(e.key);
+                if (handled) {
+                    e.preventDefault();
+                    this.scheduleRender();
+                }
+                return;
+            }
             
             switch(e.key) {
                 case 'Escape':
@@ -8985,17 +9358,145 @@ function generateCityName() {
 
 document.addEventListener('DOMContentLoaded', () => {
     const canvas = document.getElementById('gameCanvas');
+    const game = new IsometricGrid(canvas, 12);
+    window.game = game; // Make game accessible globally right away
     
     // Player setup functionality
-    const setupModal = document.getElementById('setup-modal');
+    const setupScreen = document.getElementById('setup-screen');
+    const gameInterface = document.getElementById('game-interface');
     const playerHandle = document.getElementById('player-handle');
     const previewName = document.getElementById('preview-name');
     const previewTile = document.getElementById('preview-tile');
-    const previewEmoji = previewTile.querySelector('.preview-emoji');
+    const previewEmoji = previewTile?.querySelector('.preview-emoji');
     const startGameBtn = document.getElementById('start-game-btn');
+    
+    // Debug: Check if elements exist
+    console.log('🔧 Setup elements found:', {
+        setupScreen: !!setupScreen,
+        gameInterface: !!gameInterface,
+        playerHandle: !!playerHandle,
+        previewName: !!previewName,
+        previewTile: !!previewTile,
+        previewEmoji: !!previewEmoji,
+        startGameBtn: !!startGameBtn
+    });
+    
+    // Expanded color palette
+    const allColors = [
+        '#FF6B6B', '#4ECDC4', '#45B7D1', '#FFA07A', '#98D8C8', '#F7DC6F', '#BB8FCE', '#85C1E2', '#52C77E',
+        '#E74C3C', '#3498DB', '#9B59B6', '#E67E22', '#F39C12', '#27AE60', '#16A085', '#2C3E50', '#34495E',
+        '#FF5722', '#607D8B', '#795548', '#8BC34A', '#CDDC39', '#FFC107', '#FF9800', '#03A9F4', '#00BCD4',
+        '#009688', '#4CAF50', '#8BC34A', '#FFEB3B', '#FF5722', '#9C27B0', '#673AB7', '#3F51B5', '#2196F3'
+    ];
+    
+    // Expanded emoji collection
+    const allEmojis = [
+        '🏠', '🌳', '🏗️', '🌆', '🏛️', '🌱', '🚀', '⭐', '🎯', '💎', '🔨', '🎨',
+        '🏰', '🏞️', '🌉', '🗼', '🏭', '🏪', '🎪', '🎭', '🎮', '🎲', '🎵', '🎸',
+        '🌟', '💫', '⚡', '🔥', '💧', '🌈', '🦋', '🌺', '🍀', '🌙', '☀️', '⛅'
+    ];
     
     let selectedColor = '#52C77E';
     let selectedEmoji = '🏠';
+    
+    // Function to get contrasting colors
+    function getContrastingColors(colors, count = 5) {
+        // Sort colors by hue and brightness for good contrast
+        const contrastingColors = [];
+        const shuffled = [...colors].sort(() => Math.random() - 0.5);
+        
+        for (let i = 0; i < count && i < shuffled.length; i++) {
+            contrastingColors.push(shuffled[i]);
+        }
+        
+        return contrastingColors;
+    }
+    
+    // Function to randomly select items
+    function getRandomSelection(items, count = 5) {
+        const shuffled = [...items].sort(() => Math.random() - 0.5);
+        return shuffled.slice(0, count);
+    }
+    
+    // Force setup screen to be visible and game interface to be hidden
+    setupScreen.style.display = 'flex';
+    gameInterface.classList.add('hidden');
+    
+    console.log('🔧 Setup screen forced visible');
+    console.log('🔧 Game interface forced hidden');
+    
+    // Generate random selections
+    const displayColors = getContrastingColors(allColors, 5);
+    const displayEmojis = getRandomSelection(allEmojis, 5);
+    
+    // Randomly choose defaults from the displayed options
+    selectedColor = displayColors[Math.floor(Math.random() * displayColors.length)];
+    selectedEmoji = displayEmojis[Math.floor(Math.random() * displayEmojis.length)];
+    
+    // Update the HTML with new options
+    const colorPicker = document.querySelector('.color-picker');
+    const emojiPicker = document.querySelector('.emoji-picker');
+    
+    console.log('🔧 Picker elements found:', {
+        colorPicker: !!colorPicker,
+        emojiPicker: !!emojiPicker
+    });
+    
+    if (!colorPicker || !emojiPicker) {
+        console.error('❌ Setup screen picker elements not found!');
+        return;
+    }
+    
+    colorPicker.innerHTML = '';
+    console.log('🎨 Creating color options:', displayColors);
+    displayColors.forEach((color, index) => {
+        const btn = document.createElement('button');
+        btn.className = 'color-option';
+        btn.dataset.color = color;
+        btn.style.backgroundColor = color;
+        if (color === selectedColor) btn.classList.add('selected');
+        
+        console.log('🎨 Created color button:', { color, element: btn });
+        
+        // Add click listener to each color button
+        btn.addEventListener('click', () => {
+            console.log('🎨 Color clicked:', color);
+            document.querySelectorAll('.color-option').forEach(b => b.classList.remove('selected'));
+            btn.classList.add('selected');
+            selectedColor = btn.dataset.color;
+            previewTile.style.background = selectedColor;
+            console.log('🎨 Preview tile updated:', previewTile.style.background);
+        });
+        
+        colorPicker.appendChild(btn);
+    });
+    
+    emojiPicker.innerHTML = '';
+    displayEmojis.forEach((emoji, index) => {
+        const btn = document.createElement('button');
+        btn.className = 'emoji-option';
+        btn.dataset.emoji = emoji;
+        btn.textContent = emoji;
+        if (emoji === selectedEmoji) btn.classList.add('selected');
+        
+        // Add click listener to each emoji button
+        btn.addEventListener('click', () => {
+            document.querySelectorAll('.emoji-option').forEach(b => b.classList.remove('selected'));
+            btn.classList.add('selected');
+            selectedEmoji = btn.dataset.emoji;
+            previewEmoji.textContent = selectedEmoji;
+        });
+        
+        emojiPicker.appendChild(btn);
+    });
+    
+    // Update preview with random selections
+    previewTile.style.background = selectedColor;
+    previewEmoji.textContent = selectedEmoji;
+    
+    // Always show setup screen - don't auto-start with saved settings
+    // const savedPlayerData = localStorage.getItem('theCommons_playerSettings');
+    // Commented out to force setup screen to always show
     
     // Handle name input
     playerHandle.addEventListener('input', (e) => {
@@ -9003,53 +9504,124 @@ document.addEventListener('DOMContentLoaded', () => {
         previewName.textContent = name;
     });
     
-    // Handle color selection
-    document.querySelectorAll('.color-option').forEach(btn => {
-        btn.addEventListener('click', () => {
-            document.querySelectorAll('.color-option').forEach(b => b.classList.remove('selected'));
-            btn.classList.add('selected');
-            selectedColor = btn.dataset.color;
-            previewTile.style.background = selectedColor;
-        });
-    });
-    
-    // Handle emoji selection
-    document.querySelectorAll('.emoji-option').forEach(btn => {
-        btn.addEventListener('click', () => {
-            document.querySelectorAll('.emoji-option').forEach(b => b.classList.remove('selected'));
-            btn.classList.add('selected');
-            selectedEmoji = btn.dataset.emoji;
-            previewEmoji.textContent = selectedEmoji;
-        });
-    });
-    
     // Start game button
     startGameBtn.addEventListener('click', () => {
         const playerName = playerHandle.value || 'Player';
-        
-        // Hide setup modal
-        setupModal.classList.add('hidden');
-        
-        // Initialize game with player settings
-        const game = new IsometricGrid(canvas, 12);
-        game.playerSettings = {
+        const playerSettings = {
             name: playerName,
             color: selectedColor,
             emoji: selectedEmoji
         };
+        
+        // Save player settings
+        localStorage.setItem('theCommons_playerSettings', JSON.stringify(playerSettings));
+        
+        // Get transition overlay
+        const transitionOverlay = document.getElementById('transition-overlay');
+        const transitionText = document.getElementById('transition-text');
+        
+        // Start cinematic transition with overlapping timing
+        setupScreen.classList.add('fade-out');
+        
+        // Start transition overlay slightly before setup finishes fading (overlap)
+        setTimeout(() => {
+            transitionOverlay.classList.add('active');
+        }, 150); // Start while setup is still fading
+        
+        // Hide setup screen as it finishes fading
+        setTimeout(() => {
+            setupScreen.style.setProperty('display', 'none', 'important');
+        }, 300);
+        
+        // Enhanced loading sequence with better messages
+        const messages = [
+            'Initializing City Simulation',
+            'Loading Economic Models', 
+            'Preparing Urban Infrastructure',
+            'Calculating Transit Networks',
+            'Finalizing Systems'
+        ];
+        let messageIndex = 0;
+        
+        // Start first message immediately when overlay appears
+        // setTimeout(() => {
+        //     transitionText.textContent = messages[0];
+        // }, 150);
+        
+        // Cycle through remaining messages with smooth transitions
+        // const messageInterval = setInterval(() => {
+        //     messageIndex++;
+        //     if (messageIndex < messages.length) {
+        //         // Fade out current text
+        //         transitionText.classList.add('changing');
+        //         
+        //         // Change text and fade back in
+        //         setTimeout(() => {
+        //             transitionText.textContent = messages[messageIndex];
+        //             transitionText.classList.remove('changing');
+        //         }, 150);
+        //     }
+        // }, 180); // Smooth message progression
+        
+        // Prepare game interface (starts while messages are still cycling)
+        setTimeout(() => {
+            gameInterface.classList.remove('hidden');
+            gameInterface.style.removeProperty('display');
+            
+            // Ensure all game containers are ready
+            const containers = ['game-container', 'main-area', 'sidebar'];
+            containers.forEach(id => {
+                const element = document.getElementById(id);
+                if (element) {
+                    element.style.removeProperty('display');
+                    element.style.removeProperty('opacity');
+                    element.style.removeProperty('visibility');
+                }
+            });
+            
+            // Setup canvas
+            game.setupCanvas();
+            game.scheduleRender();
+            game.render();
+        }, 700);
+        
+        // Start game fade-in (overlaps with final message)
+        setTimeout(() => {
+            // clearInterval(messageInterval);
+            gameInterface.classList.add('fade-in');
+        }, 900);
+        
+        // Begin overlay fade-out (game is fading in)
+        setTimeout(() => {
+            transitionOverlay.classList.remove('active');
+        }, 1000);
+        
+        // Complete transition cleanup
+        setTimeout(() => {
+            transitionOverlay.style.display = 'none';
+            // Final canvas adjustment
+            game.setupCanvas();
+            game.scheduleRender();
+        }, 1200);
+        
+        // Configure the existing game object with player settings
+        game.playerSettings = playerSettings;
         
         // Update player name in UI if needed
         const playerBtn = document.getElementById('player-btn');
         if (playerBtn) {
             playerBtn.innerHTML = `${playerName.toUpperCase()}<span class="indicator">▼</span>`;
         }
+
+        // Start the game after transition completes (faster)
+        setTimeout(() => {
+            game.startGame();
+        }, 1200); // Faster transition complete time
         
         // Setup road adjustment controls
         // Road controls removed - segments should naturally fit without adjustments
         
         // Multiplayer removed - focusing on core mechanics
-        
-        window.game = game; // Make game accessible globally for devtools
         
         // Setup context menu close listener now that game exists
         setupContextMenuCloseListener();
@@ -9060,6 +9632,7 @@ document.addEventListener('DOMContentLoaded', () => {
         setupCashflowMenu();
         setupVitalityTooltips();
     });
+    
     
     document.getElementById('city-name').textContent = generateCityName().toUpperCase();
     
@@ -9328,6 +9901,31 @@ document.addEventListener('DOMContentLoaded', () => {
         });
         
         row.addEventListener('mouseleave', () => {
+            tooltip.classList.remove('visible');
+        });
+    });
+
+    // Setup metric tooltips for mobility and other elements
+    document.querySelectorAll('.metric-tooltip').forEach(element => {
+        element.addEventListener('mouseenter', (e) => {
+            const tooltipText = element.getAttribute('data-tooltip');
+            if (tooltipText) {
+                tooltip.textContent = tooltipText;
+                
+                // Position tooltip relative to the hovered element
+                const rect = element.getBoundingClientRect();
+                const tooltipHeight = tooltip.offsetHeight || 100;
+                
+                // Position to the left of the sidebar, aligned with the element
+                tooltip.style.left = `${rect.left - 300}px`;
+                tooltip.style.top = `${rect.top + (rect.height / 2) - (tooltipHeight / 2)}px`;
+                tooltip.style.transform = 'none';
+                
+                tooltip.classList.add('visible');
+            }
+        });
+        
+        element.addEventListener('mouseleave', () => {
             tooltip.classList.remove('visible');
         });
     });
@@ -10213,15 +10811,15 @@ document.addEventListener('DOMContentLoaded', () => {
             };
             
             row.innerHTML = `
-                <td>${item.coordinates}</td>
-                <td>${item.buildingName}</td>
-                <td>${item.buildingAge} days</td>
-                <td>${item.decay.toFixed(1)}%</td>
-                <td>$${Math.round(item.landValue).toLocaleString()}</td>
-                <td class="${getValueClass(item.revenue)}">${formatCurrency(item.revenue)}</td>
-                <td class="${getValueClass(-item.maintenance)}">${formatCurrency(-item.maintenance)}</td>
-                <td class="${getValueClass(-item.lvt)}">${formatCurrency(-item.lvt)}</td>
-                <td class="${getValueClass(item.netCashflow)}">${formatCurrency(item.netCashflow)}</td>
+                <td>${item.coordinates || 'N/A'}</td>
+                <td>${item.buildingName || 'Unknown'}</td>
+                <td>${item.buildingAge || 0} days</td>
+                <td>${item.decay ? item.decay.toFixed(1) + '%' : 'N/A'}</td>
+                <td>$${Math.round(item.landValue || 0).toLocaleString()}</td>
+                <td class="${getValueClass(item.revenue || 0)}">${formatCurrency(item.revenue || 0)}</td>
+                <td class="${getValueClass(-(item.maintenance || 0))}">${formatCurrency(-(item.maintenance || 0))}</td>
+                <td class="${getValueClass(-(item.lvt || 0))}">${formatCurrency(-(item.lvt || 0))}</td>
+                <td class="${getValueClass(item.netCashflow || 0)}">${formatCurrency(item.netCashflow || 0)}</td>
             `;
             
             tbody.appendChild(row);
@@ -10328,99 +10926,7 @@ document.addEventListener('DOMContentLoaded', () => {
         rows.forEach(row => tbody.appendChild(row));
     }
     
-    // Setup transportation modal event handlers
-    function setupTransportationModal() {
-        // Close modal button
-        document.getElementById('close-transportation-modal').addEventListener('click', () => {
-            game.hideTransportationModal();
-        });
-        
-        // Close modal on backdrop click
-        document.getElementById('transportation-modal').addEventListener('click', (e) => {
-            if (e.target.id === 'transportation-modal') {
-                game.hideTransportationModal();
-            }
-        });
-        
-        // Transport mode buttons
-        document.getElementById('road-mode').addEventListener('click', () => {
-            game.switchTransportMode('road');
-        });
-        
-        document.getElementById('bus-mode').addEventListener('click', () => {
-            game.switchTransportMode('bus');
-        });
-        
-        document.getElementById('subway-mode').addEventListener('click', () => {
-            game.switchTransportMode('subway');
-        });
-        
-        // Road type selector change events
-        ['north', 'east', 'south', 'west'].forEach(side => {
-            document.getElementById(`road-${side}`).addEventListener('change', () => {
-                game.updateRoadCostDisplay();
-            });
-            
-            // Amenity checkbox events for this side
-            const amenitiesContainer = document.getElementById(`amenities-${side}`);
-            if (amenitiesContainer) {
-                const checkboxes = amenitiesContainer.querySelectorAll('input[type="checkbox"]');
-                checkboxes.forEach(checkbox => {
-                    checkbox.addEventListener('change', () => {
-                        game.updateRoadCostDisplay();
-                    });
-                });
-            }
-        });
-        
-        // Apply design button
-        document.getElementById('apply-road-design').addEventListener('click', () => {
-            game.applyRoadDesign();
-        });
-        
-        // Bus route builder events
-        const busCanvas = document.getElementById('bus-route-canvas');
-        if (busCanvas) {
-            busCanvas.addEventListener('click', (e) => {
-                game.handleBusCanvasClick(e);
-            });
-        }
-        
-        document.getElementById('bus-service-level').addEventListener('change', () => {
-            game.updateBusRouteCost();
-        });
-        
-        document.getElementById('clear-bus-route').addEventListener('click', () => {
-            game.clearBusRouteSelection();
-        });
-        
-        document.getElementById('create-bus-route').addEventListener('click', () => {
-            game.createBusRoute();
-        });
-        
-        // Subway route builder events
-        const subwayCanvas = document.getElementById('subway-route-canvas');
-        if (subwayCanvas) {
-            subwayCanvas.addEventListener('click', (e) => {
-                game.handleSubwayCanvasClick(e);
-            });
-        }
-        
-        document.getElementById('subway-service-level').addEventListener('change', () => {
-            game.updateSubwayRouteCost();
-        });
-        
-        document.getElementById('clear-subway-route').addEventListener('click', () => {
-            game.clearSubwayRouteSelection();
-        });
-        
-        document.getElementById('create-subway-route').addEventListener('click', () => {
-            game.createSubwayRoute();
-        });
-    }
-    
-    // Initialize transportation modal
-    setupTransportationModal();
+    // Transportation modal functions removed - now using modular transportation system
     
     // Setup governance modal event handlers
     function setupGovernanceModal() {

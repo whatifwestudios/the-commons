@@ -6,8 +6,411 @@
     <title>THE COMMONS</title>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect fill='%231a1a1a' width='100' height='100'/><path fill='%234CAF50' d='M20 70 L50 30 L80 70 Z M35 70 L50 50 L65 70 Z'/></svg>" type="image/svg+xml">
     <link rel="stylesheet" href="style.css">
+    <style>
+        /* Fallback CSS to ensure setup screen works */
+        .setup-screen {
+            position: fixed !important;
+            top: 0 !important;
+            left: 0 !important;
+            right: 0 !important;
+            bottom: 0 !important;
+            background: #0f0f0f !important;
+            display: flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+            z-index: 99999 !important;
+            opacity: 1 !important;
+        }
+        @keyframes setupFadeIn {
+            to { opacity: 1; }
+        }
+        .setup-content {
+            background: #141414 !important;
+            border: 1px solid #333333 !important;
+            border-radius: 6px !important;
+            padding: 32px 40px !important;
+            max-width: 720px !important;
+            width: 85vw !important;
+            box-shadow: 
+                0 8px 32px rgba(0, 0, 0, 0.6),
+                0 1px 0 rgba(82, 199, 126, 0.2) !important;
+            transform: translateY(0) !important;
+        }
+        @keyframes setupSlideUp {
+            to { transform: translateY(0); }
+        }
+        .setup-content h2 {
+            color: #ffffff !important;
+            font-size: 28px !important;
+            font-weight: 600 !important;
+            text-align: center !important;
+            margin: 0 0 8px 0 !important;
+            letter-spacing: -0.02em !important;
+        }
+        .setup-content p {
+            color: #999999 !important;
+            text-align: center !important;
+            font-size: 14px !important;
+            line-height: 1.4 !important;
+            margin: 0 0 24px 0 !important;
+            font-weight: 400 !important;
+        }
+        .setup-form {
+            display: grid !important;
+            grid-template-columns: 1fr 1fr !important;
+            gap: 24px 32px !important;
+        }
+        .setup-field {
+            display: flex !important;
+            flex-direction: column !important;
+            gap: 8px !important;
+            opacity: 1 !important;
+            transform: translateY(0) !important;
+        }
+        @keyframes fieldFadeIn {
+            to { 
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        .setup-field label {
+            color: #cccccc !important;
+            font-size: 12px !important;
+            font-weight: 500 !important;
+            text-transform: uppercase !important;
+            letter-spacing: 0.5px !important;
+        }
+        .setup-field input {
+            background: #1a1a1a !important;
+            border: 1px solid #333333 !important;
+            color: #ffffff !important;
+            padding: 12px 14px !important;
+            border-radius: 4px !important;
+            font-size: 14px !important;
+            font-family: inherit !important;
+            transition: border-color 0.2s ease !important;
+        }
+        .setup-field input:focus {
+            outline: none !important;
+            border-color: #52C77E !important;
+        }
+        .color-picker, .emoji-picker {
+            display: flex !important;
+            gap: 6px !important;
+            flex-wrap: wrap !important;
+            margin-top: 4px !important;
+        }
+        .color-option {
+            width: 32px !important;
+            height: 32px !important;
+            border-radius: 3px !important;
+            border: 2px solid transparent !important;
+            cursor: pointer !important;
+            transition: all 0.15s ease !important;
+        }
+        .color-option:hover {
+            transform: scale(1.1) !important;
+            border-color: rgba(255, 255, 255, 0.3) !important;
+        }
+        .color-option.selected {
+            border-color: #ffffff !important;
+            transform: scale(1.15) !important;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4) !important;
+        }
+        .emoji-option {
+            width: 36px !important;
+            height: 36px !important;
+            background: #1a1a1a !important;
+            border: 1px solid #333333 !important;
+            border-radius: 3px !important;
+            font-size: 18px !important;
+            cursor: pointer !important;
+            display: flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+            transition: all 0.15s ease !important;
+        }
+        .emoji-option:hover {
+            background: #222222 !important;
+            border-color: #52C77E !important;
+            transform: scale(1.1) !important;
+        }
+        .emoji-option.selected {
+            background: rgba(82, 199, 126, 0.15) !important;
+            border-color: #52C77E !important;
+            transform: scale(1.15) !important;
+            box-shadow: 0 2px 8px rgba(82, 199, 126, 0.3) !important;
+        }
+        .setup-preview {
+            grid-column: 1 / -1 !important;
+            display: flex !important;
+            align-items: center !important;
+            justify-content: space-between !important;
+            padding: 16px 20px !important;
+            background: #1a1a1a !important;
+            border: 1px solid #333333 !important;
+            border-radius: 4px !important;
+            margin-top: 20px !important;
+            opacity: 1 !important;
+            transform: translateY(0) !important;
+        }
+        .preview-container {
+            display: flex !important;
+            align-items: center !important;
+            gap: 16px !important;
+        }
+        .preview-tile {
+            width: 48px !important;
+            height: 48px !important;
+            background: #52C77E; /* Remove !important to allow JS updates */
+            border-radius: 4px !important;
+            display: flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+            transform: rotate(45deg) !important;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3) !important;
+        }
+        .preview-emoji {
+            font-size: 24px !important;
+            transform: rotate(-45deg) !important;
+        }
+        .preview-info {
+            display: flex !important;
+            flex-direction: column !important;
+            gap: 2px !important;
+        }
+        .preview-name {
+            color: #ffffff !important;
+            font-size: 16px !important;
+            font-weight: 600 !important;
+            line-height: 1 !important;
+        }
+        .preview-subtitle {
+            color: #666666 !important;
+            font-size: 11px !important;
+            text-transform: uppercase !important;
+            letter-spacing: 0.5px !important;
+        }
+        .setup-start-btn {
+            background: #52C77E !important;
+            color: #ffffff !important;
+            border: none !important;
+            padding: 10px 24px !important;
+            font-size: 13px !important;
+            font-weight: 600 !important;
+            text-transform: uppercase !important;
+            letter-spacing: 0.5px !important;
+            border-radius: 4px !important;
+            cursor: pointer !important;
+            transition: all 0.2s ease !important;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2) !important;
+        }
+        .setup-start-btn:hover {
+            background: #42B96E !important;
+            transform: translateY(-1px) !important;
+            box-shadow: 0 4px 8px rgba(82, 199, 126, 0.3) !important;
+        }
+        .setup-start-btn:active {
+            transform: translateY(0) !important;
+            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2) !important;
+        }
+        .game-interface.hidden {
+            display: none !important;
+        }
+        
+        /* Cinematic transition styles - faster */
+        .setup-screen.fade-out {
+            animation: setupFadeOut 0.3s ease-out forwards !important;
+        }
+        @keyframes setupFadeOut {
+            to { 
+                opacity: 0;
+                transform: scale(0.98);
+            }
+        }
+        
+        .transition-overlay {
+            position: fixed !important;
+            top: 0 !important;
+            left: 0 !important;
+            right: 0 !important;
+            bottom: 0 !important;
+            background: #0f0f0f !important;
+            z-index: 100000 !important;
+            display: flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+            opacity: 0 !important;
+            pointer-events: none !important;
+            transition: opacity 0.3s ease !important;
+        }
+        
+        .transition-overlay.active {
+            opacity: 1 !important;
+            pointer-events: all !important;
+        }
+        
+        .transition-text {
+            color: #52C77E !important;
+            font-size: 14px !important;
+            font-weight: 500 !important;
+            text-transform: uppercase !important;
+            letter-spacing: 2px !important;
+            opacity: 1 !important;
+            transform: translateY(0) !important;
+            position: relative !important;
+            transition: all 0.3s ease !important;
+        }
+        
+        .transition-text.changing {
+            opacity: 0 !important;
+            transform: translateY(-10px) !important;
+        }
+        
+        .transition-progress {
+            position: absolute !important;
+            bottom: -20px !important;
+            left: 50% !important;
+            transform: translateX(-50%) !important;
+            width: 120px !important;
+            height: 2px !important;
+            background: #333333 !important;
+            border-radius: 1px !important;
+            overflow: hidden !important;
+        }
+        
+        .transition-progress::after {
+            content: '' !important;
+            position: absolute !important;
+            top: 0 !important;
+            left: 0 !important;
+            height: 100% !important;
+            width: 0% !important;
+            background: linear-gradient(90deg, #52C77E 0%, #42B96E 100%) !important;
+            animation: progressFill 1.0s ease-out forwards !important;
+            box-shadow: 0 0 8px rgba(82, 199, 126, 0.4) !important;
+        }
+        
+        @keyframes progressFill {
+            0% { width: 0%; opacity: 0.8; }
+            50% { opacity: 1; }
+            100% { width: 100%; opacity: 0.9; }
+        }
+        
+        @keyframes transitionTextFade {
+            0% { 
+                opacity: 0;
+                transform: translateY(10px);
+            }
+            50% { 
+                opacity: 1;
+                transform: translateY(0);
+            }
+            100% { 
+                opacity: 0;
+                transform: translateY(-10px);
+            }
+        }
+        
+        .game-interface {
+            opacity: 1 !important; /* Default visible state */
+            display: block !important; /* Force display */
+        }
+        
+        /* Force all game elements to be visible after transition */
+        .game-interface:not(.hidden) #game-container {
+            display: flex !important;
+            opacity: 1 !important;
+            visibility: visible !important;
+            height: calc(100vh - 40px) !important;
+        }
+        
+        .game-interface:not(.hidden) #main-area {
+            display: flex !important;
+            opacity: 1 !important;
+            visibility: visible !important;
+            flex: 1 !important;
+        }
+        
+        .game-interface:not(.hidden) #gameCanvas {
+            display: block !important;
+            opacity: 1 !important;
+            visibility: visible !important;
+        }
+        
+        .game-interface:not(.hidden) #sidebar {
+            display: block !important;
+            opacity: 1 !important;
+            visibility: visible !important;
+        }
+        
+        /* City Treasury styling - subtle gold text only */
+        #treasury-row {
+            background: none !important; /* Remove background */
+            border: none !important; /* Remove border */
+        }
+        
+        #treasury-row .metric-label {
+            font-weight: 600 !important;
+            color: #D4A574 !important; /* Subtle gold */
+        }
+        
+        #treasury-row .metric-value {
+            font-weight: 600 !important;
+            color: #D4A574 !important; /* Subtle gold */
+        }
+        
+        /* Remove the highlight border/glow from metric-tooltip on treasury */
+        #treasury-row.metric-tooltip::after {
+            display: none !important;
+        }
+        
+        #treasury-row.metric-tooltip::before {
+            display: none !important;
+        }
+        
+        /* Mobility panel closed by default - handled by collapsed class in HTML */
+        
+        /* Action Manager header to white */
+        .action-manager .section-header span {
+            color: #ffffff !important;
+        }
+        
+        /* Open Marketplace button - white by default, green on hover */
+        .action-btn {
+            background: transparent !important;
+            border: 2px solid #ffffff69 !important;
+            color: white !important;
+            font-size: 0.7em !important;
+            font-weight: 300 !important;
+            transition: all 0.15s ease !important;
+        }
+        
+        .action-btn:hover {
+            border-color: #52C77E !important;
+            color: #52C77E !important;
+        }
+        
+        .game-interface.fade-in {
+            animation: gameFadeIn 0.5s ease-out forwards !important;
+            opacity: 1 !important; /* Ensure it's visible during animation */
+        }
+        
+        @keyframes gameFadeIn {
+            from {
+                opacity: 0;
+                transform: scale(1.01);
+            }
+            to {
+                opacity: 1;
+                transform: scale(1);
+            }
+        }
+    </style>
 </head>
 <body>
+    <!-- Main Game Interface (hidden until setup complete) -->
+    <div id="game-interface" class="game-interface hidden">
     <div id="top-bar">
         <div class="top-bar-section">
             <button class="top-bar-btn" id="player-btn">
@@ -39,8 +442,8 @@
                 <button class="dropdown-item layer-option" id="layer-cashflow" data-layer="cashflow">
                     📊 Cashflow View
                 </button>
-                <button class="dropdown-item layer-option" id="layer-transportation" data-layer="transportation">
-                    🚗 Transportation
+                <button class="dropdown-item layer-option" id="layer-mobility" data-layer="mobility">
+                    🚶 Mobility View
                 </button>
             </div>
         </div>
@@ -735,23 +1138,59 @@
                     </div>
                 </div>
             </div>
+            <div class="sidebar-section collapsible collapsed">
+                <div class="section-header" data-target="mobility-panel">
+                    <span>MOBILITY</span>
+                    <span class="collapse-icon">▶</span>
+                </div>
+                <div id="mobility-panel" class="section-content">
+                    <div class="mobility-metrics">
+                        <!-- Mobility metrics will be populated by JavaScript -->
+                        <div class="metric-row">
+                            <span class="metric-label">NETWORK CONNECTIVITY</span>
+                            <span class="metric-value" id="network-connectivity">0%</span>
+                        </div>
+                        <div class="metric-row metric-tooltip" data-tooltip="Average time residents spend commuting to work via available transportation options">
+                            <span class="metric-label">AVG COMMUTE TIME</span>
+                            <span class="metric-value" id="avg-commute-time">0 min</span>
+                        </div>
+                        <div class="metric-row metric-tooltip" data-tooltip="Transportation cost impact on residents' budgets. Lower scores indicate expensive transit options that burden low-income households">
+                            <span class="metric-label">AFFORDABILITY</span>
+                            <span class="metric-value" id="mobility-affordability">0</span>
+                        </div>
+                        <div class="metric-row metric-tooltip" data-tooltip="Health benefits from active transportation (walking, biking). Higher scores indicate more opportunities for physical activity during daily travel">
+                            <span class="metric-label">HEALTH SCORE</span>
+                            <span class="metric-value" id="mobility-health">0</span>
+                        </div>
+                        <div class="metric-row metric-tooltip" data-tooltip="Environmental impact of transportation choices. Higher scores indicate cleaner, more sustainable mobility options with lower emissions">
+                            <span class="metric-label">ENVIRONMENT</span>
+                            <span class="metric-value" id="mobility-environment">0</span>
+                        </div>
+                        <div class="metric-row">
+                            <span class="metric-label">TOTAL ROADS</span>
+                            <span class="metric-value" id="total-roads">0</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
             <div class="sidebar-section collapsible">
                 <div class="section-header" data-target="info">
                     <span>METRICS</span>
                     <span class="collapse-icon">▼</span>
                 </div>
                 <div id="info" class="section-content">
-                    <div class="metric-row">
+                    <div class="metric-row metric-tooltip" id="residents-row">
                         <span class="metric-label">RESIDENTS</span>
                         <span class="metric-value" id="total-residents">0</span>
                     </div>
-                    <div class="metric-row">
+                    <div class="metric-row metric-tooltip" id="treasury-row">
                         <span class="metric-label">CITY TREASURY</span>
                         <span class="metric-value" id="city-treasury">$0</span>
                     </div>
                 </div>
             </div>
             
+
             <!-- Action Manager Section -->
             <div class="sidebar-section action-manager">
                 <div class="section-header">
@@ -765,7 +1204,10 @@
                         </div>
                         <div class="action-stat-row">
                             <span class="action-label">Month Ends:</span>
-                            <span class="action-value countdown" id="month-countdown">--:--</span>
+                            <div class="month-progress-container metric-tooltip" id="month-progress-container">
+                                <div class="month-progress-bar" id="month-progress-bar"></div>
+                                <span class="month-progress-text" id="month-progress-text">--:--</span>
+                            </div>
                         </div>
                         <div class="action-stat-row">
                             <span class="action-label">Market:</span>
@@ -1013,267 +1455,52 @@
             </div>
         </div>
     </div>
+    </div> <!-- End of game-interface -->
     
-    <!-- Transportation Design Modal -->
-    <div id="transportation-modal" class="transportation-modal">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h3>Transportation Design</h3>
-                <span class="parcel-info" id="modal-parcel-coord">A-1</span>
-                <div class="transport-modes">
-                    <button class="transport-mode-btn active" id="road-mode">🛣️ Roads</button>
-                    <button class="transport-mode-btn" id="bus-mode">🚌 Bus Network</button>
-                    <button class="transport-mode-btn" id="subway-mode">🚇 Subway Network</button>
-                </div>
-                <button class="close-btn" id="close-transportation-modal">×</button>
-            </div>
-            <div class="modal-body">
-                <div class="road-design-panel" id="road-design-panel">
-                    <div class="parcel-diagram-enhanced">
-                        <div class="parcel-center">
-                            <span class="land-value" id="modal-land-value">$2.5k</span>
-                        </div>
-                        <div class="parcel-side north" data-side="north">
-                            <span class="side-label">NORTH</span>
-                            <div class="road-config">
-                                <select class="road-select" id="road-north">
-                                    <option value="none">No Road</option>
-                                    <option value="dirt_path">Dirt Path - $25</option>
-                                    <option value="local_street">Local Street - $100</option>
-                                    <option value="arterial">Arterial Road - $250</option>
-                                    <option value="highway">Highway - $1000</option>
-                                </select>
-                                <div class="road-visual" id="road-visual-north"></div>
-                                <div class="amenities-section" id="amenities-north">
-                                    <label class="amenity-checkbox" title="Sidewalks - $25">
-                                        <input type="checkbox" data-amenity="sidewalk" data-cost="25"> Sidewalk
-                                    </label>
-                                    <label class="amenity-checkbox" title="Bike Lanes - $50">
-                                        <input type="checkbox" data-amenity="bike_lane" data-cost="50"> Bike Lane
-                                    </label>
-                                    <label class="amenity-checkbox" title="Bus Stop - $75">
-                                        <input type="checkbox" data-amenity="bus_stop" data-cost="75"> Bus Stop
-                                    </label>
-                                    <label class="amenity-checkbox" title="Subway Entrance - $200">
-                                        <input type="checkbox" data-amenity="subway_entrance" data-cost="200"> Subway
-                                    </label>
-                                </div>
-                            </div>
-                        </div>
-                        <div class="parcel-side east" data-side="east">
-                            <span class="side-label">EAST</span>
-                            <div class="road-config">
-                                <select class="road-select" id="road-east">
-                                    <option value="none">No Road</option>
-                                    <option value="dirt_path">Dirt Path - $25</option>
-                                    <option value="local_street">Local Street - $100</option>
-                                    <option value="arterial">Arterial Road - $250</option>
-                                    <option value="highway">Highway - $1000</option>
-                                </select>
-                                <div class="road-visual" id="road-visual-east"></div>
-                                <div class="amenities-section" id="amenities-east">
-                                    <label class="amenity-checkbox" title="Sidewalks - $25">
-                                        <input type="checkbox" data-amenity="sidewalk" data-cost="25"> Sidewalk
-                                    </label>
-                                    <label class="amenity-checkbox" title="Bike Lanes - $50">
-                                        <input type="checkbox" data-amenity="bike_lane" data-cost="50"> Bike Lane
-                                    </label>
-                                    <label class="amenity-checkbox" title="Bus Stop - $75">
-                                        <input type="checkbox" data-amenity="bus_stop" data-cost="75"> Bus Stop
-                                    </label>
-                                    <label class="amenity-checkbox" title="Subway Entrance - $200">
-                                        <input type="checkbox" data-amenity="subway_entrance" data-cost="200"> Subway
-                                    </label>
-                                </div>
-                            </div>
-                        </div>
-                        <div class="parcel-side south" data-side="south">
-                            <span class="side-label">SOUTH</span>
-                            <div class="road-config">
-                                <select class="road-select" id="road-south">
-                                    <option value="none">No Road</option>
-                                    <option value="dirt_path">Dirt Path - $25</option>
-                                    <option value="local_street">Local Street - $100</option>
-                                    <option value="arterial">Arterial Road - $250</option>
-                                    <option value="highway">Highway - $1000</option>
-                                </select>
-                                <div class="road-visual" id="road-visual-south"></div>
-                                <div class="amenities-section" id="amenities-south">
-                                    <label class="amenity-checkbox" title="Sidewalks - $25">
-                                        <input type="checkbox" data-amenity="sidewalk" data-cost="25"> Sidewalk
-                                    </label>
-                                    <label class="amenity-checkbox" title="Bike Lanes - $50">
-                                        <input type="checkbox" data-amenity="bike_lane" data-cost="50"> Bike Lane
-                                    </label>
-                                    <label class="amenity-checkbox" title="Bus Stop - $75">
-                                        <input type="checkbox" data-amenity="bus_stop" data-cost="75"> Bus Stop
-                                    </label>
-                                    <label class="amenity-checkbox" title="Subway Entrance - $200">
-                                        <input type="checkbox" data-amenity="subway_entrance" data-cost="200"> Subway
-                                    </label>
-                                </div>
-                            </div>
-                        </div>
-                        <div class="parcel-side west" data-side="west">
-                            <span class="side-label">WEST</span>
-                            <div class="road-config">
-                                <select class="road-select" id="road-west">
-                                    <option value="none">No Road</option>
-                                    <option value="dirt_path">Dirt Path - $25</option>
-                                    <option value="local_street">Local Street - $100</option>
-                                    <option value="arterial">Arterial Road - $250</option>
-                                    <option value="highway">Highway - $1000</option>
-                                </select>
-                                <div class="road-visual" id="road-visual-west"></div>
-                                <div class="amenities-section" id="amenities-west">
-                                    <label class="amenity-checkbox" title="Sidewalks - $25">
-                                        <input type="checkbox" data-amenity="sidewalk" data-cost="25"> Sidewalk
-                                    </label>
-                                    <label class="amenity-checkbox" title="Bike Lanes - $50">
-                                        <input type="checkbox" data-amenity="bike_lane" data-cost="50"> Bike Lane
-                                    </label>
-                                    <label class="amenity-checkbox" title="Bus Stop - $75">
-                                        <input type="checkbox" data-amenity="bus_stop" data-cost="75"> Bus Stop
-                                    </label>
-                                    <label class="amenity-checkbox" title="Subway Entrance - $200">
-                                        <input type="checkbox" data-amenity="subway_entrance" data-cost="200"> Subway
-                                    </label>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                <div class="network-design-panel" id="bus-design-panel" style="display: none;">
-                    <div class="network-builder">
-                        <h4>Bus Network Builder</h4>
-                        <p>Click bus stops on the map to create routes. Connect 2+ stops to form a route.</p>
-                        <canvas id="bus-route-canvas" width="400" height="400"></canvas>
-                        <div class="route-config" id="bus-route-config" style="display: none;">
-                            <div class="route-name-section">
-                                <label>Route Name:</label>
-                                <input type="text" id="bus-route-name" placeholder="Route 1" />
-                            </div>
-                            <div class="service-level-section">
-                                <label>Service Level:</label>
-                                <select id="bus-service-level">
-                                    <option value="rush_hour">Rush Hour - $0.01/parcel/day</option>
-                                    <option value="daytime">Daytime - $0.10/parcel/day</option>
-                                    <option value="late_night">Late Night - $0.50/parcel/day</option>
-                                    <option value="24_hour">24 Hour - $1.00/parcel/day</option>
-                                </select>
-                            </div>
-                            <div class="route-info">
-                                <span>Selected Stops: <span id="bus-stop-count">0</span></span>
-                                <span>Route Length: <span id="bus-route-length">0</span> parcels</span>
-                                <span>Daily Cost: $<span id="bus-route-cost">0.00</span></span>
-                            </div>
-                            <div class="route-actions">
-                                <button class="btn-secondary" id="clear-bus-route">Clear Selection</button>
-                                <button class="btn-primary" id="create-bus-route">Create Route</button>
-                            </div>
-                        </div>
-                        <div class="existing-routes">
-                            <h5>Existing Bus Routes</h5>
-                            <div id="bus-route-list"></div>
-                        </div>
-                    </div>
-                </div>
-                <div class="network-design-panel" id="subway-design-panel" style="display: none;">
-                    <div class="network-builder">
-                        <h4>Subway Network Builder</h4>
-                        <p>Click subway entrances to create lines. Connect 2+ entrances to form a line.</p>
-                        <canvas id="subway-route-canvas" width="400" height="400"></canvas>
-                        <div class="route-config" id="subway-route-config" style="display: none;">
-                            <div class="route-name-section">
-                                <label>Line Name:</label>
-                                <input type="text" id="subway-route-name" placeholder="Blue Line" />
-                            </div>
-                            <div class="service-level-section">
-                                <label>Service Level:</label>
-                                <select id="subway-service-level">
-                                    <option value="rush_hour">Rush Hour - $0.01/parcel/day</option>
-                                    <option value="daytime">Daytime - $0.10/parcel/day</option>
-                                    <option value="late_night">Late Night - $0.50/parcel/day</option>
-                                    <option value="24_hour">24 Hour - $1.00/parcel/day</option>
-                                </select>
-                            </div>
-                            <div class="route-info">
-                                <span>Selected Entrances: <span id="subway-stop-count">0</span></span>
-                                <span>Line Length: <span id="subway-route-length">0</span> parcels</span>
-                                <span>Daily Cost: $<span id="subway-route-cost">0.00</span></span>
-                            </div>
-                            <div class="route-actions">
-                                <button class="btn-secondary" id="clear-subway-route">Clear Selection</button>
-                                <button class="btn-primary" id="create-subway-route">Create Line</button>
-                            </div>
-                        </div>
-                        <div class="existing-routes">
-                            <h5>Existing Subway Lines</h5>
-                            <div id="subway-route-list"></div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-            <div class="modal-footer">
-                <div class="cost-summary">
-                    <span class="cost-label">Total Cost:</span>
-                    <span class="cost-value" id="total-road-cost">$0</span>
-                </div>
-                <button class="btn-primary" id="apply-road-design">Apply Design</button>
-            </div>
+    <!-- Transition Overlay -->
+    <div id="transition-overlay" class="transition-overlay">
+        <div class="transition-text" id="transition-text">
+            Welcome to The Commons
+            <div class="transition-progress"></div>
         </div>
     </div>
     
-    <!-- Player Setup Modal -->
-    <div id="setup-modal" class="setup-modal">
+    <!-- Game Setup Screen (shown by default) -->
+    <div id="setup-screen" class="setup-screen">
         <div class="setup-content">
             <h2>Welcome to The Commons</h2>
-            <p>Create your player profile</p>
+            <p>Build your ideal city in this collaborative urban planning simulation. Choose your identity and start shaping a thriving community together.</p>
             
             <div class="setup-form">
                 <div class="setup-field">
                     <label for="player-handle">Player Name</label>
-                    <input type="text" id="player-handle" placeholder="Enter your name" maxlength="20" value="Player">
+                    <input type="text" id="player-handle" placeholder="What should we call you?" maxlength="20" value="Player">
                 </div>
                 
                 <div class="setup-field">
                     <label>Choose Your Color</label>
                     <div class="color-picker">
-                        <button class="color-option" data-color="#FF6B6B" style="background-color: #FF6B6B"></button>
-                        <button class="color-option" data-color="#4ECDC4" style="background-color: #4ECDC4"></button>
-                        <button class="color-option" data-color="#45B7D1" style="background-color: #45B7D1"></button>
-                        <button class="color-option" data-color="#FFA07A" style="background-color: #FFA07A"></button>
-                        <button class="color-option" data-color="#98D8C8" style="background-color: #98D8C8"></button>
-                        <button class="color-option" data-color="#F7DC6F" style="background-color: #F7DC6F"></button>
-                        <button class="color-option" data-color="#BB8FCE" style="background-color: #BB8FCE"></button>
-                        <button class="color-option" data-color="#85C1E2" style="background-color: #85C1E2"></button>
-                        <button class="color-option selected" data-color="#52C77E" style="background-color: #52C77E"></button>
+                        <!-- Colors will be dynamically generated -->
                     </div>
                 </div>
                 
                 <div class="setup-field">
-                    <label>Choose Your Emoji</label>
+                    <label>Choose Your Symbol</label>
                     <div class="emoji-picker">
-                        <button class="emoji-option selected" data-emoji="🏠">🏠</button>
-                        <button class="emoji-option" data-emoji="🌳">🌳</button>
-                        <button class="emoji-option" data-emoji="🏗️">🏗️</button>
-                        <button class="emoji-option" data-emoji="🌆">🌆</button>
-                        <button class="emoji-option" data-emoji="🏛️">🏛️</button>
-                        <button class="emoji-option" data-emoji="🌱">🌱</button>
-                        <button class="emoji-option" data-emoji="🚀">🚀</button>
-                        <button class="emoji-option" data-emoji="⭐">⭐</button>
-                        <button class="emoji-option" data-emoji="🎯">🎯</button>
-                        <button class="emoji-option" data-emoji="💎">💎</button>
-                        <button class="emoji-option" data-emoji="🔨">🔨</button>
-                        <button class="emoji-option" data-emoji="🎨">🎨</button>
+                        <!-- Emojis will be dynamically generated -->
                     </div>
                 </div>
                 
                 <div class="setup-preview">
-                    <div class="preview-tile" id="preview-tile">
-                        <span class="preview-emoji">🏠</span>
+                    <div class="preview-container">
+                        <div class="preview-tile" id="preview-tile">
+                            <span class="preview-emoji">🏠</span>
+                        </div>
+                        <div class="preview-info">
+                            <span class="preview-name" id="preview-name">Player</span>
+                            <span class="preview-subtitle">Your Avatar</span>
+                        </div>
                     </div>
-                    <span class="preview-name" id="preview-name">Player</span>
                 </div>
                 
                 <button class="setup-start-btn" id="start-game-btn">Start Game</button>
@@ -1349,6 +1576,8 @@
     
     <script src="config.js"></script>
     <script src="buildings.js"></script>
+    <script src="transportation.js"></script>
+    <script src="mobility-layer.js"></script>
     <script src="game.js"></script>
 </body>
 </html>
