@@ -1,3 +1,150 @@
+class TooltipManager {
+    constructor() {
+        this.currentTooltip = null;
+        this.tooltipElement = null;
+        this.hideTimer = null;
+        this.showTimer = null;
+        this.isVisible = false;
+        
+        this.createTooltipElement();
+    }
+    
+    createTooltipElement() {
+        // Remove any existing unified tooltip
+        const existing = document.getElementById('unified-tooltip');
+        if (existing) existing.remove();
+        
+        // Create single tooltip element
+        this.tooltipElement = document.createElement('div');
+        this.tooltipElement.id = 'unified-tooltip';
+        this.tooltipElement.className = 'unified-tooltip';
+        this.tooltipElement.style.cssText = `
+            position: fixed;
+            background: #1a1a1a;
+            border: 1px solid #3a3a3a;
+            border-radius: 6px;
+            padding: 8px 12px;
+            color: #ffffff;
+            font-size: 12px;
+            line-height: 1.4;
+            white-space: nowrap;
+            max-width: 300px;
+            pointer-events: none;
+            z-index: 10000;
+            opacity: 0;
+            visibility: hidden;
+            transition: opacity 0.2s ease, visibility 0.2s ease;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+        `;
+        document.body.appendChild(this.tooltipElement);
+    }
+    
+    show(content, x, y, options = {}) {
+        this.hide(); // Hide any existing tooltip first
+        
+        if (!content) return;
+        
+        const { 
+            delay = 500, 
+            html = false, 
+            maxWidth = 300,
+            className = ''
+        } = options;
+        
+        // Clear any existing timers
+        this.clearTimers();
+        
+        // Set timer to show tooltip after delay
+        this.showTimer = setTimeout(() => {
+            if (html) {
+                this.tooltipElement.innerHTML = content;
+            } else {
+                this.tooltipElement.textContent = content;
+            }
+            
+            this.tooltipElement.style.maxWidth = maxWidth + 'px';
+            this.tooltipElement.className = `unified-tooltip ${className}`;
+            
+            // Position tooltip
+            this.position(x, y);
+            
+            // Show tooltip
+            this.tooltipElement.style.opacity = '1';
+            this.tooltipElement.style.visibility = 'visible';
+            this.isVisible = true;
+            
+        }, delay);
+    }
+    
+    showImmediate(content, x, y, options = {}) {
+        this.show(content, x, y, { ...options, delay: 0 });
+    }
+    
+    position(x, y) {
+        if (!this.tooltipElement) return;
+        
+        const rect = this.tooltipElement.getBoundingClientRect();
+        const tooltipWidth = rect.width || 200;
+        const tooltipHeight = rect.height || 50;
+        
+        const viewportWidth = window.innerWidth;
+        const viewportHeight = window.innerHeight;
+        const margin = 10;
+        
+        // Calculate best position
+        let left = x + 15;
+        let top = y - tooltipHeight - 15;
+        
+        // Keep tooltip in viewport
+        if (left + tooltipWidth > viewportWidth - margin) {
+            left = x - tooltipWidth - 15;
+        }
+        if (left < margin) {
+            left = margin;
+        }
+        
+        if (top < margin) {
+            top = y + 15;
+        }
+        if (top + tooltipHeight > viewportHeight - margin) {
+            top = viewportHeight - tooltipHeight - margin;
+        }
+        
+        this.tooltipElement.style.left = left + 'px';
+        this.tooltipElement.style.top = top + 'px';
+    }
+    
+    hide() {
+        this.clearTimers();
+        
+        if (this.tooltipElement && this.isVisible) {
+            this.tooltipElement.style.opacity = '0';
+            this.tooltipElement.style.visibility = 'hidden';
+            this.isVisible = false;
+        }
+    }
+    
+    clearTimers() {
+        if (this.hideTimer) {
+            clearTimeout(this.hideTimer);
+            this.hideTimer = null;
+        }
+        if (this.showTimer) {
+            clearTimeout(this.showTimer);
+            this.showTimer = null;
+        }
+    }
+    
+    destroy() {
+        this.hide();
+        this.clearTimers();
+        if (this.tooltipElement) {
+            this.tooltipElement.remove();
+            this.tooltipElement = null;
+        }
+    }
+}
+
 class IsometricGrid {
     constructor(canvas, gridSize = 12) {
         this.canvas = canvas;
@@ -7,6 +154,9 @@ class IsometricGrid {
         this.currentTool = 'grass';
         this.tooltip = document.getElementById('tooltip');
         this.contextMenu = document.getElementById('context-menu');
+        
+        // Initialize unified tooltip manager
+        this.tooltipManager = new TooltipManager();
         
         // Mobility tooltip timer
         this.mobilityTooltipTimer = null;
@@ -2125,9 +2275,63 @@ class IsometricGrid {
         return Math.round(500 - priceReduction);
     }
     
+    generateTooltipContent(row, col) {
+        const parcel = this.grid[row][col];
+        const coord = this.getParcelCoordinate(row, col);
+        
+        if (parcel.building) {
+            const building = this.buildingManager.getBuildingById(parcel.building);
+            if (building) {
+                let stats = [];
+                
+                if (parcel.owner === 'player') {
+                    stats.push('👤 Owned by You');
+                } else {
+                    stats.push('🏛️ City Owned');
+                }
+                
+                // Show basic economic info
+                if (building.economics?.maxRevenue > 0) {
+                    stats.push(`💰 $${building.economics.maxRevenue}/day revenue`);
+                }
+                if (building.economics?.maintenanceCost > 0) {
+                    stats.push(`🔧 $${building.economics.maintenanceCost}/day maintenance`);
+                }
+                
+                // Show building age and decay if owned by player
+                if (parcel.owner === 'player') {
+                    const age = parcel.buildingAge || 0;
+                    const decay = Math.round((parcel.decay || 0) * 100);
+                    if (age > 0) stats.push(`📅 ${age} days old`);
+                    if (decay > 0) stats.push(`⚠️ ${decay}% decay`);
+                }
+                
+                return `<strong>${building.name}</strong> (${coord})<br>${stats.join('<br>')}`;
+            }
+        } else {
+            // Empty land
+            const price = this.getLandPrice(row, col);
+            return `<strong>Empty Land</strong> (${coord})<br>💰 $${price}`;
+        }
+        
+        return null;
+    }
+    
     showTooltip(row, col, mouseX, mouseY) {
         // Don't show tooltip if context menu is open
         if (this.contextMenu && this.contextMenu.classList && this.contextMenu.classList.contains('visible')) {
+            return;
+        }
+        
+        // Use unified tooltip manager for simplified display
+        if (this.tooltipManager) {
+            const content = this.generateTooltipContent(row, col);
+            if (content) {
+                this.tooltipManager.showImmediate(content, mouseX, mouseY, {
+                    html: true,
+                    maxWidth: 250
+                });
+            }
             return;
         }
         
@@ -2325,6 +2529,13 @@ class IsometricGrid {
     }
     
     hideTooltip() {
+        // Use unified tooltip manager first
+        if (this.tooltipManager) {
+            this.tooltipManager.hide();
+            return;
+        }
+        
+        // Fallback to old system
         if (this.tooltip && this.tooltip.classList) {
             this.tooltip.classList.remove('visible');
         }
@@ -9960,29 +10171,26 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
-    // Setup metric tooltips for mobility and other elements
-    const metricTooltip = document.getElementById('custom-tooltip');
+    // Setup unified tooltips for metric elements
     document.querySelectorAll('.metric-tooltip').forEach(element => {
         element.addEventListener('mouseenter', (e) => {
             const tooltipText = element.getAttribute('data-tooltip');
-            if (tooltipText) {
-                metricTooltip.textContent = tooltipText;
-                
-                // Position tooltip relative to the hovered element
+            if (tooltipText && window.game && window.game.tooltipManager) {
                 const rect = element.getBoundingClientRect();
-                const tooltipHeight = metricTooltip.offsetHeight || 100;
+                const x = rect.left - 20; // Position to the left of sidebar
+                const y = rect.top + rect.height / 2;
                 
-                // Position to the left of the sidebar, aligned with the element
-                metricTooltip.style.left = `${rect.left - 300}px`;
-                metricTooltip.style.top = `${rect.top + (rect.height / 2) - (tooltipHeight / 2)}px`;
-                metricTooltip.style.transform = 'none';
-                
-                metricTooltip.classList.add('visible');
+                window.game.tooltipManager.show(tooltipText, x, y, {
+                    delay: 400,
+                    maxWidth: 280
+                });
             }
         });
         
         element.addEventListener('mouseleave', () => {
-            metricTooltip.classList.remove('visible');
+            if (window.game && window.game.tooltipManager) {
+                window.game.tooltipManager.hide();
+            }
         });
     });
     }
@@ -11032,33 +11240,25 @@ document.addEventListener('DOMContentLoaded', () => {
             governanceTooltip.style.display = 'none';
         }
         
+        // Setup unified tooltips for budget categories
         document.querySelectorAll('.budget-category[data-tooltip]').forEach(element => {
             element.addEventListener('mouseenter', (e) => {
                 const tooltipText = element.getAttribute('data-tooltip');
-                if (tooltipText && governanceTooltip) {
-                    governanceTooltip.textContent = tooltipText;
-                    governanceTooltip.style.display = 'block';
-                    
-                    // Position tooltip near the element
+                if (tooltipText && window.game && window.game.tooltipManager) {
                     const rect = element.getBoundingClientRect();
-                    governanceTooltip.style.left = `${rect.left + rect.width / 2}px`;
-                    governanceTooltip.style.top = `${rect.top - 40}px`;
-                    governanceTooltip.style.transform = 'translateX(-50%)';
+                    const x = rect.left + rect.width / 2;
+                    const y = rect.top;
                     
-                    // Use timeout to ensure display:block takes effect before adding visible class
-                    setTimeout(() => {
-                        governanceTooltip.classList.add('visible');
-                    }, 10);
+                    window.game.tooltipManager.show(tooltipText, x, y, {
+                        delay: 300,
+                        maxWidth: 250
+                    });
                 }
             });
             
             element.addEventListener('mouseleave', () => {
-                if (governanceTooltip) {
-                    governanceTooltip.classList.remove('visible');
-                    // Hide after transition completes
-                    setTimeout(() => {
-                        governanceTooltip.style.display = 'none';
-                    }, 150);
+                if (window.game && window.game.tooltipManager) {
+                    window.game.tooltipManager.hide();
                 }
             });
         });
