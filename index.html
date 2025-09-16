@@ -412,118 +412,142 @@
     <!-- Main Game Interface (hidden until setup complete) -->
     <div id="game-interface" class="game-interface hidden">
     <div id="top-bar">
-        <div class="top-bar-section">
-            <button class="top-bar-btn" id="player-btn">
-                PLAYER
-                <span class="indicator">▼</span>
-            </button>
-            <button class="top-bar-btn" id="governance-btn">
-                GOVERNANCE
-            </button>
-            <div class="dropdown-menu" id="player-menu">
-                <button class="dropdown-item">CUSTOMIZE SIDEBAR</button>
-                <button class="dropdown-item">DEVTOOLS</button>
-                <hr style="margin: 8px 0; border: 1px solid #444;">
-                <button class="dropdown-item" id="hard-reset-btn" style="color: #ff6b6b;">🔄 HARD RESET GAME</button>
-            </div>
-        </div>
-        <div class="top-bar-section">
-            <button class="top-bar-btn city-name" id="city-name-btn">
-                <span id="city-name">LOADING...</span>
-                <span class="indicator">▼</span>
-            </button>
-            <div class="dropdown-menu" id="city-menu">
-                <button class="dropdown-item layer-option active" id="layer-normal" data-layer="normal">
-                    🗺️ Normal View
+        <!-- Left container: Player menu -->
+        <div class="top-bar-left">
+            <div class="top-bar-section">
+                <button class="top-bar-btn" id="player-btn">
+                    PLAYER
+                    <span class="indicator">▼</span>
                 </button>
-                <button class="dropdown-item layer-option" id="layer-landvalue" data-layer="landvalue">
-                    🔥 Land Values Heatmap
-                </button>
-                <button class="dropdown-item layer-option" id="layer-cashflow" data-layer="cashflow">
-                    📊 Cashflow View
-                </button>
-                <button class="dropdown-item layer-option" id="layer-mobility" data-layer="mobility">
-                    🚶 Mobility View
-                </button>
-            </div>
-        </div>
-        <div class="top-bar-section">
-            <div class="top-bar-info">
-                <div class="info-item date-only">
-                    <span class="info-value date-value" id="game-date">SEPT 2</span>
+                <div class="dropdown-menu" id="player-menu">
+                    <button class="dropdown-item" id="show-leaderboard">
+                        🏆 Leaderboard
+                    </button>
+                    <button class="dropdown-item" id="show-player-stats">
+                        📊 Player Stats
+                    </button>
+                    <button class="dropdown-item" id="save-game">
+                        💾 Save Game
+                    </button>
                 </div>
             </div>
         </div>
-        <div class="top-bar-section">
-            <div class="top-bar-info">
-                <div class="info-item finances-row">
-                    <div class="finance-item">
-                        <span class="info-label">CASH:</span>
-                        <span class="info-value" id="player-cash">$5,000</span>
+        
+        <!-- Center container: Date, Layer switcher, Governance, Finances -->
+        <div class="top-bar-center">
+            <div class="top-bar-section">
+                <div class="top-bar-info">
+                    <div class="info-item date-only">
+                        <span class="info-value date-value" id="game-date">SEPT 2</span>
                     </div>
-                    <div class="finance-item">
-                        <span class="info-label">WEALTH:</span>
-                        <span class="info-value" id="player-wealth">$5,000</span>
-                    </div>
-                    <div class="finance-item clickable" id="cashflow-item">
-                        <span class="info-label">DAILY:</span>
-                        <span class="info-value" id="player-cashflow">$0</span>
+                </div>
+            </div>
+            <div class="top-bar-section">
+                <button class="top-bar-btn city-name" id="city-name-btn">
+                    <span id="city-name">LOADING...</span>
+                    <span class="indicator">▼</span>
+                </button>
+                <div class="dropdown-menu" id="city-menu">
+                    <button class="dropdown-item layer-option active" id="layer-normal" data-layer="normal">
+                        🗺️ Normal View
+                    </button>
+                    <button class="dropdown-item layer-option" id="layer-landvalue" data-layer="landvalue">
+                        🔥 Land Values Heatmap
+                    </button>
+                    <button class="dropdown-item layer-option" id="layer-cashflow" data-layer="cashflow">
+                        📊 Cashflow View
+                    </button>
+                    <button class="dropdown-item layer-option" id="layer-mobility" data-layer="mobility">
+                        🚶 Mobility View
+                    </button>
+                </div>
+            </div>
+            <div class="top-bar-section">
+                <button class="top-bar-btn" id="governance-btn">
+                    GOVERNANCE
+                </button>
+            </div>
+            <div class="top-bar-section">
+                <div class="top-bar-info">
+                    <div class="info-item finances-row">
+                        <div class="finance-item">
+                            <span class="info-label">CASH:</span>
+                            <span class="info-value" id="player-cash">$5,000</span>
+                        </div>
+                        <div class="finance-item">
+                            <span class="info-label">WEALTH:</span>
+                            <span class="info-value" id="player-wealth">$5,000</span>
+                        </div>
+                        <div class="finance-item clickable" id="cashflow-item">
+                            <span class="info-label">DAILY:</span>
+                            <span class="info-value" id="player-cashflow">$0</span>
+                        </div>
                     </div>
                 </div>
             </div>
         </div>
-        <div class="top-bar-section">
-            <div class="zoom-controls">
-                <button class="zoom-btn" id="zoom-out" title="Zoom Out">-</button>
-                <button class="zoom-btn" id="zoom-reset" title="Reset Zoom">◦</button>
-                <button class="zoom-btn" id="zoom-in" title="Zoom In">+</button>
+        
+        <!-- Right container: Zoom controls -->
+        <div class="top-bar-right">
+            <div class="top-bar-section">
+                <div class="zoom-controls">
+                    <button class="zoom-btn" id="zoom-out" title="Zoom Out">-</button>
+                    <button class="zoom-btn" id="zoom-reset" title="Reset Zoom">◦</button>
+                    <button class="zoom-btn" id="zoom-in" title="Zoom In">+</button>
+                </div>
             </div>
         </div>
     </div>
     
-    <!-- Cashflow Context Menu -->
-    <div class="cashflow-menu" id="cashflow-menu">
-        <div class="cashflow-header">
-            <h3>Daily Cashflow Breakdown</h3>
-            <button class="close-btn" id="close-cashflow">×</button>
-        </div>
-        <div class="cashflow-summary">
-            <div class="summary-item">
-                <span class="summary-label">Revenue:</span>
-                <span class="summary-value" id="total-revenue">$0</span>
+    <!-- Cashflow Modal -->
+    <div class="cashflow-modal" id="cashflow-menu">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div class="header-left">
+                    <h3>DAILY CASHFLOW</h3>
+                    <div class="cashflow-summary">
+                        <div class="summary-item">
+                            <span class="summary-label">Revenue:</span>
+                            <span class="summary-value" id="total-revenue">$0</span>
+                        </div>
+                        <div class="summary-item">
+                            <span class="summary-label">Maintenance:</span>
+                            <span class="summary-value expense" id="total-maintenance">-$0</span>
+                        </div>
+                        <div class="summary-item">
+                            <span class="summary-label">LVT:</span>
+                            <span class="summary-value expense" id="total-lvt">-$0</span>
+                        </div>
+                        <div class="summary-item total">
+                            <span class="summary-label">Net Daily:</span>
+                            <span class="summary-value" id="net-daily">$0</span>
+                        </div>
+                    </div>
+                </div>
+                <button class="close-btn" id="close-cashflow">×</button>
             </div>
-            <div class="summary-item">
-                <span class="summary-label">Maintenance:</span>
-                <span class="summary-value expense" id="total-maintenance">-$0</span>
+            <div class="modal-body">
+                <div class="cashflow-table-container">
+                    <table class="cashflow-table" id="cashflow-table">
+                        <thead>
+                            <tr>
+                                <th class="sortable" data-sort="coordinates">Parcel</th>
+                                <th class="sortable" data-sort="buildingName">Building</th>
+                                <th class="sortable" data-sort="buildingAge">Age</th>
+                                <th class="sortable" data-sort="decay">Decay</th>
+                                <th class="sortable" data-sort="landValue">Land Value</th>
+                                <th class="sortable" data-sort="revenue">Revenue</th>
+                                <th class="sortable" data-sort="maintenance">Maintenance</th>
+                                <th class="sortable" data-sort="lvt">LVT</th>
+                                <th class="sortable" data-sort="netCashflow">Net</th>
+                            </tr>
+                        </thead>
+                        <tbody id="cashflow-tbody">
+                            <!-- Dynamic content -->
+                        </tbody>
+                    </table>
+                </div>
             </div>
-            <div class="summary-item">
-                <span class="summary-label">Land Value Tax:</span>
-                <span class="summary-value expense" id="total-lvt">-$0</span>
-            </div>
-            <div class="summary-item total">
-                <span class="summary-label">Net Daily:</span>
-                <span class="summary-value" id="net-daily">$0</span>
-            </div>
-        </div>
-        <div class="cashflow-table-container">
-            <table class="cashflow-table" id="cashflow-table">
-                <thead>
-                    <tr>
-                        <th class="sortable" data-sort="coordinates">Parcel</th>
-                        <th class="sortable" data-sort="buildingName">Building</th>
-                        <th class="sortable" data-sort="buildingAge">Age</th>
-                        <th class="sortable" data-sort="decay">Decay</th>
-                        <th class="sortable" data-sort="landValue">Land Value</th>
-                        <th class="sortable" data-sort="revenue">Revenue</th>
-                        <th class="sortable" data-sort="maintenance">Maintenance</th>
-                        <th class="sortable" data-sort="lvt">LVT</th>
-                        <th class="sortable" data-sort="netCashflow">Net</th>
-                    </tr>
-                </thead>
-                <tbody id="cashflow-tbody">
-                    <!-- Dynamic content -->
-                </tbody>
-            </table>
         </div>
     </div>
     
@@ -651,6 +675,24 @@
                             <div class="multiplier-actions">
                                 <button id="reset-multipliers" class="btn-secondary">Reset to Defaults</button>
                                 <button id="apply-multipliers" class="btn-primary">Apply Changes</button>
+                                <button id="open-market-dashboard" class="btn-primary">📊 Open Market Dashboard</button>
+                            </div>
+                        </div>
+                        
+                        <div class="dev-section">
+                            <h4>Performance Monitor</h4>
+                            <p>Monitor game performance and frame rates for debugging.</p>
+                            
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label for="fps-monitor-mode">FPS Display Mode</label>
+                                    <select id="fps-monitor-mode">
+                                        <option value="off" selected>Off</option>
+                                        <option value="minimal">Minimal</option>
+                                        <option value="detailed">Detailed</option>
+                                    </select>
+                                    <small>Show performance metrics on screen</small>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -1150,19 +1192,19 @@
                             <span class="metric-label">NETWORK CONNECTIVITY</span>
                             <span class="metric-value" id="network-connectivity">0%</span>
                         </div>
-                        <div class="metric-row metric-tooltip" data-tooltip="Average time residents spend commuting to work via available transportation options">
+                        <div class="metric-row metric-tooltip"Average time residents spend commuting to work via available transportation options">
                             <span class="metric-label">AVG COMMUTE TIME</span>
                             <span class="metric-value" id="avg-commute-time">0 min</span>
                         </div>
-                        <div class="metric-row metric-tooltip" data-tooltip="Transportation cost impact on residents' budgets. Lower scores indicate expensive transit options that burden low-income households">
+                        <div class="metric-row metric-tooltip"Transportation cost impact on residents' budgets. Lower scores indicate expensive transit options that burden low-income households">
                             <span class="metric-label">AFFORDABILITY</span>
                             <span class="metric-value" id="mobility-affordability">0</span>
                         </div>
-                        <div class="metric-row metric-tooltip" data-tooltip="Health benefits from active transportation (walking, biking). Higher scores indicate more opportunities for physical activity during daily travel">
+                        <div class="metric-row metric-tooltip"Health benefits from active transportation (walking, biking). Higher scores indicate more opportunities for physical activity during daily travel">
                             <span class="metric-label">HEALTH SCORE</span>
                             <span class="metric-value" id="mobility-health">0</span>
                         </div>
-                        <div class="metric-row metric-tooltip" data-tooltip="Environmental impact of transportation choices. Higher scores indicate cleaner, more sustainable mobility options with lower emissions">
+                        <div class="metric-row metric-tooltip"Environmental impact of transportation choices. Higher scores indicate cleaner, more sustainable mobility options with lower emissions">
                             <span class="metric-label">ENVIRONMENT</span>
                             <span class="metric-value" id="mobility-environment">0</span>
                         </div>
@@ -1179,7 +1221,7 @@
                     <span class="collapse-icon">▼</span>
                 </div>
                 <div id="info" class="section-content">
-                    <div class="metric-row metric-tooltip" id="residents-row">
+                    <div class="metric-row" id="residents-row">
                         <span class="metric-label">RESIDENTS</span>
                         <span class="metric-value" id="total-residents">0</span>
                     </div>
@@ -1203,7 +1245,6 @@
                             <span class="action-value" id="current-actions">10/10</span>
                         </div>
                         <div class="action-stat-row">
-                            <span class="action-label">Month Ends:</span>
                             <div class="month-progress-container metric-tooltip" id="month-progress-container">
                                 <div class="month-progress-bar" id="month-progress-bar"></div>
                                 <span class="month-progress-text" id="month-progress-text">--:--</span>
@@ -1218,10 +1259,9 @@
                             <span class="action-value" id="action-avg-price">--</span>
                         </div>
                     </div>
-                    <button class="action-btn" id="open-action-marketplace">OPEN MARKETPLACE</button>
+                    <button class="action-btn" id="open-action-marketplace">ACTION MARKET</button>
                 </div>
             </div>
-            
             
             <div id="building-info-panel" class="building-info-panel">
                 <div class="building-info-header">
@@ -1277,28 +1317,45 @@
     <div id="governance-modal" class="governance-modal">
         <div class="modal-content">
             <div class="modal-header">
-                <h3>City Governance</h3>
+                <h3>City Gov</h3>
                 <div class="governance-info">
-                    <span class="voting-points">Voting Points: <span id="player-voting-points">2</span></span>
-                    <span class="lvt-rate">Current LVT: <span id="current-lvt-rate">50%</span></span>
+                    <span class="voting-points">Points Available: <span id="player-voting-points">2</span></span>
                 </div>
                 <button class="close-btn" id="close-governance-modal">×</button>
             </div>
             <div class="modal-body">
+                <!-- Financial Overview Panel -->
+                <div class="financial-overview">
+                    <div class="financial-metrics">
+                        <div class="metric-item">
+                            <span class="metric-label">Monthly Collection</span>
+                            <span class="metric-value">$<span id="monthly-lvt-amount">0</span></span>
+                        </div>
+                        <div class="metric-item">
+                            <span class="metric-label">Current Funds</span>
+                            <span class="metric-value">$<span id="unallocated-funds-amount">0</span></span>
+                        </div>
+                        <div class="metric-item lvt-adjuster">
+                            <span class="metric-label">LVT Rate</span>
+                            <div class="lvt-controls">
+                                <button class="vote-btn decrease" id="lvt-decrease-btn">-</button>
+                                <div class="lvt-display">
+                                    <span class="current-rate" id="current-lvt-display">50%</span>
+                                    <span class="vote-points" id="lvt-vote-points">0</span>
+                                </div>
+                                <button class="vote-btn increase" id="lvt-increase-btn">+</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
                 <div class="governance-sections">
-                    <!-- Budget Allocation Section -->
-                    <div class="governance-section">
-                        <h4>Budget Allocation</h4>
-                        <p class="section-description">Allocate your voting points to fund public services. Funds come from Land Value Tax collections.</p>
-                        <div class="monthly-collection">
-                            Monthly LVT Collection: $<span id="monthly-lvt-amount">0</span>
-                        </div>
-                        <div class="unallocated-funds" style="margin-bottom: 15px; padding: 10px; background: #2a2a2a; border-radius: 4px; border-left: 4px solid #fbbf24;">
-                            <strong>Unallocated Funds: $<span id="unallocated-funds-amount">0</span></strong>
-                            <p style="font-size: 11px; margin: 4px 0 0 0; color: #ccc;">These funds will be distributed when you apply budget changes</p>
-                        </div>
+                        <!-- Budget Allocation Section -->
+                        <div class="governance-section">
+                            <h4>Budget Allocation</h4>
+                            <p class="section-description">Allocate your voting points to fund public services.</p>
                         <div class="budget-categories">
-                            <div class="budget-category" data-category="education" data-tooltip="Fund schools, libraries, and educational programs to boost citizen learning and development">
+                            <div class="budget-category" data-category="education">
                                 <div class="category-header">
                                     <span class="category-name">Education</span>
                                     <span class="category-allocation">0%</span>
@@ -1308,9 +1365,10 @@
                                     <span class="vote-count">0</span>
                                     <button class="vote-btn increase" data-category="education" data-action="increase">+</button>
                                 </div>
-                                <div class="category-coffers">Coffers: $<span>0</span></div>
+                                <div class="category-coffers">Current funds: $<span>0</span></div>
+                                <button class="more-info-btn" data-category="education">more info >></button>
                             </div>
-                            <div class="budget-category" data-category="healthcare" data-tooltip="Support hospitals, clinics, and public health initiatives to keep citizens healthy">
+                            <div class="budget-category" data-category="healthcare">
                                 <div class="category-header">
                                     <span class="category-name">Healthcare</span>
                                     <span class="category-allocation">0%</span>
@@ -1320,9 +1378,10 @@
                                     <span class="vote-count">0</span>
                                     <button class="vote-btn increase" data-category="healthcare" data-action="increase">+</button>
                                 </div>
-                                <div class="category-coffers">Coffers: $<span>0</span></div>
+                                <div class="category-coffers">Current funds: $<span>0</span></div>
+                                <button class="more-info-btn" data-category="healthcare">more info >></button>
                             </div>
-                            <div class="budget-category" data-category="infrastructure" data-tooltip="Build and maintain roads, utilities, and essential city infrastructure">
+                            <div class="budget-category" data-category="infrastructure">
                                 <div class="category-header">
                                     <span class="category-name">Infrastructure</span>
                                     <span class="category-allocation">0%</span>
@@ -1332,9 +1391,10 @@
                                     <span class="vote-count">0</span>
                                     <button class="vote-btn increase" data-category="infrastructure" data-action="increase">+</button>
                                 </div>
-                                <div class="category-coffers">Coffers: $<span>0</span></div>
+                                <div class="category-coffers">Current funds: $<span>0</span></div>
+                                <button class="more-info-btn" data-category="infrastructure">more info >></button>
                             </div>
-                            <div class="budget-category" data-category="housing" data-tooltip="Support affordable housing projects and residential development programs">
+                            <div class="budget-category" data-category="housing">
                                 <div class="category-header">
                                     <span class="category-name">Housing</span>
                                     <span class="category-allocation">0%</span>
@@ -1344,9 +1404,10 @@
                                     <span class="vote-count">0</span>
                                     <button class="vote-btn increase" data-category="housing" data-action="increase">+</button>
                                 </div>
-                                <div class="category-coffers">Coffers: $<span>0</span></div>
+                                <div class="category-coffers">Current funds: $<span>0</span></div>
+                                <button class="more-info-btn" data-category="housing">more info >></button>
                             </div>
-                            <div class="budget-category" data-category="culture" data-tooltip="Fund museums, art centers, and cultural events that enrich community life">
+                            <div class="budget-category" data-category="culture">
                                 <div class="category-header">
                                     <span class="category-name">Culture</span>
                                     <span class="category-allocation">0%</span>
@@ -1356,9 +1417,10 @@
                                     <span class="vote-count">0</span>
                                     <button class="vote-btn increase" data-category="culture" data-action="increase">+</button>
                                 </div>
-                                <div class="category-coffers">Coffers: $<span>0</span></div>
+                                <div class="category-coffers">Current funds: $<span>0</span></div>
+                                <button class="more-info-btn" data-category="culture">more info >></button>
                             </div>
-                            <div class="budget-category" data-category="recreation" data-tooltip="Create parks, sports facilities, and entertainment venues for citizen wellbeing">
+                            <div class="budget-category" data-category="recreation">
                                 <div class="category-header">
                                     <span class="category-name">Recreation</span>
                                     <span class="category-allocation">0%</span>
@@ -1368,9 +1430,10 @@
                                     <span class="vote-count">0</span>
                                     <button class="vote-btn increase" data-category="recreation" data-action="increase">+</button>
                                 </div>
-                                <div class="category-coffers">Coffers: $<span>0</span></div>
+                                <div class="category-coffers">Current funds: $<span>0</span></div>
+                                <button class="more-info-btn" data-category="recreation">more info >></button>
                             </div>
-                            <div class="budget-category" data-category="commercial" data-tooltip="Support business development, markets, and economic growth initiatives">
+                            <div class="budget-category" data-category="commercial">
                                 <div class="category-header">
                                     <span class="category-name">Commercial</span>
                                     <span class="category-allocation">0%</span>
@@ -1380,9 +1443,10 @@
                                     <span class="vote-count">0</span>
                                     <button class="vote-btn increase" data-category="commercial" data-action="increase">+</button>
                                 </div>
-                                <div class="category-coffers">Coffers: $<span>0</span></div>
+                                <div class="category-coffers">Current funds: $<span>0</span></div>
+                                <button class="more-info-btn" data-category="commercial">more info >></button>
                             </div>
-                            <div class="budget-category" data-category="civic" data-tooltip="Fund government buildings, public services, and administrative operations">
+                            <div class="budget-category" data-category="civic">
                                 <div class="category-header">
                                     <span class="category-name">Civic</span>
                                     <span class="category-allocation">0%</span>
@@ -1392,9 +1456,10 @@
                                     <span class="vote-count">0</span>
                                     <button class="vote-btn increase" data-category="civic" data-action="increase">+</button>
                                 </div>
-                                <div class="category-coffers">Coffers: $<span>0</span></div>
+                                <div class="category-coffers">Current funds: $<span>0</span></div>
+                                <button class="more-info-btn" data-category="civic">more info >></button>
                             </div>
-                            <div class="budget-category" data-category="emergency" data-tooltip="Maintain emergency services, disaster response, and public safety resources">
+                            <div class="budget-category" data-category="emergency">
                                 <div class="category-header">
                                     <span class="category-name">Emergency</span>
                                     <span class="category-allocation">0%</span>
@@ -1404,9 +1469,10 @@
                                     <span class="vote-count">0</span>
                                     <button class="vote-btn increase" data-category="emergency" data-action="increase">+</button>
                                 </div>
-                                <div class="category-coffers">Coffers: $<span>0</span></div>
+                                <div class="category-coffers">Current funds: $<span>0</span></div>
+                                <button class="more-info-btn" data-category="emergency">more info >></button>
                             </div>
-                            <div class="budget-category special" data-category="ubi" data-tooltip="Provide direct cash payments to all citizens as universal basic income">
+                            <div class="budget-category special" data-category="ubi">
                                 <div class="category-header">
                                     <span class="category-name">Universal Basic Income</span>
                                     <span class="category-allocation">0%</span>
@@ -1417,44 +1483,185 @@
                                     <button class="vote-btn increase" data-category="ubi" data-action="increase">+</button>
                                 </div>
                                 <div class="category-coffers">Monthly UBI: $<span>0</span>/citizen</div>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <!-- LVT Rate Adjustment Section -->
-                    <div class="governance-section">
-                        <h4>Land Value Tax Rate</h4>
-                        <p class="section-description">Allocate points to change the LVT rate. Each point = 1% change. Positive points increase, negative decrease.</p>
-                        <div class="lvt-point-allocation">
-                            <div class="lvt-control">
-                                <div class="lvt-header">
-                                    <span class="lvt-title">LVT Rate Adjustment</span>
-                                    <span class="current-rate">Current: <span id="current-lvt-display">50%</span></span>
-                                </div>
-                                <div class="lvt-voting-controls">
-                                    <button class="vote-btn decrease" id="lvt-decrease-btn">-</button>
-                                    <div class="lvt-vote-display">
-                                        <span class="lvt-vote-count" id="lvt-vote-points">0</span>
-                                        <span class="lvt-vote-label">points</span>
-                                    </div>
-                                    <button class="vote-btn increase" id="lvt-increase-btn">+</button>
-                                </div>
-                                <div class="proposed-rate">
-                                    Proposed Rate: <span id="proposed-lvt-rate">50%</span>
-                                </div>
+                                <button class="more-info-btn" data-category="ubi">more info >></button>
                             </div>
                         </div>
                     </div>
                 </div>
             </div>
-            <div class="modal-footer">
-                <div class="vote-summary">
-                    Points Used: <span id="points-used">0</span> / <span id="points-available">2</span>
+            <!-- Category Details Slide-out Panel -->
+            <div class="category-details-panel" id="category-details-panel">
+                <div class="panel-header">
+                    <h4 id="category-details-title">Category Details</h4>
+                    <button class="panel-close-btn" id="close-category-details">×</button>
                 </div>
-                <button class="btn-primary" id="apply-governance">Apply Changes</button>
+                <div class="panel-content" id="category-details-content">
+                    <div class="buildings-list">
+                        <div class="maintenance-note" id="maintenance-note"></div>
+                        <div class="buildings-grid" id="buildings-grid"></div>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
+    
+    <script>
+    // Governance More Info Panel Handler
+    function setupGovernanceInfoPanels() {
+        const categoryData = {
+            education: {
+                title: "Education Budget",
+                description: "Fund schools, libraries, and educational programs to boost citizen learning and development.",
+                maintenance: "✓ Covers maintenance costs for education buildings",
+                buildings: ["Elementary School", "High School", "University", "Library", "Research Center"]
+            },
+            healthcare: {
+                title: "Healthcare Budget", 
+                description: "Support hospitals, clinics, and public health initiatives to keep citizens healthy.",
+                maintenance: "✓ Covers maintenance costs for healthcare buildings",
+                buildings: ["Clinic", "Hospital", "Medical Center", "Pharmacy", "Mental Health Center"]
+            },
+            infrastructure: {
+                title: "Infrastructure Budget",
+                description: "Build and maintain roads, utilities, and essential city infrastructure.",
+                maintenance: "✓ Covers maintenance costs for infrastructure buildings",
+                buildings: ["Power Plant", "Water Treatment", "Waste Management", "Road Network", "Bridge"]
+            },
+            housing: {
+                title: "Housing Budget",
+                description: "Support affordable housing projects and residential development programs.",
+                maintenance: "✗ Does not cover maintenance costs",
+                buildings: ["Apartment Complex", "Single Family Home", "Townhouse", "Senior Housing", "Student Housing"]
+            },
+            culture: {
+                title: "Culture Budget",
+                description: "Fund museums, art centers, and cultural events that enrich community life.",
+                maintenance: "✓ Covers maintenance costs for culture buildings",
+                buildings: ["Museum", "Art Gallery", "Theater", "Concert Hall", "Cultural Center"]
+            },
+            recreation: {
+                title: "Recreation Budget",
+                description: "Create parks, sports facilities, and entertainment venues for citizen wellbeing.",
+                maintenance: "✗ Does not cover maintenance costs",
+                buildings: ["Park", "Sports Complex", "Swimming Pool", "Playground", "Community Center"]
+            },
+            commercial: {
+                title: "Commercial Budget",
+                description: "Support business development, markets, and economic growth initiatives.",
+                maintenance: "✗ Does not cover maintenance costs",
+                buildings: ["Shopping Mall", "Office Building", "Restaurant", "Market", "Bank"]
+            },
+            civic: {
+                title: "Civic Budget",
+                description: "Fund government buildings, public services, and administrative operations.",
+                maintenance: "✓ Covers maintenance costs for civic buildings",
+                buildings: ["City Hall", "Police Station", "Fire Department", "Court House", "Post Office"]
+            },
+            emergency: {
+                title: "Emergency Budget",
+                description: "Maintain emergency services, disaster response, and public safety resources.",
+                maintenance: "✓ Covers maintenance costs for emergency buildings",
+                buildings: ["Fire Station", "Police Station", "Emergency Center", "Disaster Response Unit", "First Aid Station"]
+            },
+            ubi: {
+                title: "UBI Budget",
+                description: "Provide direct cash payments to all citizens as universal basic income.",
+                maintenance: "N/A - Direct cash payments",
+                buildings: ["Universal Basic Income is a direct cash payment system, not tied to specific buildings"]
+            }
+        };
+
+        // Track currently open category
+        let currentOpenCategory = null;
+
+        // Add click handlers to all more-info-btn buttons
+        document.addEventListener('click', function(e) {
+            if (e.target.classList.contains('more-info-btn')) {
+                const category = e.target.getAttribute('data-category');
+                if (category && categoryData[category]) {
+                    // If clicking the same category that's already open, close it
+                    if (currentOpenCategory === category) {
+                        closeCategoryDetails();
+                        currentOpenCategory = null;
+                    } else {
+                        // Otherwise show the new category details
+                        showCategoryDetails(categoryData[category]);
+                        currentOpenCategory = category;
+                    }
+                }
+            }
+        });
+
+        // Close panel handler
+        document.addEventListener('click', function(e) {
+            if (e.target.id === 'close-category-details') {
+                closeCategoryDetails();
+            }
+        });
+
+        // Close panel when clicking outside (on governance modal but not on slide-out panel)
+        document.addEventListener('click', function(e) {
+            const panel = document.getElementById('category-details-panel');
+            const governanceModal = document.getElementById('governance-modal');
+            
+            // Check if the panel is open and user clicked inside governance modal but outside the panel
+            if (currentOpenCategory && panel && governanceModal) {
+                const isClickInsideModal = governanceModal.contains(e.target);
+                const isClickInsidePanel = panel.contains(e.target);
+                const isMoreInfoButton = e.target.classList.contains('more-info-btn');
+                
+                // Close if clicked inside modal but outside panel (and not on a more info button)
+                if (isClickInsideModal && !isClickInsidePanel && !isMoreInfoButton) {
+                    closeCategoryDetails();
+                }
+            }
+        });
+
+        function showCategoryDetails(data) {
+            const panel = document.getElementById('category-details-panel');
+            const title = document.getElementById('category-details-title');
+            const content = document.getElementById('category-details-content');
+            
+            title.textContent = data.title;
+            
+            let buildingsHtml = '';
+            if (Array.isArray(data.buildings)) {
+                buildingsHtml = data.buildings.map(building => 
+                    `<div class="building-item">
+                        <div class="building-name">${building}</div>
+                    </div>`
+                ).join('');
+            } else {
+                buildingsHtml = `<div class="building-item">
+                    <div class="building-name">${data.buildings}</div>
+                </div>`;
+            }
+            
+            content.innerHTML = `
+                <div class="category-description">${data.description}</div>
+                <div class="maintenance-note ${data.maintenance.includes('✓') ? 'covered' : 'not-covered'}">
+                    ${data.maintenance}
+                </div>
+                <div class="buildings-section">
+                    <h5>Related Buildings:</h5>
+                    <div class="buildings-grid">${buildingsHtml}</div>
+                </div>
+            `;
+            
+            panel.classList.add('open');
+        }
+
+        function closeCategoryDetails() {
+            const panel = document.getElementById('category-details-panel');
+            panel.classList.remove('open');
+            currentOpenCategory = null;
+        }
+    }
+
+    // Initialize when DOM is loaded
+    document.addEventListener('DOMContentLoaded', setupGovernanceInfoPanels);
+    </script>
+    
     </div> <!-- End of game-interface -->
     
     <!-- Transition Overlay -->
@@ -1469,23 +1676,23 @@
     <div id="setup-screen" class="setup-screen">
         <div class="setup-content">
             <h2>Welcome to The Commons</h2>
-            <p>Build your ideal city in this collaborative urban planning simulation. Choose your identity and start shaping a thriving community together.</p>
+            <p>Build a city that thrives. Customize your identity, start a solo session or join others for multiplayer fun.</p>
             
             <div class="setup-form">
                 <div class="setup-field">
-                    <label for="player-handle">Player Name</label>
+                    <label for="player-handle">Your Handle</label>
                     <input type="text" id="player-handle" placeholder="What should we call you?" maxlength="20" value="Player">
                 </div>
                 
                 <div class="setup-field">
-                    <label>Choose Your Color</label>
+                    <label>Your Color</label>
                     <div class="color-picker">
                         <!-- Colors will be dynamically generated -->
                     </div>
                 </div>
                 
                 <div class="setup-field">
-                    <label>Choose Your Symbol</label>
+                    <label>Your Symbol</label>
                     <div class="emoji-picker">
                         <!-- Emojis will be dynamically generated -->
                     </div>
@@ -1503,7 +1710,21 @@
                     </div>
                 </div>
                 
-                <button class="setup-start-btn" id="start-game-btn">Start Game</button>
+                <div class="setup-multiplayer-section">
+                    <div class="section-divider">
+                        <span>OR</span>
+                    </div>
+                    
+                    <div class="setup-field">
+                        <label for="player-email">Email for Magic Link</label>
+                        <input type="email" id="player-email" placeholder="your@email.com" />
+                    </div>
+                    
+                    <button class="setup-magic-btn" id="magic-link-btn">Send Magic Link</button>
+                    <p class="magic-link-help">We'll send you a link to join multiplayer sessions</p>
+                </div>
+                
+                <button class="setup-start-btn" id="start-game-btn">Start Solo Sesh</button>
             </div>
         </div>
     </div>
@@ -1512,7 +1733,7 @@
     <div id="action-marketplace-modal" class="modal" style="display: none;">
         <div class="modal-content action-marketplace">
             <div class="modal-header">
-                <h2>Action Marketplace</h2>
+                <h2>Action Market</h2>
                 <button class="modal-close" onclick="window.game.closeActionMarketplace()">&times;</button>
             </div>
             <div class="modal-body">
@@ -1665,10 +1886,195 @@
         </div>
     </div>
     
+    <!-- Market Dashboard Modal -->
+    <div id="market-dashboard-modal" class="modal" style="display: none;">
+        <div class="modal-content" style="max-width: 90%; width: 1200px; max-height: 90vh; overflow-y: auto;">
+            <div class="modal-header">
+                <h2>📊 Real-Time Market Dashboard</h2>
+                <button class="close-btn" onclick="document.getElementById('market-dashboard-modal').style.display='none'">×</button>
+            </div>
+            <div class="modal-body" style="padding: 20px;">
+                <!-- Live Market Stats -->
+                <div class="market-stats-grid" style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; margin-bottom: 30px;">
+                    <div class="market-stat-card" style="background: #2a2a2a; padding: 15px; border-radius: 8px;">
+                        <h4 style="color: #ffeb3b; margin: 0 0 10px 0;">⚡ Energy Market</h4>
+                        <div>Supply: <span id="energy-supply">0</span></div>
+                        <div>Demand: <span id="energy-demand">0</span></div>
+                        <div>Ratio: <span id="energy-ratio">0%</span></div>
+                        <div>Price: <span id="energy-price" style="color: #4CAF50">1.0x</span></div>
+                    </div>
+                    <div class="market-stat-card" style="background: #2a2a2a; padding: 15px; border-radius: 8px;">
+                        <h4 style="color: #8BC34A; margin: 0 0 10px 0;">🍎 Food Market</h4>
+                        <div>Supply: <span id="food-supply">0</span></div>
+                        <div>Demand: <span id="food-demand">0</span></div>
+                        <div>Ratio: <span id="food-ratio">0%</span></div>
+                        <div>Price: <span id="food-price" style="color: #4CAF50">1.0x</span></div>
+                    </div>
+                    <div class="market-stat-card" style="background: #2a2a2a; padding: 15px; border-radius: 8px;">
+                        <h4 style="color: #2196F3; margin: 0 0 10px 0;">🏠 Housing Market</h4>
+                        <div>Supply: <span id="housing-supply">0</span></div>
+                        <div>Demand: <span id="housing-demand">0</span></div>
+                        <div>Ratio: <span id="housing-ratio">0%</span></div>
+                        <div>Price: <span id="housing-price" style="color: #4CAF50">1.0x</span></div>
+                    </div>
+                    <div class="market-stat-card" style="background: #2a2a2a; padding: 15px; border-radius: 8px;">
+                        <h4 style="color: #9C27B0; margin: 0 0 10px 0;">💼 Jobs Market</h4>
+                        <div>Supply: <span id="jobs-supply">0</span></div>
+                        <div>Demand: <span id="jobs-demand">0</span></div>
+                        <div>Ratio: <span id="jobs-ratio">0%</span></div>
+                        <div>Price: <span id="jobs-price" style="color: #4CAF50">1.0x</span></div>
+                    </div>
+                </div>
+                
+                <!-- Market Curve Controls -->
+                <div class="market-controls" style="background: #2a2a2a; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
+                    <h3 style="margin-top: 0;">Market Elasticity Controls</h3>
+                    <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px;">
+                        <div>
+                            <label>Energy Elasticity: <span id="energy-elasticity-val">0.3</span></label>
+                            <input type="range" id="energy-elasticity" min="0.1" max="2.0" step="0.1" value="0.3" style="width: 100%;">
+                            <small style="color: #888;">Lower = price insensitive (essential), Higher = price sensitive (luxury)</small>
+                        </div>
+                        <div>
+                            <label>Food Elasticity: <span id="food-elasticity-val">0.5</span></label>
+                            <input type="range" id="food-elasticity" min="0.1" max="2.0" step="0.1" value="0.5" style="width: 100%;">
+                        </div>
+                        <div>
+                            <label>Housing Elasticity: <span id="housing-elasticity-val">0.7</span></label>
+                            <input type="range" id="housing-elasticity" min="0.1" max="2.0" step="0.1" value="0.7" style="width: 100%;">
+                        </div>
+                        <div>
+                            <label>Jobs Elasticity: <span id="jobs-elasticity-val">1.2</span></label>
+                            <input type="range" id="jobs-elasticity" min="0.1" max="2.0" step="0.1" value="1.2" style="width: 100%;">
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Market Radius Controls -->
+                <div class="market-controls" style="background: #2a2a2a; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
+                    <h3 style="margin-top: 0;">Market Locality (Tile Radius)</h3>
+                    <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px;">
+                        <div>
+                            <label>Energy Market Radius: <span id="energy-radius-val">999</span> (City-wide)</label>
+                            <input type="range" id="energy-radius" min="1" max="999" value="999" style="width: 100%;">
+                        </div>
+                        <div>
+                            <label>Food Market Radius: <span id="food-radius-val">5</span></label>
+                            <input type="range" id="food-radius" min="1" max="12" value="5" style="width: 100%;">
+                        </div>
+                        <div>
+                            <label>Housing Market Radius: <span id="housing-radius-val">3</span></label>
+                            <input type="range" id="housing-radius" min="1" max="12" value="3" style="width: 100%;">
+                        </div>
+                        <div>
+                            <label>Jobs Market Radius: <span id="jobs-radius-val">4</span></label>
+                            <input type="range" id="jobs-radius" min="1" max="12" value="4" style="width: 100%;">
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Price Bounds -->
+                <div class="market-controls" style="background: #2a2a2a; padding: 20px; border-radius: 8px;">
+                    <h3 style="margin-top: 0;">Price Multiplier Bounds</h3>
+                    <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px;">
+                        <div>
+                            <label>Minimum Price: <span id="min-price-val">0.25x</span></label>
+                            <input type="range" id="min-price" min="0.1" max="0.5" step="0.05" value="0.25" style="width: 100%;">
+                            <small style="color: #888;">Lowest price during extreme oversupply</small>
+                        </div>
+                        <div>
+                            <label>Maximum Price: <span id="max-price-val">4.0x</span></label>
+                            <input type="range" id="max-price" min="2.0" max="10.0" step="0.5" value="4.0" style="width: 100%;">
+                            <small style="color: #888;">Highest price during extreme shortage</small>
+                        </div>
+                    </div>
+                </div>
+                
+                <div style="margin-top: 20px; text-align: center;">
+                    <button onclick="applyMarketSettings()" class="btn-primary" style="margin-right: 10px;">Apply Market Settings</button>
+                    <button onclick="resetMarketDefaults()" class="btn-secondary">Reset to Defaults</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Leaderboard Modal -->
+    <div id="leaderboard-modal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>🏆 Wealth Leaderboard</h2>
+                <button class="modal-close" onclick="closeModal('leaderboard-modal')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="leaderboard-list" id="modal-leaderboard-list">
+                    <!-- Populated by JavaScript -->
+                </div>
+                <div class="leaderboard-info">
+                    <span class="leaderboard-note">Based on total net worth (cash + assets)</span>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Player Stats Modal -->
+    <div id="player-stats-modal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>📊 Player Statistics</h2>
+                <button class="modal-close" onclick="closeModal('player-stats-modal')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="stats-grid" id="player-stats-content">
+                    <!-- Populated by JavaScript -->
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Save Game Modal -->
+    <div id="save-game-modal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>💾 Save Game</h2>
+                <button class="modal-close" onclick="closeModal('save-game-modal')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="save-game-content">
+                    <div class="form-group">
+                        <label for="save-name">Save Name</label>
+                        <input type="text" id="save-name" placeholder="Enter save name" maxlength="50">
+                    </div>
+                    <div class="save-info">
+                        <p><strong>Game Info:</strong></p>
+                        <div class="save-details" id="save-details">
+                            <!-- Populated by JavaScript -->
+                        </div>
+                    </div>
+                    <div class="save-actions">
+                        <button class="btn-primary" id="confirm-save">Save Game</button>
+                        <button class="btn-secondary" onclick="closeModal('save-game-modal')">Cancel</button>
+                    </div>
+                    <div class="save-note">
+                        <small>Note: Only solo games can be saved. Multiplayer games cannot be saved.</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
     <script src="config.js"></script>
     <script src="buildings.js"></script>
     <script src="transportation.js"></script>
+    <script src="building-system.js"></script>
+    <script src="economic-engine.js"></script>
+    <script src="rendering-system.js"></script>
+    <script src="governance-system.js"></script>
+    <script src="auction-system.js"></script>
+    <script src="game-state.js"></script>
+    <script src="performance-monitor.js"></script>
+    <script src="ui-manager.js"></script>
     <script src="mobility-layer.js"></script>
+    <script src="tooltip-manager.js"></script>
     <script src="game.js"></script>
 </body>
 </html>

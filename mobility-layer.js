@@ -1920,12 +1920,27 @@ class MobilityLayer {
             ctx.fillText(`+$${config.cost}`, textX, optionsRowY + buttonHeight/2 + 8);
         });
         
-        // Show total cost
+        // Show total cost in new bottom row
+        const totalCostRowY = 170; // New bottom row position
         const totalCost = this.calculateSegmentCost();
+        
+        // Draw background for cost display
+        ctx.save();
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+        this.drawRoundedRect(ctx, startX, totalCostRowY, buttonWidth * 2 + buttonSpacing, buttonHeight - 8, 6);
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
+        ctx.lineWidth = 1;
+        this.drawRoundedRect(ctx, startX, totalCostRowY, buttonWidth * 2 + buttonSpacing, buttonHeight - 8, 6);
+        ctx.stroke();
+        ctx.restore();
+        
+        // Display total cost text
         ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
         ctx.font = '13px SF Mono, Monaco, Inconsolata, Roboto Mono, Source Code Pro, monospace';
-        ctx.textAlign = 'left';
-        ctx.fillText(`Total per segment: $${totalCost}`, startX + 350, roadRowY + buttonHeight/2);
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(`Total per segment: $${totalCost}`, startX + (buttonWidth + buttonSpacing/2), totalCostRowY + (buttonHeight - 8)/2);
     }
 
     // Mode switching
@@ -1989,8 +2004,8 @@ class MobilityLayer {
     drawTransitStopsControls(ctx) {
         const transitY = 80; // Below tabs at top left
         const startX = 20;
-        const buttonWidth = 100;
-        const buttonHeight = 35;
+        const buttonWidth = 110; // Match road controls
+        const buttonHeight = 38; // Match road controls
         const buttonSpacing = 8;
         
         // Clear previous transit buttons
@@ -2031,8 +2046,8 @@ class MobilityLayer {
     drawTransitConnectControls(ctx) {
         const transitY = 80; // Below tabs at top left
         const startX = 20;
-        const buttonWidth = 100;
-        const buttonHeight = 35;
+        const buttonWidth = 110; // Match road controls
+        const buttonHeight = 38; // Match road controls
         const buttonSpacing = 8;
         
         // Clear previous transit buttons
@@ -2492,9 +2507,7 @@ class MobilityLayer {
                 const isAllowed = allowed[type];
                 
                 if (!isAllowed) {
-                    // Show notification for disabled infrastructure
-                    const roadTypeName = this.selectedRoadType.charAt(0).toUpperCase() + this.selectedRoadType.slice(1);
-                    this.game.showNotification(`${roadTypeName} roads cannot have ${type}`, 'error');
+                    // Infrastructure not allowed for this road type
                     uiClicked = true;
                     return;
                 }

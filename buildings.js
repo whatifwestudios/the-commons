@@ -881,9 +881,20 @@ class BuildingManager {
         // Get graphics file path - prefer SVG for better scaling
         const category = row.Category.toLowerCase();
         let graphicsFile = row.GraphicsFile;
+        
+        // Debug CSV parsing
+        if (Math.random() < 0.2) { // Log 20% of buildings
+            console.log(`Building ${id} from CSV:`, {
+                name: row.Name,
+                category: row.Category,
+                graphicsFile: row.GraphicsFile,
+                allKeys: Object.keys(row)
+            });
+        }
+        
         if (!graphicsFile) {
-            // Default to SVG first, then PNG fallback
-            graphicsFile = `${id}.svg`;
+            // Default to PNG first (since most assets are PNG), then SVG fallback  
+            graphicsFile = `${id}.png`;
         }
         const graphicsPath = `assets/buildings/${category}/${graphicsFile}`;
         
@@ -896,6 +907,8 @@ class BuildingManager {
             id: id,
             name: row.Name,
             category: category,
+            // Direct property for rendering system
+            graphicsFile: graphicsPath,
             graphics: {
                 filename: graphicsFile,
                 path: graphicsPath,

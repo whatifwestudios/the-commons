@@ -1,150 +1,3 @@
-class TooltipManager {
-    constructor() {
-        this.currentTooltip = null;
-        this.tooltipElement = null;
-        this.hideTimer = null;
-        this.showTimer = null;
-        this.isVisible = false;
-        
-        this.createTooltipElement();
-    }
-    
-    createTooltipElement() {
-        // Remove any existing unified tooltip
-        const existing = document.getElementById('unified-tooltip');
-        if (existing) existing.remove();
-        
-        // Create single tooltip element
-        this.tooltipElement = document.createElement('div');
-        this.tooltipElement.id = 'unified-tooltip';
-        this.tooltipElement.className = 'unified-tooltip';
-        this.tooltipElement.style.cssText = `
-            position: fixed;
-            background: #1a1a1a;
-            border: 1px solid #3a3a3a;
-            border-radius: 6px;
-            padding: 8px 12px;
-            color: #ffffff;
-            font-size: 12px;
-            line-height: 1.4;
-            white-space: nowrap;
-            max-width: 300px;
-            pointer-events: none;
-            z-index: 10000;
-            opacity: 0;
-            visibility: hidden;
-            transition: opacity 0.2s ease, visibility 0.2s ease;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
-        `;
-        document.body.appendChild(this.tooltipElement);
-    }
-    
-    show(content, x, y, options = {}) {
-        this.hide(); // Hide any existing tooltip first
-        
-        if (!content) return;
-        
-        const { 
-            delay = 500, 
-            html = false, 
-            maxWidth = 300,
-            className = ''
-        } = options;
-        
-        // Clear any existing timers
-        this.clearTimers();
-        
-        // Set timer to show tooltip after delay
-        this.showTimer = setTimeout(() => {
-            if (html) {
-                this.tooltipElement.innerHTML = content;
-            } else {
-                this.tooltipElement.textContent = content;
-            }
-            
-            this.tooltipElement.style.maxWidth = maxWidth + 'px';
-            this.tooltipElement.className = `unified-tooltip ${className}`;
-            
-            // Position tooltip
-            this.position(x, y);
-            
-            // Show tooltip
-            this.tooltipElement.style.opacity = '1';
-            this.tooltipElement.style.visibility = 'visible';
-            this.isVisible = true;
-            
-        }, delay);
-    }
-    
-    showImmediate(content, x, y, options = {}) {
-        this.show(content, x, y, { ...options, delay: 0 });
-    }
-    
-    position(x, y) {
-        if (!this.tooltipElement) return;
-        
-        const rect = this.tooltipElement.getBoundingClientRect();
-        const tooltipWidth = rect.width || 200;
-        const tooltipHeight = rect.height || 50;
-        
-        const viewportWidth = window.innerWidth;
-        const viewportHeight = window.innerHeight;
-        const margin = 10;
-        
-        // Calculate best position
-        let left = x + 15;
-        let top = y - tooltipHeight - 15;
-        
-        // Keep tooltip in viewport
-        if (left + tooltipWidth > viewportWidth - margin) {
-            left = x - tooltipWidth - 15;
-        }
-        if (left < margin) {
-            left = margin;
-        }
-        
-        if (top < margin) {
-            top = y + 15;
-        }
-        if (top + tooltipHeight > viewportHeight - margin) {
-            top = viewportHeight - tooltipHeight - margin;
-        }
-        
-        this.tooltipElement.style.left = left + 'px';
-        this.tooltipElement.style.top = top + 'px';
-    }
-    
-    hide() {
-        this.clearTimers();
-        
-        if (this.tooltipElement && this.isVisible) {
-            this.tooltipElement.style.opacity = '0';
-            this.tooltipElement.style.visibility = 'hidden';
-            this.isVisible = false;
-        }
-    }
-    
-    clearTimers() {
-        if (this.hideTimer) {
-            clearTimeout(this.hideTimer);
-            this.hideTimer = null;
-        }
-        if (this.showTimer) {
-            clearTimeout(this.showTimer);
-            this.showTimer = null;
-        }
-    }
-    
-    destroy() {
-        this.hide();
-        this.clearTimers();
-        if (this.tooltipElement) {
-            this.tooltipElement.remove();
-            this.tooltipElement = null;
-        }
-    }
-}
-
 class IsometricGrid {
     constructor(canvas, gridSize = 12) {
         this.canvas = canvas;
@@ -152,8 +5,32 @@ class IsometricGrid {
         this.gridSize = gridSize;
         this.selectedTile = null;
         this.currentTool = 'grass';
-        this.tooltip = document.getElementById('tooltip');
         this.contextMenu = document.getElementById('context-menu');
+        
+        // Initialize state management system
+        this.gameState = new GameState();
+        
+        // Initialize performance monitoring
+        this.perfMonitor = new PerformanceMonitor();
+        this.perfMonitor.initDisplay();
+        
+        // Initialize UI Manager for DOM caching
+        this.uiManager = new UIManager();
+        
+        // Initialize Building System
+        this.buildingSystem = new BuildingSystem(this);
+        
+        // Initialize Economic Engine
+        this.economicEngine = new EconomicEngine(this);
+        
+        // Initialize Rendering System
+        this.renderingSystem = new RenderingSystem(this);
+        
+        // Initialize Governance System
+        this.governanceSystem = new GovernanceSystem(this);
+        
+        // Initialize Auction System
+        this.auctionSystem = new AuctionSystem(this);
         
         // Initialize unified tooltip manager
         this.tooltipManager = new TooltipManager();
@@ -318,6 +195,26 @@ class IsometricGrid {
             maintenance: 1.0
         };
         
+        // Market elasticity and locality settings
+        this.marketSettings = {
+            elasticity: {
+                energy: 0.3,    // Inelastic - essential
+                food: 0.5,      // Somewhat inelastic
+                housing: 0.7,   // More elastic
+                jobs: 1.2       // Elastic
+            },
+            radius: {
+                energy: 999,    // City-wide
+                food: 5,        // Regional
+                housing: 3,     // Neighborhood
+                jobs: 4         // Commute distance
+            },
+            priceBounds: {
+                min: 0.25,      // Minimum price multiplier
+                max: 4.0        // Maximum price multiplier
+            }
+        };
+        
         // Create a simple square grid
         this.grid = [];
         for (let row = 0; row < gridSize; row++) {
@@ -388,10 +285,7 @@ class IsometricGrid {
         // Map layer system
         this.currentLayer = 'normal'; // 'normal', 'landvalue', 'cashflow'
         
-        // Auction system
-        this.activeAuction = null;
-        this.auctionHistory = [];
-        this.auctionInterval = null;
+        // Auction system - now handled by AuctionSystem module
         
         
         // Competitor names
@@ -404,10 +298,24 @@ class IsometricGrid {
             'competitor6': 'Teal Associates'
         };
         
-        // Governance system
+        // Unified Governance system - players start with 2 points, get 2 more each month
         this.governance = {
-            votingPoints: 2, // Points awarded per month
-            playerVotes: {}, // Track each player's vote allocations
+            totalVotingPoints: 2, // Total points player has earned (starts with 2)
+            playerAllocations: { // Track where player has allocated their points
+                // Budget categories (10 options)
+                education: 0,
+                healthcare: 0,
+                infrastructure: 0,
+                housing: 0,
+                culture: 0,
+                recreation: 0,
+                commercial: 0,
+                civic: 0,
+                emergency: 0,
+                ubi: 0,
+                // LVT rate adjustment (1 option) - can be negative
+                lvtRate: 0
+            },
             budgetCategories: [
                 'education',
                 'healthcare', 
@@ -418,12 +326,12 @@ class IsometricGrid {
                 'commercial',
                 'civic',
                 'emergency',
-                'ubi' // Universal Basic Income
+                'ubi'
             ],
             categoryAllocations: {}, // Percentage of LVT allocated to each category
             publicCoffers: {}, // Available funds in each category
             unallocatedFunds: 0, // Funds collected but not yet allocated to categories
-            lvtPointsAllocated: 0, // Points allocated to LVT rate changes
+            baseLvtRate: 0.50, // 50% base rate (unchanged)
             currentLvtRate: 0.50, // 50% starting rate
             proposedLvtRate: 0.50,
             monthlyLvtCollected: 0
@@ -518,8 +426,29 @@ class IsometricGrid {
     }
 
     startGame() {
+        // Initialize building system
+        this.buildingSystem.initialize();
+        
+        // Initialize economic engine
+        this.economicEngine.initialize();
+        
+        // Initialize rendering system
+        this.renderingSystem.initialize();
+        
+        // Initialize governance system
+        this.governanceSystem.initialize();
+        
+        // Initialize auction system
+        this.auctionSystem.initialize();
+        
         this.startGameTime();
         this.scheduleRender();
+        
+        // Start construction animation manager
+        this.startConstructionAnimationManager();
+        
+        // Start live tooltip updates for time-based tooltips
+        this.startLiveTooltipUpdates();
     }
     
     // Action Marketplace Functions
@@ -807,14 +736,18 @@ class IsometricGrid {
     
     // Cache frequently accessed DOM elements for performance
     initDOMCache() {
-        this.domCache.selectedTile = document.getElementById('selected-tile');
-        this.domCache.gameDate = document.getElementById('game-date');
-        this.domCache.playerCash = document.getElementById('player-cash');
-        this.domCache.playerWealth = document.getElementById('player-wealth');
-        this.domCache.cityName = document.getElementById('city-name');
-        this.domCache.playerCashflow = document.getElementById('player-cashflow');
-        this.domCache.totalResidents = document.getElementById('total-residents');
-        this.domCache.cityTreasury = document.getElementById('city-treasury');
+        // Initialize the UI Manager's comprehensive DOM cache
+        this.uiManager.initialize();
+        
+        // Keep backward compatibility with old domCache references
+        this.domCache.selectedTile = this.uiManager.get('selectedTile');
+        this.domCache.gameDate = this.uiManager.get('gameDate');
+        this.domCache.playerCash = this.uiManager.get('playerCash');
+        this.domCache.playerWealth = this.uiManager.get('playerWealth');
+        this.domCache.cityName = this.uiManager.get('cityName');
+        this.domCache.playerCashflow = this.uiManager.get('playerCashflow');
+        this.domCache.totalResidents = this.uiManager.get('totalResidents');
+        this.domCache.cityTreasury = this.uiManager.get('cityTreasury');
     }
 
     initializeEdgeParcels() {
@@ -921,36 +854,8 @@ class IsometricGrid {
     }
 
     populateBuildingCategories() {
-        const categorySelect = document.getElementById('building-category');
-        if (!categorySelect) return;
-        
-        // Clear existing options
-        categorySelect.innerHTML = '';
-        
-        // Get categories from building manager
-        const categories = this.buildingManager.getCategories();
-        
-        // If no categories available, show loading message
-        if (categories.length === 0) {
-            const option = document.createElement('option');
-            option.value = '';
-            option.textContent = 'Loading buildings...';
-            categorySelect.appendChild(option);
-            
-            // Try to reload buildings from CSV if empty
-            if (this.buildingManager.isBuildingsEmpty()) {
-                this.buildingManager.initializeBuildingsFromMasterCSV();
-            }
-            return;
-        }
-        
-        // Add options for each category
-        categories.forEach(category => {
-            const option = document.createElement('option');
-            option.value = category;
-            option.textContent = category.charAt(0).toUpperCase() + category.slice(1);
-            categorySelect.appendChild(option);
-        });
+        // Delegate to building system
+        this.buildingSystem.populateBuildingCategories();
     }
 
     startGameTime() {
@@ -967,10 +872,11 @@ class IsometricGrid {
 
     // Action Manager Methods
     calculateMonthlyActionAllowance() {
-        // Start at 20 actions in month 1, reduce by 2 each month, bottom out at 10
-        const currentMonth = this.currentMonth || 1;
+        // September gets 20 actions, then 2 less each month until minimum of 10
+        const monthOrder = ['SEPT', 'OCT', 'NOV', 'DEC', 'JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG'];
+        const currentMonthIndex = monthOrder.indexOf(this.gameDate.month);
         const baseActions = 20;
-        const reduction = (currentMonth - 1) * 2;
+        const reduction = currentMonthIndex * 2;
         const minimumActions = 10;
         
         return Math.max(minimumActions, baseActions - reduction);
@@ -1043,34 +949,32 @@ class IsometricGrid {
     }
     
     updateActionDisplay() {
-        const actionsElement = document.getElementById('current-actions');
-        if (actionsElement) {
-            const currentActions = this.actionManager.currentActions;
-            const monthlyAllowance = this.actionManager.monthlyAllowance;
-            
-            // Calculate expiring vs rolling over actions
-            const expiringActions = Math.min(currentActions, monthlyAllowance);
-            const rollingOverActions = Math.max(0, currentActions - monthlyAllowance);
-            
-            // Build display text
-            let displayText = '';
-            if (rollingOverActions > 0) {
-                displayText = `${expiringActions} expiring | ${rollingOverActions} rolling over`;
-            } else {
-                displayText = `${expiringActions} expiring`;
-            }
-            
-            actionsElement.textContent = displayText;
-            
-            // Color code based on remaining actions
-            if (currentActions === 0) {
-                actionsElement.style.color = '#FF4444';
-            } else if (currentActions <= 3) {
-                actionsElement.style.color = '#FFD700';
-            } else {
-                actionsElement.style.color = '#42B96E';
-            }
+        const currentActions = this.actionManager.currentActions;
+        const monthlyAllowance = this.actionManager.monthlyAllowance;
+        
+        // Calculate expiring vs rolling over actions
+        const expiringActions = Math.min(currentActions, monthlyAllowance);
+        const rollingOverActions = Math.max(0, currentActions - monthlyAllowance);
+        
+        // Build display text
+        let displayText = '';
+        if (rollingOverActions > 0) {
+            displayText = `${expiringActions} expiring | ${rollingOverActions} rolling over`;
+        } else {
+            displayText = `${expiringActions} expiring`;
         }
+        
+        // Use UI Manager for efficient update
+        this.uiManager.updateText('currentActions', displayText);
+        
+        // Color code based on remaining actions
+        let color = '#42B96E'; // Default green
+        if (currentActions === 0) {
+            color = '#FF4444'; // Red
+        } else if (currentActions <= 3) {
+            color = '#FFD700'; // Gold
+        }
+        this.uiManager.updateStyle('currentActions', 'color', color);
         
         // Update marketplace stats
         this.updateMarketplaceDisplay();
@@ -1129,23 +1033,52 @@ class IsometricGrid {
         // Calculate progress percentage (100% to 0%)
         const progressPercent = Math.max(0, Math.min(100, (totalSecondsRemaining / totalSecondsInMonth) * 100));
         
-        // Update progress bar width
-        progressBar.style.width = `${progressPercent}%`;
+        // Show urgent timer only in final 30 seconds
+        const isUrgent = totalSecondsRemaining <= 30;
         
-        // Format time as MM:SS
+        // Format time as MM:SS (needed for both display and tooltip)
         const minutes = Math.floor(totalSecondsRemaining / 60);
         const seconds = Math.floor(totalSecondsRemaining % 60);
         const timeText = `${minutes}:${seconds.toString().padStart(2, '0')}`;
         
-        progressText.textContent = timeText;
+        // Always show the container
+        progressContainer.style.display = 'block';
+        progressContainer.style.opacity = '1';
+        progressBar.style.width = `${progressPercent}%`;
+        
+        if (isUrgent) {
+            // Final 30 seconds - add urgent styling and show timer
+            progressContainer.classList.add('urgent');
+            progressText.textContent = timeText;
+            progressText.style.display = 'block';
+        } else {
+            // Normal state - remove urgent styling and show days
+            progressContainer.classList.remove('urgent');
+            
+            if (daysRemaining === 1) {
+                progressText.textContent = 'Final Day';
+            } else {
+                progressText.textContent = `${daysRemaining} days left`;
+            }
+            progressText.style.display = 'block';
+        }
+        
+        // Calculate game progress (12 months ending Sept 1)
+        const monthOrder = ['SEPT', 'OCT', 'NOV', 'DEC', 'JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG'];
+        const currentMonthIndex = monthOrder.indexOf(this.gameDate.month);
+        const gameMonthsElapsed = currentMonthIndex + 1;
+        const gameMonthsRemaining = 12 - gameMonthsElapsed;
         
         // Update tooltip with detailed information
         const daysText = daysRemaining === 1 ? 'day' : 'days';
+        const monthsRemainingText = gameMonthsRemaining === 1 ? 'month' : 'months';
+        
         progressContainer.setAttribute('data-tooltip', 
-            `Month End Progress\n` +
-            `📅 ${this.gameDate.month} ${this.gameDate.day}/${daysInMonth}\n` +
-            `⏱️ ${timeText} remaining\n` +
-            `📆 ${daysRemaining} ${daysText} left\n\n` +
+            `<strong>Time Left in Month</strong><br><br>` +
+            `⏱️ ${timeText} remaining in month<br>` +
+            `📆 ${daysRemaining} ${daysText} left in month<br><br>` +
+            `<strong>🎮 Game Progress</strong><br>` +
+            `⏳ ${gameMonthsRemaining} ${monthsRemainingText} until Sept 1<br><br>` +
             `💼 Actions refresh when month ends`);
     }
     
@@ -1171,8 +1104,7 @@ class IsometricGrid {
             this.refreshMonthlyActions();
             
             // Award voting points and trigger governance button animation
-            this.awardMonthlyVotingPoints();
-            this.highlightGovernanceButton();
+            this.governanceSystem.processMonthlyGovernance();
         } else {
             this.gameDate.day++;
         }
@@ -1242,7 +1174,7 @@ class IsometricGrid {
         this.economicCache.lastUpdate = performance.now();
         
         // Check for auction triggers
-        this.checkForAuctions();
+        this.auctionSystem.checkForAuctions();
         
     }
     
@@ -1326,141 +1258,8 @@ class IsometricGrid {
     
     // Helper method: Calculate economics for a single building/parcel
     calculateBuildingEconomics(parcel, row, col) {
-        // Process Land Value Tax (50% annually = 0.137% daily)
-        const dailyLVTRate = 0.50 / 365; // 50% per year, paid daily
-        const landTax = parcel.landValue.paidPrice * dailyLVTRate;
-        
-        let buildingRevenue = 0;
-        let buildingMaintenance = 0;
-        let buildingName = 'Empty Land';
-        let buildingAge = parcel.buildingAge || 0;
-        let decay = 0;
-        
-        // NEW: Calculate transport accessibility multiplier
-        let transportMultiplier = 1.0;
-        
-        if (parcel.building) {
-            // Calculate decay (increases over time)
-            const building = this.buildingManager.getBuildingById(parcel.building);
-            if (building) {
-                buildingName = building.name;
-                
-                // NEW: Calculate transport accessibility for this building
-                if (this.buildingCategories.isEnergyProducer(building)) {
-                    // Energy producers need road connectivity for power distribution, not population access
-                    const hasRoadConnectivity = this.checkRoadConnectivity(row, col);
-                    transportMultiplier = hasRoadConnectivity ? 1.0 : 0.2; // 20% efficiency without roads, full with roads
-                    
-                    // Log for debugging
-                    if (this.gameDate.day % 7 === 0) { // Log weekly
-                        console.log(`⚡ ${buildingName} at (${row},${col}): road connectivity=${hasRoadConnectivity}, multiplier: ${transportMultiplier.toFixed(2)}`);
-                    }
-                    
-                } else if (this.buildingCategories.needsTransportAccess(building)) {
-                    // Commercial/education buildings need population accessibility
-                    const accessiblePop = this.calculateAccessiblePopulation(row, col);
-                    const optimalPop = building.jobs ? building.jobs * 10 : 100; // Buildings need 10x their job count in accessible population
-                    
-                    // Transport multiplier: 0.1 (no access) to 1.0 (full access)
-                    transportMultiplier = Math.max(0.1, Math.min(1.0, accessiblePop / optimalPop));
-                    
-                    // Log for debugging
-                    if (this.gameDate.day % 7 === 0) { // Log weekly
-                        console.log(`🚌 ${buildingName} at (${row},${col}): ${accessiblePop}/${optimalPop} accessible pop, multiplier: ${transportMultiplier.toFixed(2)}`);
-                    }
-                }
-                
-                // Decay rate: 0.1% per day base, accelerating over time
-                const baseDecayRate = 0.001;
-                const ageMultiplier = 1 + (parcel.buildingAge / 1000); // Accelerates slowly
-                const livabilityMultipliers = this.calculateLivabilityMultipliers(row, col);
-                const dailyDecayIncrease = baseDecayRate * ageMultiplier * livabilityMultipliers.decay;
-                parcel.decay = Math.min(1, parcel.decay + dailyDecayIncrease);
-                decay = parcel.decay;
-                
-                // Calculate revenue (already daily, affected by decay and satisfaction)
-                const maxRevenue = building.economics.maxRevenue || 0;
-                const decayMultiplier = Math.max(0, 1 - parcel.decay);
-                
-                
-                // Apply city satisfaction multiplier (0.5 to 1.2x based on happiness)
-                const satisfactionMultiplier = 0.5 + (this.citySatisfaction?.overall || 0.5) * 0.7;
-                
-                // Apply building efficiency penalty for very unhappy cities
-                const efficiencyPenalty = this.buildingEfficiencyPenalty || 1.0;
-                
-                // Apply population growth modifier (represents changing demand/occupancy)
-                const growthModifier = this.populationGrowthModifier || 1.0;
-                
-                // Apply supply/demand effects
-                let supplyDemandMultiplier = 1.0;
-                if (this.supplyDemandEffects) {
-                    // Apply different multipliers based on building type and resource shortages
-                    const normalizedCategory = this.buildingCategories.normalize(building.category);
-                    if (this.buildingCategories.isEnergyProducer(building)) {
-                        // Energy producers affected by energy oversupply/shortage
-                        supplyDemandMultiplier *= this.supplyDemandEffects.energyMultiplier;
-                    } else if (normalizedCategory === 'commercial') {
-                        // Commercial buildings affected by energy shortages (higher costs)
-                        if (building.resources?.energyDemand > 0) {
-                            // Energy consumers pay more during shortages
-                            const energyCostMultiplier = 2 - this.supplyDemandEffects.energyMultiplier;
-                            supplyDemandMultiplier *= Math.max(0.1, Math.min(2.0, energyCostMultiplier));
-                        }
-                        // Food producers affected by food oversupply
-                        if (building.resources?.foodProduction > 0) {
-                            supplyDemandMultiplier *= this.supplyDemandEffects.foodMultiplier;
-                        }
-                    } else if (normalizedCategory === 'housing') {
-                        // Housing affected by housing shortage (higher rents/values)
-                        supplyDemandMultiplier *= this.supplyDemandEffects.housingMultiplier;
-                    }
-                    
-                    // Job-creating buildings affected by job market conditions
-                    if (building.population?.jobsCreated > 0) {
-                        supplyDemandMultiplier *= this.supplyDemandEffects.jobsMultiplier;
-                    }
-                    
-                    // All revenue-generating buildings affected by overall business efficiency
-                    if (maxRevenue > 0) {
-                        supplyDemandMultiplier *= this.supplyDemandEffects.businessEfficiency;
-                    }
-                }
-                
-                // Calculate maintenance (already daily, increases with decay) - MOVED UP for debug logging
-                const baseMaintenance = building.economics.maintenanceCost || 0;
-                const maintenanceMultiplier = 1 + (parcel.decay * 2); // Doubles at full decay
-                
-                // NEW: Apply transport multiplier and livability to revenue
-                buildingRevenue = maxRevenue * decayMultiplier * satisfactionMultiplier * efficiencyPenalty * growthModifier * supplyDemandMultiplier * transportMultiplier * livabilityMultipliers.revenue * this.economicMultipliers.baseRevenue;
-                
-                // Debug logging for negative cashflow buildings
-                const netCashflow = buildingRevenue - (baseMaintenance * maintenanceMultiplier * this.economicMultipliers.maintenance) - (parcel.landValue.paidPrice * dailyLVTRate);
-                if (netCashflow < 0 && (buildingName === 'Solar Farm' || buildingName === 'Cornerstore')) {
-                    console.log(`🚨 ${buildingName} at (${row},${col}) running negative:`);
-                    console.log(`  Base: Revenue=$${maxRevenue}, Maintenance=$${baseMaintenance}, LandValue=$${parcel.landValue.paidPrice}`);
-                    console.log(`  Multipliers: decay=${decayMultiplier.toFixed(2)}, satisfaction=${satisfactionMultiplier.toFixed(2)}, transport=${transportMultiplier.toFixed(2)}, livability=${livabilityMultipliers.revenue.toFixed(2)}, supply/demand=${supplyDemandMultiplier.toFixed(2)}`);
-                    console.log(`  Final: Revenue=$${buildingRevenue.toFixed(2)}, Maintenance=$${(baseMaintenance * maintenanceMultiplier * this.economicMultipliers.maintenance).toFixed(2)}, LVT=$${(parcel.landValue.paidPrice * dailyLVTRate).toFixed(2)}`);
-                    console.log(`  Net: $${netCashflow.toFixed(2)}`);
-                }
-                buildingMaintenance = baseMaintenance * maintenanceMultiplier * this.economicMultipliers.maintenance;
-            }
-        }
-        
-        // Return cached stats object
-        return {
-            row,
-            col,
-            coordinates: `(${row}, ${col})`,
-            buildingName,
-            buildingAge,
-            decay: decay * 100, // Convert to percentage for UI
-            landValue: parcel.landValue.paidPrice,
-            revenue: buildingRevenue,
-            maintenance: buildingMaintenance,
-            lvt: landTax,
-            netCashflow: buildingRevenue - buildingMaintenance - landTax
-        };
+        // Delegate to the building system
+        return this.buildingSystem.calculateBuildingEconomics(parcel, row, col);
     }
     
     // Helper method: Get localized livability scores around a building location
@@ -1675,304 +1474,176 @@ class IsometricGrid {
     }
 
     calculateCurrentCashflow() {
-        // Unified cashflow calculation - uses the same method as processDailyCashflow
-        // but without aging buildings or applying cash changes
-        let dailyRevenue = 0;
-        let dailyMaintenance = 0;
-        let dailyLVT = 0;
+        // Delegate to economic engine
+        const cashflow = this.economicEngine.calculatePlayerCashflow();
         
-        // Store detailed breakdown for UI
-        this.cashflowBreakdown = [];
-        
-        // First, ensure supply/demand effects are calculated
-        this.applySupplyDemandEffects();
-        
-        for (let row = 0; row < this.gridSize; row++) {
-            for (let col = 0; col < this.gridSize; col++) {
-                const parcel = this.grid[row][col];
-                
-                if (parcel.owner === 'player') {
-                    // Use the unified calculation method
-                    const buildingStats = this.calculateBuildingEconomics(parcel, row, col);
-                    
-                    dailyRevenue += buildingStats.revenue;
-                    dailyMaintenance += buildingStats.maintenance;
-                    dailyLVT += buildingStats.lvt;
-                    
-                    // Store breakdown data for UI
-                    this.cashflowBreakdown.push({
-                        ...buildingStats
-                    });
-                }
-            }
-        }
-        
-        // Add road maintenance costs
-        const roadMaintenance = this.calculateRoadMaintenance();
-        dailyMaintenance += roadMaintenance;
-        
-        // Add road maintenance to breakdown for UI
-        if (roadMaintenance > 0) {
-            this.cashflowBreakdown.push({
-                location: 'Infrastructure',
-                buildingName: 'Road Network',
-                revenue: 0,
-                maintenance: roadMaintenance,
-                lvt: 0,
-                net: -roadMaintenance,
-                efficiency: 100
-            });
-        }
-        
-        // Store preview totals for UI (don't overwrite real daily totals)
+        // Store breakdown for UI compatibility
+        this.cashflowBreakdown = cashflow.breakdown;
         this.currentCashflowPreview = {
-            revenue: dailyRevenue,
-            maintenance: dailyMaintenance,
-            lvt: dailyLVT,
-            netCashflow: dailyRevenue - dailyMaintenance - dailyLVT
+            revenue: cashflow.totalRevenue,
+            maintenance: cashflow.totalMaintenance,
+            lvt: cashflow.totalLVT,
+            netCashflow: cashflow.netCashflow
         };
+        this.dailyCashflowTotals = this.currentCashflowPreview;
         
-        // Also update the daily totals for the UI to show accurate values
-        this.dailyCashflowTotals = {
-            revenue: dailyRevenue,
-            maintenance: dailyMaintenance,
-            lvt: dailyLVT,
-            netCashflow: dailyRevenue - dailyMaintenance - dailyLVT
-        };
+        return cashflow.netCashflow;
     }
 
     checkForAuctions() {
-        // Update calculated values but don't auto-trigger auctions
-        // Players must manually start auctions
-        for (let row = 0; row < this.gridSize; row++) {
-            for (let col = 0; col < this.gridSize; col++) {
-                const parcel = this.grid[row][col];
-                if (parcel.owner && parcel.owner !== 'unclaimed') {
-                    parcel.landValue.calculatedValue = this.calculateLandValue(row, col);
-                }
-            }
-        }
+        // Delegate to auction system
+        this.auctionSystem.checkForAuctions();
     }
 
-    // Auction system methods
+    // Auction system methods - now delegated to AuctionSystem
     showAuctionUI() {
-        // Create auction UI overlay
-        const existingUI = document.getElementById('auction-ui');
-        if (existingUI) existingUI.remove();
-        
-        const auctionUI = document.createElement('div');
-        auctionUI.id = 'auction-ui';
-        auctionUI.className = 'auction-overlay';
-        auctionUI.innerHTML = `
-            <div class="auction-panel">
-                <div class="auction-header">
-                    <h3>LAND AUCTION - ${this.activeAuction.coord}</h3>
-                    <span class="auction-timer" id="auction-timer">60</span>
-                </div>
-                <div class="auction-info">
-                    <div class="info-row">
-                        <span>Current Owner:</span>
-                        <span>${this.activeAuction.currentOwner || 'UNOWNED'}</span>
-                    </div>
-                    <div class="info-row">
-                        <span>Calculated Land Value:</span>
-                        <span>$${this.activeAuction.calculatedLandValue.toLocaleString()}</span>
-                    </div>
-                    <div class="info-row" ${this.activeAuction.buildingValue ? '' : 'style="display:none"'}>
-                        <span>Building Value:</span>
-                        <span>$${this.activeAuction.buildingValue.toLocaleString()}</span>
-                    </div>
-                </div>
-                <div class="auction-current-bid">
-                    <div class="bid-label">CURRENT BID</div>
-                    <div class="bid-amount" id="current-bid">$${this.activeAuction.currentBid.toLocaleString()}</div>
-                    <div class="bid-status" id="bid-status">Waiting for bidder...</div>
-                </div>
-                <div class="auction-actions" id="auction-actions">
-                    <button class="auction-btn" id="place-bid-btn">PLACE BID</button>
-                </div>
-                <div class="auction-history" id="auction-history">
-                    <!-- Bid history will appear here -->
-                </div>
-            </div>
-        `;
-        
-        document.body.appendChild(auctionUI);
-        
-        // Set up bid button
-        const bidBtn = document.getElementById('place-bid-btn');
-        if (bidBtn) {
-            bidBtn.onclick = () => this.placeBid();
-        }
+        // Delegate to auction system
+        this.auctionSystem.showAuctionUI();
+    }
+    
+    startAuction(row, col) {
+        // Delegate to auction system
+        return this.auctionSystem.startAuction(row, col);
     }
     
     startAuctionTimer() {
-        if (this.auctionInterval) clearInterval(this.auctionInterval);
-        
-        this.auctionInterval = setInterval(() => {
-            if (!this.activeAuction) {
-                clearInterval(this.auctionInterval);
-                return;
-            }
-            
-            const now = Date.now();
-            const timeLeft = Math.max(0, this.activeAuction.endTime - now) / 1000;
-            
-            // Update timer display
-            const timerEl = document.getElementById('auction-timer');
-            if (timerEl) {
-                timerEl.textContent = Math.ceil(timeLeft);
-                if (timeLeft < 10) {
-                    timerEl.style.color = '#ff6b6b';
-                }
-            }
-            
-            // Dutch auction phase - price drops
-            if (this.activeAuction.dutchPhase && !this.activeAuction.currentBidder) {
-                const timeSinceLastUpdate = now - this.activeAuction.lastDutchUpdate;
-                if (timeSinceLastUpdate >= 1000) { // Update every second
-                    const minPrice = this.activeAuction.initialLandValue;
-                    const newBid = Math.max(minPrice, Math.floor(this.activeAuction.currentBid * 0.99));
-                    this.activeAuction.currentBid = newBid;
-                    this.activeAuction.lastDutchUpdate = now;
-                    
-                    const bidEl = document.getElementById('current-bid');
-                    if (bidEl) {
-                        bidEl.textContent = `$${newBid.toLocaleString()}`;
-                    }
-                }
-            }
-            
-            // End auction
-            if (timeLeft <= 0) {
-                this.endAuction();
-            }
-        }, 100); // Update every 100ms
+        // Delegate to auction system
+        this.auctionSystem.startAuctionTimer();
     }
     
-    placeBid(increment = 0.01) {
-        if (!this.activeAuction) return;
-        
-        // First bid ends Dutch phase
-        if (this.activeAuction.dutchPhase) {
-            this.activeAuction.dutchPhase = false;
-            this.activeAuction.currentBidder = 'player';
-            this.activeAuction.bidHistory.push({
-                bidder: 'player',
-                amount: this.activeAuction.currentBid,
-                time: Date.now()
-            });
-            
-            // Update UI to show increment buttons
-            this.updateAuctionActions();
-        } else {
-            // Calculate new bid with increment
-            const newBid = Math.floor(this.activeAuction.currentBid * (1 + increment));
-            
-            // Check if player can afford total (bid + building value if taking from another owner)
-            const totalCost = this.activeAuction.currentOwner && this.activeAuction.currentOwner !== 'player' 
-                ? newBid + this.activeAuction.buildingValue 
-                : newBid;
-                
-            if (this.playerCash < totalCost) {
-                this.showNotification('Insufficient funds for this bid', 'error');
-                return;
-            }
-            
-            this.activeAuction.currentBid = newBid;
-            this.activeAuction.currentBidder = 'player';
-            this.activeAuction.bidHistory.push({
-                bidder: 'player',
-                amount: newBid,
-                time: Date.now()
-            });
-            
-            // Extend timer if bid in last 10 seconds
-            const timeLeft = (this.activeAuction.endTime - Date.now()) / 1000;
-            if (timeLeft < 10) {
-                this.activeAuction.endTime += 2000; // Add 2 seconds
-            }
-        }
-        
-        // Update display
-        document.getElementById('current-bid').textContent = `$${this.activeAuction.currentBid.toLocaleString()}`;
-        document.getElementById('bid-status').textContent = `Current leader: PLAYER`;
-        
-        // TODO: Add AI bidding logic here
-    }
-    
-    updateAuctionActions() {
-        const actionsEl = document.getElementById('auction-actions');
-        if (!actionsEl || !this.activeAuction) return;
-        
-        if (!this.activeAuction.dutchPhase) {
-            actionsEl.innerHTML = `
-                <button class="auction-btn small" onclick="game.placeBid(0.01)">+1%</button>
-                <button class="auction-btn small" onclick="game.placeBid(0.05)">+5%</button>
-                <button class="auction-btn small" onclick="game.placeBid(0.10)">+10%</button>
-            `;
-        }
+    placeBid(increment) {
+        // Delegate to auction system
+        this.auctionSystem.placeBid(increment);
     }
     
     endAuction() {
-        if (!this.activeAuction) return;
+        // Delegate to auction system
+        this.auctionSystem.endAuction();
+    }
+    
+    updateAuctionActions() {
+        // Delegate to auction system
+        this.auctionSystem.updateAuctionActions();
+    }
+
+    getCustomBuildings() {
+        try {
+            return JSON.parse(localStorage.getItem('theCommons_customBuildings') || '[]');
+        } catch (error) {
+            console.error('Failed to load custom buildings:', error);
+            return [];
+        }
+    }
+
+    getCustomAmenities() {
+        try {
+            return JSON.parse(localStorage.getItem('theCommons_customAmenities') || '[]');
+        } catch (error) {
+            console.error('Failed to load custom amenities:', error);
+            return [];
+        }
+    }
+
+    buildBuilding(row, col, buildingId) {
+        const coord = this.getParcelCoordinate(row, col);
+        const buildingCost = this.getBuildingCost(buildingId);
         
-        clearInterval(this.auctionInterval);
-        
-        const auction = this.activeAuction;
-        const parcel = this.grid[auction.row][auction.col];
-        const winner = auction.currentBidder;
-        const finalBid = auction.currentBid;
-        
-        if (winner) {
-            // Process the auction result
-            if (winner === parcel.owner) {
-                // Current owner wins - just update land value for tax
-                parcel.landValue.paidPrice = finalBid;
-                parcel.landValue.lastAuctionDay = this.currentDay;
-                
-            } else {
-                // Challenger wins
-                const totalCost = finalBid + auction.buildingValue;
-                const cityFee = Math.floor(totalCost * 0.005); // 0.5% to city
-                const ownerPayment = totalCost - cityFee;
-                
-                // Deduct from winner
-                if (winner === 'player') {
-                    this.playerCash -= totalCost;
-                }
-                
-                // Pay previous owner (minus city fee)
-                if (parcel.owner === 'player') {
-                    this.playerCash += ownerPayment;
-                }
-                
-                // Transfer ownership
-                parcel.owner = winner;
-                parcel.landValue.paidPrice = finalBid;
-                parcel.landValue.lastAuctionDay = this.currentDay;
-                
-            }
-            
-            // Update land values
-            this.updateAllLandValues();
-        } else {
+        // NEW: Check if player has enough actions
+        if (!this.useAction('constructBuilding', this.actionCosts.constructBuilding)) {
+            this.hideContextMenu();
+            return;
         }
         
-        // Clean up UI
-        const auctionUI = document.getElementById('auction-ui');
-        if (auctionUI) auctionUI.remove();
+        // Get building info for public funding calculation
+        const building = this.buildingManager.getBuildingById(buildingId);
         
-        // Store in history
-        this.auctionHistory.push({
-            ...auction,
-            endTime: Date.now(),
-            winner,
-            finalBid
-        });
+        // Use centralized cost calculation with public funding
+        const fundingInfo = this.calculateBuildingCostWithFunding(building, buildingCost);
         
-        this.activeAuction = null;
-        this.scheduleRender();
+        // Delegate to building system
+        return this.buildingSystem.buildBuilding(row, col, buildingId, fundingInfo);
+    }
+
+    getBuildingCost(buildingId) {
+        // Delegate to building manager
+        return this.buildingManager.getBuildingCost(buildingId);
+    }
+
+    getBuildingValue(buildingId) {
+        return this.buildingManager.getBuildingCost(buildingId);
+    }
+
+    updatePlayerStats() {
+        const population = this.calculatePopulation();
+        const totalWealth = this.calculateTotalWealth();
+        
+        // Round cash and wealth to nearest dollar for display
+        this.domCache.playerCash.textContent = `$${Math.round(this.playerCash).toLocaleString()}`;
+        this.domCache.playerWealth.textContent = `$${Math.round(totalWealth).toLocaleString()}`;
+        this.domCache.totalResidents.textContent = population.toLocaleString();
+        
+    }
+
+    calculatePopulation() {
+        let totalBedrooms = 0;
+        let totalJobs = 0;
+        let schoolCapacity = 0;
+        
+        // Get bedroom counts and jobs from COMPLETED player-owned buildings only
+        for (let row = 0; row < this.gridSize; row++) {
+            for (let col = 0; col < this.gridSize; col++) {
+                const parcel = this.grid[row][col];
+                
+                // Skip if no building or not player owned
+                if (!parcel || !parcel.building || parcel.owner !== 'player') continue;
+                
+                // Add bedroom and job counts for completed buildings
+                const building = this.buildingManager.getBuildingById(parcel.building);
+                if (building && building.population) {
+                    totalBedrooms += building.population.bedroomsAdded || 0;
+                    totalJobs += building.population.jobsCreated || 0;
+                }
+            }
+        }
+        
+        return Math.min(totalBedrooms, totalJobs); // Population limited by available housing AND jobs
+    }
+
+    calculateTotalWealth() {
+        // Delegate to economic engine
+        return this.economicEngine.calculateTotalWealth();
+    }
+
+    initDOMCache() {
+        // Initialize the UI Manager's comprehensive DOM cache
+        this.uiManager.initialize();
+        
+        // Keep backward compatibility with old domCache references
+        this.domCache.selectedTile = this.uiManager.get('selectedTile');
+        this.domCache.gameDate = this.uiManager.get('gameDate');
+        this.domCache.playerCash = this.uiManager.get('playerCash');
+        this.domCache.playerWealth = this.uiManager.get('playerWealth');
+        this.domCache.cityName = this.uiManager.get('cityName');
+        this.domCache.playerCashflow = this.uiManager.get('playerCashflow');
+        this.domCache.totalResidents = this.uiManager.get('totalResidents');
+        this.domCache.cityTreasury = this.uiManager.get('cityTreasury');
+    }
+
+    populateBuildingCategories() {
+        // Delegate to building system
+        this.buildingSystem.populateBuildingCategories();
+    }
+
+    startGameTime() {
+        setInterval(() => {
+            this.currentDay++;
+            this.lastDayStartTime = performance.now(); // Track when this day started
+            this.updateGameDate();
+            this.processDailyCashflow();
+            this.updatePlayerStats();
+            // Re-render to update building construction stages
+            this.scheduleRender();
+        }, this.dayLength);
     }
     
     showNotification(message, type = 'info') {
@@ -2034,6 +1705,353 @@ class IsometricGrid {
                 }
             }, 300);
         }, 4000);
+    }
+    
+    // Visual feedback for insufficient funds (replaces distracting toasts)
+    showInsufficientFundsFeedback() {
+        // Find the player cash display
+        const cashDisplay = document.querySelector('#city-treasury');
+        if (cashDisplay) {
+            cashDisplay.classList.add('cash-blink');
+            setTimeout(() => cashDisplay.classList.remove('cash-blink'), 1500);
+        }
+        
+        // Add red border blink to context menu or relevant UI element
+        const contextMenu = document.getElementById('context-menu');
+        if (contextMenu && contextMenu.style.display !== 'none') {
+            contextMenu.classList.add('insufficient-funds-blink');
+            setTimeout(() => contextMenu.classList.remove('insufficient-funds-blink'), 1500);
+        }
+        
+        // If there's a modal open, apply to it
+        const openModal = document.querySelector('.modal[style*="block"]');
+        if (openModal) {
+            openModal.classList.add('insufficient-funds-blink');
+            setTimeout(() => openModal.classList.remove('insufficient-funds-blink'), 1500);
+        }
+    }
+    
+    // Show leaderboard modal
+    showLeaderboardModal() {
+        const playerNetWorth = this.calculatePlayerNetWorth();
+        const playerName = this.playerSettings?.name || 'You';
+        
+        // Simulated leaderboard data - in real multiplayer this would come from server
+        const leaderboardData = [
+            { name: playerName, wealth: playerNetWorth, isPlayer: true },
+            { name: 'CityBuilder42', wealth: 12500 },
+            { name: 'UrbanPlanner', wealth: 9800 },
+            { name: 'MetroMaster', wealth: 7200 },
+            { name: 'GridGuru', wealth: 6100 },
+            { name: 'TownDesigner', wealth: 4900 },
+            { name: 'ZoneKing', wealth: 3800 }
+        ];
+        
+        // Sort by wealth (descending)
+        leaderboardData.sort((a, b) => b.wealth - a.wealth);
+        
+        // Take top 10 for modal
+        const topPlayers = leaderboardData.slice(0, 10);
+        
+        // Update modal content
+        const modalList = document.getElementById('modal-leaderboard-list');
+        if (modalList) {
+            modalList.innerHTML = topPlayers.map((player, index) => `
+                <div class="leaderboard-item ${player.isPlayer ? 'player-item' : ''}">
+                    <span class="rank">#${index + 1}</span>
+                    <span class="player-name">${player.name}</span>
+                    <span class="player-wealth">$${player.wealth.toLocaleString()}</span>
+                </div>
+            `).join('');
+        }
+        
+        // Show modal
+        window.showModal('leaderboard-modal');
+    }
+    
+    // Show player stats modal
+    showPlayerStatsModal() {
+        const stats = this.generatePlayerStats();
+        const statsContent = document.getElementById('player-stats-content');
+        
+        if (statsContent) {
+            statsContent.innerHTML = Object.entries(stats).map(([category, data]) => `
+                <div class="stat-card">
+                    <div class="stat-title">${data.title}</div>
+                    <div class="stat-value">${data.value}</div>
+                    <div class="stat-subtitle">${data.subtitle}</div>
+                </div>
+            `).join('');
+        }
+        
+        // Show modal
+        window.showModal('player-stats-modal');
+    }
+    
+    // Show save game modal
+    showSaveGameModal() {
+        // Generate default save name
+        const date = new Date();
+        const defaultName = `${this.playerSettings?.name || 'Player'} - ${date.toLocaleDateString()}`;
+        document.getElementById('save-name').value = defaultName;
+        
+        // Update save details
+        const saveDetails = document.getElementById('save-details');
+        if (saveDetails) {
+            const gameInfo = this.getGameInfo();
+            saveDetails.innerHTML = Object.entries(gameInfo).map(([key, value]) => 
+                `<div><strong>${key}:</strong> ${value}</div>`
+            ).join('');
+        }
+        
+        // Show modal
+        window.showModal('save-game-modal');
+    }
+    
+    // Generate comprehensive player statistics
+    generatePlayerStats() {
+        const netWorth = this.calculatePlayerNetWorth();
+        const population = this.calculatePopulation();
+        const totalWealth = this.calculateTotalWealth();
+        
+        // Count player-owned parcels and buildings
+        let ownedParcels = 0;
+        let ownedBuildings = 0;
+        let buildingsByCategory = {};
+        
+        for (let row = 0; row < this.gridSize; row++) {
+            for (let col = 0; col < this.gridSize; col++) {
+                const parcel = this.grid[row][col];
+                if (parcel && parcel.owner === 'player') {
+                    ownedParcels++;
+                    if (parcel.building) {
+                        ownedBuildings++;
+                        const building = this.buildingManager?.getBuildingById(parcel.building);
+                        if (building) {
+                            const category = building.category || 'other';
+                            buildingsByCategory[category] = (buildingsByCategory[category] || 0) + 1;
+                        }
+                    }
+                }
+            }
+        }
+        
+        // Calculate current cashflow
+        const cashflow = this.calculateCurrentCashflow();
+        
+        return {
+            netWorth: {
+                title: 'Net Worth',
+                value: `$${netWorth.toLocaleString()}`,
+                subtitle: 'Cash + Assets'
+            },
+            cash: {
+                title: 'Current Cash',
+                value: `$${Math.round(this.playerCash).toLocaleString()}`,
+                subtitle: 'Available funds'
+            },
+            cashflow: {
+                title: 'Daily Cashflow',
+                value: cashflow >= 0 ? `+$${Math.round(cashflow).toLocaleString()}` : `-$${Math.abs(Math.round(cashflow)).toLocaleString()}`,
+                subtitle: 'Revenue - expenses'
+            },
+            parcels: {
+                title: 'Owned Parcels',
+                value: ownedParcels.toString(),
+                subtitle: `Out of ${this.gridSize * this.gridSize} total`
+            },
+            buildings: {
+                title: 'Buildings',
+                value: ownedBuildings.toString(),
+                subtitle: 'Constructed & operational'
+            },
+            population: {
+                title: 'Population',
+                value: population.toLocaleString(),
+                subtitle: 'City residents'
+            },
+            playTime: {
+                title: 'Play Time',
+                value: this.getPlayTimeString(),
+                subtitle: 'Current session'
+            },
+            gameDate: {
+                title: 'Game Date',
+                value: `${this.gameDate.month} ${this.gameDate.day}`,
+                subtitle: 'In-game calendar'
+            }
+        };
+    }
+    
+    // Get formatted play time
+    getPlayTimeString() {
+        if (!this.gameStartTime) return '0m';
+        
+        const elapsed = Date.now() - this.gameStartTime;
+        const minutes = Math.floor(elapsed / 60000);
+        const hours = Math.floor(minutes / 60);
+        
+        if (hours > 0) {
+            return `${hours}h ${minutes % 60}m`;
+        }
+        return `${minutes}m`;
+    }
+    
+    // Get game info for saving
+    getGameInfo() {
+        return {
+            'Player Name': this.playerSettings?.name || 'Player',
+            'City Name': document.getElementById('city-name')?.textContent || 'Unknown',
+            'Game Date': `${this.gameDate.month} ${this.gameDate.day}`,
+            'Net Worth': `$${this.calculatePlayerNetWorth().toLocaleString()}`,
+            'Population': this.calculatePopulation().toLocaleString(),
+            'Play Time': this.getPlayTimeString()
+        };
+    }
+    
+    // Save game functionality
+    saveGame() {
+        const saveName = document.getElementById('save-name').value.trim();
+        if (!saveName) {
+            alert('Please enter a save name');
+            return;
+        }
+        
+        // Create save data
+        const saveData = {
+            version: '1.0',
+            timestamp: Date.now(),
+            saveName: saveName,
+            playerSettings: this.playerSettings,
+            gameState: {
+                playerCash: this.playerCash,
+                currentDay: this.currentDay,
+                gameDate: this.gameDate,
+                grid: this.grid,
+                governance: this.governance,
+                economicMultipliers: this.economicMultipliers,
+                actionManager: this.actionManager
+            },
+            gameInfo: this.getGameInfo()
+        };
+        
+        try {
+            // Save to localStorage
+            const saves = JSON.parse(localStorage.getItem('theCommons_saves') || '{}');
+            saves[saveName] = saveData;
+            localStorage.setItem('theCommons_saves', JSON.stringify(saves));
+            
+            // Show success and close modal
+            alert(`Game saved as "${saveName}"`);
+            window.closeModal('save-game-modal');
+            
+        } catch (error) {
+            alert('Failed to save game. Save data may be too large.');
+            console.error('Save failed:', error);
+        }
+    }
+    
+    // Calculate player's total net worth (cash + asset value)
+    calculatePlayerNetWorth() {
+        let assetValue = 0;
+        
+        // Calculate value of owned parcels and buildings
+        for (let row = 0; row < this.gridSize; row++) {
+            for (let col = 0; col < this.gridSize; col++) {
+                const parcel = this.grid[row][col];
+                if (parcel && parcel.owner === 'player') {
+                    // Add land value
+                    if (parcel.landValue && parcel.landValue.current) {
+                        assetValue += parcel.landValue.current;
+                    }
+                    
+                    // Add building value
+                    if (parcel.building) {
+                        const building = this.buildingManager?.getBuildingById(parcel.building);
+                        if (building) {
+                            assetValue += this.calculateCurrentBuildingValue(parcel, building);
+                        }
+                    }
+                }
+            }
+        }
+        
+        return Math.round(this.playerCash + assetValue);
+    }
+    
+    // Construction animation manager - ensures smooth construction progress updates
+    startConstructionAnimationManager() {
+        // Check for buildings under construction and schedule regular updates
+        this.constructionAnimationInterval = setInterval(() => {
+            if (this.hasConstructionInProgress()) {
+                this.scheduleRender();
+            }
+        }, 100); // Update every 100ms for smooth 10fps construction animation
+    }
+    
+    // Check if any buildings are currently under construction
+    hasConstructionInProgress() {
+        if (!this.grid) return false;
+        
+        for (let row = 0; row < this.gridSize; row++) {
+            for (let col = 0; col < this.gridSize; col++) {
+                const parcel = this.grid[row][col];
+                if (parcel && parcel.building && 
+                    parcel.constructionStartDay !== null && 
+                    parcel.constructionDays > 0) {
+                    
+                    // Check if construction is still in progress
+                    const totalConstructionTimeMs = parcel.constructionDays * this.dayDuration;
+                    const elapsedTimeMs = (this.currentDay - parcel.constructionStartDay) * this.dayDuration + 
+                                          (performance.now() - (this.lastDayStartTime || Date.now()));
+                    
+                    if (elapsedTimeMs < totalConstructionTimeMs) {
+                        return true; // Found at least one building under construction
+                    }
+                }
+            }
+        }
+        
+        return false;
+    }
+    
+    // Live tooltip updates for time-based content
+    startLiveTooltipUpdates() {
+        // Update time-based tooltips every second
+        this.liveTooltipInterval = setInterval(() => {
+            this.updateLiveTooltips();
+        }, 1000); // Update every second for live time display
+    }
+    
+    // Update any visible tooltips that contain time information
+    updateLiveTooltips() {
+        // Check if tooltip manager exists and a tooltip is currently visible
+        if (this.tooltipManager && this.tooltipManager.isVisible) {
+            // Check if the current tooltip content contains "Time Left in Month"
+            const tooltipElement = this.tooltipManager.tooltipElement;
+            if (tooltipElement && tooltipElement.innerHTML && 
+                tooltipElement.innerHTML.includes('Time Left in Month')) {
+                // Re-show the month progress tooltip with updated time
+                const progressContainer = document.getElementById('month-progress-container');
+                if (progressContainer) {
+                    // Update the tooltip data first
+                    this.updateMonthCountdown();
+                    // Force refresh the visible tooltip by re-triggering it
+                    const rect = progressContainer.getBoundingClientRect();
+                    const x = rect.left - 20;
+                    const y = rect.top + rect.height / 2;
+                    const tooltipContent = progressContainer.getAttribute('data-tooltip');
+                    if (tooltipContent) {
+                        this.tooltipManager.show(tooltipContent, x, y, {
+                            delay: 0,
+                            maxWidth: 300,
+                            priority: 1,
+                            html: true
+                        });
+                    }
+                }
+            }
+        }
     }
 
     calculatePopulation() {
@@ -2113,29 +2131,8 @@ class IsometricGrid {
     }
 
     calculateTotalWealth() {
-        let wealth = this.playerCash;
-        
-        // Add value of owned parcels using higher of paid price or calculated value
-        for (let row = 0; row < this.gridSize; row++) {
-            for (let col = 0; col < this.gridSize; col++) {
-                const parcel = this.grid[row][col];
-                if (parcel.owner === 'player') {
-                    // Use the higher of the two land values
-                    const landValue = Math.max(
-                        parcel.landValue.paidPrice,
-                        parcel.landValue.calculatedValue
-                    );
-                    wealth += landValue;
-                    
-                    // Add building values (simplified - could factor in decay later)
-                    if (parcel.building) {
-                        wealth += this.getBuildingValue(parcel.building);
-                    }
-                }
-            }
-        }
-        
-        return wealth;
+        // Delegate to economic engine
+        return this.economicEngine.calculateTotalWealth();
     }
 
     getBuildingValue(buildingId) {
@@ -2186,11 +2183,11 @@ class IsometricGrid {
             const residentsRow = document.getElementById('residents-row');
             if (residentsRow) {
                 residentsRow.setAttribute('data-tooltip', 
-                    `Demographics Breakdown:\n` +
-                    `👶 Children (0-17): ${demographics.children.toLocaleString()} (${demographics.childrenPercent}%)\n` +
-                    `👨‍💼 Working Age (18-64): ${demographics.adults.toLocaleString()} (${demographics.adultsPercent}%)\n` +
-                    `👴 Seniors (65+): ${demographics.seniors.toLocaleString()} (${demographics.seniorsPercent}%)\n` +
-                    `💼 Labor Force: ${demographics.laborForce.toLocaleString()} available workers`);
+                    `<strong>Population Breakdown</strong><br><br>` +
+                    `<strong>Children:</strong> ${demographics.children.toLocaleString()}<br>` +
+                    `<strong>Adults:</strong> ${demographics.adults.toLocaleString()}<br>` +
+                    `<strong>Seniors:</strong> ${demographics.seniors.toLocaleString()}<br><br>` +
+                    `<strong>Available Workers:</strong> ${demographics.laborForce.toLocaleString()}`);
             }
         }
         
@@ -2215,10 +2212,10 @@ class IsometricGrid {
             const treasuryRow = document.getElementById('treasury-row');
             if (treasuryRow) {
                 treasuryRow.setAttribute('data-tooltip', 
-                    `City Treasury Breakdown:\n` +
-                    `💰 Total: $${Math.round(totalTreasury).toLocaleString()}\n` +
-                    `📂 Allocated to Budgets: $${Math.round(allocatedFunds).toLocaleString()}\n` +
-                    `🏛️ Unassigned Funds: $${Math.round(unallocatedAmount).toLocaleString()}\n\n` +
+                    `<strong>City Treasury Breakdown</strong><br><br>` +
+                    `💰 Total: $${Math.round(totalTreasury).toLocaleString()}<br>` +
+                    `📂 Allocated to Budgets: $${Math.round(allocatedFunds).toLocaleString()}<br>` +
+                    `🏛️ Unassigned Funds: $${Math.round(unallocatedAmount).toLocaleString()}<br><br>` +
                     `💡 Click to open Governance!`);
                 
                 // Always make treasury clickable and gold
@@ -2244,6 +2241,7 @@ class IsometricGrid {
                 }
             }
         });
+        
     }
     
     getParcelCoordinate(row, col) {
@@ -2275,6 +2273,219 @@ class IsometricGrid {
         return Math.round(500 - priceReduction);
     }
     
+    showBuildingDataInsights(row, col) {
+        const parcel = this.grid[row][col];
+        if (!parcel || !parcel.building || parcel.owner !== 'player') {
+            return;
+        }
+        
+        // Hide context menu
+        this.hideContextMenu();
+        
+        // Create or update data insights overlay in sidebar
+        this.createDataInsightsOverlay(row, col, parcel);
+    }
+    
+    createDataInsightsOverlay(row, col, parcel) {
+        // Remove any existing overlay
+        const existingOverlay = document.getElementById('data-insights-overlay');
+        if (existingOverlay) {
+            existingOverlay.remove();
+        }
+        
+        const building = this.buildingManager.getBuildingById(parcel.building);
+        const stats = this.calculateBuildingEconomics(parcel, row, col);
+        const coord = this.getParcelCoordinate(row, col);
+        
+        // Create overlay
+        const overlay = document.createElement('div');
+        overlay.id = 'data-insights-overlay';
+        overlay.className = 'data-insights-overlay';
+        
+        let content = `
+            <div class="insights-header">
+                <h3>${building.name} - ${coord}</h3>
+                <button class="close-btn" onclick="document.getElementById('data-insights-overlay').remove()">×</button>
+            </div>
+            
+            <div class="insights-content">
+                <div class="insights-section">
+                    <h4>💰 Economic Performance</h4>
+                    <div class="data-grid">
+                        <div class="data-item">
+                            <span class="label">Base Revenue:</span>
+                            <span class="value">$${building.economics?.maxRevenue || 0}/day</span>
+                        </div>
+                        <div class="data-item">
+                            <span class="label">Actual Revenue:</span>
+                            <span class="value ${stats.revenue >= (building.economics?.maxRevenue || 0) * 0.8 ? 'good' : 'poor'}">$${stats.revenue.toFixed(2)}/day</span>
+                        </div>
+                        <div class="data-item">
+                            <span class="label">Revenue Efficiency:</span>
+                            <span class="value">${building.economics?.maxRevenue ? Math.round((stats.revenue / building.economics.maxRevenue) * 100) : 0}%</span>
+                        </div>
+                        <div class="data-item">
+                            <span class="label">Base Maintenance:</span>
+                            <span class="value">$${building.economics?.maintenanceCost || 0}/day</span>
+                        </div>
+                        <div class="data-item">
+                            <span class="label">Actual Maintenance:</span>
+                            <span class="value">$${stats.maintenance.toFixed(2)}/day</span>
+                        </div>
+                        <div class="data-item">
+                            <span class="label">Land Value Tax:</span>
+                            <span class="value">$${stats.lvt.toFixed(2)}/day</span>
+                        </div>
+                        <div class="data-item total">
+                            <span class="label">Net Daily Profit:</span>
+                            <span class="value ${stats.revenue - stats.maintenance - stats.lvt >= 0 ? 'good' : 'poor'}">$${(stats.revenue - stats.maintenance - stats.lvt).toFixed(2)}/day</span>
+                        </div>
+                    </div>
+                </div>
+        `;
+        
+        // Performance multipliers section
+        if (building.economics?.maxRevenue > 0) {
+            const decay = parcel.decay || 0;
+            const decayMultiplier = Math.max(0, 1 - decay);
+            const satisfaction = this.citySatisfaction?.overall || 0.5;
+            const satisfactionMultiplier = 0.5 + satisfaction * 0.7;
+            const efficiencyPenalty = this.buildingEfficiencyPenalty || 1.0;
+            const growthModifier = this.populationGrowthModifier || 1.0;
+            
+            // Transport connectivity
+            let transportMultiplier = 1.0;
+            let transportType = '';
+            if (this.buildingCategories.isEnergyProducer(building)) {
+                const hasRoadConnectivity = this.checkRoadConnectivity(row, col);
+                transportMultiplier = hasRoadConnectivity ? 1.0 : 0.2;
+                transportType = 'Road Connectivity';
+            } else if (this.buildingCategories.needsTransportAccess(building)) {
+                const accessiblePop = this.calculateAccessiblePopulation(row, col);
+                const optimalPop = building.jobs ? building.jobs * 10 : 100;
+                transportMultiplier = Math.max(0.1, Math.min(1.0, accessiblePop / optimalPop));
+                transportType = 'Population Access';
+            }
+            
+            content += `
+                <div class="insights-section">
+                    <h4>📊 Performance Multipliers</h4>
+                    <div class="data-grid">
+                        <div class="data-item">
+                            <span class="label">Building Condition:</span>
+                            <span class="value ${decayMultiplier >= 0.9 ? 'good' : decayMultiplier >= 0.7 ? 'ok' : 'poor'}">${Math.round(decayMultiplier * 100)}%</span>
+                        </div>
+                        <div class="data-item">
+                            <span class="label">City Satisfaction:</span>
+                            <span class="value ${satisfactionMultiplier >= 0.9 ? 'good' : satisfactionMultiplier >= 0.7 ? 'ok' : 'poor'}">${Math.round(satisfactionMultiplier * 100)}%</span>
+                        </div>
+                        <div class="data-item">
+                            <span class="label">${transportType}:</span>
+                            <span class="value ${transportMultiplier >= 0.9 ? 'good' : transportMultiplier >= 0.5 ? 'ok' : 'poor'}">${Math.round(transportMultiplier * 100)}%</span>
+                        </div>
+                        <div class="data-item">
+                            <span class="label">Market Conditions:</span>
+                            <span class="value">${Math.round((this.supplyDemandEffects?.businessEfficiency || 1.0) * 100)}%</span>
+                        </div>
+                        <div class="data-item">
+                            <span class="label">Economic Stability:</span>
+                            <span class="value">${Math.round(efficiencyPenalty * 100)}%</span>
+                        </div>
+                        <div class="data-item">
+                            <span class="label">Population Growth:</span>
+                            <span class="value">${Math.round(growthModifier * 100)}%</span>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+        
+        // Building details section
+        const age = parcel.buildingAge || 0;
+        const decayPercent = Math.round((parcel.decay || 0) * 100);
+        const repairCost = this.calculateRepairCost(parcel, building);
+        
+        content += `
+            <div class="insights-section">
+                <h4>🏗️ Building Details</h4>
+                <div class="data-grid">
+                    <div class="data-item">
+                        <span class="label">Age:</span>
+                        <span class="value">${age} days</span>
+                    </div>
+                    <div class="data-item">
+                        <span class="label">Wear & Tear:</span>
+                        <span class="value ${decayPercent < 25 ? 'good' : decayPercent < 50 ? 'ok' : 'poor'}">${decayPercent}%</span>
+                    </div>
+                    <div class="data-item">
+                        <span class="label">Repair Cost:</span>
+                        <span class="value">$${repairCost.toFixed(2)}</span>
+                    </div>
+                    <div class="data-item">
+                        <span class="label">Category:</span>
+                        <span class="value">${building.category}</span>
+                    </div>
+                    <div class="data-item">
+                        <span class="label">Build Cost:</span>
+                        <span class="value">$${building.economics?.buildCost || 0}</span>
+                    </div>
+                    <div class="data-item">
+                        <span class="label">Land Value:</span>
+                        <span class="value">$${parcel.landValue?.paidPrice || 0}</span>
+                    </div>
+                </div>
+            </div>
+        `;
+        
+        // Resource needs section
+        if (building.resources || building.population) {
+            content += `
+                <div class="insights-section">
+                    <h4>🔄 Resource Needs & Output</h4>
+                    <div class="data-grid">
+            `;
+            
+            if (building.resources?.energyDemand > 0) {
+                content += `<div class="data-item"><span class="label">Energy Demand:</span><span class="value">${building.resources.energyDemand}</span></div>`;
+            }
+            if (building.resources?.foodDemand > 0) {
+                content += `<div class="data-item"><span class="label">Food Demand:</span><span class="value">${building.resources.foodDemand}</span></div>`;
+            }
+            if (building.resources?.energyProduction > 0) {
+                content += `<div class="data-item"><span class="label">Energy Production:</span><span class="value">${building.resources.energyProduction}</span></div>`;
+            }
+            if (building.resources?.foodProduction > 0) {
+                content += `<div class="data-item"><span class="label">Food Production:</span><span class="value">${building.resources.foodProduction}</span></div>`;
+            }
+            if (building.population?.jobsCreated > 0) {
+                content += `<div class="data-item"><span class="label">Jobs Created:</span><span class="value">${building.population.jobsCreated}</span></div>`;
+            }
+            if (building.population?.populationRequired > 0) {
+                content += `<div class="data-item"><span class="label">Workers Needed:</span><span class="value">${building.population.populationRequired}</span></div>`;
+            }
+            if (building.population?.bedroomsAdded > 0) {
+                content += `<div class="data-item"><span class="label">Housing Provided:</span><span class="value">${building.population.bedroomsAdded}</span></div>`;
+            }
+            
+            content += `
+                    </div>
+                </div>
+            `;
+        }
+        
+        content += `
+            </div>
+        `;
+        
+        overlay.innerHTML = content;
+        
+        // Add to sidebar
+        const sidebar = document.getElementById('right-sidebar');
+        if (sidebar) {
+            sidebar.appendChild(overlay);
+        }
+    }
+    
     generateTooltipContent(row, col) {
         const parcel = this.grid[row][col];
         const coord = this.getParcelCoordinate(row, col);
@@ -2282,36 +2493,175 @@ class IsometricGrid {
         if (parcel.building) {
             const building = this.buildingManager.getBuildingById(parcel.building);
             if (building) {
-                let stats = [];
+                let content = `<strong>${building.name}</strong> (${coord})<br>`;
                 
+                // Ownership
                 if (parcel.owner === 'player') {
-                    stats.push('👤 Owned by You');
+                    content += '👤 <span style="color: #4CAF50">Owned by You</span><br>';
                 } else {
-                    stats.push('🏛️ City Owned');
+                    content += '🏛️ <span style="color: #9E9E9E">City Owned</span><br>';
                 }
                 
-                // Show basic economic info
-                if (building.economics?.maxRevenue > 0) {
-                    stats.push(`💰 $${building.economics.maxRevenue}/day revenue`);
-                }
-                if (building.economics?.maintenanceCost > 0) {
-                    stats.push(`🔧 $${building.economics.maintenanceCost}/day maintenance`);
-                }
-                
-                // Show building age and decay if owned by player
+                // For player-owned buildings, show performance score and simple suggestions
                 if (parcel.owner === 'player') {
-                    const age = parcel.buildingAge || 0;
-                    const decay = Math.round((parcel.decay || 0) * 100);
-                    if (age > 0) stats.push(`📅 ${age} days old`);
-                    if (decay > 0) stats.push(`⚠️ ${decay}% decay`);
+                    // Calculate overall performance score (0-100)
+                    let performanceScore = 100;
+                    const improvements = [];
+                    
+                    // Factor in decay
+                    const decay = parcel.decay || 0;
+                    if (decay > 0.05) {
+                        performanceScore -= Math.round(decay * 100);
+                        if (decay > 0.3) {
+                            improvements.push('Repair building');
+                        } else if (decay > 0.15) {
+                            improvements.push('Repair soon');
+                        }
+                    }
+                    
+                    // Factor in transport connectivity
+                    let transportMultiplier = 1.0;
+                    if (building.economics?.maxRevenue > 0) {
+                        if (this.buildingCategories.isEnergyProducer(building)) {
+                            const hasRoadConnectivity = this.checkRoadConnectivity(row, col);
+                            transportMultiplier = hasRoadConnectivity ? 1.0 : 0.2;
+                        } else if (this.buildingCategories.needsTransportAccess(building)) {
+                            const accessiblePop = this.calculateAccessiblePopulation(row, col);
+                            const optimalPop = building.jobs ? building.jobs * 10 : 100;
+                            transportMultiplier = Math.max(0.1, Math.min(1.0, accessiblePop / optimalPop));
+                        }
+                        
+                        if (transportMultiplier < 0.95) {
+                            performanceScore -= Math.round((1 - transportMultiplier) * 30);
+                            if (transportMultiplier < 0.5) {
+                                improvements.push('Build roads');
+                            } else {
+                                improvements.push('Better transit');
+                            }
+                        }
+                    }
+                    
+                    // Factor in city satisfaction
+                    const satisfaction = this.citySatisfaction?.overall || 0.5;
+                    const satisfactionMultiplier = 0.5 + satisfaction * 0.7;
+                    if (satisfactionMultiplier < 0.9) {
+                        performanceScore -= Math.round((1 - satisfactionMultiplier) * 20);
+                        improvements.push('Improve city services');
+                    }
+                    
+                    // Factor in market conditions and supply/demand effects
+                    let marketImpact = 1.0;
+                    if (this.supplyDemandEffects) {
+                        // Apply same logic as revenue calculation
+                        if (this.buildingCategories.isEnergyProducer(building)) {
+                            marketImpact *= this.supplyDemandEffects.energyMultiplier;
+                            if (this.supplyDemandEffects.energyMultiplier < 0.4) {
+                                improvements.push('Energy oversupply - reduce power plants');
+                                performanceScore -= 40;
+                            } else if (this.supplyDemandEffects.energyMultiplier < 0.7) {
+                                improvements.push('Too much energy production');
+                                performanceScore -= 20;
+                            }
+                        }
+                        
+                        marketImpact *= this.supplyDemandEffects.businessEfficiency;
+                        if (this.supplyDemandEffects.businessEfficiency < 0.9) {
+                            performanceScore -= Math.round((1 - this.supplyDemandEffects.businessEfficiency) * 15);
+                            if (this.supplyDemandEffects.businessEfficiency < 0.7) {
+                                improvements.push('Poor business conditions');
+                            }
+                        }
+                    }
+                    
+                    // Ensure score stays within bounds
+                    performanceScore = Math.max(0, Math.min(100, performanceScore));
+                    
+                    // Show performance score with color coding
+                    const scoreColor = performanceScore >= 80 ? '#4CAF50' : performanceScore >= 60 ? '#ff9800' : '#f44336';
+                    content += `<br><strong>Performance: <span style="color: ${scoreColor}">${performanceScore}/100</span></strong><br>`;
+                    
+                    // Show top improvement suggestions
+                    if (improvements.length > 0) {
+                        content += `<br><strong>To improve:</strong> ${improvements.slice(0, 2).join(', ')}<br>`;
+                    }
+                } else {
+                    // City-owned building - simpler display
+                    if (building.economics?.maxRevenue > 0) {
+                        content += `💰 Max Revenue: $${building.economics.maxRevenue}/day<br>`;
+                    }
+                    if (building.economics?.maintenanceCost > 0) {
+                        content += `🔧 Maintenance: $${building.economics.maintenanceCost}/day<br>`;
+                    }
                 }
                 
-                return `<strong>${building.name}</strong> (${coord})<br>${stats.join('<br>')}`;
+                // Building needs info - make it friendlier
+                if (building.resources || building.population) {
+                    content += '<br><strong>💡 What it does:</strong><br>';
+                    const info = [];
+                    
+                    // What it provides first (positive framing)
+                    if (building.population?.jobsCreated > 0) {
+                        const jobs = building.population.jobsCreated;
+                        if (jobs === 1) {
+                            info.push(`💼 Creates 1 job for the community`);
+                        } else {
+                            info.push(`💼 Creates ${jobs} jobs for the community`);
+                        }
+                    }
+                    if (building.resources?.energyProduction > 0) {
+                        info.push(`⚡ Generates power for the city`);
+                    }
+                    if (building.resources?.foodProduction > 0) {
+                        info.push(`🍎 Produces food for residents`);
+                    }
+                    if (building.population?.bedroomsAdded > 0) {
+                        const homes = building.population.bedroomsAdded;
+                        if (homes === 1) {
+                            info.push(`🏠 Houses 1 person`);
+                        } else {
+                            info.push(`🏠 Houses ${homes} people`);
+                        }
+                    }
+                    
+                    // What it needs (framed as requirements, not problems)
+                    if (building.resources?.energyDemand > 0) {
+                        info.push(`⚡ Needs electricity to operate`);
+                    }
+                    if (building.resources?.foodDemand > 0) {
+                        info.push(`🍎 Residents need food deliveries`);
+                    }
+                    if (building.population?.populationRequired > 0) {
+                        const workers = building.population.populationRequired;
+                        if (workers === 1) {
+                            info.push(`👥 Needs 1 worker to run`);
+                        } else {
+                            info.push(`👥 Needs ${workers} workers to run`);
+                        }
+                    }
+                    
+                    if (info.length > 0) {
+                        content += info.join('<br>') + '<br>';
+                    }
+                }
+                
+                // Building category info
+                content += `<br><span style="color: #9E9E9E">Category: ${building.category}</span>`;
+                
+                return content;
             }
         } else {
             // Empty land
-            const price = this.getLandPrice(row, col);
-            return `<strong>Empty Land</strong> (${coord})<br>💰 $${price}`;
+            const price = this.getParcelPrice(row, col);
+            const landValue = parcel.landValue?.calculatedValue || price;
+            
+            let content = `<strong>Empty Land</strong> (${coord})<br>`;
+            content += `💰 Purchase Price: $${price}<br>`;
+            if (landValue !== price) {
+                content += `📈 Market Value: $${landValue}<br>`;
+            }
+            
+            
+            return content;
         }
         
         return null;
@@ -2323,221 +2673,29 @@ class IsometricGrid {
             return;
         }
         
-        // Use unified tooltip manager for simplified display
-        if (this.tooltipManager) {
+        // Use unified tooltip manager for detailed display
+        if (this.tooltipManager && this.tooltipManager.tooltipElement) {
             const content = this.generateTooltipContent(row, col);
             if (content) {
-                this.tooltipManager.showImmediate(content, mouseX, mouseY, {
+                const parcel = this.grid[row][col];
+                const cacheKey = `grid_${row}_${col}_${parcel.buildingAge || 0}_${Math.round((parcel.decay || 0) * 100)}`;
+                
+                this.tooltipManager.show(content, mouseX, mouseY, {
                     html: true,
-                    maxWidth: 250
+                    maxWidth: 350,
+                    priority: 1,
+                    cacheKey: cacheKey,
+                    delay: 0,
+                    animationSpeed: 'fast'
                 });
             }
             return;
         }
-        
-        const parcel = this.grid[row][col];
-        const coord = this.getParcelCoordinate(row, col);
-        
-        if (!this.tooltip || !this.tooltip.querySelector) {
-            return;
-        }
-        
-        const parcelCoordEl = this.tooltip.querySelector('.parcel-coord');
-        if (parcelCoordEl) parcelCoordEl.textContent = coord;
-        
-        const tooltipPrice = this.tooltip.querySelector('.tooltip-price');
-        const tooltipBuilding = this.tooltip.querySelector('.tooltip-building');
-        
-        if (!tooltipPrice || !tooltipBuilding) {
-            return;
-        }
-        
-        if (parcel.building) {
-            // Show building information instead of price
-            tooltipPrice.style.display = 'none';
-            tooltipBuilding.style.display = 'block';
-            
-            const building = this.buildingManager.getBuildingById(parcel.building);
-            if (building) {
-                const buildingNameEl = tooltipBuilding.querySelector('.building-name');
-                const buildingStatsEl = tooltipBuilding.querySelector('.building-stats');
-                
-                buildingNameEl.textContent = building.name;
-                
-                // Show key building stats
-                const stats = [];
-                
-                // Owner information
-                if (parcel.owner === 'player') {
-                    const emoji = (this.playerSettings && this.playerSettings.emoji) || '🏠';
-                    stats.push(`${emoji} OWNED`);
-                } else if (parcel.owner) {
-                    stats.push(`🏢 ${parcel.owner.toUpperCase()}`);
-                }
-                
-                // Economic information
-                if (building.economics) {
-                    const revenue = building.economics.maxRevenue || 0;
-                    const maintenance = building.economics.maintenanceCost || 0;
-                    if (revenue > 0) stats.push(`💰 $${revenue}/day revenue`);
-                    if (maintenance > 0) stats.push(`🔧 $${maintenance}/day maintenance`);
-                }
-                
-                // Population information
-                if (building.population) {
-                    if (building.population.jobsCreated) {
-                        stats.push(`💼 ${building.population.jobsCreated} jobs`);
-                    }
-                    if (building.population.bedroomsAdded) {
-                        stats.push(`🛏️ ${building.population.bedroomsAdded} bedrooms`);
-                    }
-                }
-                
-                // Construction progress or age
-                if (parcel._isUnderConstruction) {
-                    const progress = Math.round((parcel._constructionProgress || 0) * 100);
-                    const progressBar = this.createProgressBar(progress, '#4ade80', '#1f2937');
-                    stats.push(`🚧 Under Construction: ${progress}%`);
-                    stats.push(progressBar);
-                } else if (parcel.buildingAge) {
-                    stats.push(`📅 ${parcel.buildingAge} days old`);
-                }
-                if (parcel.decay && parcel.decay > 0.05) {
-                    const condition = parcel.decay < 0.2 ? 'Good' : 
-                                    parcel.decay < 0.5 ? 'Fair' : 
-                                    parcel.decay < 0.8 ? 'Poor' : 'Critical';
-                    stats.push(`⚠️ Condition: ${condition}`);
-                }
-                
-                // Building efficiency and needs (show for all buildings)
-                const efficiencyInfo = this.getBuildingEfficiencyInfo(row, col);
-                
-                // Show efficiency with color coding
-                let efficiencyColor = '#ef4444'; // red
-                if (efficiencyInfo.efficiency >= 100) efficiencyColor = '#10b981'; // green
-                else if (efficiencyInfo.efficiency >= 80) efficiencyColor = '#f59e0b'; // amber
-                else if (efficiencyInfo.efficiency >= 60) efficiencyColor = '#f97316'; // orange
-                
-                // Show efficiency percentage or "No demands" for buildings without needs
-                if (efficiencyInfo.topNeeds.length > 0) {
-                    stats.push(`<span style="color: ${efficiencyColor}">⚙️ Efficiency: ${efficiencyInfo.efficiency}%</span>`);
-                    
-                    // Show top needs if not at 100%
-                    if (efficiencyInfo.efficiency < 100) {
-                        stats.push(`<span style="color: #94a3b8">📋 Top Needs:</span>`);
-                        
-                        // Get custom ordered needs based on building type
-                        const orderedNeeds = this.getOrderedTooltipNeeds(building, efficiencyInfo.topNeeds);
-                        
-                        orderedNeeds.forEach(need => {
-                            const needColor = need.satisfaction < 30 ? '#ef4444' : 
-                                            need.satisfaction < 60 ? '#f97316' : '#f59e0b';
-                            stats.push(`<span style="color: ${needColor}">  ${need.emoji} ${need.resource}: ${need.satisfaction}%</span>`);
-                        });
-                        
-                        // Add concise JEFH analysis
-                        const jefhAnalysis = this.getJEFHAnalysis(row, col);
-                        if (jefhAnalysis.hasIssues) {
-                            stats.push(`<span style="color: #ef4444">Top Needs:</span>`);
-                            jefhAnalysis.issues.forEach(issue => {
-                                stats.push(`<span style="color: #ef4444; font-size: 11px;">${issue}</span>`);
-                            });
-                        }
-                    }
-                } else {
-                    // For buildings with no demands (like pure infrastructure)
-                    stats.push(`<span style="color: #10b981">⚙️ Operating at full capacity</span>`);
-                }
-                
-                // Land value information
-                if (parcel.landValue) {
-                    const currentValue = parcel.landValue.calculatedValue || 0;
-                    stats.push(`🏡 Land value: $${Math.round(currentValue)}`);
-                }
-                
-                buildingStatsEl.innerHTML = stats.map(stat => `<div>${stat}</div>`).join('');
-            }
-        } else {
-            // Show price for empty parcels
-            tooltipBuilding.style.display = 'none';
-            tooltipPrice.style.display = 'block';
-            
-            const price = this.getParcelPrice(row, col);
-            this.tooltip.querySelector('.price-value').textContent = `$${price}`;
-        }
-        
-        // Smart positioning - attach to one of four parcel corners to stay in viewport
-        const tooltipRect = this.tooltip.getBoundingClientRect();
-        const tooltipWidth = tooltipRect.width || 200; // fallback if not rendered
-        const tooltipHeight = tooltipRect.height || 100; // fallback if not rendered
-        const viewportWidth = window.innerWidth;
-        const viewportHeight = window.innerHeight;
-        const margin = 10; // margin from viewport edges
-        
-        let left, top;
-        
-        // Get parcel screen position for the four corners
-        const canvasRect = this.canvas.getBoundingClientRect();
-        const screenX = mouseX - canvasRect.left;
-        const screenY = mouseY - canvasRect.top;
-        const worldCoords = this.screenToWorldCoords(screenX, screenY);
-        const tileCoord = this.fromIsometric(worldCoords.x, worldCoords.y);
-        
-        if (tileCoord && tileCoord.row >= 0 && tileCoord.row < this.gridSize &&
-            tileCoord.col >= 0 && tileCoord.col < this.gridSize) {
-            const parcelCenter = this.toIsometric(tileCoord.col, tileCoord.row);
-            const parcelX = parcelCenter.x * this.zoomScale + this.panOffset.x + canvasRect.left;
-            const parcelY = parcelCenter.y * this.zoomScale + this.panOffset.y + canvasRect.top;
-            const tileRadius = this.tileWidth / 2;
-            
-            // Try different attachment positions in order of preference
-            const positions = [
-                { x: parcelX + tileRadius, y: parcelY - tileRadius, name: "top-right" },
-                { x: parcelX - tileRadius, y: parcelY - tileRadius, name: "top-left" },  
-                { x: parcelX + tileRadius, y: parcelY + tileRadius, name: "bottom-right" },
-                { x: parcelX - tileRadius, y: parcelY + tileRadius, name: "bottom-left" }
-            ];
-            
-            // Find the first position that keeps tooltip fully in viewport
-            let bestPosition = positions[0]; // fallback
-            for (const pos of positions) {
-                const tooltipLeft = pos.x + 15; // small offset from corner
-                const tooltipTop = pos.y - (pos.name.includes('bottom') ? tooltipHeight + 15 : -15);
-                
-                if (tooltipLeft >= margin && 
-                    tooltipLeft + tooltipWidth <= viewportWidth - margin &&
-                    tooltipTop >= margin && 
-                    tooltipTop + tooltipHeight <= viewportHeight - margin) {
-                    bestPosition = pos;
-                    break;
-                }
-            }
-            
-            left = bestPosition.x + 15;
-            top = bestPosition.y - (bestPosition.name.includes('bottom') ? tooltipHeight + 15 : -15);
-        } else {
-            // Fallback to mouse position if tile calculation fails
-            left = mouseX + 30;
-            top = mouseY - 80;
-        }
-        
-        if (this.tooltip && this.tooltip.classList) {
-            this.tooltip.style.left = `${left}px`;
-            this.tooltip.style.top = `${top}px`;
-            this.tooltip.classList.add('visible');
-        }
     }
     
     hideTooltip() {
-        // Use unified tooltip manager first
-        if (this.tooltipManager) {
+        if (this.tooltipManager && this.tooltipManager.tooltipElement) {
             this.tooltipManager.hide();
-            return;
-        }
-        
-        // Fallback to old system
-        if (this.tooltip && this.tooltip.classList) {
-            this.tooltip.classList.remove('visible');
         }
     }
     
@@ -2547,59 +2705,42 @@ class IsometricGrid {
             return;
         }
         
-        if (!this.tooltip || !this.tooltip.querySelector) {
+        if (!this.tooltipManager) {
             return;
         }
         
         const parcel = this.grid[row][col];
         const coord = this.getParcelCoordinate(row, col);
-        
-        const parcelCoordEl = this.tooltip.querySelector('.parcel-coord');
-        if (parcelCoordEl) parcelCoordEl.textContent = coord;
-        
-        const tooltipPrice = this.tooltip.querySelector('.tooltip-price');
-        const tooltipBuilding = this.tooltip.querySelector('.tooltip-building');
-        
-        if (!tooltipPrice || !tooltipBuilding) {
-            return;
-        }
+        let content = '';
         
         if (parcel.building) {
             // Show mobility-focused building information
-            tooltipPrice.style.display = 'none';
-            tooltipBuilding.style.display = 'block';
-            
             const building = this.buildingManager.getBuildingById(parcel.building);
             if (building) {
-                const buildingNameEl = tooltipBuilding.querySelector('.building-name');
-                const buildingStatsEl = tooltipBuilding.querySelector('.building-stats');
-                
-                buildingNameEl.textContent = building.name;
-                
-                // Show mobility-relevant stats
-                const stats = [];
+                content += `<strong>${building.name}</strong> (${coord})<br>`;
                 
                 // Supply type and category
                 const supplyType = this.getMobilitySupplyType(building.category);
-                stats.push(`Supply: ${supplyType}`);
+                content += `🚛 Supply: ${supplyType}<br>`;
                 
                 // Connectivity info
                 try {
                     const connectivity = this.mobilityLayer.getParcelConnectivity(row, col);
-                    stats.push(`Road Access: ${connectivity.connected ? 'Connected' : 'Isolated'}`);
+                    const connectStatus = connectivity.connected ? '✅ Connected' : '❌ Isolated';
+                    content += `🛣️ Road Access: ${connectStatus}<br>`;
                     
                     if (connectivity.connected && connectivity.networkDistance) {
-                        stats.push(`Network Distance: ${connectivity.networkDistance}`);
+                        content += `📏 Network Distance: ${connectivity.networkDistance}<br>`;
                     }
                 } catch (e) {
-                    stats.push(`Road Access: Checking...`);
+                    content += `🛣️ Road Access: Checking...<br>`;
                 }
                 
                 // Transportation info
                 try {
                     const nearbyRoads = this.mobilityLayer.getNearbyRoads(row, col);
                     if (nearbyRoads.length > 0) {
-                        stats.push(`Adjacent Roads: ${nearbyRoads.length}`);
+                        content += `🔗 Adjacent Roads: ${nearbyRoads.length}<br>`;
                     }
                 } catch (e) {
                     // Skip if error
@@ -2608,77 +2749,32 @@ class IsometricGrid {
                 // Owner information
                 if (parcel.owner === 'player') {
                     const emoji = (this.playerSettings && this.playerSettings.emoji) || '🏠';
-                    stats.push(`${emoji} OWNED`);
+                    content += `${emoji} <span style="color: #4CAF50">OWNED</span>`;
                 } else if (parcel.owner) {
-                    stats.push(`🏢 ${parcel.owner.toUpperCase()}`);
+                    content += `🏢 <span style="color: #9E9E9E">${parcel.owner.toUpperCase()}</span>`;
                 }
-                
-                buildingStatsEl.innerHTML = stats.map(stat => `<div>${stat}</div>`).join('');
             }
         } else {
             // Show empty parcel with mobility info
-            tooltipBuilding.style.display = 'none';
-            tooltipPrice.style.display = 'block';
-            
             const price = this.getParcelPrice(row, col);
-            const priceValue = tooltipPrice.querySelector('.price-value');
-            if (priceValue) priceValue.textContent = `$${price}`;
+            content += `<strong>Empty Parcel</strong> (${coord})<br>`;
+            content += `💰 Price: $${price}<br>`;
             
             // Add connectivity info for empty parcels
-            let connectivityEl = tooltipPrice.querySelector('.connectivity-info');
-            if (!connectivityEl) {
-                connectivityEl = document.createElement('div');
-                connectivityEl.className = 'connectivity-info';
-                connectivityEl.style.fontSize = '11px';
-                connectivityEl.style.color = '#94a3b8';
-                connectivityEl.style.marginTop = '4px';
-                tooltipPrice.appendChild(connectivityEl);
-            }
-            
             try {
                 const connectivity = this.mobilityLayer.getParcelConnectivity(row, col);
-                connectivityEl.textContent = connectivity.connected ? 'Connected to road network' : 'No road access';
+                const connectStatus = connectivity.connected ? '✅ Connected to road network' : '❌ No road access';
+                content += `🛣️ ${connectStatus}`;
             } catch (e) {
-                connectivityEl.textContent = 'Checking connectivity...';
+                content += `🛣️ Checking connectivity...`;
             }
         }
         
-        // Position tooltip (reuse same logic as regular tooltip)
-        const tooltipHeight = 100;
-        let left, top;
-        
-        if (this.selectedTile) {
-            const tileIso = this.toIsometric(this.selectedTile.col, this.selectedTile.row);
-            const screenPos = this.worldToScreenCoords(tileIso.x, tileIso.y);
-            
-            const positions = [
-                { x: screenPos.x + 80, y: screenPos.y - tooltipHeight - 20, name: 'top-right' },
-                { x: screenPos.x - 220, y: screenPos.y - tooltipHeight - 20, name: 'top-left' },
-                { x: screenPos.x + 80, y: screenPos.y + 60, name: 'bottom-right' },
-                { x: screenPos.x - 220, y: screenPos.y + 60, name: 'bottom-left' }
-            ];
-            
-            let bestPosition = positions[0];
-            for (const pos of positions) {
-                if (pos.x >= 10 && pos.x <= window.innerWidth - 200 && 
-                    pos.y >= 10 && pos.y <= window.innerHeight - tooltipHeight - 10) {
-                    bestPosition = pos;
-                    break;
-                }
-            }
-            
-            left = bestPosition.x + 15;
-            top = bestPosition.y - (bestPosition.name.includes('bottom') ? tooltipHeight + 15 : -15);
-        } else {
-            left = mouseX + 30;
-            top = mouseY - 80;
-        }
-        
-        if (this.tooltip && this.tooltip.classList) {
-            this.tooltip.style.left = `${left}px`;
-            this.tooltip.style.top = `${top}px`;
-            this.tooltip.classList.add('visible');
-        }
+        // Use unified tooltip manager with proper positioning
+        this.tooltipManager.show(content, mouseX, mouseY, {
+            delay: 0, // No delay since this is triggered by timer
+            priority: 10 // High priority for mobility mode
+        });
     }
     
     handleMobilityTooltips(tile, mouseEvent) {
@@ -3324,39 +3420,25 @@ class IsometricGrid {
     
     // Governance System Methods
     showGovernanceModal() {
-        // Update UI with current data
-        this.updateGovernanceUI();
-        document.getElementById('governance-modal').classList.add('visible');
-        
-        // Hide any lingering tooltips
-        const tooltip = document.getElementById('custom-tooltip');
-        if (tooltip) {
-            tooltip.classList.remove('visible');
-            tooltip.style.display = 'none';
-        }
+        // Delegate to governance system
+        this.governanceSystem.openGovernanceModal();
     }
     
     hideGovernanceModal() {
-        document.getElementById('governance-modal').classList.remove('visible');
-        
-        // Hide any lingering tooltips
-        const tooltip = document.getElementById('custom-tooltip');
-        if (tooltip) {
-            tooltip.classList.remove('visible');
-            tooltip.style.display = 'none';
-        }
+        // Delegate to governance system
+        this.governanceSystem.closeGovernanceModal();
     }
     
     updateGovernanceUI() {
-        // Update voting points
-        const playerVotes = this.governance.playerVotes['player'] || {};
+        // Update voting points (using new unified system)
+        const playerAllocations = this.governance.playerAllocations || {};
         let usedPoints = 0;
         
         // Update budget categories
         this.governance.budgetCategories.forEach(category => {
             const categoryEl = document.querySelector(`[data-category="${category}"]`);
             if (categoryEl) {
-                const voteCount = playerVotes[category] || 0;
+                const voteCount = playerAllocations[category] || 0;
                 usedPoints += voteCount;
                 
                 categoryEl.querySelector('.vote-count').textContent = voteCount;
@@ -3376,67 +3458,127 @@ class IsometricGrid {
         // Add LVT points to total used points
         usedPoints += Math.abs(this.governance.lvtPointsAllocated);
         
-        // Update LVT rate info
-        document.getElementById('current-lvt-rate').textContent = `${(this.governance.currentLvtRate * 100).toFixed(0)}%`;
-        document.getElementById('current-lvt-display').textContent = `${(this.governance.currentLvtRate * 100).toFixed(0)}%`;
-        document.getElementById('proposed-lvt-rate').textContent = `${(this.governance.proposedLvtRate * 100).toFixed(0)}%`;
+        // Update LVT rate info - with null checks
+        const currentLvtRateEl = document.getElementById('current-lvt-rate');
+        if (currentLvtRateEl) {
+            currentLvtRateEl.textContent = `${(this.governance.currentLvtRate * 100).toFixed(0)}%`;
+        }
         
-        // Update LVT point allocation
-        document.getElementById('lvt-vote-points').textContent = this.governance.lvtPointsAllocated;
+        const currentLvtDisplayEl = document.getElementById('current-lvt-display');
+        if (currentLvtDisplayEl) {
+            currentLvtDisplayEl.textContent = `${(this.governance.currentLvtRate * 100).toFixed(0)}%`;
+        }
+        
+        const proposedLvtRateEl = document.getElementById('proposed-lvt-rate');
+        if (proposedLvtRateEl) {
+            proposedLvtRateEl.textContent = `${(this.governance.proposedLvtRate * 100).toFixed(0)}%`;
+        }
+        
+        // Update LVT point allocation (old system - keeping for compatibility)
+        const lvtVotePointsElOld = document.getElementById('lvt-vote-points-old');
+        if (lvtVotePointsElOld) {
+            lvtVotePointsElOld.textContent = this.governance.lvtPointsAllocated;
+        }
         
         // Update monthly collection
-        document.getElementById('monthly-lvt-amount').textContent = this.governance.monthlyLvtCollected.toLocaleString();
+        const monthlyLvtAmountEl = document.getElementById('monthly-lvt-amount');
+        if (monthlyLvtAmountEl) {
+            monthlyLvtAmountEl.textContent = this.governance.monthlyLvtCollected.toLocaleString();
+        }
         
         // Update unallocated funds display
-        document.getElementById('unallocated-funds-amount').textContent = (this.governance.unallocatedFunds || 0).toLocaleString();
+        const unallocatedFundsAmountEl = document.getElementById('unallocated-funds-amount');
+        if (unallocatedFundsAmountEl) {
+            unallocatedFundsAmountEl.textContent = (this.governance.unallocatedFunds || 0).toLocaleString();
+        }
         
-        // Update vote summary
-        document.getElementById('points-used').textContent = usedPoints;
-        document.getElementById('points-available').textContent = this.governance.votingPoints;
-        document.getElementById('player-voting-points').textContent = this.governance.votingPoints - usedPoints;
+        // Update vote summary with new unified system
+        const pointsUsedEl = document.getElementById('points-used');
+        const totalAllocated = this.getTotalAllocatedPoints();
+        if (pointsUsedEl) {
+            pointsUsedEl.textContent = totalAllocated;
+        }
+        
+        const pointsAvailableEl = document.getElementById('points-available');
+        if (pointsAvailableEl) {
+            pointsAvailableEl.textContent = this.governance.totalVotingPoints;
+        }
+        
+        const playerVotingPointsEl = document.getElementById('player-voting-points');
+        if (playerVotingPointsEl) {
+            playerVotingPointsEl.textContent = this.getUnallocatedPoints();
+        }
+        
+        // Update LVT display
+        const lvtVotePointsEl = document.getElementById('lvt-vote-points');
+        if (lvtVotePointsEl) {
+            lvtVotePointsEl.textContent = this.governance.playerAllocations.lvtRate || 0;
+        }
     }
     
     allocateVoteToCategory(category, change) {
-        if (!this.governance.playerVotes['player']) {
-            this.governance.playerVotes['player'] = {};
-        }
+        const currentAllocation = this.governance.playerAllocations[category] || 0;
+        const newAllocation = Math.max(0, currentAllocation + change);
         
-        const currentVotes = this.governance.playerVotes['player'][category] || 0;
-        const newVotes = Math.max(0, currentVotes + change);
+        // Calculate total points that would be used after this change
+        const totalUsedPoints = this.getTotalAllocatedPoints() - currentAllocation + newAllocation;
         
         // Check if player has enough points
-        const usedPoints = this.getTotalUsedPoints('player') - currentVotes + newVotes;
-        if (usedPoints > this.governance.votingPoints) {
-            return false; // Not enough points
+        if (totalUsedPoints > this.governance.totalVotingPoints) {
+            console.log(`Not enough points: ${totalUsedPoints} > ${this.governance.totalVotingPoints}`);
+            return false;
         }
         
-        this.governance.playerVotes['player'][category] = newVotes;
+        this.governance.playerAllocations[category] = newAllocation;
         this.calculateBudgetAllocations();
         this.updateGovernanceUI();
         return true;
     }
     
     allocateLVTPoint(change) {
-        const newPoints = this.governance.lvtPointsAllocated + change;
+        const currentAllocation = this.governance.playerAllocations.lvtRate || 0;
+        const newAllocation = currentAllocation + change; // Can be negative
+        
+        // Calculate total points that would be used after this change
+        const totalUsedPoints = this.getTotalAllocatedPoints() - Math.abs(currentAllocation) + Math.abs(newAllocation);
         
         // Check if player has enough points
-        const playerVotes = this.governance.playerVotes['player'] || {};
-        const categoryVotes = Object.values(playerVotes).reduce((sum, votes) => sum + votes, 0);
-        const totalUsedPoints = categoryVotes + Math.abs(newPoints);
-        
-        if (totalUsedPoints > this.governance.votingPoints) {
-            return false; // Not enough points
+        if (totalUsedPoints > this.governance.totalVotingPoints) {
+            console.log(`Not enough points: ${totalUsedPoints} > ${this.governance.totalVotingPoints}`);
+            return false;
         }
         
-        this.governance.lvtPointsAllocated = newPoints;
-        this.governance.proposedLvtRate = Math.max(0, Math.min(1, this.governance.currentLvtRate + (newPoints * 0.01)));
+        this.governance.playerAllocations.lvtRate = newAllocation;
+        
+        // Calculate new rate based on base rate + point allocations
+        this.governance.proposedLvtRate = Math.max(0, Math.min(1, this.governance.baseLvtRate + (newAllocation * 0.01)));
+        
+        // Apply changes immediately for real-time feedback
+        this.governance.currentLvtRate = this.governance.proposedLvtRate;
+        
         this.updateGovernanceUI();
+        
+        console.log('LVT point allocated successfully:', {
+            change,
+            newAllocation,
+            proposedRate: this.governance.proposedLvtRate
+        });
         return true;
     }
 
-    getTotalUsedPoints(player) {
-        const playerVotes = this.governance.playerVotes[player] || {};
-        return Object.values(playerVotes).reduce((sum, votes) => sum + votes, 0);
+    getTotalAllocatedPoints() {
+        // Sum all allocated points (budget categories + absolute value of LVT)
+        const budgetPoints = this.governance.budgetCategories.reduce((sum, category) => {
+            return sum + (this.governance.playerAllocations[category] || 0);
+        }, 0);
+        
+        const lvtPoints = Math.abs(this.governance.playerAllocations.lvtRate || 0);
+        
+        return budgetPoints + lvtPoints;
+    }
+    
+    getUnallocatedPoints() {
+        return this.governance.totalVotingPoints - this.getTotalAllocatedPoints();
     }
     
     calculateBudgetAllocations() {
@@ -3446,12 +3588,12 @@ class IsometricGrid {
             totalVotes[category] = 0;
         });
         
-        // Sum up all player votes
-        Object.values(this.governance.playerVotes).forEach(playerVotes => {
+        // Sum up player allocations (using new unified governance structure)
+        if (this.governance.playerAllocations) {
             this.governance.budgetCategories.forEach(category => {
-                totalVotes[category] += playerVotes[category] || 0;
+                totalVotes[category] = this.governance.playerAllocations[category] || 0;
             });
-        });
+        }
         
         // Calculate total votes across all categories
         const grandTotal = Object.values(totalVotes).reduce((sum, votes) => sum + votes, 0);
@@ -3509,12 +3651,8 @@ class IsometricGrid {
     
     // Called at the beginning of each month
     awardMonthlyVotingPoints() {
-        // Award points to all players (for now just player)
-        if (!this.governance.playerVotes['player']) {
-            this.governance.playerVotes['player'] = {};
-        }
-        
-        this.governance.votingPoints += 2; // Add 2 points per month (accumulate)
+        // Award points to player (new unified system)
+        this.governance.totalVotingPoints += 2; // Add 2 points per month (accumulate)
         
         // Reset LVT votes
         this.governance.lvtRateVotes = { increase: 0, decrease: 0, maintain: 0 };
@@ -3771,6 +3909,18 @@ class IsometricGrid {
         
         contentEl.appendChild(actionsSection);
         
+        // Data Insights section  
+        const insightsSection = document.createElement('div');
+        insightsSection.className = 'context-section';
+        
+        const insightsBtn = document.createElement('button');
+        insightsBtn.className = 'context-btn insights';
+        insightsBtn.textContent = '📊 DATA INSIGHTS';
+        insightsBtn.onclick = () => this.showBuildingDataInsights(row, col);
+        insightsSection.appendChild(insightsBtn);
+        
+        contentEl.appendChild(insightsSection);
+        
         // Upgrade section
         const upgradeSection = document.createElement('div');
         upgradeSection.className = 'context-section';
@@ -3840,17 +3990,19 @@ class IsometricGrid {
     }
     
     calculateRepairCost(parcel, building) {
-        // Calculate cost to repair building based on maintenance increase due to decay
+        // Calculate cost to repair building based on maintenance increase due to exponential decay
         // Cost = 200 × (current_maintenance - original_maintenance)
-        if (!parcel || !building || !parcel.decay || parcel.decay <= 0) {
+        if (!parcel || !building || !parcel.buildingAge || parcel.buildingAge <= 0) {
             return 0;
         }
         
-        // Get base maintenance cost
+        // Get base maintenance cost and decay rate
         const baseMaintenance = building.economics.maintenanceCost || 0;
+        const decayRate = building.economics.decayRatePercent ? building.economics.decayRatePercent / 100 : 0.001;
+        const buildingAgeInDays = parcel.buildingAge || 0;
         
-        // Calculate current maintenance with decay (same formula as in calculateBuildingEconomics)
-        const maintenanceMultiplier = 1 + (parcel.decay * 2); // Doubles at full decay
+        // Calculate current maintenance using exponential formula: baseMaintenance * (1 + decayRate)^days
+        const maintenanceMultiplier = Math.pow(1 + decayRate, buildingAgeInDays);
         const currentMaintenance = baseMaintenance * maintenanceMultiplier;
         
         // Calculate maintenance increase due to decay
@@ -3928,7 +4080,7 @@ class IsometricGrid {
             this.actionManager.currentActions += this.actionCosts.purchaseParcel;
             this.actionManager.usedThisMonth -= this.actionCosts.purchaseParcel;
             this.updateActionDisplay();
-            this.showNotification('Insufficient funds!', 'error');
+            this.showInsufficientFundsFeedback();
             return;
         }
 
@@ -4067,7 +4219,7 @@ class IsometricGrid {
             this.actionManager.currentActions += this.actionCosts.constructBuilding;
             this.actionManager.usedThisMonth -= this.actionCosts.constructBuilding;
             this.updateActionDisplay();
-            this.showNotification('Insufficient funds!', 'error');
+            this.showInsufficientFundsFeedback();
             return;
         }
 
@@ -4212,6 +4364,7 @@ class IsometricGrid {
         // Check if player can afford demolition fee
         if (this.playerCash < demolitionFee) {
             console.log(`❌ Insufficient funds for demolition fee: $${demolitionFee}`);
+            this.showInsufficientFundsFeedback();
             this.hideContextMenu();
             return;
         }
@@ -5281,46 +5434,6 @@ class IsometricGrid {
         };
     }
     
-    getOrderedTooltipNeeds(building, topNeeds) {
-        // Create a map of needs for easy lookup
-        const needsMap = new Map();
-        topNeeds.forEach(need => {
-            needsMap.set(need.resource.toLowerCase(), need);
-        });
-        
-        // Define priority orders for different building types
-        let priorityOrder = [];
-        
-        // Determine building type and set priority order
-        if (building.category === 'residential') {
-            // Residential: food, housing, jobs, energy
-            priorityOrder = ['food', 'housing', 'jobs', 'energy', 'workers', 'residents'];
-        } else if (this.buildingCategories.normalize(building.category) === 'commercial' || building.category === 'industrial') {
-            // Commercial/Industrial: energy, workers, food
-            priorityOrder = ['energy', 'workers', 'food', 'jobs', 'housing', 'residents'];
-        } else {
-            // All others: energy, workers, food, housing
-            priorityOrder = ['energy', 'workers', 'food', 'housing', 'jobs', 'residents'];
-        }
-        
-        // Build ordered list based on priority, then add any remaining needs
-        const orderedNeeds = [];
-        
-        // Add needs in priority order
-        priorityOrder.forEach(resource => {
-            if (needsMap.has(resource)) {
-                orderedNeeds.push(needsMap.get(resource));
-                needsMap.delete(resource);
-            }
-        });
-        
-        // Add any remaining needs that weren't in the priority list
-        needsMap.forEach(need => {
-            orderedNeeds.push(need);
-        });
-        
-        return orderedNeeds;
-    }
     
     // Supply/Demand System with Transport Networks
     calculateSupplyDemandBalance() {
@@ -6131,6 +6244,20 @@ class IsometricGrid {
         return chebyshevDistance;
     }
     
+    // Calculate smooth price multiplier using supply/demand curves
+    calculateSmoothMultiplier(supplyRatio, elasticity) {
+        // Smooth price curve: 0.5x to 2.5x range (5x max swing)
+        if (supplyRatio >= 1.0) {
+            // Oversupply: prices drop gradually
+            const excess = Math.min(supplyRatio - 1.0, 2.0); // Cap at 3x oversupply
+            return Math.max(0.5, 1.0 - (excess * elasticity * 0.5));
+        } else {
+            // Shortage: prices rise gradually  
+            const shortage = Math.min(1.0 - supplyRatio, 0.8); // Cap at 80% shortage
+            return Math.min(2.5, 1.0 + (shortage * elasticity * 1.5));
+        }
+    }
+
     // Update building revenues based on supply/demand satisfaction
     applySupplyDemandEffects() {
         this.calculateCityVitality(); // Ensure we have current supply/demand data
@@ -6151,94 +6278,40 @@ class IsometricGrid {
             businessEfficiency: 1.0 // Overall business performance
         };
         
-        // ENERGY EFFECTS (with multiplier scaling)
-        if (energyRatio < this.economicMultipliers.shortageThreshold * 0.5) {
-            // Critical energy shortage: energy costs 10x normal, businesses fail
-            const baseEffect = 0.05; // Revenue drops to 5%
-            this.economicEffects.energyMultiplier = 1 - (1 - baseEffect) * this.economicMultipliers.energy;
-            this.economicEffects.populationChangeRate -= this.economicMultipliers.populationGrowthRate * 2;
-            this.economicEffects.businessEfficiency = 0.1; // Commercial spaces barely function
-        } else if (energyRatio < this.economicMultipliers.shortageThreshold * 0.75) {
-            // Severe energy shortage: energy costs soar, commercial spaces struggle
-            const baseEffect = 0.2; // Revenue drops to 20%
-            this.economicEffects.energyMultiplier = 1 - (1 - baseEffect) * this.economicMultipliers.energy;
-            this.economicEffects.populationChangeRate -= this.economicMultipliers.populationGrowthRate * 1.5;
-            this.economicEffects.businessEfficiency = 0.25;
-        } else if (energyRatio < this.economicMultipliers.shortageThreshold) {
-            // Energy shortage: higher costs, reduced commercial profitability
-            const baseEffect = 0.5; // Revenue drops to 50%
-            this.economicEffects.energyMultiplier = 1 - (1 - baseEffect) * this.economicMultipliers.energy;
-            this.economicEffects.populationChangeRate -= this.economicMultipliers.populationGrowthRate * 0.5;
-            this.economicEffects.businessEfficiency = 0.6;
-        } else if (energyRatio > this.economicMultipliers.oversupplyThreshold * 1.5) {
-            // Massive energy oversupply: utility revenues crash to zero
-            this.economicEffects.energyMultiplier = Math.max(0, 1 - this.economicMultipliers.energy);
-        } else if (energyRatio > this.economicMultipliers.oversupplyThreshold) {
-            // Energy oversupply: reduced utility revenues
-            const reductionFactor = (energyRatio - this.economicMultipliers.oversupplyThreshold) * this.economicMultipliers.energy;
-            this.economicEffects.energyMultiplier = Math.max(0.1, 1 - reductionFactor * 0.5);
+        // ENERGY EFFECTS - smooth curves instead of cliffs
+        this.economicEffects.energyMultiplier = this.calculateSmoothMultiplier(energyRatio, 0.2); // Energy is inelastic
+        
+        // Business efficiency affected by severe energy shortages only
+        if (energyRatio < 0.3) {
+            this.economicEffects.businessEfficiency = Math.max(0.4, energyRatio + 0.1);
+            this.economicEffects.populationChangeRate -= (0.3 - energyRatio) * 0.1; // Gradual exodus
         }
         
-        // FOOD EFFECTS
-        if (foodRatio < 0.3) {
-            // Critical food shortage: mass exodus, businesses collapse
-            this.economicEffects.populationChangeRate -= 0.08; // 8% daily population loss
-            this.economicEffects.businessEfficiency *= 0.2; // Businesses collapse without customers
-            this.economicEffects.foodMultiplier = Math.max(0.1, 0.5 - foodRatio); // Food prices skyrocket
-        } else if (foodRatio < 0.6) {
-            // Severe food shortage: people leave, commercial spaces suffer
-            this.economicEffects.populationChangeRate -= 0.04; // 4% daily population loss
-            this.economicEffects.businessEfficiency *= 0.4; // Major drop in consumer spending
-            this.economicEffects.foodMultiplier = Math.max(0.3, 0.8 - foodRatio);
-        } else if (foodRatio < 0.9) {
-            // Food shortage: reduced consumer spending
-            this.economicEffects.populationChangeRate -= 0.015;
-            this.economicEffects.businessEfficiency *= 0.7;
-        } else if (foodRatio > 2.5) {
-            // Food oversupply: food business revenues decline
-            this.economicEffects.foodMultiplier = Math.max(0.1, 3 - foodRatio);
+        // FOOD EFFECTS - smooth curves
+        this.economicEffects.foodMultiplier = this.calculateSmoothMultiplier(foodRatio, 0.4); // Food is semi-elastic
+        
+        // Population effects only for severe food shortages
+        if (foodRatio < 0.4) {
+            this.economicEffects.populationChangeRate -= (0.4 - foodRatio) * 0.15; // Gradual exodus
+            this.economicEffects.businessEfficiency *= Math.max(0.5, foodRatio + 0.3); // Less severe impact
         }
         
-        // HOUSING EFFECTS
-        if (housingRatio < 0.4) {
-            // Critical housing shortage: homeless crisis, businesses have no customers/workers
-            this.economicEffects.businessEfficiency *= 0.15; // Severe lack of customers and workers
-            this.economicEffects.populationChangeRate -= 0.06; // 6% daily population exodus
-            this.economicEffects.housingMultiplier = Math.max(0.1, 1 - (0.4 - housingRatio) * 5); // Housing costs skyrocket
-        } else if (housingRatio < 0.7) {
-            // Severe housing shortage: high costs, reduced livability
-            this.economicEffects.businessEfficiency *= (0.25 + housingRatio * 0.6);
-            this.economicEffects.populationChangeRate -= 0.03; // People leave due to unaffordable housing
-            this.economicEffects.housingMultiplier = Math.max(0.3, 1 - (0.7 - housingRatio) * 2);
-        } else if (housingRatio < 1.0) {
-            // Housing shortage: increased costs, some population decline
-            this.economicEffects.businessEfficiency *= (0.6 + housingRatio * 0.4);
-            this.economicEffects.populationChangeRate -= 0.01;
-        } else if (housingRatio > 2.0) {
-            // Housing oversupply: high unemployment, businesses suffer
-            const unemployment = Math.min(0.8, (housingRatio - 1) * 0.4);
-            this.economicEffects.businessEfficiency *= (1 - unemployment * 0.6);
-            this.economicEffects.populationChangeRate -= unemployment * 0.01;
+        // HOUSING EFFECTS - smooth curves
+        this.economicEffects.housingMultiplier = this.calculateSmoothMultiplier(housingRatio, 0.6); // Housing is elastic
+        
+        // Business and population effects for severe housing shortages only
+        if (housingRatio < 0.5) {
+            this.economicEffects.businessEfficiency *= Math.max(0.6, housingRatio + 0.3);
+            this.economicEffects.populationChangeRate -= (0.5 - housingRatio) * 0.08; // Gradual exodus
         }
         
-        // JOBS EFFECTS
-        if (jobsRatio < 0.3) {
-            // Critical job shortage: economic collapse, mass unemployment
-            this.economicEffects.populationChangeRate -= 0.07; // 7% daily population exodus
-            this.economicEffects.businessEfficiency *= 0.15; // Businesses fail without workers
-            this.economicEffects.jobsMultiplier = Math.max(0.1, jobsRatio * 2); // Wages skyrocket for available jobs
-        } else if (jobsRatio < 0.6) {
-            // Severe job shortage: high unemployment, reduced consumer spending
-            this.economicEffects.populationChangeRate -= 0.035;
-            this.economicEffects.businessEfficiency *= 0.3; // Low consumer spending due to unemployment
-            this.economicEffects.jobsMultiplier = Math.max(0.3, jobsRatio * 1.5);
-        } else if (jobsRatio < 0.9) {
-            // Job shortage: unemployment affects consumer spending
-            this.economicEffects.populationChangeRate -= 0.015;
-            this.economicEffects.businessEfficiency *= 0.6;
-        } else if (jobsRatio > 2.0) {
-            // Too many jobs, not enough workers: businesses underperform
-            this.economicEffects.businessEfficiency *= Math.max(0.5, 2.5 - jobsRatio * 0.5);
+        // JOBS EFFECTS - smooth curves
+        this.economicEffects.jobsMultiplier = this.calculateSmoothMultiplier(jobsRatio, 0.8); // Jobs are elastic
+        
+        // Population and business effects for severe job shortages only
+        if (jobsRatio < 0.4) {
+            this.economicEffects.populationChangeRate -= (0.4 - jobsRatio) * 0.12; // Gradual exodus
+            this.economicEffects.businessEfficiency *= Math.max(0.5, jobsRatio + 0.3); // Less severe impact
         }
         
         // Apply cumulative population change (with limits)
@@ -6284,19 +6357,20 @@ class IsometricGrid {
         const cityNameBtn = document.getElementById('city-name-btn');
         const cityMenu = document.getElementById('city-menu');
         
-        cityNameBtn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            cityMenu.classList.toggle('active');
+        // Show dropdown on hover
+        cityNameBtn.addEventListener('mouseenter', () => {
+            cityMenu.classList.add('active');
         });
         
-        // Close dropdown when clicking elsewhere
-        document.addEventListener('click', () => {
+        // Hide dropdown when leaving the entire dropdown area
+        const citySection = cityNameBtn.closest('.top-bar-section');
+        citySection.addEventListener('mouseleave', () => {
             cityMenu.classList.remove('active');
         });
         
-        // Prevent dropdown from closing when clicking inside it
-        cityMenu.addEventListener('click', (e) => {
-            e.stopPropagation();
+        // Keep dropdown open when hovering over the menu itself
+        cityMenu.addEventListener('mouseenter', () => {
+            cityMenu.classList.add('active');
         });
         
         // Setup layer switching
@@ -7359,6 +7433,11 @@ class IsometricGrid {
     }
     
     drawTile(col, row, color, elevation = 0) {
+        // Track draw call for performance monitoring
+        if (this.perfMonitor) {
+            this.perfMonitor.recordDraw('tile');
+        }
+        
         const iso = this.toIsometric(col, row);
         const elevationHeight = elevation * 8;
         const adjustedY = iso.y - elevationHeight;
@@ -8594,9 +8673,11 @@ class IsometricGrid {
         const decayMultiplier = Math.max(0, 1 - decay);
         let revenue = maxRevenue * decayMultiplier;
         
-        // Calculate maintenance costs (increases with decay)
+        // Calculate maintenance costs using exponential decay formula
         const baseMaintenance = building.economics.maintenanceCost || 0;
-        const maintenanceMultiplier = 1 + (decay * 2); // Doubles at full decay
+        const decayRate = building.economics.decayRatePercent ? building.economics.decayRatePercent / 100 : 0.001;
+        const buildingAgeInDays = parcel.buildingAge || 0;
+        const maintenanceMultiplier = Math.pow(1 + decayRate, buildingAgeInDays);
         let maintenanceCost = baseMaintenance * maintenanceMultiplier;
         
         // Note: Amenities in the current system don't have revenue/maintenance data
@@ -8732,9 +8813,74 @@ class IsometricGrid {
     }
 
     render() {
+        // Delegate to rendering system
+        this.renderingSystem.render();
+    }
+    
+    // Keep drawScene for backward compatibility
+    drawScene() {
+        // Delegate to rendering system
+        this.renderingSystem.drawScene();
+    }
+    
+    // Keep scheduleRender for backward compatibility  
+    scheduleRender() {
+        this.renderingSystem.scheduleRender();
+    }
+    
+    // Delegate other rendering methods
+    drawTile(col, row, color, elevation) {
+        return this.renderingSystem.drawTile(col, row, color, elevation);
+    }
+    
+    toIsometric(col, row) {
+        return this.renderingSystem.toIsometric(col, row);
+    }
+    
+    fromIsometric(x, y) {
+        return this.renderingSystem.fromIsometric(x, y);
+    }
+    
+    // Old render method kept for reference - TODO: remove after testing
+    renderOld() {
+        // Start performance monitoring for this frame
+        if (this.perfMonitor) {
+            this.perfMonitor.startFrame();
+        }
+        
         this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
         // Always use normal scene drawing - blur is handled per-building
-        this.drawScene();
+        this.drawSceneOld();
+        
+        // End performance monitoring for this frame
+        if (this.perfMonitor) {
+            this.perfMonitor.endFrame();
+            
+            // Update game stats periodically (every 60 frames)
+            if (this.perfMonitor.frameCount % 60 === 0) {
+                // Calculate total buildings
+                let totalBuildings = 0;
+                let totalPopulation = 0;
+                for (let row = 0; row < this.gridSize; row++) {
+                    for (let col = 0; col < this.gridSize; col++) {
+                        if (this.grid[row] && this.grid[row][col]) {
+                            if (this.grid[row][col].building) {
+                                totalBuildings++;
+                            }
+                            if (this.grid[row][col].population) {
+                                totalPopulation += this.grid[row][col].population;
+                            }
+                        }
+                    }
+                }
+                
+                this.perfMonitor.updateGameStats({
+                    totalBuildings: totalBuildings,
+                    populationCount: totalPopulation,
+                    activeRoutes: this.transportationSystem ? this.transportationSystem.routes.length : 0
+                });
+            }
+        }
     }
     
     // Performance optimization methods
@@ -9600,7 +9746,121 @@ class IsometricGrid {
         });
     }
     
+    // Update the real-time market dashboard
+    updateMarketDashboard() {
+        if (!document.getElementById('market-dashboard-modal') || 
+            document.getElementById('market-dashboard-modal').style.display === 'none') {
+            return;
+        }
+        
+        // Get current supply/demand data
+        this.calculateCityVitality();
+        
+        // Update market stats
+        const markets = ['energy', 'food', 'housing', 'jobs'];
+        markets.forEach(market => {
+            const supply = this.vitalitySupply[market.toUpperCase()] || 0;
+            const demand = this.vitalityDemand[market.toUpperCase()] || 1;
+            const ratio = (supply / demand * 100).toFixed(1);
+            
+            // Calculate price multiplier based on current system
+            let priceMultiplier = 1.0;
+            if (this.supplyDemandEffects) {
+                priceMultiplier = this.supplyDemandEffects[`${market}Multiplier`] || 1.0;
+            }
+            
+            // Update DOM elements
+            document.getElementById(`${market}-supply`).textContent = supply.toFixed(1);
+            document.getElementById(`${market}-demand`).textContent = demand.toFixed(1);
+            document.getElementById(`${market}-ratio`).textContent = ratio + '%';
+            
+            const priceEl = document.getElementById(`${market}-price`);
+            priceEl.textContent = priceMultiplier.toFixed(2) + 'x';
+            
+            // Color code the price based on value
+            if (priceMultiplier > 1.2) {
+                priceEl.style.color = '#f44336'; // Red for expensive
+            } else if (priceMultiplier < 0.8) {
+                priceEl.style.color = '#2196F3'; // Blue for cheap
+            } else {
+                priceEl.style.color = '#4CAF50'; // Green for normal
+            }
+        });
+    }
     
+    
+}
+
+// Global functions for market dashboard
+function applyMarketSettings() {
+    if (!window.game) return;
+    
+    // Update elasticity settings
+    const elasticityInputs = ['energy', 'food', 'housing', 'jobs'];
+    elasticityInputs.forEach(market => {
+        const input = document.getElementById(`${market}-elasticity`);
+        if (input) {
+            window.game.marketSettings.elasticity[market] = parseFloat(input.value);
+        }
+    });
+    
+    // Update radius settings
+    const radiusInputs = ['energy', 'food', 'housing', 'jobs'];
+    radiusInputs.forEach(market => {
+        const input = document.getElementById(`${market}-radius`);
+        if (input) {
+            window.game.marketSettings.radius[market] = parseInt(input.value);
+        }
+    });
+    
+    // Update price bounds
+    const minPriceInput = document.getElementById('min-price');
+    const maxPriceInput = document.getElementById('max-price');
+    if (minPriceInput) window.game.marketSettings.priceBounds.min = parseFloat(minPriceInput.value);
+    if (maxPriceInput) window.game.marketSettings.priceBounds.max = parseFloat(maxPriceInput.value);
+    
+    // Force recalculation
+    window.game.calculateCityVitality();
+    window.game.updateVitalityDisplay();
+    
+    console.log('🔄 Market settings updated:', window.game.marketSettings);
+}
+
+function resetMarketDefaults() {
+    if (!window.game) return;
+    
+    // Reset to defaults
+    window.game.marketSettings = {
+        elasticity: { energy: 0.3, food: 0.5, housing: 0.7, jobs: 1.2 },
+        radius: { energy: 999, food: 5, housing: 3, jobs: 4 },
+        priceBounds: { min: 0.25, max: 4.0 }
+    };
+    
+    // Update UI controls
+    document.getElementById('energy-elasticity').value = 0.3;
+    document.getElementById('energy-elasticity-val').textContent = '0.3';
+    document.getElementById('food-elasticity').value = 0.5;
+    document.getElementById('food-elasticity-val').textContent = '0.5';
+    document.getElementById('housing-elasticity').value = 0.7;
+    document.getElementById('housing-elasticity-val').textContent = '0.7';
+    document.getElementById('jobs-elasticity').value = 1.2;
+    document.getElementById('jobs-elasticity-val').textContent = '1.2';
+    
+    document.getElementById('energy-radius').value = 999;
+    document.getElementById('energy-radius-val').textContent = '999';
+    document.getElementById('food-radius').value = 5;
+    document.getElementById('food-radius-val').textContent = '5';
+    document.getElementById('housing-radius').value = 3;
+    document.getElementById('housing-radius-val').textContent = '3';
+    document.getElementById('jobs-radius').value = 4;
+    document.getElementById('jobs-radius-val').textContent = '4';
+    
+    document.getElementById('min-price').value = 0.25;
+    document.getElementById('min-price-val').textContent = '0.25x';
+    document.getElementById('max-price').value = 4.0;
+    document.getElementById('max-price-val').textContent = '4.0x';
+    
+    console.log('↩️ Market settings reset to defaults');
 }
 
 function generateCityName() {
@@ -9831,6 +10091,7 @@ document.addEventListener('DOMContentLoaded', () => {
         
         // Prepare game interface (starts while messages are still cycling)
         setTimeout(() => {
+            // Show the interface first so containers have proper dimensions
             gameInterface.classList.remove('hidden');
             gameInterface.style.removeProperty('display');
             
@@ -9845,10 +10106,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             });
             
-            // Setup canvas
-            game.setupCanvas();
-            game.scheduleRender();
-            game.render();
+            // Now setup canvas with proper container dimensions
+            setTimeout(() => {
+                game.setupCanvas();
+                game.render();
+                game.scheduleRender();
+            }, 50); // Small delay to ensure layout is complete
         }, 700);
         
         // Start game fade-in (overlaps with final message)
@@ -9865,9 +10128,15 @@ document.addEventListener('DOMContentLoaded', () => {
         // Complete transition cleanup
         setTimeout(() => {
             transitionOverlay.style.display = 'none';
-            // Final canvas adjustment
-            game.setupCanvas();
-            game.scheduleRender();
+            
+            // Ensure grid is fully drawn
+            game.render();
+            
+            // Add canvas fade-in with subtle zoom immediately
+            const canvas = document.getElementById('gameCanvas');
+            if (canvas) {
+                canvas.classList.add('loaded');
+            }
         }, 1200);
         
         // Configure the existing game object with player settings
@@ -9882,6 +10151,16 @@ document.addEventListener('DOMContentLoaded', () => {
         // Start the game after transition completes (faster)
         setTimeout(() => {
             game.startGame();
+            
+            // Initialize tooltip system after game starts
+            if (typeof initializeTooltips === 'function') {
+                initializeTooltips();
+            }
+            
+            // Set up governance button after game is ready
+            if (window.setupGovernanceButton) {
+                window.setupGovernanceButton();
+            }
         }, 1200); // Faster transition complete time
         
         // Setup road adjustment controls
@@ -9899,6 +10178,70 @@ document.addEventListener('DOMContentLoaded', () => {
         setupVitalityTooltips();
     });
     
+    // Keyboard shortcut to toggle testing mode (Ctrl+Shift+M)
+    document.addEventListener('keydown', (e) => {
+        if (e.ctrlKey && e.shiftKey && e.key === 'M') {
+            e.preventDefault();
+            document.body.classList.toggle('testing-mode');
+            const isTestingMode = document.body.classList.contains('testing-mode');
+            console.log(`Testing mode ${isTestingMode ? 'enabled' : 'disabled'} - Magic link buttons now ${isTestingMode ? 'visible' : 'hidden'}`);
+        }
+    });
+
+    // Magic link button event listener
+    document.getElementById('magic-link-btn').addEventListener('click', () => {
+        const emailInput = document.getElementById('player-email');
+        const email = emailInput.value.trim();
+        
+        if (!email) {
+            emailInput.style.borderColor = '#ef4444';
+            emailInput.placeholder = 'Email required';
+            setTimeout(() => {
+                emailInput.style.borderColor = '';
+                emailInput.placeholder = 'your@email.com';
+            }, 2000);
+            return;
+        }
+        
+        // Basic email validation
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!emailRegex.test(email)) {
+            emailInput.style.borderColor = '#ef4444';
+            emailInput.value = '';
+            emailInput.placeholder = 'Valid email required';
+            setTimeout(() => {
+                emailInput.style.borderColor = '';
+                emailInput.placeholder = 'your@email.com';
+            }, 2000);
+            return;
+        }
+        
+        // Simulate sending magic link
+        const magicBtn = document.getElementById('magic-link-btn');
+        const originalText = magicBtn.textContent;
+        
+        magicBtn.textContent = 'SENDING...';
+        magicBtn.disabled = true;
+        magicBtn.style.opacity = '0.7';
+        
+        setTimeout(() => {
+            magicBtn.textContent = 'LINK SENT!';
+            magicBtn.style.background = 'linear-gradient(135deg, #10b981 0%, #059669 100%)';
+            
+            setTimeout(() => {
+                magicBtn.textContent = originalText;
+                magicBtn.disabled = false;
+                magicBtn.style.opacity = '1';
+                magicBtn.style.background = '';
+            }, 3000);
+        }, 1500);
+        
+        // Store email for potential multiplayer session
+        localStorage.setItem('theCommons_playerEmail', email);
+        
+        console.log(`🔗 Magic link request for: ${email}`);
+    });
+    
     
     document.getElementById('city-name').textContent = generateCityName().toUpperCase();
     
@@ -9914,12 +10257,166 @@ document.addEventListener('DOMContentLoaded', () => {
     const playerBtn = document.getElementById('player-btn');
     const playerMenu = document.getElementById('player-menu');
     const devtoolsPanel = document.getElementById('devtools-panel');
-    const governanceBtn = document.getElementById('governance-btn');
+    // Governance button functionality - only set up after game starts
+    window.setupGovernanceButton = function() {
+        const governanceBtn = document.getElementById('governance-btn');
+        if (governanceBtn && game) {
+            governanceBtn.addEventListener('click', () => {
+                console.log('Governance button clicked');
+                console.log('Governance system exists:', !!game.governanceSystem);
+                if (game.governanceSystem) {
+                    game.governanceSystem.openGovernanceModal();
+                } else {
+                    console.error('Governance system not initialized');
+                }
+            });
+        }
+    };
     
-    // Governance button functionality
-    governanceBtn.addEventListener('click', () => {
-        game.showGovernanceModal();
+    // Market Dashboard button
+    const openMarketDashboardBtn = document.getElementById('open-market-dashboard');
+    if (openMarketDashboardBtn) {
+        openMarketDashboardBtn.addEventListener('click', () => {
+            const modal = document.getElementById('market-dashboard-modal');
+            if (modal) {
+                modal.style.display = 'block';
+                game.updateMarketDashboard();
+                
+                // Set up real-time updates
+                if (!game.marketDashboardInterval) {
+                    game.marketDashboardInterval = setInterval(() => {
+                        game.updateMarketDashboard();
+                    }, 1000); // Update every second
+                }
+            }
+        });
+    }
+    
+    // Route configuration modal functionality
+    const createRouteBtn = document.getElementById('create-route');
+    const cancelRouteBtn = document.getElementById('cancel-route');
+    const routeModal = document.getElementById('route-modal');
+    
+    if (createRouteBtn) {
+        createRouteBtn.addEventListener('click', () => {
+            const ticketPrice = parseFloat(document.getElementById('ticket-price').value) || 2.50;
+            const serviceLevel = document.querySelector('input[name="service-level"]:checked')?.value || 'daytime';
+            
+            // Get route configuration from mobility layer
+            if (window.game.mobilityLayer && window.game.mobilityLayer.pendingRoute) {
+                const routeConfig = {
+                    ticketPrice: ticketPrice,
+                    serviceLevel: serviceLevel
+                };
+                
+                // Create the route
+                window.game.mobilityLayer.createRoute(routeConfig);
+                
+                // Hide the modal
+                if (routeModal) {
+                    routeModal.style.display = 'none';
+                }
+            }
+        });
+    }
+    
+    if (cancelRouteBtn) {
+        cancelRouteBtn.addEventListener('click', () => {
+            // Reset route creation state
+            if (window.game.mobilityLayer) {
+                window.game.mobilityLayer.isCreatingRoute = false;
+                window.game.mobilityLayer.selectedTransitStops = [];
+                window.game.mobilityLayer.pendingRoute = null;
+                window.game.mobilityLayer.transitMode = null;
+            }
+            
+            // Hide the modal
+            if (routeModal) {
+                routeModal.style.display = 'none';
+            }
+        });
+    }
+    
+    // Optimal pricing functionality
+    const optimalPricingBtn = document.getElementById('optimal-pricing');
+    if (optimalPricingBtn) {
+        optimalPricingBtn.addEventListener('click', () => {
+            // Calculate optimal price based on demand/supply economics
+            const baseDemand = 200; // Base daily ridership
+            const optimalPrice = 2.75; // Sweet spot for supply/demand balance
+            
+            // Update the ticket price input
+            const ticketPriceInput = document.getElementById('ticket-price');
+            if (ticketPriceInput) {
+                ticketPriceInput.value = optimalPrice.toFixed(2);
+                
+                // Update revenue projections
+                const ridership = Math.max(50, baseDemand - (optimalPrice - 1.0) * 60);
+                const dailyRevenue = ridership * optimalPrice;
+                const dailyCosts = 25;
+                const dailyProfit = dailyRevenue - dailyCosts;
+                
+                // Update displays
+                document.getElementById('daily-ridership').textContent = Math.round(ridership);
+                document.getElementById('daily-revenue').textContent = `$${Math.round(dailyRevenue)}`;
+                document.getElementById('daily-profit').textContent = `$${Math.round(dailyProfit)}`;
+                document.getElementById('monthly-profit').textContent = `$${Math.round(dailyProfit * 30).toLocaleString()}`;
+                
+                // Visual feedback
+                optimalPricingBtn.textContent = '✓ Optimal Price Applied';
+                optimalPricingBtn.style.backgroundColor = '#4CAF50';
+                setTimeout(() => {
+                    optimalPricingBtn.textContent = 'Suggest Optimal Price';
+                    optimalPricingBtn.style.backgroundColor = '';
+                }, 2000);
+            }
+        });
+    }
+    
+    // Market dashboard slider event listeners
+    const marketSliders = [
+        'energy-elasticity', 'food-elasticity', 'housing-elasticity', 'jobs-elasticity',
+        'energy-radius', 'food-radius', 'housing-radius', 'jobs-radius',
+        'min-price', 'max-price'
+    ];
+    
+    marketSliders.forEach(sliderId => {
+        const slider = document.getElementById(sliderId);
+        if (slider) {
+            slider.addEventListener('input', () => {
+                const value = parseFloat(slider.value);
+                const valueDisplay = document.getElementById(sliderId + '-val');
+                if (valueDisplay) {
+                    if (sliderId.includes('price')) {
+                        valueDisplay.textContent = value.toFixed(2) + 'x';
+                    } else if (sliderId.includes('radius')) {
+                        valueDisplay.textContent = value + (value === 999 ? ' (City-wide)' : '');
+                    } else {
+                        valueDisplay.textContent = value.toFixed(1);
+                    }
+                }
+            });
+        }
     });
+    
+    // Update revenue projections when ticket price changes
+    const ticketPriceInput = document.getElementById('ticket-price');
+    if (ticketPriceInput) {
+        ticketPriceInput.addEventListener('input', () => {
+            const price = parseFloat(ticketPriceInput.value) || 2.50;
+            const baseDemand = 200;
+            const ridership = Math.max(50, baseDemand - (price - 1.0) * 60);
+            const dailyRevenue = ridership * price;
+            const dailyCosts = 25;
+            const dailyProfit = dailyRevenue - dailyCosts;
+            
+            // Update displays
+            document.getElementById('daily-ridership').textContent = Math.round(ridership);
+            document.getElementById('daily-revenue').textContent = `$${Math.round(dailyRevenue)}`;
+            document.getElementById('daily-profit').textContent = `$${Math.round(dailyProfit)}`;
+            document.getElementById('monthly-profit').textContent = `$${Math.round(dailyProfit * 30).toLocaleString()}`;
+        });
+    }
     
     playerBtn.addEventListener('click', (e) => {
         e.stopPropagation();
@@ -9935,49 +10432,85 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     
     // Devtools functionality
-    document.querySelectorAll('.dropdown-item').forEach(item => {
-        if (item.textContent === 'DEVTOOLS') {
-            item.addEventListener('click', () => {
-                devtoolsPanel.classList.add('visible');
-                playerMenu.classList.remove('active');
-            });
-        }
-    });
+    // Devtools is now accessible via Ctrl+Shift+D keyboard shortcut
     
-    // Hard reset functionality
-    document.getElementById('hard-reset-btn').addEventListener('click', async () => {
-        if (confirm('⚠️ HARD RESET\n\nThis will completely reset the game:\n• Clear all buildings and progress\n• Reset cash to starting amount\n• Force reload buildings from CSV\n• Clear all saved data\n\nThis cannot be undone. Are you sure?')) {
-            // Clear ALL localStorage data for this game
-            const keysToRemove = [];
-            for (let i = 0; i < localStorage.length; i++) {
-                const key = localStorage.key(i);
-                if (key && key.startsWith('theCommons')) {
-                    keysToRemove.push(key);
-                }
-            }
-            
-            keysToRemove.forEach(key => {
-                localStorage.removeItem(key);
-            });
-            
-            
-            // Try to refresh buildings before reload
-            if (window.refreshBuildingsFromCSV) {
-                try {
-                    await window.refreshBuildingsFromCSV();
-                } catch (e) {
-                }
-            }
-            
-            // Force reload the page to start fresh
-            window.location.reload(true);
-        }
-        playerMenu.classList.remove('active');
-    });
     
     document.getElementById('close-devtools').addEventListener('click', () => {
         devtoolsPanel.classList.remove('visible');
     });
+    
+    // Keyboard shortcut to toggle devtools (Ctrl+Shift+D)
+    document.addEventListener('keydown', (e) => {
+        if (e.ctrlKey && e.shiftKey && e.key === 'D') {
+            e.preventDefault();
+            const devtoolsPanel = document.getElementById('devtools-panel');
+            if (devtoolsPanel.classList.contains('visible')) {
+                devtoolsPanel.classList.remove('visible');
+            } else {
+                devtoolsPanel.classList.add('visible');
+                // Close player menu if open
+                const playerMenu = document.querySelector('.player-menu');
+                if (playerMenu) {
+                    playerMenu.classList.remove('active');
+                }
+            }
+        }
+    });
+    
+    // FPS Monitor control in devtools
+    document.getElementById('fps-monitor-mode').addEventListener('change', (e) => {
+        const mode = e.target.value;
+        if (window.game && window.game.perfMonitor) {
+            window.game.perfMonitor.displayMode = mode;
+            window.game.perfMonitor.updateDisplay();
+        }
+    });
+    
+    // Player menu options
+    document.getElementById('show-leaderboard').addEventListener('click', () => {
+        if (window.game) {
+            window.game.showLeaderboardModal();
+        }
+        // Close player menu
+        document.getElementById('player-menu').classList.remove('active');
+    });
+    
+    document.getElementById('show-player-stats').addEventListener('click', () => {
+        if (window.game) {
+            window.game.showPlayerStatsModal();
+        }
+        // Close player menu
+        document.getElementById('player-menu').classList.remove('active');
+    });
+    
+    document.getElementById('save-game').addEventListener('click', () => {
+        if (window.game) {
+            window.game.showSaveGameModal();
+        }
+        // Close player menu
+        document.getElementById('player-menu').classList.remove('active');
+    });
+    
+    document.getElementById('confirm-save').addEventListener('click', () => {
+        if (window.game) {
+            window.game.saveGame();
+        }
+    });
+    
+    // Global modal functions with smooth animations
+    window.showModal = function(modalId) {
+        const modal = document.getElementById(modalId);
+        if (modal) {
+            modal.classList.add('visible');
+        }
+    };
+    
+    window.closeModal = function(modalId) {
+        const modal = document.getElementById(modalId);
+        if (modal) {
+            modal.classList.remove('visible');
+        }
+    };
     
     
     // CSV refresh button functionality
@@ -10091,108 +10624,12 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
     
-    // Setup vitality bar tooltips
-    function setupVitalityTooltips() {
-        const tooltip = document.getElementById('custom-tooltip');
-    
-    function generateTooltipContent(tooltipData) {
-        const data = JSON.parse(tooltipData);
-        
-        if (data.type === 'supply-demand') {
-            let content = `${data.domain} (Supply & Demand)\n`;
-            content += `═════════════════════════════\n`;
-            content += `Supply: ${data.supply.toFixed(1)}\n`;
-            content += `Demand: ${data.demand.toFixed(1)}\n`;
-            content += `Balance: ${data.balance >= 0 ? '+' : ''}${data.balance.toFixed(1)}\n`;
-            content += `Ratio: ${data.ratio.toFixed(0)}%\n\n`;
-            
-            if (data.ratio > 0) {
-                content += `✓ Surplus available`;
-            } else if (data.ratio < -50) {
-                content += `⚠ Critical shortage`;
-            } else if (data.ratio < 0) {
-                content += `⚠ Shortage detected`;
-            } else {
-                content += `— Balanced`;
-            }
-            
-            return content;
-        } else if (data.type === 'net-score') {
-            let content = `${data.domain} (Net Score)\n`;
-            content += `═════════════════════════════\n`;
-            content += `Score: ${data.score >= 0 ? '+' : ''}${data.score.toFixed(0)}\n`;
-            content += `Buildings: ${data.buildingCount}\n\n`;
-            
-            if (Object.keys(data.impactDetails).length > 0) {
-                content += `Building Breakdown:\n`;
-                Object.entries(data.impactDetails)
-                    .sort(([,a], [,b]) => Math.abs(b.totalImpact) - Math.abs(a.totalImpact))
-                    .slice(0, 4) // Show top 4 contributors
-                    .forEach(([name, details]) => {
-                        const impact = details.totalImpact >= 0 ? '+' : '';
-                        content += `• ${name} (×${details.count}): ${impact}${details.totalImpact.toFixed(1)}\n`;
-                    });
-                    
-                if (Object.keys(data.impactDetails).length > 4) {
-                    content += `• ... and ${Object.keys(data.impactDetails).length - 4} others\n`;
-                }
-            } else {
-                content += `No buildings affecting this metric`;
-            }
-            
-            return content;
-        }
-        
-        return 'No data available';
+    // Setup tooltips - now handled by external tooltip-manager.js
+    if (typeof setupVitalityTooltips === 'function') {
+        setupVitalityTooltips();
     }
-    
-    document.querySelectorAll('.vitality-row[data-vitality]').forEach(row => {
-        row.addEventListener('mouseenter', (e) => {
-            const tooltipData = row.getAttribute('data-tooltip-data');
-            if (tooltipData) {
-                const content = generateTooltipContent(tooltipData);
-                tooltip.textContent = content;
-                
-                // Position tooltip relative to the hovered element
-                const rect = row.getBoundingClientRect();
-                const tooltipHeight = tooltip.offsetHeight || 100; // Estimate if not rendered yet
-                
-                // Position to the left of the sidebar, aligned with the row
-                tooltip.style.left = `${rect.left - 300}px`; // 300px left of the row
-                tooltip.style.top = `${rect.top + (rect.height / 2) - (tooltipHeight / 2)}px`;
-                tooltip.style.transform = 'none'; // Remove the transform since we're using absolute positioning
-                
-                tooltip.classList.add('visible');
-            }
-        });
-        
-        row.addEventListener('mouseleave', () => {
-            tooltip.classList.remove('visible');
-        });
-    });
-
-    // Setup unified tooltips for metric elements
-    document.querySelectorAll('.metric-tooltip').forEach(element => {
-        element.addEventListener('mouseenter', (e) => {
-            const tooltipText = element.getAttribute('data-tooltip');
-            if (tooltipText && window.game && window.game.tooltipManager) {
-                const rect = element.getBoundingClientRect();
-                const x = rect.left - 20; // Position to the left of sidebar
-                const y = rect.top + rect.height / 2;
-                
-                window.game.tooltipManager.show(tooltipText, x, y, {
-                    delay: 400,
-                    maxWidth: 280
-                });
-            }
-        });
-        
-        element.addEventListener('mouseleave', () => {
-            if (window.game && window.game.tooltipManager) {
-                window.game.tooltipManager.hide();
-            }
-        });
-    });
+    if (typeof setupMetricTooltips === 'function') {
+        setupMetricTooltips();
     }
     
     // Tab switching
@@ -11013,16 +11450,28 @@ document.addEventListener('DOMContentLoaded', () => {
             showCashflowMenu();
         });
         
+        // Add hover tooltip with summary numbers
+        let hoverTimeout;
+        cashflowItem.addEventListener('mouseenter', () => {
+            clearTimeout(hoverTimeout);
+            hoverTimeout = setTimeout(() => {
+                showCashflowTooltip(cashflowItem);
+            }, 300); // Small delay to avoid flickering
+        });
+        
+        cashflowItem.addEventListener('mouseleave', () => {
+            clearTimeout(hoverTimeout);
+            hideCashflowTooltip();
+        });
+        
         // Close cashflow menu
         closeCashflowBtn.addEventListener('click', () => {
             hideCashflowMenu();
         });
         
-        // Close on outside click
-        document.addEventListener('click', (e) => {
-            if (cashflowMenu.classList.contains('visible') && 
-                !cashflowMenu.contains(e.target) && 
-                !cashflowItem.contains(e.target)) {
+        // Close modal on backdrop click
+        cashflowMenu.addEventListener('click', (e) => {
+            if (e.target.id === 'cashflow-menu') {
                 hideCashflowMenu();
             }
         });
@@ -11032,16 +11481,110 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     
     function showCashflowMenu() {
-        const menu = document.getElementById('cashflow-menu');
+        const modal = document.getElementById('cashflow-menu');
+        
+        if (!modal) {
+            console.error('Cashflow modal not found!');
+            return;
+        }
+        
+        // Move modal to body to ensure it's not hidden by parent elements
+        if (modal.parentElement !== document.body) {
+            document.body.appendChild(modal);
+        }
+        
+        // Apply visible styles
+        modal.style.cssText = `
+            position: fixed !important;
+            top: 0 !important;
+            left: 0 !important;
+            width: 100% !important;
+            height: 100% !important;
+            background: rgba(0, 0, 0, 0.8) !important;
+            z-index: 99999 !important;
+            display: flex !important;
+            visibility: visible !important;
+            opacity: 1 !important;
+            align-items: center !important;
+            justify-content: center !important;
+        `;
+        
+        modal.classList.add('visible');
+        
+        // Ensure modal content is visible
+        const modalContent = modal.querySelector('.modal-content');
+        if (modalContent) {
+            modalContent.style.display = 'block';
+            modalContent.style.visibility = 'visible';
+            modalContent.style.opacity = '1';
+        }
+        
         // Trigger cashflow calculation to get current data
         game.calculateCurrentCashflow();
         populateCashflowData();
-        menu.classList.add('visible');
     }
     
     function hideCashflowMenu() {
-        const menu = document.getElementById('cashflow-menu');
-        menu.classList.remove('visible');
+        const modal = document.getElementById('cashflow-menu');
+        
+        if (modal) {
+            modal.classList.remove('visible');
+            // Reset inline styles
+            modal.style.cssText = '';
+            
+            // Also reset modal content styles
+            const modalContent = modal.querySelector('.modal-content');
+            if (modalContent) {
+                modalContent.style.cssText = '';
+            }
+        }
+    }
+    
+    function showCashflowTooltip(element) {
+        // Calculate current cashflow data
+        game.calculateCurrentCashflow();
+        const totals = game.dailyCashflowTotals || { revenue: 0, maintenance: 0, lvt: 0, netCashflow: 0 };
+        
+        // Create tooltip content
+        const tooltipContent = `
+            <div style="display: flex; flex-direction: column; gap: 4px; min-width: 200px;">
+                <div style="display: flex; justify-content: space-between;">
+                    <span style="color: #888;">Revenue:</span>
+                    <span style="color: #4CAF50; font-weight: 600;">$${totals.revenue.toLocaleString()}</span>
+                </div>
+                <div style="display: flex; justify-content: space-between;">
+                    <span style="color: #888;">Maintenance:</span>
+                    <span style="color: #F44336; font-weight: 600;">-$${Math.abs(totals.maintenance).toLocaleString()}</span>
+                </div>
+                <div style="display: flex; justify-content: space-between;">
+                    <span style="color: #888;">LVT:</span>
+                    <span style="color: #F44336; font-weight: 600;">-$${Math.abs(totals.lvt).toLocaleString()}</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; border-top: 1px solid #444; padding-top: 4px; margin-top: 4px;">
+                    <span style="color: #ccc; font-weight: 600;">Net Daily:</span>
+                    <span style="color: ${totals.netCashflow >= 0 ? '#FFD700' : '#F44336'}; font-weight: 700;">$${totals.netCashflow.toLocaleString()}</span>
+                </div>
+            </div>
+        `;
+        
+        // Use the existing tooltip system with HTML enabled
+        if (game.tooltipManager) {
+            const rect = element.getBoundingClientRect();
+            // Position tooltip below the top bar (40px height + small margin)
+            const x = rect.left + rect.width / 2;
+            const y = rect.bottom + 10; // Position below the element with 10px margin
+            game.tooltipManager.show(tooltipContent, x, y, {
+                html: true,
+                delay: 0,
+                maxWidth: 250
+            });
+        }
+    }
+    
+    function hideCashflowTooltip() {
+        if (game.tooltipManager) {
+            game.tooltipManager.hide();
+        }
     }
     
     function populateCashflowData() {
@@ -11226,42 +11769,13 @@ document.addEventListener('DOMContentLoaded', () => {
             game.allocateLVTPoint(-1);
         });
         
-        // Apply changes button
-        document.getElementById('apply-governance').addEventListener('click', () => {
-            game.applyGovernanceChanges();
-        });
+        // Apply changes button - removed as element doesn't exist in current HTML
+        // Governance changes are now applied automatically
         
-        // Setup tooltips for budget categories
-        const governanceTooltip = document.getElementById('custom-tooltip');
-        
-        // Ensure tooltip is hidden initially
-        if (governanceTooltip) {
-            governanceTooltip.classList.remove('visible');
-            governanceTooltip.style.display = 'none';
+        // Setup governance tooltips - now handled by external tooltip-manager.js
+        if (typeof setupGovernanceTooltips === 'function') {
+            setupGovernanceTooltips();
         }
-        
-        // Setup unified tooltips for budget categories
-        document.querySelectorAll('.budget-category[data-tooltip]').forEach(element => {
-            element.addEventListener('mouseenter', (e) => {
-                const tooltipText = element.getAttribute('data-tooltip');
-                if (tooltipText && window.game && window.game.tooltipManager) {
-                    const rect = element.getBoundingClientRect();
-                    const x = rect.left + rect.width / 2;
-                    const y = rect.top;
-                    
-                    window.game.tooltipManager.show(tooltipText, x, y, {
-                        delay: 300,
-                        maxWidth: 250
-                    });
-                }
-            });
-            
-            element.addEventListener('mouseleave', () => {
-                if (window.game && window.game.tooltipManager) {
-                    window.game.tooltipManager.hide();
-                }
-            });
-        });
     }
     
     // Initialize governance modal
