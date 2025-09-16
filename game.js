@@ -458,6 +458,16 @@ class IsometricGrid {
             marketplaceBtn.addEventListener('click', () => this.openActionMarketplace());
         }
         
+        // Setup backdrop click-to-close
+        const modal = document.getElementById('action-marketplace-modal');
+        if (modal) {
+            modal.addEventListener('click', (e) => {
+                if (e.target.id === 'action-marketplace-modal') {
+                    this.closeActionMarketplace();
+                }
+            });
+        }
+        
         // Setup tab switching
         const tabs = document.querySelectorAll('.marketplace-tabs .tab-btn');
         tabs.forEach(tab => {
@@ -471,7 +481,7 @@ class IsometricGrid {
     openActionMarketplace() {
         const modal = document.getElementById('action-marketplace-modal');
         if (modal) {
-            modal.style.display = 'flex';
+            modal.classList.add('visible');
             this.updateMarketplaceModal();
         }
     }
@@ -479,7 +489,7 @@ class IsometricGrid {
     closeActionMarketplace() {
         const modal = document.getElementById('action-marketplace-modal');
         if (modal) {
-            modal.style.display = 'none';
+            modal.classList.remove('visible');
         }
     }
     
@@ -2680,7 +2690,10 @@ class IsometricGrid {
                 const parcel = this.grid[row][col];
                 const cacheKey = `grid_${row}_${col}_${parcel.buildingAge || 0}_${Math.round((parcel.decay || 0) * 100)}`;
                 
-                this.tooltipManager.show(content, mouseX, mouseY, {
+                // Ensure content is properly formatted for HTML display
+                const cleanContent = content.replace(/\\n/g, '<br>');
+                
+                this.tooltipManager.show(cleanContent, mouseX, mouseY, {
                     html: true,
                     maxWidth: 350,
                     priority: 1,

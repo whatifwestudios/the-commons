@@ -2002,7 +2002,7 @@ class MobilityLayer {
     }
 
     drawTransitStopsControls(ctx) {
-        const transitY = 80; // Below tabs at top left
+        const transitY = 80; // Below tabs at top left  
         const startX = 20;
         const buttonWidth = 110; // Match road controls
         const buttonHeight = 38; // Match road controls

@@ -1026,50 +1026,111 @@ body {
 
 /* Action Marketplace Modal Styles */
 .action-marketplace {
-    max-width: 800px;
-    background: #0a0a0a;
+    max-width: 900px;
+    min-width: 700px;
+    background: linear-gradient(145deg, #111111, #0a0a0a);
+    border: 1px solid #2a2a2a;
+    border-radius: 16px;
+    box-shadow: 
+        0 25px 50px rgba(0, 0, 0, 0.6),
+        0 0 0 1px rgba(255, 255, 255, 0.05),
+        inset 0 1px 0 rgba(255, 255, 255, 0.1);
+    transform: scale(0.9) translateY(30px);
+    transition: all 0.14s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.modal.visible .action-marketplace {
+    transform: scale(1) translateY(0);
+}
+
+.action-marketplace .modal-header {
+    background: linear-gradient(145deg, #1a1a1a, #0f0f0f);
+    border-bottom: 1px solid #2a2a2a;
+    padding: 20px 24px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.action-marketplace .modal-header h2 {
+    margin: 0;
+    font-size: 20px;
+    font-weight: 600;
+    color: #ffffff;
+    letter-spacing: 0.3px;
 }
 
 .marketplace-tabs {
     display: flex;
-    gap: 10px;
+    gap: 4px;
     margin-bottom: 20px;
-    border-bottom: 2px solid #1a1a1a;
+    padding: 4px;
+    background: rgba(0, 0, 0, 0.3);
+    border-radius: 12px;
 }
 
 .marketplace-tabs .tab-btn {
-    padding: 10px 20px;
+    padding: 12px 24px;
     background: transparent;
     color: #888;
     border: none;
-    border-bottom: 2px solid transparent;
+    border-radius: 8px;
     cursor: pointer;
-    transition: all 0.2s ease;
+    font-size: 13px;
+    font-weight: 500;
+    letter-spacing: 0.3px;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    position: relative;
+    overflow: hidden;
+}
+
+.marketplace-tabs .tab-btn:hover {
+    color: #aaa;
+    background: rgba(255, 255, 255, 0.05);
 }
 
 .marketplace-tabs .tab-btn.active {
     color: #42B96E;
-    border-bottom-color: #42B96E;
+    background: rgba(66, 185, 110, 0.15);
+    box-shadow: 0 2px 8px rgba(66, 185, 110, 0.2);
+}
+
+.marketplace-tabs .tab-btn.active::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(135deg, rgba(66, 185, 110, 0.1) 0%, rgba(66, 185, 110, 0.05) 100%);
+    opacity: 1;
+    transition: opacity 0.3s ease;
 }
 
 .action-balance {
-    background: #141414;
-    padding: 20px;
-    border-radius: 8px;
-    margin-bottom: 20px;
+    background: linear-gradient(145deg, #1a1a1a, #141414);
+    border: 1px solid #2a2a2a;
+    padding: 24px;
+    border-radius: 12px;
+    margin-bottom: 24px;
+    box-shadow: 
+        0 4px 12px rgba(0, 0, 0, 0.3),
+        inset 0 1px 0 rgba(255, 255, 255, 0.08);
 }
 
 .balance-display {
     display: flex;
     align-items: baseline;
-    gap: 10px;
+    gap: 12px;
     margin: 15px 0;
 }
 
 .balance-number {
     font-size: 48px;
-    font-weight: bold;
+    font-weight: 700;
     color: #42B96E;
+    text-shadow: 0 2px 8px rgba(66, 185, 110, 0.3);
+    background: linear-gradient(135deg, #42B96E, #52C77E);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
 }
 
 .balance-label {
@@ -1077,9 +1138,102 @@ body {
     color: #888;
 }
 
+.action-marketplace .btn-primary {
+    background: linear-gradient(135deg, #42B96E, #52C77E);
+    border: none;
+    padding: 12px 24px;
+    border-radius: 8px;
+    color: white;
+    font-weight: 600;
+    font-size: 14px;
+    cursor: pointer;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: 0 4px 12px rgba(66, 185, 110, 0.3);
+    position: relative;
+    overflow: hidden;
+}
+
+.action-marketplace .btn-primary:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(66, 185, 110, 0.4);
+}
+
+.action-marketplace .btn-primary:active {
+    transform: translateY(0);
+    box-shadow: 0 2px 8px rgba(66, 185, 110, 0.3);
+}
+
+.action-marketplace .btn-primary::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.2) 0%, rgba(255, 255, 255, 0.1) 100%);
+    opacity: 0;
+    transition: opacity 0.3s ease;
+}
+
+.action-marketplace .btn-primary:hover::before {
+    opacity: 1;
+}
+
+.action-marketplace .sell-form {
+    display: flex;
+    flex-direction: row;
+    gap: 12px;
+    margin-top: 16px;
+    align-items: flex-end;
+}
+
+.action-marketplace .sell-form input {
+    flex: 1;
+    background: rgba(0, 0, 0, 0.3);
+    border: 1px solid #2a2a2a;
+    border-radius: 8px;
+    padding: 12px 16px;
+    color: #ffffff;
+    font-size: 14px;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.action-marketplace .sell-form input:focus {
+    outline: none;
+    border-color: #42B96E;
+    box-shadow: 0 0 0 3px rgba(66, 185, 110, 0.1);
+}
+
+.action-marketplace .sell-form input::placeholder {
+    color: #666;
+}
+
+.action-marketplace .market-stats {
+    display: flex;
+    gap: 24px;
+    font-size: 14px;
+    color: #888;
+}
+
+.action-marketplace .market-stats span {
+    font-weight: 500;
+}
+
 .balance-info {
     display: flex;
-    gap: 30px;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.balance-info p {
+    margin: 0;
+    color: #888;
+    font-size: 14px;
+}
+
+.rollover-text {
+    color: #42B96E !important;
+    font-size: 12px !important;
+    margin-top: 10px !important;
+    text-align: left;
+}
     color: #ececec;
 }
 
@@ -1125,20 +1279,75 @@ body {
     font-size: 14px;
 }
 
+.tab-content {
+    opacity: 0;
+    transform: translateY(10px);
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    pointer-events: none;
+    min-height: 400px;
+    position: absolute;
+    width: 100%;
+    top: 0;
+    left: 0;
+}
+
+.tab-content.active {
+    opacity: 1;
+    transform: translateY(0);
+    pointer-events: auto;
+    position: relative;
+}
+
+.action-marketplace .modal-body {
+    position: relative;
+    min-height: 400px;
+}
+
 .listings-container {
     display: flex;
     flex-direction: column;
-    gap: 10px;
+    gap: 12px;
+    animation: fadeInUp 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@keyframes fadeInUp {
+    from {
+        opacity: 0;
+        transform: translateY(20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
 }
 
 .action-listing {
-    background: #141414;
+    background: linear-gradient(145deg, #1a1a1a, #141414);
     border: 1px solid #2a2a2a;
-    border-radius: 8px;
-    padding: 15px;
+    border-radius: 12px;
+    padding: 18px;
     display: flex;
     justify-content: space-between;
     align-items: center;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    position: relative;
+    overflow: hidden;
+}
+
+.action-listing:hover {
+    border-color: #3a3a3a;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+    transform: translateY(-1px);
+}
+
+.action-listing::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.1), transparent);
 }
 
 .listing-info {
