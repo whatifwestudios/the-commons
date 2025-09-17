@@ -7,10 +7,11 @@ class AuctionSystem {
     constructor(game) {
         this.game = game;
         
-        // Auction state
-        this.activeAuction = null;
+        // Auction state - support multiple concurrent auctions
+        this.activeAuctions = new Map(); // Map of auctionId -> auction
+        this.maxConcurrentAuctions = 2;
         this.auctionHistory = [];
-        this.auctionInterval = null;
+        this.auctionIntervals = new Map(); // Map of auctionId -> interval
         
         // Auction parameters
         this.auctionDuration = 60000; // 60 seconds in milliseconds
@@ -52,17 +53,34 @@ class AuctionSystem {
     /**
      * Start an auction for a parcel
      */
-    startAuction(row, col) {
+    startAuction(row, col, challengingPlayerId = 'player') {
         // Validate coordinates
         if (row < 0 || row >= this.game.gridSize || col < 0 || col >= this.game.gridSize) {
             this.game.showNotification('Invalid parcel coordinates', 'error');
             return false;
         }
         
-        // Check if there's already an active auction
-        if (this.activeAuction) {
-            this.game.showNotification('An auction is already in progress', 'error');
+        // Check if we've reached max concurrent auctions
+        if (this.activeAuctions.size >= this.maxConcurrentAuctions) {
+            this.game.showNotification(`Maximum ${this.maxConcurrentAuctions} auctions allowed at once`, 'error');
             return false;
+        }
+        
+        // Check if this parcel is already being auctioned
+        const parcelKey = `${row}-${col}`;
+        for (const auction of this.activeAuctions.values()) {
+            if (auction.row === row && auction.col === col) {
+                this.game.showNotification('This parcel is already being auctioned', 'error');
+                return false;
+            }
+        }
+        
+        // Check if player has enough actions to start auction
+        if (challengingPlayerId === 'player' && this.game.actionManager) {
+            if (!this.game.actionManager.canUseActions(1)) {
+                this.game.showNotification('Need 1 action to start an auction', 'error');
+                return false;
+            }
         }
         
         const parcel = this.game.grid[row][col];
@@ -78,12 +96,17 @@ class AuctionSystem {
         const buildingValue = this.calculateBuildingValue(parcel);
         const currentOwner = parcel.owner;
         
+        // Create unique auction ID
+        const auctionId = crypto.randomUUID();
+        
         // Initialize auction
-        this.activeAuction = {
+        const auction = {
+            id: auctionId,
             row: row,
             col: col,
             coord: this.game.getParcelCoordinate(row, col),
             currentOwner: currentOwner,
+            challengingPlayer: challengingPlayerId,
             calculatedLandValue: calculatedLandValue,
             buildingValue: buildingValue,
             initialLandValue: calculatedLandValue,
@@ -96,8 +119,18 @@ class AuctionSystem {
             lastDutchUpdate: Date.now()
         };
         
-        this.showAuctionUI();
-        this.startAuctionTimer();
+        // Add to active auctions
+        this.activeAuctions.set(auctionId, auction);
+        
+        // Use action for starting auction
+        if (challengingPlayerId === 'player' && this.game.actionManager) {
+            this.game.actionManager.useActions(1);
+        }
+        
+        // Show modals for both players
+        this.showAuctionModals(auction);
+        this.startAuctionTimer(auctionId);
+        this.updateSidebar();
         
         // Hide context menu
         this.game.hideContextMenu();
@@ -126,27 +159,64 @@ class AuctionSystem {
     }
     
     /**
-     * Show the auction UI
+     * Legacy compatibility method - just shows most recent auction modal
      */
     showAuctionUI() {
-        // Remove existing auction UI
-        const existingUI = document.getElementById('auction-ui');
+        const auctions = Array.from(this.activeAuctions.values());
+        if (auctions.length > 0) {
+            const mostRecentAuction = auctions[auctions.length - 1];
+            this.showAuctionModal(mostRecentAuction, 'challenger');
+        }
+    }
+
+    /**
+     * Show auction modals for both players
+     */
+    showAuctionModals(auction) {
+        // Show modal for challenging player
+        if (auction.challengingPlayer === 'player') {
+            this.showAuctionModal(auction, 'challenger');
+        }
+        
+        // Show modal for current owner (if not the same as challenger)
+        if (auction.currentOwner && auction.currentOwner !== auction.challengingPlayer) {
+            if (auction.currentOwner === 'player') {
+                this.showAuctionModal(auction, 'owner');
+            }
+        }
+    }
+
+    /**
+     * Show the auction UI
+     */
+    showAuctionModal(auction, playerRole = 'challenger') {
+        // Remove existing auction UI for this specific modal
+        const modalId = `auction-ui-${auction.id}-${playerRole}`;
+        const existingUI = document.getElementById(modalId);
         if (existingUI) existingUI.remove();
         
-        const totalValue = this.activeAuction.calculatedLandValue + this.activeAuction.buildingValue;
-        const phaseLabel = this.activeAuction.dutchPhase ? 'Dutch Phase' : 'Bidding Phase';
-        const phaseDescription = this.activeAuction.dutchPhase ? 
+        const totalValue = auction.calculatedLandValue + auction.buildingValue;
+        const phaseLabel = auction.dutchPhase ? 'Dutch Phase' : 'Bidding Phase';
+        const phaseDescription = auction.dutchPhase ? 
             'Price decreasing automatically' : 
             'Players can place competitive bids';
         
+        const roleTitle = playerRole === 'challenger' ? 'Challenge Auction' : 'Defend Property';
+        const roleDescription = playerRole === 'challenger' 
+            ? 'You are challenging for this property' 
+            : 'Your property is being challenged';
+        
         const auctionUI = document.createElement('div');
-        auctionUI.id = 'auction-ui';
+        auctionUI.id = modalId;
         auctionUI.className = 'modal auction-modal';
+        auctionUI.dataset.auctionId = auction.id;
+        auctionUI.dataset.playerRole = playerRole;
         auctionUI.innerHTML = `
             <div class="modal-content parcel-auction">
                 <div class="modal-header">
-                    <h2>Parcel Auction - ${this.activeAuction.coord}</h2>
-                    <button class="modal-close" onclick="window.game.auctionSystem.cancelAuction()">&times;</button>
+                    <h2>${roleTitle} - ${auction.coord}</h2>
+                    <div class="role-description">${roleDescription}</div>
+                    <button class="modal-close" onclick="window.game.auctionSystem.closeModal('${auction.id}', '${playerRole}')">&times;</button>
                 </div>
                 <div class="modal-body">
                     <div class="auction-tabs">
@@ -158,7 +228,7 @@ class AuctionSystem {
                     <div class="tab-content active" id="current-auction">
                         <div class="auction-status-card">
                             <div class="auction-phase">
-                                <div class="phase-indicator ${this.activeAuction.dutchPhase ? 'dutch' : 'bidding'}">
+                                <div class="phase-indicator ${auction.dutchPhase ? 'dutch' : 'bidding'}">
                                     <div class="phase-dot"></div>
                                     <span class="phase-label">${phaseLabel}</span>
                                 </div>
@@ -167,9 +237,9 @@ class AuctionSystem {
                             
                             <div class="auction-timer-section">
                                 <div class="timer-label">Time Remaining</div>
-                                <div class="timer-display" id="auction-timer">60s</div>
+                                <div class="timer-display" id="auction-timer-${auction.id}">60s</div>
                                 <div class="timer-bar">
-                                    <div class="timer-progress" id="timer-progress"></div>
+                                    <div class="timer-progress" id="timer-progress-${auction.id}"></div>
                                 </div>
                             </div>
                         </div>
@@ -177,25 +247,25 @@ class AuctionSystem {
                         <div class="current-bid-card">
                             <div class="bid-header">
                                 <h3>Current Price</h3>
-                                <div class="bid-trend ${this.activeAuction.dutchPhase ? 'decreasing' : 'stable'}">
-                                    <span class="trend-icon">${this.activeAuction.dutchPhase ? '↓' : '→'}</span>
-                                    <span class="trend-text">${this.activeAuction.dutchPhase ? 'Decreasing' : 'Stable'}</span>
+                                <div class="bid-trend ${auction.dutchPhase ? 'decreasing' : 'stable'}">
+                                    <span class="trend-icon">${auction.dutchPhase ? '↓' : '→'}</span>
+                                    <span class="trend-text">${auction.dutchPhase ? 'Decreasing' : 'Stable'}</span>
                                 </div>
                             </div>
                             <div class="bid-amount-display">
                                 <span class="currency">$</span>
-                                <span class="amount" id="current-bid">${this.activeAuction.currentBid.toLocaleString()}</span>
+                                <span class="amount" id="current-bid-${auction.id}">${auction.currentBid.toLocaleString()}</span>
                             </div>
                             <div class="bid-details">
                                 <div class="bid-breakdown">
                                     <div class="breakdown-item">
                                         <span class="label">Land Value:</span>
-                                        <span class="value">$${this.activeAuction.calculatedLandValue.toLocaleString()}</span>
+                                        <span class="value">$${auction.calculatedLandValue.toLocaleString()}</span>
                                     </div>
-                                    ${this.activeAuction.buildingValue > 0 ? `
+                                    ${auction.buildingValue > 0 ? `
                                     <div class="breakdown-item">
                                         <span class="label">Building Value:</span>
-                                        <span class="value">$${this.activeAuction.buildingValue.toLocaleString()}</span>
+                                        <span class="value">$${auction.buildingValue.toLocaleString()}</span>
                                     </div>
                                     <div class="breakdown-item total">
                                         <span class="label">Total Value:</span>
@@ -214,10 +284,10 @@ class AuctionSystem {
                                     <button class="quick-bid-btn" data-increment="0.20">+20%</button>
                                 </div>
                                 <div class="custom-bid-form">
-                                    <input type="number" id="custom-bid-input" placeholder="Enter custom bid..." min="${this.activeAuction.currentBid + 1}">
-                                    <button class="btn-primary" id="place-custom-bid">Place Bid</button>
+                                    <input type="number" id="custom-bid-input-${auction.id}" placeholder="Enter custom bid..." min="${auction.currentBid + 1}">
+                                    <button class="btn-primary" id="place-custom-bid-${auction.id}" data-auction-id="${auction.id}">Place Bid</button>
                                 </div>
-                                <button class="btn-primary large" id="place-bid-btn">
+                                <button class="btn-primary large" id="place-bid-btn-${auction.id}" data-auction-id="${auction.id}">
                                     <span class="btn-icon">💰</span>
                                     Accept Current Price
                                 </button>
@@ -230,8 +300,8 @@ class AuctionSystem {
                                 </div>
                                 <div class="info-item">
                                     <span class="label">After Purchase:</span>
-                                    <span class="value ${(this.game.playerCash - this.activeAuction.currentBid) < 0 ? 'insufficient' : ''}">
-                                        $${(this.game.playerCash - this.activeAuction.currentBid).toLocaleString()}
+                                    <span class="value ${(this.game.playerCash - auction.currentBid) < 0 ? 'insufficient' : ''}">
+                                        $${(this.game.playerCash - auction.currentBid).toLocaleString()}
                                     </span>
                                 </div>
                             </div>
@@ -242,25 +312,25 @@ class AuctionSystem {
                         <div class="parcel-info-card">
                             <div class="parcel-header">
                                 <h3>Property Information</h3>
-                                <div class="parcel-coordinate">${this.activeAuction.coord}</div>
+                                <div class="parcel-coordinate">${auction.coord}</div>
                             </div>
                             <div class="parcel-details-grid">
                                 <div class="detail-item">
                                     <span class="label">Current Owner:</span>
-                                    <span class="value">${this.activeAuction.currentOwner || 'Unowned'}</span>
+                                    <span class="value">${auction.currentOwner || 'Unowned'}</span>
                                 </div>
                                 <div class="detail-item">
                                     <span class="label">Land Value:</span>
-                                    <span class="value">$${this.activeAuction.calculatedLandValue.toLocaleString()}</span>
+                                    <span class="value">$${auction.calculatedLandValue.toLocaleString()}</span>
                                 </div>
-                                ${this.activeAuction.buildingValue > 0 ? `
+                                ${auction.buildingValue > 0 ? `
                                 <div class="detail-item">
                                     <span class="label">Building Present:</span>
                                     <span class="value">Yes</span>
                                 </div>
                                 <div class="detail-item">
                                     <span class="label">Building Value:</span>
-                                    <span class="value">$${this.activeAuction.buildingValue.toLocaleString()}</span>
+                                    <span class="value">$${auction.buildingValue.toLocaleString()}</span>
                                 </div>
                                 ` : `
                                 <div class="detail-item">
@@ -300,19 +370,86 @@ class AuctionSystem {
         }, 10);
         
         // Setup tab switching
-        this.setupAuctionTabs();
+        this.setupAuctionTabs(auction.id);
         
         // Setup bid controls
-        this.setupBidControls();
+        this.setupBidControls(auction.id);
         
         // Update timer display
-        this.updateAuctionTimer();
+        this.updateAuctionTimer(auction.id);
     }
     
     /**
+     * Close a specific auction modal
+     */
+    closeModal(auctionId, playerRole) {
+        const modalId = `auction-ui-${auctionId}-${playerRole}`;
+        const modal = document.getElementById(modalId);
+        if (modal) {
+            modal.remove();
+        }
+    }
+
+    /**
+     * Update sidebar with active auctions
+     */
+    updateSidebar() {
+        // Remove existing sidebar
+        const existingSidebar = document.getElementById('auction-sidebar');
+        if (existingSidebar) existingSidebar.remove();
+        
+        if (this.activeAuctions.size === 0) return;
+        
+        const sidebar = document.createElement('div');
+        sidebar.id = 'auction-sidebar';
+        sidebar.className = 'auction-sidebar';
+        sidebar.innerHTML = `
+            <div class="sidebar-header">
+                <h3>Active Auctions</h3>
+                <span class="auction-count">${this.activeAuctions.size}/${this.maxConcurrentAuctions}</span>
+            </div>
+            <div class="auction-list" id="auction-list">
+                ${Array.from(this.activeAuctions.values()).map(auction => `
+                    <div class="auction-item" data-auction-id="${auction.id}">
+                        <div class="auction-location">${auction.coord}</div>
+                        <div class="auction-price">$${auction.currentBid.toLocaleString()}</div>
+                        <div class="auction-time" id="sidebar-timer-${auction.id}">60s</div>
+                        <div class="auction-players">
+                            <span class="current-owner">${auction.currentOwner || 'Unowned'}</span>
+                            <span class="vs">vs</span>
+                            <span class="challenger">${auction.challengingPlayer}</span>
+                        </div>
+                        <button class="view-auction-btn" onclick="window.game.auctionSystem.focusAuction('${auction.id}')">
+                            View
+                        </button>
+                    </div>
+                `).join('')}
+            </div>
+        `;
+        
+        document.body.appendChild(sidebar);
+        
+        // Add animation
+        setTimeout(() => {
+            sidebar.classList.add('visible');
+        }, 10);
+    }
+
+    /**
+     * Focus on a specific auction (bring up modal)
+     */
+    focusAuction(auctionId) {
+        const auction = this.activeAuctions.get(auctionId);
+        if (!auction) return;
+        
+        // Show modal for current player
+        this.showAuctionModal(auction, 'challenger');
+    }
+
+    /**
      * Setup auction tab switching
      */
-    setupAuctionTabs() {
+    setupAuctionTabs(auctionId) {
         const tabButtons = document.querySelectorAll('.auction-tabs .tab-btn');
         const tabContents = document.querySelectorAll('.tab-content');
         
@@ -338,28 +475,31 @@ class AuctionSystem {
     /**
      * Setup bid control event listeners
      */
-    setupBidControls() {
+    setupBidControls(auctionId) {
         // Quick bid buttons
         const quickBidButtons = document.querySelectorAll('.quick-bid-btn');
         quickBidButtons.forEach(button => {
             button.addEventListener('click', () => {
                 const increment = parseFloat(button.getAttribute('data-increment'));
-                this.placeBid(increment);
+                this.placeBid(auctionId, increment);
             });
         });
         
         // Custom bid form
-        const customBidInput = document.getElementById('custom-bid-input');
-        const customBidButton = document.getElementById('place-custom-bid');
+        const customBidInput = document.getElementById(`custom-bid-input-${auctionId}`);
+        const customBidButton = document.getElementById(`place-custom-bid-${auctionId}`);
         
         if (customBidInput && customBidButton) {
             customBidButton.addEventListener('click', () => {
+                const auction = this.activeAuctions.get(auctionId);
+                if (!auction) return;
+                
                 const customAmount = parseInt(customBidInput.value);
-                if (customAmount && customAmount > this.activeAuction.currentBid) {
+                if (customAmount && customAmount > auction.currentBid) {
                     // Calculate the percentage increase for custom bid
-                    const currentBid = this.activeAuction.currentBid;
+                    const currentBid = auction.currentBid;
                     const customBidAsIncrement = (customAmount - currentBid) / currentBid;
-                    this.placeBid(customBidAsIncrement, customAmount);
+                    this.placeBid(auctionId, customBidAsIncrement, customAmount);
                     customBidInput.value = '';
                 } else {
                     this.game.showNotification('Please enter a valid bid higher than current price', 'error');
@@ -375,10 +515,10 @@ class AuctionSystem {
         }
         
         // Accept current price button  
-        const placeBidButton = document.getElementById('place-bid-btn');
+        const placeBidButton = document.getElementById(`place-bid-btn-${auctionId}`);
         if (placeBidButton) {
             placeBidButton.addEventListener('click', () => {
-                this.placeBid(0); // Accept current price
+                this.placeBid(auctionId, 0); // Accept current price
             });
         }
     }
@@ -386,16 +526,17 @@ class AuctionSystem {
     /**
      * Update auction timer display
      */
-    updateAuctionTimer() {
-        if (!this.activeAuction) return;
+    updateAuctionTimer(auctionId) {
+        const auction = this.activeAuctions.get(auctionId);
+        if (!auction) return;
         
         const now = Date.now();
-        const timeLeft = Math.max(0, this.activeAuction.endTime - now) / 1000;
+        const timeLeft = Math.max(0, auction.endTime - now) / 1000;
         const totalDuration = this.auctionDuration / 1000;
         const progress = Math.max(0, 1 - (timeLeft / totalDuration));
         
         // Update timer display
-        const timerEl = document.getElementById('auction-timer');
+        const timerEl = document.getElementById(`auction-timer-${auctionId}`);
         if (timerEl) {
             const minutes = Math.floor(timeLeft / 60);
             const seconds = Math.floor(timeLeft % 60);
@@ -411,7 +552,7 @@ class AuctionSystem {
         }
         
         // Update progress bar
-        const progressEl = document.getElementById('timer-progress');
+        const progressEl = document.getElementById(`timer-progress-${auctionId}`);
         if (progressEl) {
             progressEl.style.width = `${progress * 100}%`;
             
@@ -426,117 +567,144 @@ class AuctionSystem {
         }
         
         // Update current bid display
-        const currentBidEl = document.getElementById('current-bid');
-        if (currentBidEl && this.activeAuction) {
-            currentBidEl.textContent = this.activeAuction.currentBid.toLocaleString();
+        const currentBidEl = document.getElementById(`current-bid-${auctionId}`);
+        if (currentBidEl && auction) {
+            currentBidEl.textContent = auction.currentBid.toLocaleString();
         }
         
         // Update bid trend indicator
-        const trendEl = document.querySelector('.bid-trend');
-        if (trendEl) {
-            const isDecreasing = this.activeAuction.dutchPhase && !this.activeAuction.currentBidder;
-            trendEl.className = `bid-trend ${isDecreasing ? 'decreasing' : 'stable'}`;
-            
-            const trendIcon = trendEl.querySelector('.trend-icon');
-            const trendText = trendEl.querySelector('.trend-text');
-            if (trendIcon && trendText) {
-                trendIcon.textContent = isDecreasing ? '↓' : '→';
-                trendText.textContent = isDecreasing ? 'Decreasing' : 'Stable';
+        const modalElement = document.getElementById(`auction-ui-${auctionId}-challenger`) || document.getElementById(`auction-ui-${auctionId}-owner`);
+        if (modalElement) {
+            const trendEl = modalElement.querySelector('.bid-trend');
+            if (trendEl) {
+                const isDecreasing = auction.dutchPhase && !auction.currentBidder;
+                trendEl.className = `bid-trend ${isDecreasing ? 'decreasing' : 'stable'}`;
+                
+                const trendIcon = trendEl.querySelector('.trend-icon');
+                const trendText = trendEl.querySelector('.trend-text');
+                if (trendIcon && trendText) {
+                    trendIcon.textContent = isDecreasing ? '↓' : '→';
+                    trendText.textContent = isDecreasing ? 'Decreasing' : 'Stable';
+                }
             }
         }
         
         // Update phase indicator
-        const phaseIndicator = document.querySelector('.phase-indicator');
-        if (phaseIndicator) {
-            phaseIndicator.className = `phase-indicator ${this.activeAuction.dutchPhase ? 'dutch' : 'bidding'}`;
-            
-            const phaseLabel = phaseIndicator.querySelector('.phase-label');
-            if (phaseLabel) {
-                phaseLabel.textContent = this.activeAuction.dutchPhase ? 'Dutch Phase' : 'Bidding Phase';
+        if (modalElement) {
+            const phaseIndicator = modalElement.querySelector('.phase-indicator');
+            if (phaseIndicator) {
+                phaseIndicator.className = `phase-indicator ${auction.dutchPhase ? 'dutch' : 'bidding'}`;
+                
+                const phaseLabel = phaseIndicator.querySelector('.phase-label');
+                if (phaseLabel) {
+                    phaseLabel.textContent = auction.dutchPhase ? 'Dutch Phase' : 'Bidding Phase';
+                }
             }
         }
         
         // Update after purchase amount
-        const afterPurchaseEl = document.querySelector('.bid-info .info-item:last-child .value');
-        if (afterPurchaseEl) {
-            const remaining = this.game.playerCash - this.activeAuction.currentBid;
-            afterPurchaseEl.textContent = `$${remaining.toLocaleString()}`;
-            afterPurchaseEl.className = remaining < 0 ? 'value insufficient' : 'value';
+        if (modalElement) {
+            const afterPurchaseEl = modalElement.querySelector('.bid-info .info-item:last-child .value');
+            if (afterPurchaseEl) {
+                const remaining = this.game.playerCash - auction.currentBid;
+                afterPurchaseEl.textContent = `$${remaining.toLocaleString()}`;
+                afterPurchaseEl.className = remaining < 0 ? 'value insufficient' : 'value';
+            }
+        }
+        
+        // Update sidebar timer
+        const sidebarTimer = document.getElementById(`sidebar-timer-${auctionId}`);
+        if (sidebarTimer) {
+            const minutes = Math.floor(timeLeft / 60);
+            const seconds = Math.floor(timeLeft % 60);
+            const timeString = minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`;
+            sidebarTimer.textContent = timeString;
         }
     }
     
     /**
      * Start the auction timer
      */
-    startAuctionTimer() {
-        if (this.auctionInterval) clearInterval(this.auctionInterval);
+    startAuctionTimer(auctionId) {
+        // Clear existing interval for this auction if it exists
+        if (this.auctionIntervals.has(auctionId)) {
+            clearInterval(this.auctionIntervals.get(auctionId));
+        }
         
-        this.auctionInterval = setInterval(() => {
-            if (!this.activeAuction) {
-                clearInterval(this.auctionInterval);
+        const interval = setInterval(() => {
+            const auction = this.activeAuctions.get(auctionId);
+            if (!auction) {
+                clearInterval(interval);
+                this.auctionIntervals.delete(auctionId);
                 return;
             }
             
             const now = Date.now();
-            const timeLeft = Math.max(0, this.activeAuction.endTime - now) / 1000;
+            const timeLeft = Math.max(0, auction.endTime - now) / 1000;
             
             // Update timer display
-            this.updateAuctionTimer();
+            this.updateAuctionTimer(auctionId);
             
             // Dutch auction phase - price drops
-            if (this.activeAuction.dutchPhase && !this.activeAuction.currentBidder) {
-                const timeSinceLastUpdate = now - this.activeAuction.lastDutchUpdate;
+            if (auction.dutchPhase && !auction.currentBidder) {
+                const timeSinceLastUpdate = now - auction.lastDutchUpdate;
                 if (timeSinceLastUpdate >= this.dutchUpdateInterval) {
-                    const minPrice = this.activeAuction.initialLandValue;
-                    const newBid = Math.max(minPrice, Math.floor(this.activeAuction.currentBid * this.dutchReductionRate));
-                    this.activeAuction.currentBid = newBid;
-                    this.activeAuction.lastDutchUpdate = now;
+                    const minPrice = auction.initialLandValue;
+                    const newBid = Math.max(minPrice, Math.floor(auction.currentBid * this.dutchReductionRate));
+                    auction.currentBid = newBid;
+                    auction.lastDutchUpdate = now;
                     
                     // Update UI
-                    const bidEl = document.getElementById('current-bid');
+                    const bidEl = document.getElementById(`current-bid-${auctionId}`);
                     if (bidEl) {
-                        bidEl.textContent = `$${newBid.toLocaleString()}`;
+                        bidEl.textContent = newBid.toLocaleString();
                     }
+                    
+                    // Update sidebar
+                    this.updateSidebar();
                 }
             }
             
             // End auction when time expires
             if (timeLeft <= 0) {
-                this.endAuction();
+                this.endAuction(auctionId);
             }
         }, 100); // Update every 100ms for smooth timer
+        
+        this.auctionIntervals.set(auctionId, interval);
     }
     
     /**
      * Place a bid in the auction
      */
-    placeBid(increment = 0.05, customAmount = null) {
-        if (!this.activeAuction) return;
+    placeBid(auctionId, increment = 0.05, customAmount = null) {
+        const auction = this.activeAuctions.get(auctionId);
+        if (!auction) return;
         
         // Handle Dutch auction phase
-        if (this.activeAuction.dutchPhase) {
-            this.activeAuction.dutchPhase = false;
-            this.activeAuction.currentBidder = 'player';
-            this.activeAuction.bidHistory.push({
+        if (auction.dutchPhase) {
+            auction.dutchPhase = false;
+            auction.currentBidder = 'player';
+            auction.bidHistory.push({
                 bidder: 'player',
-                amount: this.activeAuction.currentBid,
+                amount: auction.currentBid,
                 timestamp: Date.now()
             });
             
-            this.updateAuctionActions();
+            this.updateAuctionActions(auctionId);
         } else {
             // Regular bidding phase - increase bid
-            const newBid = customAmount || Math.floor(this.activeAuction.currentBid * (1 + increment));
+            const newBid = customAmount || Math.floor(auction.currentBid * (1 + increment));
             
             // Validate minimum bid
-            if (newBid <= this.activeAuction.currentBid) {
+            if (newBid <= auction.currentBid) {
                 this.game.showNotification('Bid must be higher than current price', 'error');
                 return;
             }
             
             // Check if player can afford this bid
-            const totalCost = this.activeAuction.currentOwner && this.activeAuction.currentOwner !== 'player' 
-                ? newBid + this.activeAuction.buildingValue 
+            const totalCost = auction.currentOwner && auction.currentOwner !== 'player' 
+                ? newBid + auction.buildingValue 
                 : newBid;
                 
             if (this.game.playerCash < totalCost) {
@@ -544,60 +712,79 @@ class AuctionSystem {
                 return;
             }
             
-            this.activeAuction.currentBid = newBid;
-            this.activeAuction.currentBidder = 'player';
-            this.activeAuction.bidHistory.push({
+            auction.currentBid = newBid;
+            auction.currentBidder = 'player';
+            auction.bidHistory.push({
                 bidder: 'player',
                 amount: newBid,
                 timestamp: Date.now()
             });
             
             // Extend time if bid placed near end
-            const timeLeft = (this.activeAuction.endTime - Date.now()) / 1000;
+            const timeLeft = (auction.endTime - Date.now()) / 1000;
             if (timeLeft <= this.bidExtensionThreshold) {
-                this.activeAuction.endTime += this.bidExtensionTime;
+                auction.endTime += this.bidExtensionTime;
             }
         }
         
         // Update UI
-        document.getElementById('current-bid').textContent = `$${this.activeAuction.currentBid.toLocaleString()}`;
+        const currentBidEl = document.getElementById(`current-bid-${auctionId}`);
+        if (currentBidEl) {
+            currentBidEl.textContent = auction.currentBid.toLocaleString();
+        }
         
         const statusEl = document.getElementById('bid-status');
         if (statusEl) {
-            statusEl.textContent = this.activeAuction.dutchPhase ? 'Dutch Auction - Price Dropping' : 'Highest Bidder: Player';
+            statusEl.textContent = auction.dutchPhase ? 'Dutch Auction - Price Dropping' : 'Highest Bidder: Player';
         }
+        
+        // Update sidebar
+        this.updateSidebar();
+        
+        // Bidding is free (no action cost)
+        // Actions are only used for starting and winning auctions
     }
     
     /**
      * Update auction action buttons
      */
-    updateAuctionActions() {
+    updateAuctionActions(auctionId) {
+        const auction = this.activeAuctions.get(auctionId);
         const actionsEl = document.getElementById('auction-actions');
-        if (!actionsEl || !this.activeAuction) return;
+        if (!actionsEl || !auction) return;
         
-        if (!this.activeAuction.dutchPhase) {
+        if (!auction.dutchPhase) {
             actionsEl.innerHTML = `
-                <button class="auction-btn small" onclick="game.auctionSystem.placeBid(0.01)">+1%</button>
-                <button class="auction-btn small" onclick="game.auctionSystem.placeBid(0.05)">+5%</button>
-                <button class="auction-btn small" onclick="game.auctionSystem.placeBid(0.10)">+10%</button>
+                <button class="auction-btn small" onclick="game.auctionSystem.placeBid('${auctionId}', 0.01)">+1%</button>
+                <button class="auction-btn small" onclick="game.auctionSystem.placeBid('${auctionId}', 0.05)">+5%</button>
+                <button class="auction-btn small" onclick="game.auctionSystem.placeBid('${auctionId}', 0.10)">+10%</button>
             `;
         }
     }
     
     /**
-     * End the current auction
+     * End a specific auction
      */
-    endAuction() {
-        if (!this.activeAuction) return;
+    endAuction(auctionId) {
+        const auction = this.activeAuctions.get(auctionId);
+        if (!auction) return;
         
-        clearInterval(this.auctionInterval);
+        // Clear interval for this auction
+        if (this.auctionIntervals.has(auctionId)) {
+            clearInterval(this.auctionIntervals.get(auctionId));
+            this.auctionIntervals.delete(auctionId);
+        }
         
-        const auction = this.activeAuction;
         const parcel = this.game.grid[auction.row][auction.col];
         const winner = auction.currentBidder;
         const finalBid = auction.currentBid;
         
         if (winner === 'player') {
+            // Winner pays action cost
+            if (this.game.actionManager && this.game.actionManager.canUseActions(1)) {
+                this.game.actionManager.useActions(1);
+            }
+            
             // Process the auction result
             const previousOwner = parcel.owner;
             
@@ -614,7 +801,7 @@ class AuctionSystem {
             
             parcel.landValue.paidPrice = finalBid;
             
-            this.game.showNotification(`Won auction! Paid $${totalCost.toLocaleString()}`, 'success');
+            this.game.showNotification(`Won auction! Paid $${totalCost.toLocaleString()}. Used 1 action.`, 'success');
             
             // Update economic cache
             this.game.economicCache.playerParcels.add(`${auction.row}-${auction.col}`);
@@ -625,9 +812,11 @@ class AuctionSystem {
             this.game.showNotification('Auction ended with no winner', 'info');
         }
         
-        // Remove auction UI
-        const auctionUI = document.getElementById('auction-ui');
-        if (auctionUI) auctionUI.remove();
+        // Remove auction UI modals for this auction
+        const challengerModal = document.getElementById(`auction-ui-${auctionId}-challenger`);
+        const ownerModal = document.getElementById(`auction-ui-${auctionId}-owner`);
+        if (challengerModal) challengerModal.remove();
+        if (ownerModal) ownerModal.remove();
         
         // Add to history
         this.auctionHistory.push({
@@ -637,7 +826,11 @@ class AuctionSystem {
             endTime: Date.now()
         });
         
-        this.activeAuction = null;
+        // Remove from active auctions
+        this.activeAuctions.delete(auctionId);
+        
+        // Update sidebar
+        this.updateSidebar();
         
         // Trigger re-render
         this.game.scheduleRender();
@@ -657,10 +850,10 @@ class AuctionSystem {
     }
     
     /**
-     * Check if an auction is currently active
+     * Check if any auctions are currently active
      */
     isAuctionActive() {
-        return this.activeAuction !== null;
+        return this.activeAuctions.size > 0;
     }
     
     /**
@@ -674,21 +867,49 @@ class AuctionSystem {
      * Get current auction details
      */
     getCurrentAuction() {
-        return this.activeAuction ? { ...this.activeAuction } : null;
+        return Array.from(this.activeAuctions.values()).map(auction => ({ ...auction }));
     }
     
     /**
-     * Cancel current auction (admin function)
+     * Get specific auction by ID
      */
-    cancelAuction() {
-        if (!this.activeAuction) return false;
+    getAuctionById(auctionId) {
+        const auction = this.activeAuctions.get(auctionId);
+        return auction ? { ...auction } : null;
+    }
+    
+    /**
+     * Cancel a specific auction (admin function)
+     */
+    cancelAuction(auctionId) {
+        if (!auctionId) {
+            // Cancel all auctions if no ID specified
+            for (const id of this.activeAuctions.keys()) {
+                this.cancelAuction(id);
+            }
+            return true;
+        }
         
-        clearInterval(this.auctionInterval);
+        const auction = this.activeAuctions.get(auctionId);
+        if (!auction) return false;
         
-        const auctionUI = document.getElementById('auction-ui');
-        if (auctionUI) auctionUI.remove();
+        // Clear interval
+        if (this.auctionIntervals.has(auctionId)) {
+            clearInterval(this.auctionIntervals.get(auctionId));
+            this.auctionIntervals.delete(auctionId);
+        }
         
-        this.activeAuction = null;
+        // Remove UI elements
+        const challengerModal = document.getElementById(`auction-ui-${auctionId}-challenger`);
+        const ownerModal = document.getElementById(`auction-ui-${auctionId}-owner`);
+        if (challengerModal) challengerModal.remove();
+        if (ownerModal) ownerModal.remove();
+        
+        // Remove from active auctions
+        this.activeAuctions.delete(auctionId);
+        
+        // Update sidebar
+        this.updateSidebar();
         
         this.game.showNotification('Auction cancelled', 'info');
         return true;
@@ -712,7 +933,8 @@ class AuctionSystem {
             winRate: totalAuctions > 0 ? (playerWins / totalAuctions) : 0,
             totalSpent,
             averageBid,
-            activeAuction: this.activeAuction !== null
+            activeAuctions: this.activeAuctions.size,
+            maxConcurrentAuctions: this.maxConcurrentAuctions
         };
     }
     
@@ -720,16 +942,26 @@ class AuctionSystem {
      * Reset auction system
      */
     reset() {
-        if (this.auctionInterval) {
-            clearInterval(this.auctionInterval);
+        // Clear all intervals
+        for (const interval of this.auctionIntervals.values()) {
+            clearInterval(interval);
+        }
+        this.auctionIntervals.clear();
+        
+        // Remove all auction UIs
+        for (const auctionId of this.activeAuctions.keys()) {
+            const challengerModal = document.getElementById(`auction-ui-${auctionId}-challenger`);
+            const ownerModal = document.getElementById(`auction-ui-${auctionId}-owner`);
+            if (challengerModal) challengerModal.remove();
+            if (ownerModal) ownerModal.remove();
         }
         
-        const auctionUI = document.getElementById('auction-ui');
-        if (auctionUI) auctionUI.remove();
+        // Remove sidebar
+        const sidebar = document.getElementById('auction-sidebar');
+        if (sidebar) sidebar.remove();
         
-        this.activeAuction = null;
+        this.activeAuctions.clear();
         this.auctionHistory = [];
-        this.auctionInterval = null;
     }
     
     /**
@@ -737,9 +969,10 @@ class AuctionSystem {
      */
     exportData() {
         return {
-            activeAuction: this.activeAuction,
+            activeAuctions: Array.from(this.activeAuctions.entries()),
             auctionHistory: this.auctionHistory,
-            isActive: this.activeAuction !== null
+            isActive: this.activeAuctions.size > 0,
+            maxConcurrentAuctions: this.maxConcurrentAuctions
         };
     }
     
@@ -751,8 +984,19 @@ class AuctionSystem {
             this.auctionHistory = data.auctionHistory;
         }
         
-        if (data.activeAuction && data.isActive) {
-            this.activeAuction = data.activeAuction;
+        if (data.maxConcurrentAuctions !== undefined) {
+            this.maxConcurrentAuctions = data.maxConcurrentAuctions;
+        }
+        
+        if (data.activeAuctions && data.isActive) {
+            // Clear existing auctions
+            this.activeAuctions.clear();
+            
+            // Import active auctions
+            data.activeAuctions.forEach(([auctionId, auction]) => {
+                this.activeAuctions.set(auctionId, auction);
+            });
+            
             // Don't automatically restart timers on import
             // Let the game decide when to resume
         }

@@ -472,7 +472,13 @@ class UniversalMultiplayerManager {
         }
         
         this.localStateVersion = diff.version;
-        this.game.updateDisplay();
+        // Update specific displays that exist
+        if (this.game.updateVitalityDisplay) {
+            this.game.updateVitalityDisplay();
+        }
+        if (this.game.updateDemographicsDisplay) {
+            this.game.updateDemographicsDisplay();
+        }
     }
     
     updateCalculatedState(calculated) {
@@ -509,7 +515,13 @@ class UniversalMultiplayerManager {
             this.game.updateVitalityDisplay();
         }
         
-        this.game.updateDisplay();
+        // Update specific displays that exist
+        if (this.game.updateVitalityDisplay) {
+            this.game.updateVitalityDisplay();
+        }
+        if (this.game.updateDemographicsDisplay) {
+            this.game.updateDemographicsDisplay();
+        }
     }
     
     handleActionSuccess(data) {
