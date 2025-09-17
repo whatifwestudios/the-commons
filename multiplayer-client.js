@@ -867,6 +867,20 @@ class UniversalMultiplayerManager {
         return result.success;
     }
     
+    async onBuildingConstructed(row, col, building, constructionData = {}) {
+        console.log(`🏗️ Broadcasting building construction: ${building} at ${row}-${col}`, constructionData);
+        const result = await this.broadcastAction({
+            type: 'CONSTRUCT_BUILDING',
+            parcelId: `${row}-${col}`,
+            building: building,
+            constructionStartDay: constructionData.constructionStartDay,
+            constructionDays: constructionData.constructionDays,
+            timestamp: Date.now()
+        });
+        
+        return result.success;
+    }
+    
     // Display update methods
     updateTreasuryDisplay() {
         const treasuryElement = document.getElementById('city-treasury');

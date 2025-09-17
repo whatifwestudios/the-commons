@@ -741,7 +741,6 @@ class MultiplayerManager {
     }
     
     onBuildingConstructed(row, col, building, constructionData = {}) {
-        console.log(`🏗️ Broadcasting building construction: ${building} at ${row}-${col}`, constructionData);
         this.broadcastAction({
             type: 'CONSTRUCT_BUILDING', 
             parcelId: `${row}-${col}`,
