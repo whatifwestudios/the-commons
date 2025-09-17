@@ -2550,36 +2550,52 @@ class MobilityLayer {
         // Calculate total cost
         const totalCost = this.calculateSegmentCost();
         
-        // Check if road already exists
-        if (this.roads.has(this.hoveredEdge)) {
-            const existingRoad = this.roads.get(this.hoveredEdge);
-            const upgradeResult = this.handleRoadUpgradeOrReplacement(existingRoad, totalCost);
-            
-            if (upgradeResult.success) {
-                this.game.playerCash -= upgradeResult.cost;
-                this.roads.set(this.hoveredEdge, {
-                    type: this.selectedRoadType,
-                    hasSidewalks: this.infrastructureOptions.sidewalks.active,
-                    hasBikeLanes: this.infrastructureOptions.bikeLanes.active,
-                    builtTime: Date.now()
-                });
-                this.game.showNotification(upgradeResult.message, 'success');
-            } else {
-                this.game.showNotification(upgradeResult.message, 'error');
-            }
+        // Use multiplayer system for road building
+        if (this.game.multiplayerManager && this.game.multiplayerManager.isConnected) {
+            // Send road build action to server
+            this.game.multiplayerManager.broadcastAction({
+                type: 'BUILD_ROAD',
+                roadKey: this.hoveredEdge,
+                roadType: this.selectedRoadType,
+                hasSidewalks: this.infrastructureOptions.sidewalks.active,
+                hasBikeLanes: this.infrastructureOptions.bikeLanes.active,
+                cost: totalCost,
+                isUpgrade: this.roads.has(this.hoveredEdge),
+                existingRoad: this.roads.get(this.hoveredEdge) || null
+            });
         } else {
-            // Build new road with selected options
-            if (this.game.playerCash >= totalCost) {
-                this.game.playerCash -= totalCost;
-                this.roads.set(this.hoveredEdge, {
-                    type: this.selectedRoadType,
-                    hasSidewalks: this.infrastructureOptions.sidewalks.active,
-                    hasBikeLanes: this.infrastructureOptions.bikeLanes.active,
-                    builtTime: Date.now()
-                });
-                this.game.showNotification(`Built road segment ($${totalCost})`, 'success');
+            // Fallback to local road building for offline mode
+            // Check if road already exists
+            if (this.roads.has(this.hoveredEdge)) {
+                const existingRoad = this.roads.get(this.hoveredEdge);
+                const upgradeResult = this.handleRoadUpgradeOrReplacement(existingRoad, totalCost);
+                
+                if (upgradeResult.success) {
+                    this.game.playerCash -= upgradeResult.cost;
+                    this.roads.set(this.hoveredEdge, {
+                        type: this.selectedRoadType,
+                        hasSidewalks: this.infrastructureOptions.sidewalks.active,
+                        hasBikeLanes: this.infrastructureOptions.bikeLanes.active,
+                        builtTime: Date.now()
+                    });
+                    this.game.showNotification(upgradeResult.message, 'success');
+                } else {
+                    this.game.showNotification(upgradeResult.message, 'error');
+                }
             } else {
-                this.game.showNotification(`Insufficient funds: need $${totalCost}, have $${this.game.playerCash}`, 'error');
+                // Build new road with selected options
+                if (this.game.playerCash >= totalCost) {
+                    this.game.playerCash -= totalCost;
+                    this.roads.set(this.hoveredEdge, {
+                        type: this.selectedRoadType,
+                        hasSidewalks: this.infrastructureOptions.sidewalks.active,
+                        hasBikeLanes: this.infrastructureOptions.bikeLanes.active,
+                        builtTime: Date.now()
+                    });
+                    this.game.showNotification(`Built road segment ($${totalCost})`, 'success');
+                } else {
+                    this.game.showNotification(`Insufficient funds: need $${totalCost}, have $${this.game.playerCash}`, 'error');
+                }
             }
         }
         

@@ -57,6 +57,11 @@ let gameState = {
       unallocatedFunds: 0,
       totalBudget: 0,
       currentLvtRate: 0.50
+    },
+    transportation: {
+      roads: {}, // key: "row1,col1-row2,col2", value: road data
+      transitStops: {}, // key: "row,col", value: stop data
+      transitRoutes: {} // key: routeId, value: route data
     }
   },
   
@@ -373,6 +378,12 @@ async function processGameAction(action) {
       return await processTreasuryFee(action);
     case 'REQUEST_LAND_PRICE':
       return await processLandPriceRequest(action);
+    case 'BUILD_ROAD':
+      return await processBuildRoad(action);
+    case 'BUILD_TRANSIT_STOP':
+      return await processBuildTransitStop(action);
+    case 'CREATE_TRANSIT_ROUTE':
+      return await processCreateTransitRoute(action);
     default:
       throw new Error(`Unknown action type: ${action.type}`);
   }
@@ -637,7 +648,8 @@ function getClientSafeState() {
       currentMonth: gameState.core.currentMonth,
       currentDay: gameState.core.currentDay,
       gameSpeed: gameState.core.gameSpeed,
-      isPaused: gameState.core.isPaused
+      isPaused: gameState.core.isPaused,
+      transportation: gameState.core.transportation
     },
     calculated: gameState.calculated,
     version: gameState.version.global,
@@ -690,6 +702,195 @@ async function processLandPriceRequest(action) {
     price: price,
     coordinates: `${row}-${col}`,
     processedAction: action
+  };
+}
+
+async function processBuildRoad(action) {
+  const { roadId, roadData, playerId } = action;
+  
+  // Validate player and actions
+  if (!gameState.core.players.has(playerId)) {
+    return {
+      success: false,
+      error: 'INVALID_PLAYER',
+      message: 'Player not found'
+    };
+  }
+  
+  const player = gameState.core.players.get(playerId);
+  const actionCost = 1;
+  const roadCost = roadData.cost || 500;
+  
+  // Check action and cash availability
+  if (player.actionManager.currentActions < actionCost) {
+    return {
+      success: false,
+      error: 'INSUFFICIENT_ACTIONS',
+      message: 'Not enough actions remaining'
+    };
+  }
+  
+  if (player.cash < roadCost) {
+    return {
+      success: false,
+      error: 'INSUFFICIENT_FUNDS',
+      message: `Not enough cash. Road costs $${roadCost}`
+    };
+  }
+  
+  // Build road
+  gameState.core.transportation.roads[roadId] = {
+    ...roadData,
+    builtBy: playerId,
+    timestamp: Date.now()
+  };
+  
+  // Deduct costs
+  player.cash -= roadCost;
+  player.actionManager.currentActions -= actionCost;
+  player.actionManager.usedThisMonth += actionCost;
+  
+  // Update versions
+  gameState.version.global++;
+  gameState.meta.lastUpdate = Date.now();
+  
+  await recalculateAuthoritativeState();
+  
+  return {
+    success: true,
+    processedAction: action,
+    stateChanges: {
+      transportation: {
+        roads: { [roadId]: gameState.core.transportation.roads[roadId] }
+      },
+      players: { [playerId]: Object.fromEntries([[playerId, player]]) }
+    }
+  };
+}
+
+async function processBuildTransitStop(action) {
+  const { stopId, stopData, playerId } = action;
+  
+  // Validate player and actions
+  if (!gameState.core.players.has(playerId)) {
+    return {
+      success: false,
+      error: 'INVALID_PLAYER',
+      message: 'Player not found'
+    };
+  }
+  
+  const player = gameState.core.players.get(playerId);
+  const actionCost = 1;
+  const stopCost = stopData.cost || 2000;
+  
+  // Check action and cash availability
+  if (player.actionManager.currentActions < actionCost) {
+    return {
+      success: false,
+      error: 'INSUFFICIENT_ACTIONS',
+      message: 'Not enough actions remaining'
+    };
+  }
+  
+  if (player.cash < stopCost) {
+    return {
+      success: false,
+      error: 'INSUFFICIENT_FUNDS',
+      message: `Not enough cash. Transit stop costs $${stopCost}`
+    };
+  }
+  
+  // Build transit stop
+  gameState.core.transportation.transitStops[stopId] = {
+    ...stopData,
+    builtBy: playerId,
+    timestamp: Date.now()
+  };
+  
+  // Deduct costs
+  player.cash -= stopCost;
+  player.actionManager.currentActions -= actionCost;
+  player.actionManager.usedThisMonth += actionCost;
+  
+  // Update versions
+  gameState.version.global++;
+  gameState.meta.lastUpdate = Date.now();
+  
+  await recalculateAuthoritativeState();
+  
+  return {
+    success: true,
+    processedAction: action,
+    stateChanges: {
+      transportation: {
+        transitStops: { [stopId]: gameState.core.transportation.transitStops[stopId] }
+      },
+      players: { [playerId]: Object.fromEntries([[playerId, player]]) }
+    }
+  };
+}
+
+async function processCreateTransitRoute(action) {
+  const { routeId, routeData, playerId } = action;
+  
+  // Validate player and actions
+  if (!gameState.core.players.has(playerId)) {
+    return {
+      success: false,
+      error: 'INVALID_PLAYER',
+      message: 'Player not found'
+    };
+  }
+  
+  const player = gameState.core.players.get(playerId);
+  const actionCost = 2; // Routes cost more actions
+  const routeCost = routeData.cost || 5000;
+  
+  // Check action and cash availability
+  if (player.actionManager.currentActions < actionCost) {
+    return {
+      success: false,
+      error: 'INSUFFICIENT_ACTIONS',
+      message: 'Not enough actions remaining'
+    };
+  }
+  
+  if (player.cash < routeCost) {
+    return {
+      success: false,
+      error: 'INSUFFICIENT_FUNDS',
+      message: `Not enough cash. Transit route costs $${routeCost}`
+    };
+  }
+  
+  // Create transit route
+  gameState.core.transportation.transitRoutes[routeId] = {
+    ...routeData,
+    createdBy: playerId,
+    timestamp: Date.now()
+  };
+  
+  // Deduct costs
+  player.cash -= routeCost;
+  player.actionManager.currentActions -= actionCost;
+  player.actionManager.usedThisMonth += actionCost;
+  
+  // Update versions
+  gameState.version.global++;
+  gameState.meta.lastUpdate = Date.now();
+  
+  await recalculateAuthoritativeState();
+  
+  return {
+    success: true,
+    processedAction: action,
+    stateChanges: {
+      transportation: {
+        transitRoutes: { [routeId]: gameState.core.transportation.transitRoutes[routeId] }
+      },
+      players: { [playerId]: Object.fromEntries([[playerId, player]]) }
+    }
   };
 }
 

@@ -461,6 +461,11 @@ class UniversalMultiplayerManager {
             }
         }
         
+        // Apply transportation changes
+        if (diff.changes.transportation) {
+            this.syncTransportationState(diff.changes.transportation);
+        }
+        
         this.localStateVersion = diff.version;
         this.game.updateDisplay();
     }
@@ -733,6 +738,11 @@ class UniversalMultiplayerManager {
         if (serverState.calculated) {
             this.updateCalculatedState(serverState.calculated);
         }
+        
+        // Sync transportation state (roads, transit)
+        if (serverState.core.transportation) {
+            this.syncTransportationState(serverState.core.transportation);
+        }
     }
     
     updatePlayersDisplay() {
@@ -824,6 +834,78 @@ class UniversalMultiplayerManager {
         if (this.game.scheduleRender) {
             this.game.scheduleRender();
         }
+    }
+    
+    /**
+     * Sync transportation state from server
+     */
+    syncTransportationState(transportationState) {
+        console.log('🛣️ Syncing transportation state from server...', transportationState);
+        
+        // Sync roads with MobilityLayer
+        if (transportationState.roads && this.game.mobilityLayer) {
+            // Clear existing roads and sync from server
+            this.game.mobilityLayer.roads.clear();
+            
+            Object.entries(transportationState.roads).forEach(([roadKey, roadData]) => {
+                this.game.mobilityLayer.roads.set(roadKey, roadData);
+                console.log(`🛣️ Synced road: ${roadKey}`, roadData);
+            });
+        }
+        
+        // Sync transit stops with MobilityLayer
+        if (transportationState.transitStops && this.game.mobilityLayer) {
+            // Clear existing stops and sync from server
+            this.game.mobilityLayer.transitStops.clear();
+            
+            Object.entries(transportationState.transitStops).forEach(([stopKey, stopData]) => {
+                this.game.mobilityLayer.transitStops.set(stopKey, stopData);
+                console.log(`🚇 Synced transit stop: ${stopKey}`, stopData);
+            });
+        }
+        
+        // Sync transit routes with MobilityLayer
+        if (transportationState.transitRoutes && this.game.mobilityLayer) {
+            // Clear existing routes and sync from server
+            this.game.mobilityLayer.transitRoutes.clear();
+            
+            Object.entries(transportationState.transitRoutes).forEach(([routeId, routeData]) => {
+                this.game.mobilityLayer.transitRoutes.set(routeId, routeData);
+                console.log(`🚌 Synced transit route: ${routeId}`, routeData);
+            });
+        }
+        
+        // Also sync with TransportationSystem if it exists
+        if (this.game.transportationSystem) {
+            if (transportationState.roads) {
+                this.game.transportationSystem.roads.clear();
+                Object.entries(transportationState.roads).forEach(([roadKey, roadData]) => {
+                    // Parse road key to get coordinates and edge
+                    const [row1, col1, row2, col2] = roadKey.split('-').join(',').split(',').map(Number);
+                    const edge = this.getEdgeFromCoordinates(row1, col1, row2, col2);
+                    if (edge) {
+                        this.game.transportationSystem.roads.set(`${row1},${col1},${edge}`, roadData);
+                    }
+                });
+            }
+        }
+        
+        // Schedule overall re-render to show transportation changes
+        if (this.game.scheduleRender) {
+            this.game.scheduleRender();
+        }
+    }
+    
+    /**
+     * Helper to determine edge direction from coordinates
+     */
+    getEdgeFromCoordinates(row1, col1, row2, col2) {
+        if (row1 === row2) {
+            return col2 > col1 ? 'right' : 'left';
+        } else if (col1 === col2) {
+            return row2 > row1 ? 'bottom' : 'top';
+        }
+        return null;
     }
 }
 
