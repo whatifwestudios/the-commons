@@ -205,6 +205,12 @@ class UniversalMultiplayerManager {
     handleServerMessage(data) {
         this.lastHeartbeat = Date.now();
         
+        // Update server stats monitor
+        if (window.game?.serverStatsMonitor) {
+            window.game.serverStatsMonitor.wsStats.messagesIn++;
+            window.game.serverStatsMonitor.wsStats.bytesIn += JSON.stringify(data).length;
+        }
+        
         switch (data.type) {
             case 'CONNECTED':
                 console.log('🔗 Client connected, ID:', data.clientId);
@@ -571,6 +577,12 @@ class UniversalMultiplayerManager {
         
         this.actionCount++;
         console.log(`✅ Action confirmed by server: ${actionId}`);
+        
+        // Update server stats
+        if (window.game?.serverStatsMonitor) {
+            window.game.serverStatsMonitor.syncStats.confirmedActions++;
+            window.game.serverStatsMonitor.syncStats.pendingActions = this.pendingActions.size;
+        }
     }
     
     handleActionError(data) {
@@ -581,6 +593,12 @@ class UniversalMultiplayerManager {
         
         // Rollback optimistic update if it exists
         const rolledBack = this.rollbackOptimisticUpdate(actionId, data.error);
+        
+        // Update server stats
+        if (window.game?.serverStatsMonitor) {
+            window.game.serverStatsMonitor.syncStats.rejectedActions++;
+            window.game.serverStatsMonitor.syncStats.pendingActions = this.pendingActions.size;
+        }
         
         // Handle auction-specific errors
         if (data.error === 'AUCTION_STATE_CHANGED' && data.currentAuctionState) {

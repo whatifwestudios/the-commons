@@ -92,11 +92,14 @@ class PerformanceMonitor {
             z-index: 10001;
             min-width: 200px;
             user-select: none;
-            cursor: pointer;
+            cursor: move;
         `;
         
-        // Add click handler to cycle display modes
-        this.displayElement.addEventListener('click', () => {
+        // Make draggable
+        this.makeDraggable(this.displayElement);
+        
+        // Add double-click handler to cycle display modes
+        this.displayElement.addEventListener('dblclick', () => {
             const modes = ['minimal', 'detailed', 'off'];
             const currentIndex = modes.indexOf(this.displayMode);
             this.displayMode = modes[(currentIndex + 1) % modes.length];
@@ -494,6 +497,47 @@ class PerformanceMonitor {
      */
     togglePause() {
         this.isPaused = !this.isPaused;
+    }
+    
+    /**
+     * Make an element draggable
+     */
+    makeDraggable(element) {
+        let isDragging = false;
+        let dragOffset = { x: 0, y: 0 };
+        
+        element.addEventListener('mousedown', (e) => {
+            // Don't start drag on double-click
+            if (e.detail === 2) return;
+            
+            isDragging = true;
+            dragOffset.x = e.clientX - element.offsetLeft;
+            dragOffset.y = e.clientY - element.offsetTop;
+            element.style.zIndex = '10002'; // Bring to front while dragging
+            e.preventDefault();
+        });
+        
+        document.addEventListener('mousemove', (e) => {
+            if (!isDragging) return;
+            
+            const newX = e.clientX - dragOffset.x;
+            const newY = e.clientY - dragOffset.y;
+            
+            // Keep within viewport bounds
+            const maxX = window.innerWidth - element.offsetWidth;
+            const maxY = window.innerHeight - element.offsetHeight;
+            
+            element.style.left = Math.max(0, Math.min(newX, maxX)) + 'px';
+            element.style.top = Math.max(0, Math.min(newY, maxY)) + 'px';
+            element.style.right = 'auto'; // Remove right positioning
+        });
+        
+        document.addEventListener('mouseup', () => {
+            if (isDragging) {
+                isDragging = false;
+                element.style.zIndex = '10001'; // Return to normal z-index
+            }
+        });
     }
 }
 

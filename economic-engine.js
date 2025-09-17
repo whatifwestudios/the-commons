@@ -38,6 +38,12 @@ class EconomicEngine {
             cashflowBreakdown: null,
             lastCacheUpdate: 0
         };
+
+        this.domCache = {
+            marketStats: {},
+            multipliers: {},
+            cashflow: null
+        };
     }
     
     /**
@@ -46,6 +52,18 @@ class EconomicEngine {
     initialize() {
         this.updateSupplyDemandBalance();
         this.calculatePlayerCashflow();
+
+        // Cache DOM elements for market dashboard
+        const resources = ['energy', 'food', 'housing', 'jobs'];
+        resources.forEach(resource => {
+            this.domCache.marketStats[resource] = {
+                supply: document.getElementById(`${resource}-supply`),
+                demand: document.getElementById(`${resource}-demand`),
+                balance: document.getElementById(`${resource}-balance`)
+            };
+            this.domCache.multipliers[resource] = document.getElementById(`${resource}-multiplier`);
+        });
+        this.domCache.cashflow = document.getElementById('dashboard-cashflow');
     }
     
     /**
@@ -171,8 +189,8 @@ class EconomicEngine {
             return Math.max(0.5, 1.0 - (excess * elasticity * 0.5));
         } else {
             // Undersupply: prices rise (1x to 2.5x)
-            const shortage = Math.min(1.0 - supplyRatio, 0.8);
-            return Math.min(2.5, 1.0 + (shortage * elasticity * 1.5));
+            const shortage = Math.min(1.0 - supplyRatio, 1.0); // Allow full range of shortage
+            return Math.min(2.5, 1.0 + (shortage * elasticity * 1.88));
         }
     }
     
@@ -363,11 +381,14 @@ class EconomicEngine {
             }
         }
         
+        const demand = Math.max(0, localDemand);
+        const ratio = (demand > 0) ? localSupply / demand : (localSupply > 0 ? Infinity : 1);
+
         return {
             supply: localSupply,
-            demand: Math.max(0.1, localDemand), // Minimum to avoid division by zero
-            balance: localSupply - localDemand,
-            ratio: localSupply / Math.max(0.1, localDemand)
+            demand: demand,
+            balance: localSupply - demand,
+            ratio: ratio
         };
     }
     
@@ -428,7 +449,7 @@ class EconomicEngine {
         
         // Update multiplier displays
         Object.entries(dashboardData.multipliers).forEach(([resource, multiplier]) => {
-            const multiplierEl = document.getElementById(`${resource}-multiplier`);
+            const multiplierEl = this.domCache.multipliers[resource];
             if (multiplierEl) {
                 multiplierEl.textContent = `${multiplier.toFixed(2)}x`;
                 
@@ -442,10 +463,10 @@ class EconomicEngine {
         });
         
         // Update cashflow
-        const cashflowEl = document.getElementById('dashboard-cashflow');
+        const cashflowEl = this.domCache.cashflow;
         if (cashflowEl) {
             const cashflow = dashboardData.playerCashflow;
-            cashflowEl.textContent = `${cashflow >= 0 ? '+' : ''}$${cashflow.toFixed(2)}/day`;
+            cashflowEl.textContent = `${cashflow >= 0 ? '+' : ''}${cashflow.toFixed(2)}/day`;
             cashflowEl.style.color = cashflow >= 0 ? '#42B96E' : '#f44336';
         }
     }
@@ -458,16 +479,19 @@ class EconomicEngine {
         const demand = data.demand[resource] || 0;
         const balance = data.balance[resource] || 0;
         
+        const statElements = this.domCache.marketStats[resource];
+        if (!statElements) return;
+
         // Update supply
-        const supplyEl = document.getElementById(`${resource}-supply`);
+        const supplyEl = statElements.supply;
         if (supplyEl) supplyEl.textContent = supply.toFixed(1);
         
         // Update demand
-        const demandEl = document.getElementById(`${resource}-demand`);
+        const demandEl = statElements.demand;
         if (demandEl) demandEl.textContent = demand.toFixed(1);
         
         // Update balance with color coding
-        const balanceEl = document.getElementById(`${resource}-balance`);
+        const balanceEl = statElements.balance;
         if (balanceEl) {
             balanceEl.textContent = `${balance >= 0 ? '+' : ''}${balance.toFixed(1)}`;
             balanceEl.style.color = balance >= 0 ? '#42B96E' : '#f44336';

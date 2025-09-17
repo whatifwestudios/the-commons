@@ -49,6 +49,7 @@ class MultiplayerManager {
                     this.handleConnectionLoss();
                 }
             }
+            this.cleanupPendingActions();
         }, 10000);
         
         // Send periodic heartbeats
@@ -294,6 +295,34 @@ class MultiplayerManager {
                 console.warn('⚠️ Action conflict detected:', data.conflict);
                 this.handleConflict(data.conflict);
                 break;
+            case 'AUCTION_CREATED':
+                console.log('옥션 생성', data.listing);
+                this.game.actionManager.marketplace.listings.push(data.listing);
+                this.game.updateActionDisplay();
+                this.game.updateMarketplaceModal();
+                this.game.switchMarketplaceTab('marketplace');
+                break;
+            case 'AUCTION_ENDED':
+                console.log('Auction ended', data.listing);
+                const listing = this.game.actionManager.marketplace.listings.find(l => l.id === data.listingId);
+                if (listing) {
+                    Object.assign(listing, data.listing);
+                }
+                this.game.updatePlayerStats();
+                this.game.updateActionDisplay();
+                this.game.updateMarketplaceModal();
+                this.game.refreshMarketplaceListings();
+                break;
+            case 'AUCTION_UPDATED':
+                console.log('Auction updated', data.listing);
+                const updatedListing = this.game.actionManager.marketplace.listings.find(l => l.id === data.listingId);
+                if (updatedListing) {
+                    Object.assign(updatedListing, data.listing);
+                }
+                this.game.updatePlayerStats();
+                this.game.updateMarketplaceModal();
+                this.game.refreshMarketplaceListings();
+                break;
                 
             default:
                 console.log('📨 Received server message:', data);
@@ -504,7 +533,7 @@ class MultiplayerManager {
                 this.pendingActions.delete(enhancedAction.id);
                 
                 // Handle specific error types
-                if (result.error === 'VERSION_TOO_OLD') {
+                if (result.error === 'VERSION_TOO_OLD' || result.error === 'VERSION_MISMATCH') {
                     this.requestFullSync();
                 } else if (result.error === 'PARCEL_ALREADY_OWNED') {
                     this.showNotification(result.message, 'warning');
@@ -767,6 +796,9 @@ class IsometricGrid {
         // Initialize performance monitoring
         this.perfMonitor = new PerformanceMonitor();
         this.perfMonitor.initDisplay();
+        
+        // Initialize server stats monitoring
+        this.serverStatsMonitor = new ServerStatsMonitor();
         
         // Initialize UI Manager for DOM caching
         this.uiManager = new UIManager();
@@ -1239,12 +1271,12 @@ class IsometricGrid {
     }
     
     initializePanelStates() {
-        // Ensure players panel is collapsed on game start (only visible on players layer)
+        // Hide players panel completely on game start (only shown on players layer)
         const playersSection = document.querySelector('[data-target="players-panel"]');
         if (playersSection) {
             const parentSection = playersSection.parentElement;
-            if (parentSection && !parentSection.classList.contains('collapsed')) {
-                this.closeSidebarSection(parentSection);
+            if (parentSection) {
+                parentSection.style.display = 'none';
             }
         }
         
@@ -1383,13 +1415,6 @@ class IsometricGrid {
             expiresAt: endOfMonth,
             month: this.gameDate.month
         };
-        
-        // Deduct actions from seller
-        this.actionManager.currentActions -= quantity;
-        this.updateActionDisplay();
-        
-        // Add to marketplace
-        this.actionManager.marketplace.listings.push(listing);
         
         // Broadcast to other players
         if (this.multiplayerManager) {
@@ -1583,34 +1608,22 @@ class IsometricGrid {
             this.showNotification('Listing not available', 'error');
             return;
         }
-        
+
         // Check if current player is the seller
         const currentPlayerId = (this.multiplayerManager && this.multiplayerManager.playerId) ? this.multiplayerManager.playerId : 'player';
         if (listing.seller === currentPlayerId) {
             this.showNotification('Cannot bid on your own listing', 'error');
             return;
         }
-        
-        // Bidding increment - can exceed buy-now price
+
         const bidIncrement = Math.max(100, Math.round(listing.reservePrice * 0.1));
         const newBid = Math.max(listing.reservePrice, listing.currentBid + bidIncrement);
-        
+
         if (this.playerCash < newBid) {
-            this.showNotification(`Insufficient funds! Need $${newBid.toLocaleString()}`, 'error');
+            this.showNotification(`Insufficient funds! Need ${newBid.toLocaleString()}`, 'error');
             return;
         }
-        
-        // Check if bid is in last 30 seconds and extend timer
-        const timeRemaining = listing.expiresAt - Date.now();
-        if (timeRemaining < 30000) { // Less than 30 seconds remaining
-            listing.expiresAt += 5000; // Add 5 seconds
-            console.log('🕐 Bid in last 30 seconds - extending auction by 5 seconds');
-        }
-        
-        listing.currentBid = newBid;
-        listing.highBidder = currentPlayerId;
-        
-        // Broadcast bid to other players
+
         if (this.multiplayerManager) {
             this.multiplayerManager.broadcastAction({
                 type: 'BID_ON_LISTING',
@@ -1619,9 +1632,6 @@ class IsometricGrid {
                 timestamp: Date.now()
             });
         }
-        
-        this.showNotification(`Bid placed: $${newBid.toLocaleString()}`, 'success');
-        this.refreshMarketplaceListings();
     }
     
     buyNowListing(listingId) {
@@ -1642,15 +1652,6 @@ class IsometricGrid {
             this.showNotification(`Insufficient funds! Need $${listing.buyNowPrice.toLocaleString()}`, 'error');
             return;
         }
-        
-        // Complete the purchase
-        this.playerCash -= listing.buyNowPrice;
-        this.actionManager.currentActions += listing.quantity;
-        
-        // Mark listing as sold
-        listing.status = 'sold';
-        listing.finalPrice = listing.buyNowPrice;
-        listing.winner = currentPlayerId;
         
         // Broadcast purchase to other players
         if (this.multiplayerManager) {
@@ -1684,39 +1685,14 @@ class IsometricGrid {
             this.showNotification('Listing not available', 'error');
             return;
         }
-        
+
         // Check if current player is the seller
         const currentPlayerId = (this.multiplayerManager && this.multiplayerManager.playerId) ? this.multiplayerManager.playerId : 'player';
         if (listing.seller !== currentPlayerId) {
             this.showNotification('Can only cancel your own listings', 'error');
             return;
         }
-        
-        let fee = 0;
-        
-        // If there are bids, charge the End It Now fee to cancel
-        if (listing.currentBid > 0) {
-            fee = this.calculateEndItNowFee(listing);
-            
-            if (this.playerCash < fee) {
-                this.showNotification(`Cannot cancel: insufficient funds for $${fee.toLocaleString()} fee`, 'error');
-                return;
-            }
-            
-            if (!confirm(`Cancel auction for $${fee.toLocaleString()} fee? Actions will be returned but will expire at month end.`)) {
-                return;
-            }
-            
-            // Charge the fee
-            this.playerCash -= fee;
-            this.governance.unallocatedFunds += fee; // Fee goes to city treasury
-        }
-        
-        // Cancel the listing
-        listing.status = 'cancelled';
-        this.actionManager.currentActions += listing.quantity; // Return actions to seller
-        
-        // Broadcast cancellation to other players
+
         if (this.multiplayerManager) {
             this.multiplayerManager.broadcastAction({
                 type: 'CANCEL_LISTING',
@@ -1724,10 +1700,6 @@ class IsometricGrid {
                 timestamp: Date.now()
             });
         }
-        
-        this.showNotification(`Listing cancelled: ${listing.quantity} actions returned${fee > 0 ? ` (Fee: $${fee.toLocaleString()})` : ''}`, 'info');
-        this.updateActionDisplay();
-        this.refreshMarketplaceListings();
     }
     
     endAuctionNow(listingId) {
@@ -1766,8 +1738,6 @@ class IsometricGrid {
         }
         
         // Process the early ending
-        this.playerCash -= fee; // Pay fee to treasury
-        this.playerCash += listing.currentBid - fee; // Receive bid minus fee
         
         // Add fee to city treasury
         if (this.governance && this.governance.unallocatedFunds !== undefined) {
@@ -3882,6 +3852,24 @@ class IsometricGrid {
                     content += `🏛️ <span style="color: #9E9E9E">Owned by ${ownerName}</span><br>`;
                 } else {
                     content += '🏛️ <span style="color: #9E9E9E">City Owned</span><br>';
+                }
+                
+                // Calculate and show efficiency percentage for buildings with needs
+                const efficiencyInfo = this.calculateBuildingEfficiencyPercentage(row, col);
+                if (efficiencyInfo) {
+                    const effColor = efficiencyInfo.percentage >= 80 ? '#4CAF50' : 
+                                    efficiencyInfo.percentage >= 60 ? '#FFC107' :
+                                    efficiencyInfo.percentage >= 40 ? '#FF9800' : '#F44336';
+                    content += `⚙️ <span style="color: ${effColor}">Efficiency: ${Math.round(efficiencyInfo.percentage)}%</span><br>`;
+                    
+                    // Show unsatisfied needs if any
+                    if (efficiencyInfo.unsatisfiedNeeds.length > 0) {
+                        content += '<span style="color: #888; font-size: 0.9em;">Needs: ';
+                        content += efficiencyInfo.unsatisfiedNeeds.map(need => 
+                            `${need.name} (${Math.round(need.satisfaction * 100)}%)`
+                        ).join(', ');
+                        content += '</span><br>';
+                    }
                 }
                 
                 // Show performance score and economics for ALL buildings (full transparency)
@@ -6841,6 +6829,107 @@ class IsometricGrid {
         return this.buildingManager.getBuildingCategory(buildingId);
     }
     
+    calculateBuildingEfficiencyPercentage(row, col) {
+        const parcel = this.grid[row]?.[col];
+        if (!parcel?.building) return null;
+        
+        const building = this.buildingManager.getBuildingById(parcel.building);
+        if (!building) return null;
+        
+        // Get building needs from definition
+        const needs = [];
+        const needsMap = new Map();
+        
+        // Check for workers need
+        if (building.population?.populationRequired > 0) {
+            const need = { 
+                type: 'workers', 
+                required: building.population.populationRequired,
+                name: 'Workers'
+            };
+            needs.push(need);
+            needsMap.set('workers', need);
+        }
+        
+        // Check for energy need
+        if (building.consumption?.energy > 0) {
+            const need = {
+                type: 'energy',
+                required: building.consumption.energy,
+                name: 'Energy'
+            };
+            needs.push(need);
+            needsMap.set('energy', need);
+        }
+        
+        // Check for food need
+        if (building.consumption?.food > 0) {
+            const need = {
+                type: 'food',
+                required: building.consumption.food,
+                name: 'Food'
+            };
+            needs.push(need);
+            needsMap.set('food', need);
+        }
+        
+        // If no needs, building is 100% efficient
+        if (needs.length === 0) return null;
+        
+        // Get efficiency data from JEFH system
+        const key = `${row},${col}`;
+        const efficiencyData = this.buildingEfficiencies?.get(key);
+        
+        // Calculate weighted efficiency percentage
+        let totalEfficiency = 0;
+        const unsatisfiedNeeds = [];
+        
+        // Equal weight for each type of need
+        const weightPerNeed = 100 / needs.length;
+        
+        needs.forEach(need => {
+            let satisfaction = 0;
+            
+            // Map JEFH categories to our needs
+            let jefhCategory = need.type;
+            if (need.type === 'workers') {
+                // Workers are tracked as 'housing' in JEFH for commercial/education buildings
+                const isWorkplace = this.buildingCategories.normalize(building.category) === 'commercial' || 
+                                  building.category === 'education';
+                jefhCategory = isWorkplace ? 'housing' : 'jobs';
+            }
+            
+            // Get satisfaction from JEFH data
+            if (efficiencyData?.needs?.[jefhCategory]) {
+                const jefhNeed = efficiencyData.needs[jefhCategory];
+                satisfaction = jefhNeed.satisfaction || 0;
+                
+                // For partial satisfaction, scale by how much is fulfilled
+                if (jefhNeed.demand && jefhNeed.fulfilled !== undefined) {
+                    const partialSatisfaction = jefhNeed.fulfilled / jefhNeed.demand;
+                    satisfaction = Math.min(1, partialSatisfaction);
+                }
+            }
+            
+            // Add weighted contribution to total efficiency
+            totalEfficiency += satisfaction * weightPerNeed;
+            
+            // Track unsatisfied needs
+            if (satisfaction < 1) {
+                unsatisfiedNeeds.push({
+                    name: need.name,
+                    satisfaction: satisfaction,
+                    deficit: need.required * (1 - satisfaction)
+                });
+            }
+        });
+        
+        return {
+            percentage: Math.max(0, Math.min(100, totalEfficiency)),
+            unsatisfiedNeeds: unsatisfiedNeeds.sort((a, b) => a.satisfaction - b.satisfaction)
+        };
+    }
+    
     getBuildingEfficiencyInfo(row, col) {
         const key = `${row},${col}`;
         const efficiencyData = this.buildingEfficiencies?.get(key);
@@ -7917,10 +8006,18 @@ class IsometricGrid {
             if (!vitalitySection.classList.contains('collapsed')) {
                 this.closeSidebarSection(vitalitySection);
             }
+            
+            // Remove players panel completely (not just hide)
+            if (playersSection) {
+                playersSection.style.display = 'none';
+            }
         } else if (layerName === 'players') {
-            // Entering players view - open players panel, update player list
-            this.openSidebarSection(playersSection);
-            this.updatePlayersList();
+            // Entering players view - show and open players panel, update player list
+            if (playersSection) {
+                playersSection.style.display = 'block';
+                this.openSidebarSection(playersSection);
+                this.updatePlayersList();
+            }
             
             // Auto-close vitality and mobility panels when entering players view
             if (!vitalitySection.classList.contains('collapsed')) {
@@ -7938,9 +8035,9 @@ class IsometricGrid {
                 this.closeSidebarSection(mobilitySection);
             }
             
-            // Auto-close players panel when leaving players view
-            if (playersSection && !playersSection.classList.contains('collapsed')) {
-                this.closeSidebarSection(playersSection);
+            // Remove players panel completely (not just hide)
+            if (playersSection) {
+                playersSection.style.display = 'none';
             }
         }
     }
@@ -9753,7 +9850,7 @@ class IsometricGrid {
             
             const imageY = offsetY + this.tileHeight/2 - baseDrawHeight + yOffset;
             
-            // Apply construction animation - bottom-up reveal
+            // Apply construction animation - bottom-up reveal with desaturation
             if (constructionProgress < 1.0) {
                 // Bottom-up reveal: show only the bottom portion based on progress
                 const revealHeight = Math.floor(baseDrawHeight * constructionProgress);
@@ -9766,12 +9863,14 @@ class IsometricGrid {
                     // Track pixel row timestamps for fade-in effect
                     this.updatePixelRowTimestamps(row, col, pixelRowsToShow, totalPixelRows);
                     
-                    // Debug construction animation
-                    if (Math.random() < 0.05) {
-                    }
+                    // Apply desaturation, sepia and dimming for under-construction look
+                    this.ctx.save();
+                    this.ctx.filter = 'brightness(0.6) saturate(0.3) sepia(0.4)';
                     
                     // Lightweight fade-in effect using gradient mask
                     this.drawConstructionWithGradientMask(img, offsetX, offsetY, baseDrawWidth, baseDrawHeight, imageY, constructionProgress, row, col);
+                    
+                    this.ctx.restore();
                 }
             } else {
                 // Draw at full height (construction complete)
@@ -9893,15 +9992,17 @@ class IsometricGrid {
             const totalPixelRows = Math.floor(height);
             const pixelRowsToShow = Math.floor(totalPixelRows * constructionProgress);
             
-            // Debug simple construction animation
-            if (Math.random() < 0.05) {
-            }
-            
             if (revealHeight > 0) {
+                // Apply desaturation for under-construction look
+                this.ctx.save();
+                this.ctx.filter = 'brightness(0.6) saturate(0.3) sepia(0.4)';
+                
                 // Calculate destination position (aligned to bottom)
                 const destY = buildingY + height - revealHeight;
                 
                 this.ctx.fillRect(offsetX - width/2, destY, width, revealHeight);
+                
+                this.ctx.restore();
             }
         } else {
             // Draw full height (construction complete)
@@ -11631,6 +11732,28 @@ document.addEventListener('DOMContentLoaded', () => {
     const game = new IsometricGrid(canvas, 12);
     window.game = game; // Make game accessible globally right away
     
+    // Load leaderboard on setup screen
+    loadCityLeaderboard();
+    
+    // Handle browser refresh/close as permanent departure
+    window.addEventListener('beforeunload', (event) => {
+        if (game.multiplayerManager && game.multiplayerManager.isConnected && game.multiplayerManager.playerId) {
+            // Send permanent departure signal
+            try {
+                // Use synchronous request for immediate departure
+                const xhr = new XMLHttpRequest();
+                xhr.open('POST', '/api/permanent-departure', false);
+                xhr.setRequestHeader('Content-Type', 'application/json');
+                xhr.send(JSON.stringify({
+                    playerId: game.multiplayerManager.playerId,
+                    reason: 'browser_close'
+                }));
+            } catch (error) {
+                console.log('Failed to send departure signal:', error);
+            }
+        }
+    });
+    
     // Player setup functionality
     const setupScreen = document.getElementById('setup-screen');
     const gameInterface = document.getElementById('game-interface');
@@ -11795,18 +11918,21 @@ document.addEventListener('DOMContentLoaded', () => {
         const transitionOverlay = document.getElementById('transition-overlay');
         const transitionText = document.getElementById('transition-text');
         
-        // Start cinematic transition with overlapping timing
+        // Start cinematic transition - complete fade to black
         setupScreen.classList.add('fade-out');
         
-        // Start transition overlay slightly before setup finishes fading (overlap)
+        // Start transition overlay as setup begins fading (perfect overlap)
         setTimeout(() => {
             transitionOverlay.classList.add('active');
-        }, 150); // Start while setup is still fading
+            transitionText.style.animation = 'welcomeGlow 3s ease-in-out infinite alternate';
+        }, 150); // Start earlier for seamless transition
         
-        // Hide setup screen as it finishes fading
+        // Hide setup screen completely as it finishes fading
         setTimeout(() => {
             setupScreen.style.setProperty('display', 'none', 'important');
-        }, 300);
+            setupScreen.classList.add('hidden');
+            setupScreen.classList.remove('visible', 'fade-out');
+        }, 600); // Match the fade-out duration exactly
         
         // Enhanced loading sequence with better messages
         const messages = [
@@ -11861,32 +11987,40 @@ document.addEventListener('DOMContentLoaded', () => {
                 game.render();
                 game.scheduleRender();
             }, 50); // Small delay to ensure layout is complete
-        }, 700);
+        }, 2800); // Extended timing for thoughtful experience
         
-        // Start game fade-in (overlaps with final message)
+        // Begin game interface fade-in (distinct stage)
         setTimeout(() => {
-            // clearInterval(messageInterval);
             gameInterface.classList.add('fade-in');
-        }, 900);
+        }, 3200);
         
-        // Begin overlay fade-out (game is fading in)
+        // Begin overlay fade-out (game UI is now visible)
         setTimeout(() => {
             transitionOverlay.classList.remove('active');
-        }, 1000);
+        }, 3600);
         
-        // Complete transition cleanup
+        // Complete transition cleanup - ensure no flashing
         setTimeout(() => {
             transitionOverlay.style.display = 'none';
+            transitionText.style.animation = ''; // Stop glow animation
             
             // Ensure grid is fully drawn
             game.render();
             
-            // Add canvas fade-in with subtle zoom immediately
+            // Add canvas fade-in with subtle zoom effect
             const canvas = document.getElementById('gameCanvas');
             if (canvas) {
-                canvas.classList.add('loaded');
+                canvas.style.opacity = '0';
+                canvas.style.transform = 'scale(1.05)';
+                canvas.style.transition = 'all 0.8s cubic-bezier(0.25, 0.46, 0.45, 0.94)';
+                
+                // Animate grid into place after UI is settled
+                setTimeout(() => {
+                    canvas.style.opacity = '1';
+                    canvas.style.transform = 'scale(1)';
+                }, 200);
             }
-        }, 1200);
+        }, 4000); // Extended timing for elegance
         
         // Configure the existing game object with player settings
         game.playerSettings = playerSettings;
@@ -11897,7 +12031,7 @@ document.addEventListener('DOMContentLoaded', () => {
             playerBtn.innerHTML = `${playerName.toUpperCase()}<span class="indicator">▼</span>`;
         }
 
-        // Start the game after transition completes (faster)
+        // Start the game after transition completes - extended for elegance
         setTimeout(() => {
             game.startGame();
             
@@ -11910,7 +12044,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (window.setupGovernanceButton) {
                 window.setupGovernanceButton();
             }
-        }, 1200); // Faster transition complete time
+        }, 4200); // Extended timing to match transition cleanup
         
         // Setup road adjustment controls
         // Road controls removed - segments should naturally fit without adjustments
@@ -11936,7 +12070,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
     
-    // Function to show the lobby (Phase 2)
+    // Function to show the lobby (Phase 2) - Buttery smooth transitions
     function showLobby() {
         const setupScreen = document.getElementById('setup-screen');
         const waitingRoom = document.getElementById('waiting-room');
@@ -11946,17 +12080,34 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
         
-        // Clean class-based state management
+        // Stage 1: Fade out setup screen with blur
         if (setupScreen) {
-            setupScreen.classList.add('hidden');
-            setupScreen.classList.remove('visible');
+            setupScreen.classList.add('fade-out');
+            
+            // Stage 2: Hide setup and show lobby after fade completes
+            setTimeout(() => {
+                setupScreen.style.setProperty('display', 'none', 'important');
+                setupScreen.classList.add('hidden');
+                setupScreen.classList.remove('visible', 'fade-out');
+                
+                // Stage 3: Prepare and fade in lobby
+                waitingRoom.classList.remove('hidden');
+                waitingRoom.classList.add('visible', 'fade-in');
+                
+                // Clean up fade-in class after animation completes
+                setTimeout(() => {
+                    waitingRoom.classList.remove('fade-in');
+                }, 700); // Match fade-in duration
+                
+                // Initialize lobby functionality
+                initializeLobby();
+            }, 600); // Match fade-out duration
+        } else {
+            // Fallback if no setup screen
+            waitingRoom.classList.remove('hidden');
+            waitingRoom.classList.add('visible');
+            initializeLobby();
         }
-        
-        waitingRoom.classList.remove('hidden');
-        waitingRoom.classList.add('visible');
-        
-        // Initialize lobby functionality
-        initializeLobby();
     }
     
     // Initialize lobby functionality
@@ -12086,7 +12237,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
     
-    // Function to hide lobby and return to setup
+    // Function to hide lobby and return to setup - Buttery smooth transitions
     function hideLobby() {
         // Disconnect from lobby first
         disconnectFromWaitingRoom();
@@ -12094,13 +12245,25 @@ document.addEventListener('DOMContentLoaded', () => {
         const setupScreen = document.getElementById('setup-screen');
         const waitingRoom = document.getElementById('waiting-room');
         
-        // Clean class-based state management
+        // Stage 1: Fade out lobby with reverse animation
         if (waitingRoom) {
-            waitingRoom.classList.add('hidden');
-            waitingRoom.classList.remove('visible');
-        }
-        
-        if (setupScreen) {
+            waitingRoom.style.animation = 'lobbyFadeIn 0.5s cubic-bezier(0.25, 0.46, 0.45, 0.94) reverse forwards';
+            
+            // Stage 2: Hide lobby and show setup after fade completes
+            setTimeout(() => {
+                waitingRoom.classList.add('hidden');
+                waitingRoom.classList.remove('visible', 'fade-in');
+                waitingRoom.style.animation = '';
+                
+                // Stage 3: Prepare and show setup screen
+                if (setupScreen) {
+                    setupScreen.style.setProperty('display', 'flex', 'important');
+                    setupScreen.classList.remove('hidden');
+                    setupScreen.classList.add('visible');
+                }
+            }, 500); // Match reverse animation duration
+        } else if (setupScreen) {
+            // Fallback if no lobby
             setupScreen.classList.remove('hidden');
             setupScreen.classList.add('visible');
         }
@@ -12681,6 +12844,17 @@ document.addEventListener('DOMContentLoaded', () => {
         if (window.game && window.game.perfMonitor) {
             window.game.perfMonitor.displayMode = mode;
             window.game.perfMonitor.updateDisplay();
+        }
+    });
+    
+    // Server Stats Monitor control in devtools
+    document.getElementById('server-stats-toggle').addEventListener('change', (e) => {
+        if (window.game && window.game.serverStatsMonitor) {
+            if (e.target.checked) {
+                window.game.serverStatsMonitor.show();
+            } else {
+                window.game.serverStatsMonitor.hide();
+            }
         }
     });
     
@@ -14350,6 +14524,79 @@ function setupRoadControls(game) {
     });
 }
 
+// City Leaderboard Functionality
+async function loadCityLeaderboard() {
+    const leaderboardContent = document.getElementById('leaderboard-content');
+    if (!leaderboardContent) return;
+    
+    try {
+        // Show loading state
+        leaderboardContent.innerHTML = `
+            <div class="leaderboard-loading">
+                <div class="loading-spinner"></div>
+                <span>Loading rankings...</span>
+            </div>
+        `;
+        
+        // Fetch leaderboard data from server
+        const response = await fetch('/api/leaderboard?limit=10');
+        const data = await response.json();
+        
+        if (data.success && data.leaderboard && data.leaderboard.length > 0) {
+            // Display enhanced leaderboard
+            const leaderboardHtml = `
+                <div class="leaderboard-list">
+                    ${data.leaderboard.map((city) => `
+                        <div class="leaderboard-item">
+                            <div class="leaderboard-rank">#${city.rank}</div>
+                            <div class="leaderboard-city">
+                                <div class="leaderboard-name">${city.cityName || 'Unnamed City'}</div>
+                                <div class="leaderboard-meta">
+                                    <span class="leaderboard-date">${city.endDate}</span>
+                                    <span class="leaderboard-duration">${city.durationFormatted}</span>
+                                    <span class="leaderboard-players">${city.playerCount} player${city.playerCount !== 1 ? 's' : ''}</span>
+                                </div>
+                                <div class="leaderboard-strategy">${formatStrategy(city.strategy)}</div>
+                            </div>
+                            <div class="leaderboard-score">${city.score}</div>
+                        </div>
+                    `).join('')}
+                </div>
+            `;
+            leaderboardContent.innerHTML = leaderboardHtml;
+        } else {
+            // No data available
+            leaderboardContent.innerHTML = `
+                <div class="leaderboard-loading">
+                    <span style="color: #666;">No completed cities yet</span>
+                    <span style="color: #444; font-size: 12px;">Be the first to build a thriving city!</span>
+                </div>
+            `;
+        }
+    } catch (error) {
+        console.error('Failed to load leaderboard:', error);
+        leaderboardContent.innerHTML = `
+            <div class="leaderboard-loading">
+                <span style="color: #666;">Unable to load rankings</span>
+                <span style="color: #444; font-size: 12px;">Check your connection</span>
+            </div>
+        `;
+    }
+}
 
+// Helper function to format strategy names
+function formatStrategy(strategy) {
+    const strategyMap = {
+        'energy_focused': 'Energy Focused',
+        'agricultural': 'Agricultural',
+        'commercial_focused': 'Commercial',
+        'residential_focused': 'Residential',
+        'balanced': 'Balanced',
+        'mixed': 'Mixed',
+        'none': 'No Strategy',
+        'unknown': 'Unknown'
+    };
+    return strategyMap[strategy] || strategy;
+}
 
 });

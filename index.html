@@ -14,7 +14,8 @@
             left: 0 !important;
             right: 0 !important;
             bottom: 0 !important;
-            background: #0f0f0f !important;
+            background: rgba(0, 0, 0, 0.85) !important;
+            backdrop-filter: blur(15px) !important;
             display: flex !important;
             align-items: center !important;
             justify-content: center !important;
@@ -24,41 +25,66 @@
         @keyframes setupFadeIn {
             to { opacity: 1; }
         }
-        .setup-content {
-            background: #141414 !important;
-            border: 1px solid #333333 !important;
-            border-radius: 6px !important;
-            padding: 32px 40px !important;
-            max-width: 720px !important;
-            width: 85vw !important;
+        .setup-container {
+            display: flex !important;
+            width: 90vw !important;
+            max-width: 1200px !important;
+            height: 85vh !important;
+            min-height: 600px !important;
+            background: linear-gradient(145deg, #111111, #0a0a0a) !important;
+            border: 1px solid #2a2a2a !important;
+            border-radius: 16px !important;
+            overflow: hidden !important;
             box-shadow: 
-                0 8px 32px rgba(0, 0, 0, 0.6),
-                0 1px 0 rgba(82, 199, 126, 0.2) !important;
+                0 25px 50px rgba(0, 0, 0, 0.6),
+                0 0 0 1px rgba(255, 255, 255, 0.05),
+                inset 0 1px 0 rgba(255, 255, 255, 0.1) !important;
             transform: translateY(0) !important;
+        }
+        
+        .setup-left-panel {
+            flex: 2 !important;
+            padding: 32px !important;
+            border-right: 1px solid rgba(42, 42, 42, 0.6) !important;
+            display: flex !important;
+            flex-direction: column !important;
+            background: linear-gradient(135deg, rgba(26, 26, 26, 0.3), rgba(20, 20, 20, 0.1)) !important;
+            overflow-y: auto !important;
+        }
+        
+        .setup-right-panel {
+            flex: 3 !important;
+            padding: 32px !important;
+            display: flex !important;
+            flex-direction: column !important;
+            background: linear-gradient(135deg, rgba(20, 20, 20, 0.1), rgba(26, 26, 26, 0.3)) !important;
         }
         @keyframes setupSlideUp {
             to { transform: translateY(0); }
         }
-        .setup-content h2 {
+        .setup-header h2 {
             color: #ffffff !important;
-            font-size: 28px !important;
+            font-size: 32px !important;
             font-weight: 600 !important;
-            text-align: center !important;
-            margin: 0 0 8px 0 !important;
+            margin: 0 0 12px 0 !important;
             letter-spacing: -0.02em !important;
+            background: linear-gradient(135deg, #ffffff, #cccccc) !important;
+            -webkit-background-clip: text !important;
+            -webkit-text-fill-color: transparent !important;
+            background-clip: text !important;
         }
-        .setup-content p {
+        .setup-header p {
             color: #999999 !important;
-            text-align: center !important;
-            font-size: 14px !important;
-            line-height: 1.4 !important;
-            margin: 0 0 24px 0 !important;
+            font-size: 16px !important;
+            line-height: 1.5 !important;
+            margin: 0 0 32px 0 !important;
             font-weight: 400 !important;
         }
         .setup-form {
-            display: grid !important;
-            grid-template-columns: 1fr 1fr !important;
-            gap: 24px 32px !important;
+            display: flex !important;
+            flex-direction: column !important;
+            gap: 24px !important;
+            flex: 1 !important;
         }
         .setup-field {
             display: flex !important;
@@ -142,10 +168,9 @@
             box-shadow: 0 2px 8px rgba(82, 199, 126, 0.3) !important;
         }
         .setup-preview {
-            grid-column: 1 / -1 !important;
             display: flex !important;
             align-items: center !important;
-            justify-content: space-between !important;
+            justify-content: flex-start !important;
             padding: 16px 20px !important;
             background: #1a1a1a !important;
             border: 1px solid #333333 !important;
@@ -218,14 +243,589 @@
             display: none !important;
         }
         
+        .setup-actions {
+            margin-top: auto !important;
+        }
+        
+        .setup-features {
+            display: flex !important;
+            flex-direction: column !important;
+            gap: 12px !important;
+            margin-bottom: 32px !important;
+        }
+        
+        .feature-item {
+            display: flex !important;
+            align-items: center !important;
+            gap: 12px !important;
+            color: #cccccc !important;
+            font-size: 14px !important;
+            font-weight: 400 !important;
+        }
+        
+        .feature-icon {
+            font-size: 16px !important;
+            width: 20px !important;
+            text-align: center !important;
+        }
+        
+        .enter-lobby-btn {
+            width: 100% !important;
+            padding: 16px 24px !important;
+            background: linear-gradient(135deg, #52C77E, #4CAF50) !important;
+            border: none !important;
+            border-radius: 8px !important;
+            color: #ffffff !important;
+            font-size: 16px !important;
+            font-weight: 600 !important;
+            cursor: pointer !important;
+            transition: all 0.2s ease !important;
+            display: flex !important;
+            align-items: center !important;
+            justify-content: space-between !important;
+            box-shadow: 0 4px 12px rgba(82, 199, 126, 0.3) !important;
+        }
+        
+        .enter-lobby-btn:hover {
+            transform: translateY(-2px) !important;
+            box-shadow: 0 6px 20px rgba(82, 199, 126, 0.4) !important;
+        }
+        
+        .btn-arrow {
+            font-size: 18px !important;
+            transition: transform 0.2s ease !important;
+        }
+        
+        .enter-lobby-btn:hover .btn-arrow {
+            transform: translateX(4px) !important;
+        }
+        
+        .leaderboard-section {
+            flex: 1 !important;
+            display: flex !important;
+            flex-direction: column !important;
+        }
+        
+        .leaderboard-header h3 {
+            color: #ffffff !important;
+            font-size: 24px !important;
+            font-weight: 600 !important;
+            margin: 0 0 8px 0 !important;
+            background: linear-gradient(135deg, #ffffff, #cccccc) !important;
+            -webkit-background-clip: text !important;
+            -webkit-text-fill-color: transparent !important;
+            background-clip: text !important;
+        }
+        
+        .leaderboard-header p {
+            color: #999999 !important;
+            font-size: 14px !important;
+            margin: 0 0 24px 0 !important;
+        }
+        
+        .leaderboard-content {
+            flex: 1 !important;
+            background: rgba(26, 26, 26, 0.6) !important;
+            border: 1px solid rgba(42, 42, 42, 0.6) !important;
+            border-radius: 8px !important;
+            padding: 20px !important;
+            min-height: 400px !important;
+        }
+        
+        .leaderboard-loading {
+            display: flex !important;
+            flex-direction: column !important;
+            align-items: center !important;
+            justify-content: center !important;
+            height: 100% !important;
+            color: #666666 !important;
+            gap: 12px !important;
+        }
+        
+        .loading-spinner {
+            width: 32px !important;
+            height: 32px !important;
+            border: 2px solid rgba(82, 199, 126, 0.2) !important;
+            border-top: 2px solid #52C77E !important;
+            border-radius: 50% !important;
+            animation: spin 1s linear infinite !important;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        @keyframes welcomeGlow {
+            0% { 
+                text-shadow: 0 0 15px rgba(82, 199, 126, 0.6), 0 0 30px rgba(82, 199, 126, 0.4), 0 0 45px rgba(82, 199, 126, 0.2);
+                transform: scale(1);
+            }
+            50% {
+                text-shadow: 0 0 25px rgba(82, 199, 126, 0.9), 0 0 50px rgba(82, 199, 126, 0.6), 0 0 75px rgba(82, 199, 126, 0.3);
+                transform: scale(1.01);
+            }
+            100% { 
+                text-shadow: 0 0 15px rgba(82, 199, 126, 0.6), 0 0 30px rgba(82, 199, 126, 0.4), 0 0 45px rgba(82, 199, 126, 0.2);
+                transform: scale(1);
+            }
+        }
+        
+        .leaderboard-list {
+            display: flex !important;
+            flex-direction: column !important;
+            gap: 8px !important;
+        }
+        
+        .leaderboard-item {
+            display: flex !important;
+            align-items: center !important;
+            justify-content: space-between !important;
+            padding: 16px !important;
+            background: rgba(20, 20, 20, 0.8) !important;
+            border: 1px solid rgba(42, 42, 42, 0.4) !important;
+            border-radius: 8px !important;
+            transition: all 0.2s ease !important;
+            margin-bottom: 8px !important;
+        }
+        
+        .leaderboard-item:hover {
+            background: rgba(26, 26, 26, 0.8) !important;
+            border-color: rgba(82, 199, 126, 0.3) !important;
+            transform: translateY(-1px) !important;
+        }
+        
+        .leaderboard-rank {
+            color: #52C77E !important;
+            font-weight: 700 !important;
+            font-size: 16px !important;
+            min-width: 32px !important;
+            text-align: center !important;
+        }
+        
+        .leaderboard-city {
+            flex: 1 !important;
+            margin-left: 16px !important;
+            display: flex !important;
+            flex-direction: column !important;
+            gap: 4px !important;
+        }
+        
+        .leaderboard-name {
+            color: #ffffff !important;
+            font-weight: 600 !important;
+            font-size: 15px !important;
+            margin-bottom: 2px !important;
+        }
+        
+        .leaderboard-meta {
+            display: flex !important;
+            gap: 12px !important;
+            align-items: center !important;
+        }
+        
+        .leaderboard-date {
+            color: #cccccc !important;
+            font-size: 11px !important;
+            font-weight: 500 !important;
+        }
+        
+        .leaderboard-duration {
+            color: #999999 !important;
+            font-size: 11px !important;
+        }
+        
+        .leaderboard-players {
+            color: #999999 !important;
+            font-size: 11px !important;
+        }
+        
+        .leaderboard-strategy {
+            color: #52C77E !important;
+            font-size: 10px !important;
+            text-transform: uppercase !important;
+            letter-spacing: 0.5px !important;
+            font-weight: 500 !important;
+            opacity: 0.8 !important;
+        }
+        
+        .leaderboard-score {
+            color: #ffffff !important;
+            font-weight: 700 !important;
+            font-size: 18px !important;
+            text-align: right !important;
+            min-width: 60px !important;
+            background: linear-gradient(135deg, #52C77E, #4CAF50) !important;
+            -webkit-background-clip: text !important;
+            -webkit-text-fill-color: transparent !important;
+            background-clip: text !important;
+        }
+        
+        /* Waiting Room / Lobby Modal Styling */
+        .waiting-room {
+            position: fixed !important;
+            top: 0 !important;
+            left: 0 !important;
+            right: 0 !important;
+            bottom: 0 !important;
+            background: rgba(0, 0, 0, 0.8) !important;
+            backdrop-filter: blur(15px) !important;
+            display: flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+            z-index: 99998 !important;
+            opacity: 1 !important;
+        }
+        
+        .lobby-modal-content {
+            background: linear-gradient(145deg, #111111, #0a0a0a) !important;
+            border: 1px solid #2a2a2a !important;
+            border-radius: 16px !important;
+            width: 90vw !important;
+            max-width: 1200px !important;
+            height: 85vh !important;
+            min-height: 600px !important;
+            overflow: hidden !important;
+            box-shadow: 
+                0 25px 50px rgba(0, 0, 0, 0.6),
+                0 0 0 1px rgba(255, 255, 255, 0.05),
+                inset 0 1px 0 rgba(255, 255, 255, 0.1) !important;
+            display: flex !important;
+            flex-direction: column !important;
+        }
+        
+        .lobby-header {
+            display: flex !important;
+            align-items: center !important;
+            justify-content: space-between !important;
+            padding: 14px 20px !important;
+            border-bottom: 1px solid rgba(42, 42, 42, 0.4) !important;
+            background: linear-gradient(135deg, rgba(26, 26, 26, 0.7), rgba(20, 20, 20, 0.8)) !important;
+            backdrop-filter: blur(8px) !important;
+        }
+        
+        .lobby-header h3 {
+            margin: 0 !important;
+            font-size: 14px !important;
+            font-weight: 500 !important;
+            color: #ffffff !important;
+            background: linear-gradient(135deg, #ffffff, #cccccc) !important;
+            -webkit-background-clip: text !important;
+            -webkit-text-fill-color: transparent !important;
+            background-clip: text !important;
+            text-transform: uppercase !important;
+            letter-spacing: 0.5px !important;
+        }
+        
+        .lobby-header .close-btn {
+            width: 32px !important;
+            height: 32px !important;
+            border: none !important;
+            background: rgba(255, 255, 255, 0.05) !important;
+            color: #cccccc !important;
+            border-radius: 6px !important;
+            cursor: pointer !important;
+            font-size: 18px !important;
+            display: flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+            transition: all 0.2s ease !important;
+            backdrop-filter: blur(8px) !important;
+        }
+        
+        .lobby-header .close-btn:hover {
+            background: rgba(255, 82, 82, 0.2) !important;
+            color: #ff5252 !important;
+            transform: scale(1.05) !important;
+        }
+        
+        .lobby-body {
+            flex: 1 !important;
+            display: flex !important;
+            overflow: hidden !important;
+        }
+        
+        .lobby-main-panel {
+            flex: 2 !important;
+            padding: 32px !important;
+            overflow-y: auto !important;
+            display: flex !important;
+            flex-direction: column !important;
+            gap: 32px !important;
+            border-right: 1px solid rgba(42, 42, 42, 0.6) !important;
+        }
+        
+        .lobby-side-panel {
+            flex: 1 !important;
+            padding: 32px !important;
+            background: linear-gradient(135deg, rgba(20, 20, 20, 0.3), rgba(26, 26, 26, 0.1)) !important;
+            display: flex !important;
+            flex-direction: column !important;
+        }
+        
+        .section-header {
+            margin-bottom: 20px !important;
+        }
+        
+        .section-header h4 {
+            color: #ffffff !important;
+            font-size: 16px !important;
+            font-weight: 600 !important;
+            margin: 0 0 4px 0 !important;
+            background: linear-gradient(135deg, #ffffff, #cccccc) !important;
+            -webkit-background-clip: text !important;
+            -webkit-text-fill-color: transparent !important;
+            background-clip: text !important;
+        }
+        
+        .section-header p {
+            color: #999999 !important;
+            font-size: 13px !important;
+            margin: 0 !important;
+        }
+        
+        .mode-options {
+            display: flex !important;
+            flex-direction: column !important;
+            gap: 12px !important;
+        }
+        
+        .mode-option {
+            display: flex !important;
+            align-items: center !important;
+            padding: 20px !important;
+            background: rgba(26, 26, 26, 0.6) !important;
+            border: 1px solid rgba(42, 42, 42, 0.6) !important;
+            border-radius: 8px !important;
+            cursor: pointer !important;
+            transition: all 0.2s ease !important;
+            text-align: left !important;
+        }
+        
+        .mode-option:hover {
+            background: rgba(26, 26, 26, 0.8) !important;
+            border-color: rgba(82, 199, 126, 0.4) !important;
+            transform: translateY(-1px) !important;
+        }
+        
+        .mode-option .mode-icon {
+            font-size: 20px !important;
+            margin-right: 16px !important;
+            width: 32px !important;
+            text-align: center !important;
+        }
+        
+        .mode-details {
+            flex: 1 !important;
+            display: flex !important;
+            flex-direction: column !important;
+            gap: 4px !important;
+        }
+        
+        .mode-title {
+            color: #ffffff !important;
+            font-weight: 500 !important;
+            font-size: 14px !important;
+        }
+        
+        .mode-description {
+            color: #999999 !important;
+            font-size: 12px !important;
+        }
+        
+        .mode-status {
+            color: #52C77E !important;
+            font-size: 12px !important;
+            font-weight: 500 !important;
+            padding: 4px 8px !important;
+            background: rgba(82, 199, 126, 0.1) !important;
+            border-radius: 4px !important;
+            white-space: nowrap !important;
+        }
+        
+        .players-grid {
+            display: flex !important;
+            flex-direction: column !important;
+            gap: 8px !important;
+            max-height: 200px !important;
+            overflow-y: auto !important;
+            margin-bottom: 16px !important;
+        }
+        
+        .lobby-status {
+            color: #666666 !important;
+            font-size: 13px !important;
+            text-align: center !important;
+            padding: 12px !important;
+            background: rgba(20, 20, 20, 0.6) !important;
+            border-radius: 6px !important;
+            border: 1px solid rgba(42, 42, 42, 0.4) !important;
+        }
+        
+        .settings-grid {
+            display: grid !important;
+            grid-template-columns: 1fr 1fr !important;
+            gap: 16px !important;
+            margin-bottom: 24px !important;
+        }
+        
+        .setting-item {
+            display: flex !important;
+            flex-direction: column !important;
+            gap: 8px !important;
+        }
+        
+        .setting-item label {
+            color: #cccccc !important;
+            font-size: 12px !important;
+            font-weight: 500 !important;
+            text-transform: uppercase !important;
+            letter-spacing: 0.5px !important;
+        }
+        
+        .setting-input {
+            background: #1a1a1a !important;
+            border: 1px solid #333333 !important;
+            color: #ffffff !important;
+            padding: 10px 12px !important;
+            border-radius: 4px !important;
+            font-size: 13px !important;
+        }
+        
+        .setting-input:focus {
+            outline: none !important;
+            border-color: #52C77E !important;
+        }
+        
+        .setting-checkbox {
+            width: 18px !important;
+            height: 18px !important;
+            accent-color: #52C77E !important;
+        }
+        
+        .launch-game-btn {
+            width: 100% !important;
+            padding: 14px 20px !important;
+            background: linear-gradient(135deg, #52C77E, #4CAF50) !important;
+            border: none !important;
+            border-radius: 6px !important;
+            color: #ffffff !important;
+            font-size: 14px !important;
+            font-weight: 600 !important;
+            cursor: pointer !important;
+            transition: all 0.2s ease !important;
+            display: flex !important;
+            align-items: center !important;
+            justify-content: space-between !important;
+            margin-bottom: 8px !important;
+        }
+        
+        .launch-game-btn:hover:not(:disabled) {
+            transform: translateY(-1px) !important;
+            box-shadow: 0 4px 12px rgba(82, 199, 126, 0.3) !important;
+        }
+        
+        .launch-game-btn:disabled {
+            background: rgba(82, 199, 126, 0.3) !important;
+            cursor: not-allowed !important;
+        }
+        
+        .launch-info {
+            color: #666666 !important;
+            font-size: 11px !important;
+            text-align: center !important;
+        }
+        
+        .communication-section {
+            flex: 1 !important;
+            display: flex !important;
+            flex-direction: column !important;
+        }
+        
+        .chat-container {
+            flex: 1 !important;
+            background: rgba(20, 20, 20, 0.6) !important;
+            border: 1px solid rgba(42, 42, 42, 0.6) !important;
+            border-radius: 8px !important;
+            padding: 16px !important;
+            overflow-y: auto !important;
+            margin-bottom: 12px !important;
+            min-height: 300px !important;
+        }
+        
+        .system-message {
+            color: #666666 !important;
+            font-size: 12px !important;
+            font-style: italic !important;
+            text-align: center !important;
+            padding: 8px !important;
+        }
+        
+        .chat-input-container {
+            display: flex !important;
+            gap: 8px !important;
+        }
+        
+        .chat-input {
+            flex: 1 !important;
+            background: #1a1a1a !important;
+            border: 1px solid #333333 !important;
+            color: #ffffff !important;
+            padding: 10px 12px !important;
+            border-radius: 6px !important;
+            font-size: 13px !important;
+        }
+        
+        .chat-input:focus {
+            outline: none !important;
+            border-color: #52C77E !important;
+        }
+        
+        .send-btn {
+            width: 40px !important;
+            height: 40px !important;
+            background: linear-gradient(135deg, #52C77E, #4CAF50) !important;
+            border: none !important;
+            border-radius: 6px !important;
+            color: #ffffff !important;
+            font-size: 16px !important;
+            cursor: pointer !important;
+            transition: all 0.2s ease !important;
+            display: flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+        }
+        
+        .send-btn:hover {
+            transform: scale(1.05) !important;
+        }
+        
         /* Cinematic transition styles - faster */
         .setup-screen.fade-out {
-            animation: setupFadeOut 0.3s ease-out forwards !important;
+            animation: setupFadeOut 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards !important;
         }
         @keyframes setupFadeOut {
             to { 
                 opacity: 0;
-                transform: scale(0.98);
+                transform: translateY(-10px) scale(0.98);
+                filter: blur(2px);
+            }
+        }
+        
+        .waiting-room.fade-in {
+            animation: lobbyFadeIn 0.7s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards !important;
+            opacity: 0;
+        }
+        @keyframes lobbyFadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(15px) scale(1.02);
+                filter: blur(3px);
+            }
+            to { 
+                opacity: 1;
+                transform: translateY(0) scale(1);
+                filter: blur(0);
             }
         }
         
@@ -235,14 +835,14 @@
             left: 0 !important;
             right: 0 !important;
             bottom: 0 !important;
-            background: #0f0f0f !important;
+            background: #000000 !important;
             z-index: 100000 !important;
             display: flex !important;
             align-items: center !important;
             justify-content: center !important;
             opacity: 0 !important;
             pointer-events: none !important;
-            transition: opacity 0.3s ease !important;
+            transition: opacity 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94) !important;
         }
         
         .transition-overlay.active {
@@ -699,6 +1299,16 @@
                                         <option value="detailed">Detailed</option>
                                     </select>
                                     <small>Show performance metrics on screen</small>
+                                </div>
+                            </div>
+                            
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label>
+                                        <input type="checkbox" id="server-stats-toggle" style="margin-right: 8px;">
+                                        Show Server Stats Panel
+                                    </label>
+                                    <small>Display sync state, latency, and multiplayer metrics</small>
                                 </div>
                             </div>
                         </div>
@@ -1699,13 +2309,15 @@
     
     <!-- Game Setup Screen (shown by default) -->
     <div id="setup-screen" class="setup-screen">
-        <div class="setup-content">
-            <h2>Welcome to The Commons</h2>
-            <p>Build a city that thrives. Join others in multiplayer or practice solo.</p>
-            
-            <div class="setup-form">
-                <!-- Left Column: Player Customization -->
-                <div class="setup-column-left">
+        <div class="setup-container">
+            <!-- Left Half: Player Setup -->
+            <div class="setup-left-panel">
+                <div class="setup-header">
+                    <h2>Welcome to The Commons</h2>
+                    <p>Build a city that thrives through land value economics</p>
+                </div>
+                
+                <div class="setup-form">
                     <div class="setup-field">
                         <label for="player-handle">Your Handle</label>
                         <input type="text" id="player-handle" placeholder="What should we call you?" maxlength="20" value="Player">
@@ -1738,22 +2350,46 @@
                     </div>
                 </div>
                 
-                <!-- Right Column: Continue to Lobby -->
-                <div class="setup-column-right">
-                    <div class="setup-continue">
-                        <h3>Ready to Build?</h3>
-                        <p>Choose your playstyle and connect with other city builders</p>
+                    <div class="setup-actions">
+                        <div class="setup-features">
+                            <div class="feature-item">
+                                <span class="feature-icon">🏛️</span>
+                                <span>Democratic governance</span>
+                            </div>
+                            <div class="feature-item">
+                                <span class="feature-icon">⚡</span>
+                                <span>Real-time multiplayer</span>
+                            </div>
+                            <div class="feature-item">
+                                <span class="feature-icon">📊</span>
+                                <span>Economic simulation</span>
+                            </div>
+                            <div class="feature-item">
+                                <span class="feature-icon">🔄</span>
+                                <span>Land value taxation</span>
+                            </div>
+                        </div>
                         
-                        <button class="continue-btn" id="continue-to-lobby-btn">
-                            <span class="continue-icon">🚀</span>
-                            <span class="continue-title">Continue to Lobby</span>
-                            <span class="continue-description">Choose solo or multiplayer</span>
+                        <button class="enter-lobby-btn" id="continue-to-lobby-btn">
+                            <span class="btn-text">Enter Lobby</span>
+                            <span class="btn-arrow">→</span>
                         </button>
-                        
-                        <div class="setup-info">
-                            <p>• Chat with other players</p>
-                            <p>• Choose to play solo or team up</p>
-                            <p>• Games support 2-12 players</p>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Right Half: City Leaderboard -->
+            <div class="setup-right-panel">
+                <div class="leaderboard-section">
+                    <div class="leaderboard-header">
+                        <h3>City Leaderboard</h3>
+                        <p>Best performing cities to date</p>
+                    </div>
+                    
+                    <div class="leaderboard-content" id="leaderboard-content">
+                        <div class="leaderboard-loading">
+                            <div class="loading-spinner"></div>
+                            <span>Loading rankings...</span>
                         </div>
                     </div>
                 </div>
@@ -1763,78 +2399,99 @@
     
     <!-- Game Lobby (hidden by default) -->
     <div id="waiting-room" class="waiting-room hidden">
-        <div class="waiting-room-content">
-            <div class="waiting-room-header">
-                <h2>Waiting Room</h2>
-                <button class="back-btn" id="back-to-setup-btn">← Back to Setup</button>
+        <div class="lobby-modal-content">
+            <div class="lobby-header">
+                <h3>MULTIPLAYER LOBBY</h3>
+                <button class="close-btn" id="back-to-setup-btn">
+                    <span>×</span>
+                </button>
             </div>
             
-            <div class="waiting-room-body">
-                <div class="waiting-room-left">
+            <div class="lobby-body">
+                <div class="lobby-main-panel">
                     <div class="game-mode-section">
-                        <h3>Choose Your Experience</h3>
+                        <div class="section-header">
+                            <h4>Game Mode Selection</h4>
+                            <p>Choose how you want to play</p>
+                        </div>
                         
-                        <button class="lobby-mode-btn solo-mode" id="start-solo-from-lobby">
-                            <span class="mode-icon">🎮</span>
-                            <div class="mode-info">
-                                <span class="mode-title">Play Solo</span>
-                                <span class="mode-description">Practice building on your own</span>
-                            </div>
-                        </button>
-                        
-                        <button class="lobby-mode-btn multiplayer-mode" id="join-multiplayer-queue">
-                            <span class="mode-icon">👥</span>
-                            <div class="mode-info">
-                                <span class="mode-title">Join Multiplayer</span>
-                                <span class="mode-description">Build cities with others</span>
-                            </div>
-                        </button>
+                        <div class="mode-options">
+                            <button class="mode-option solo-mode" id="start-solo-from-lobby">
+                                <div class="mode-icon">🎮</div>
+                                <div class="mode-details">
+                                    <span class="mode-title">Solo Practice</span>
+                                    <span class="mode-description">Build and experiment independently</span>
+                                </div>
+                                <div class="mode-status">Available</div>
+                            </button>
+                            
+                            <button class="mode-option multiplayer-mode" id="join-multiplayer-queue">
+                                <div class="mode-icon">👥</div>
+                                <div class="mode-details">
+                                    <span class="mode-title">Multiplayer Session</span>
+                                    <span class="mode-description">Collaborate or compete with others</span>
+                                </div>
+                                <div class="mode-status">Join Queue</div>
+                            </button>
+                        </div>
                     </div>
                     
                     <div class="players-section">
-                        <h3>Players in Lobby</h3>
-                        <div class="players-list" id="waiting-players-list">
+                        <div class="section-header">
+                            <h4>Active Players</h4>
+                            <p><span id="player-count">1</span> connected</p>
+                        </div>
+                        <div class="players-grid" id="waiting-players-list">
                             <!-- Players will be populated here -->
                         </div>
-                        <div class="room-status">
-                            <p><span id="player-count">1</span> players online</p>
-                            <p id="room-status-text">Choose a game mode to continue</p>
+                        <div class="lobby-status" id="room-status-text">
+                            Choose a game mode to continue
                         </div>
                     </div>
                     
                     <div class="game-settings" id="multiplayer-settings" style="display: none;">
-                        <h3>Multiplayer Settings</h3>
-                        <div class="setting">
-                            <label for="game-size-select">Target Size:</label>
-                            <select id="game-size-select">
-                                <option value="2">2 players</option>
-                                <option value="4" selected>4 players</option>
-                                <option value="6">6 players</option>
-                                <option value="8">8 players</option>
-                                <option value="12">12 players</option>
-                            </select>
-                        </div>
-                        <div class="setting">
-                            <label for="auto-start">Auto-start when ready:</label>
-                            <input type="checkbox" id="auto-start" checked>
+                        <div class="section-header">
+                            <h4>Session Configuration</h4>
+                            <p>Customize multiplayer parameters</p>
                         </div>
                         
-                        <button id="start-multiplayer-game" class="start-game-btn" disabled>
-                            Start Multiplayer Game
+                        <div class="settings-grid">
+                            <div class="setting-item">
+                                <label for="game-size-select">Target Players</label>
+                                <select id="game-size-select" class="setting-input">
+                                    <option value="2">2 players</option>
+                                    <option value="4" selected>4 players</option>
+                                    <option value="6">6 players</option>
+                                    <option value="8">8 players</option>
+                                    <option value="12">12 players</option>
+                                </select>
+                            </div>
+                            <div class="setting-item">
+                                <label for="auto-start">Auto-start</label>
+                                <input type="checkbox" id="auto-start" class="setting-checkbox" checked>
+                            </div>
+                        </div>
+                        
+                        <button id="start-multiplayer-game" class="launch-game-btn" disabled>
+                            <span>Launch Session</span>
+                            <span class="btn-arrow">→</span>
                         </button>
-                        <p class="start-info">Need at least 2 players to start</p>
+                        <div class="launch-info">Minimum 2 players required</div>
                     </div>
                 </div>
                 
-                <div class="waiting-room-right">
-                    <div class="chat-section">
-                        <h3>Chat</h3>
-                        <div class="chat-messages" id="chat-messages">
-                            <div class="system-message">Welcome to the waiting room! Chat with other players while you wait.</div>
+                <div class="lobby-side-panel">
+                    <div class="communication-section">
+                        <div class="section-header">
+                            <h4>Player Communication</h4>
+                            <p>Coordinate with other players</p>
                         </div>
-                        <div class="chat-input-section">
-                            <input type="text" id="chat-input" placeholder="Type a message..." maxlength="200">
-                            <button id="send-message-btn">Send</button>
+                        <div class="chat-container" id="chat-messages">
+                            <div class="system-message">Welcome to the multiplayer lobby</div>
+                        </div>
+                        <div class="chat-input-container">
+                            <input type="text" id="chat-input" placeholder="Send a message..." maxlength="200" class="chat-input">
+                            <button id="send-message-btn" class="send-btn">→</button>
                         </div>
                     </div>
                 </div>
@@ -2185,6 +2842,7 @@
     <script src="auction-system.js"></script>
     <script src="game-state.js"></script>
     <script src="performance-monitor.js"></script>
+    <script src="server-stats-monitor.js"></script>
     <script src="ui-manager.js"></script>
     <script src="mobility-layer.js"></script>
     <script src="tooltip-manager.js"></script>

@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 
 // Simple custom linter to check for multiplayer compatibility issues
-import { readFileSync, readdirSync } from 'fs';
-import { join, extname } from 'path';
+const { readFileSync, readdirSync } = require('fs');
+const { join, extname } = require('path');
 
 const MULTIPLAYER_PATTERNS = [
     {

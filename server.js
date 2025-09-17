@@ -24,6 +24,7 @@ let gameState = {
   core: {
     players: new Map(),
     parcels: {},
+    auctions: new Map(),
     currentMonth: 'SEPT',
     currentDay: 1,
     gameSpeed: 1,
@@ -97,11 +98,32 @@ let gameState = {
     activeConnections: new Set(),
     actionQueue: [],
     conflictLog: []
+  },
+  
+  // Game lifecycle management
+  lifecycle: {
+    gameId: null, // Unique game identifier
+    cityName: null, // Player-chosen city name
+    status: 'waiting', // 'waiting', 'active', 'ended', 'archived'
+    startTime: null,
+    endTime: null,
+    endReason: null, // 'all_players_left', 'time_limit', 'manual'
+    maxPlayers: 4,
+    activePlayers: new Set(), // Currently connected players
+    departedPlayers: new Set(), // Players who left permanently
+    allowRejoining: false, // Whether players can rejoin after leaving
+    gameLength: 365, // Days until auto-end (1 year = Sept 1 to Sept 1)
+    snapshot: null // End-game state snapshot
   }
 };
 
 // Waiting room management
 const waitingRooms = new Map();
+
+// Game history and leaderboard system
+const gameHistory = new Map(); // Map<gameId, completedGameState>
+const cityLeaderboard = []; // Array of completed games sorted by performance
+let nextGameId = 1;
 let roomIdCounter = 1;
 
 // Default waiting room (global room for now)
@@ -122,6 +144,7 @@ waitingRooms.set('default', defaultWaitingRoom);
 
 // Connected clients
 const clients = new Map();
+const parcelLocks = new Set();
 
 // Health check endpoint
 app.get('/health', (req, res) => {
@@ -134,6 +157,41 @@ app.get('/health', (req, res) => {
   });
 });
 
+// API endpoint for leaderboard
+app.get('/api/leaderboard', (req, res) => {
+  const limit = parseInt(req.query.limit) || 10;
+  const leaderboard = getTopLeaderboard(limit);
+  
+  res.json({
+    success: true,
+    leaderboard: leaderboard,
+    totalGames: cityLeaderboard.length,
+    timestamp: Date.now()
+  });
+});
+
+// API endpoint for permanent departure
+app.post('/api/permanent-departure', (req, res) => {
+  const { playerId, reason } = req.body;
+  
+  if (!playerId) {
+    return res.status(400).json({
+      success: false,
+      error: 'INVALID_REQUEST',
+      message: 'Player ID is required'
+    });
+  }
+  
+  // Handle permanent departure
+  handlePlayerDeparture(playerId, reason || 'manual');
+  
+  res.json({
+    success: true,
+    message: 'Player departure processed',
+    timestamp: Date.now()
+  });
+});
+
 // Serve main game
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'index.html'));
@@ -141,7 +199,7 @@ app.get('/', (req, res) => {
 
 // WebSocket connection handling
 wss.on('connection', (ws, req) => {
-  console.log('🔌 New WebSocket connection');
+  // console.log('🔌 New WebSocket connection');
   
   let clientId = null;
   let playerId = null;
@@ -173,17 +231,25 @@ wss.on('connection', (ws, req) => {
     console.log(`📱 Client ${clientId} disconnected`);
     
     if (playerId) {
-      // Mark player as disconnected
+      // Mark player as disconnected in game state
       if (gameState.core.players.has(playerId)) {
         gameState.core.players.get(playerId).connected = false;
         gameState.core.players.get(playerId).lastSeen = Date.now();
       }
       
-      // Broadcast player disconnection
-      broadcastToAll({
-        type: 'PLAYER_LEFT',
-        playerId: playerId,
-        timestamp: Date.now()
+      // Handle permanent departure from game lifecycle
+      handlePlayerDeparture(playerId, 'disconnect');
+      
+      // Remove from waiting rooms if they were in one
+      waitingRooms.forEach((room, roomId) => {
+        if (room.players.has(playerId)) {
+          room.players.delete(playerId);
+          broadcastToRoom(roomId, {
+            type: 'PLAYER_LEFT_ROOM',
+            playerId: playerId,
+            playerCount: room.players.size
+          });
+        }
       });
     }
     
@@ -244,18 +310,49 @@ async function handleWebSocketMessage(ws, clientId, data) {
       await handleStartMultiplayerGame(ws, clientId, data);
       break;
       
+    case 'VIEW_LEADERBOARD':
+      handleViewLeaderboard(ws, clientId, data);
+      break;
+      
+    case 'VIEW_GAME_HISTORY':
+      handleViewGameHistory(ws, clientId, data);
+      break;
+      
+    case 'START_NEW_GAME':
+      await handleStartNewGame(ws, clientId, data);
+      break;
+      
     default:
       console.warn('Unknown message type:', data.type);
   }
 }
 
 async function handleJoinGame(ws, clientId, data) {
-  const { playerName = 'Player', playerColor = '#2196F3', playerEmoji = '🏠' } = data;
+  const { playerName = 'Player', playerColor = '#2196F3', playerEmoji = '🏠', cityName } = data;
   
   // Generate or use existing player ID
   let playerId = data.playerId;
   if (!playerId || !gameState.core.players.has(playerId)) {
     playerId = 'player_' + Math.random().toString(36).substr(2, 9);
+  }
+  
+  // Initialize new game if this is the first player or no game exists
+  if (!gameState.lifecycle.gameId || gameState.lifecycle.status === 'ended' || gameState.lifecycle.status === 'archived') {
+    const gameId = initializeNewGame(cityName || playerName + "'s City");
+    console.log(`🎮 New game initialized: ${gameId}`);
+  }
+  
+  // Check if player can join this game
+  const joinResult = handlePlayerJoinGame(playerId);
+  if (!joinResult.success) {
+    ws.send(JSON.stringify({
+      type: 'JOIN_REJECTED',
+      error: joinResult.error,
+      message: joinResult.message,
+      shouldRedirect: joinResult.shouldRedirect,
+      timestamp: Date.now()
+    }));
+    return;
   }
   
   // Create or update player
@@ -309,7 +406,7 @@ async function handleJoinGame(ws, clientId, data) {
     timestamp: Date.now()
   });
   
-  console.log(`✅ Player ${playerName} (${playerId}) joined the game`);
+  // console.log(`✅ Player ${playerName} (${playerId}) joined the game`);
 }
 
 async function handleGameAction(ws, clientId, data) {
@@ -319,6 +416,15 @@ async function handleGameAction(ws, clientId, data) {
       type: 'ERROR',
       error: 'NOT_AUTHENTICATED',
       message: 'Must join game first'
+    }));
+    return;
+  }
+
+  if (data.clientVersion !== gameState.version.global) {
+    ws.send(JSON.stringify({
+        type: 'ERROR',
+        error: 'VERSION_MISMATCH',
+        message: 'Your game state is out of date. Please sync.',
     }));
     return;
   }
@@ -411,8 +517,6 @@ async function processGameAction(action, playerId) {
       return await processPurchaseParcel(action);
     case 'CONSTRUCT_BUILDING':
       return await processConstructBuilding(action);
-    case 'UPDATE_CASH':
-      return await processUpdateCash(action);
     case 'ADVANCE_TIME':
       return await processAdvanceTime(action);
     case 'TREASURY_FEE':
@@ -429,6 +533,16 @@ async function processGameAction(action, playerId) {
       return await processAllocateVote(action, playerId);
     case 'ALLOCATE_LVT_POINT':
       return await processAllocateLVTPoint(action, playerId);
+    case 'END_AUCTION_NOW':
+        return await processEndAuctionNow(action, playerId);
+    case 'CREATE_AUCTION_LISTING':
+        return await processCreateAuctionListing(action, playerId);
+    case 'BUY_NOW_LISTING':
+        return await processBuyNowListing(action, playerId);
+    case 'CANCEL_LISTING':
+        return await processCancelListing(action, playerId);
+    case 'BID_ON_LISTING':
+        return await processBidOnListing(action, playerId);
     default:
       throw new Error(`Unknown action type: ${action.type}`);
   }
@@ -436,104 +550,110 @@ async function processGameAction(action, playerId) {
 
 async function processPurchaseParcel(action) {
   const { parcelId, building, purchasePrice, playerId } = action;
-  
-  // Check for conflicts
-  if (gameState.core.parcels[parcelId]?.owner) {
+
+  if (parcelLocks.has(parcelId)) {
     return {
       success: false,
-      error: 'PARCEL_ALREADY_OWNED',
-      message: 'This parcel has already been purchased',
-      currentOwner: gameState.core.parcels[parcelId].owner
+      error: 'PARCEL_LOCKED',
+      message: 'This parcel is currently being purchased. Please try again.'
     };
   }
-  
-  // Validate player and actions
-  if (!gameState.core.players.has(playerId)) {
-    return {
-      success: false,
-      error: 'INVALID_PLAYER',
-      message: 'Player not found'
-    };
-  }
-  
-  const player = gameState.core.players.get(playerId);
-  const actionCost = 1; // Cost to purchase a parcel
-  
-  // Check action availability
-  if (player.actionManager.currentActions < actionCost) {
-    return {
-      success: false,
-      error: 'INSUFFICIENT_ACTIONS',
-      message: 'Not enough actions remaining'
-    };
-  }
-  
-  // Calculate authoritative land price
-  const [row, col] = parcelId.split('-').map(Number);
-  const authoritativePrice = calculateParcelPrice(row, col);
-  
-  // Check cash availability using server price (ignore client's suggested price)
-  if (player.cash < authoritativePrice) {
-    return {
-      success: false,
-      error: 'INSUFFICIENT_FUNDS',
-      message: `Not enough cash. This parcel costs $${authoritativePrice} but you have $${Math.round(player.cash)}`
-    };
-  }
-  
-  // Process purchase using authoritative price
-  gameState.core.parcels[parcelId] = {
-    owner: playerId,
-    building: building,
-    timestamp: Date.now(),
-    purchasePrice: authoritativePrice,
-    buildingAge: 0,
-    decay: 0,
-    amenities: []
-  };
-  
-  // Update player data
-  player.ownedParcels.push(parcelId);
-  player.cash -= authoritativePrice;
-  
-  // Deduct action cost
-  player.actionManager.currentActions -= actionCost;
-  player.actionManager.usedThisMonth += actionCost;
-  
-  // Add immediate LVT fee to treasury (typically 1-2% of purchase price)
-  const lvtFee = authoritativePrice * 0.01; // 1% immediate LVT fee
-  gameState.core.governance.unallocatedFunds += lvtFee;
-  
-  // Update versions
-  gameState.version.global++;
-  gameState.version.perParcel[parcelId] = gameState.version.global;
-  gameState.version.perPlayer[playerId] = gameState.version.global;
-  gameState.meta.lastUpdate = Date.now();
-  
-  await recalculateAuthoritativeState();
-  
-  return {
-    success: true,
-    processedAction: action,
-    stateChanges: {
-      parcels: { [parcelId]: gameState.core.parcels[parcelId] },
-      players: { [playerId]: Object.fromEntries([[playerId, gameState.core.players.get(playerId)]]) }
+
+  parcelLocks.add(parcelId);
+
+  try {
+      // Check for conflicts
+      if (gameState.core.parcels[parcelId]?.owner) {
+        return {
+          success: false,
+          error: 'PARCEL_ALREADY_OWNED',
+          message: 'This parcel has already been purchased',
+          currentOwner: gameState.core.parcels[parcelId].owner
+        };
+      }
+      
+      // Validate player and actions
+      if (!gameState.core.players.has(playerId)) {
+        return {
+          success: false,
+          error: 'INVALID_PLAYER',
+          message: 'Player not found'
+        };
+      }
+      
+      const player = gameState.core.players.get(playerId);
+      const actionCost = 1; // Cost to purchase a parcel
+      
+      // Check action availability
+      if (player.actionManager.currentActions < actionCost) {
+        return {
+          success: false,
+          error: 'INSUFFICIENT_ACTIONS',
+          message: 'Not enough actions remaining'
+        };
+      }
+      
+      // Calculate authoritative land price
+      const [row, col] = parcelId.split('-').map(Number);
+      const authoritativePrice = calculateParcelPrice(row, col);
+      
+      // Check cash availability using server price (ignore client's suggested price)
+      if (player.cash < authoritativePrice) {
+        return {
+          success: false,
+          error: 'INSUFFICIENT_FUNDS',
+          message: `Not enough cash. This parcel costs ${authoritativePrice} but you have ${Math.round(player.cash)}`
+        };
+      }
+      
+      // Process purchase using authoritative price
+      gameState.core.parcels[parcelId] = {
+        owner: playerId,
+        building: building,
+        timestamp: Date.now(),
+        purchasePrice: authoritativePrice,
+        buildingAge: 0,
+        decay: 0,
+        amenities: []
+      };
+      
+      // Update player data
+      player.ownedParcels.push(parcelId);
+      player.cash -= authoritativePrice;
+      
+      // Deduct action cost
+      player.actionManager.currentActions -= actionCost;
+      player.actionManager.usedThisMonth += actionCost;
+      
+      // Add immediate LVT fee to treasury (typically 1-2% of purchase price)
+      const lvtFee = authoritativePrice * 0.01; // 1% immediate LVT fee
+      gameState.core.governance.unallocatedFunds += lvtFee;
+      
+      // Update versions
+      gameState.version.global++;
+      gameState.version.perParcel[parcelId] = gameState.version.global;
+      gameState.version.perPlayer[playerId] = gameState.version.global;
+      gameState.meta.lastUpdate = Date.now();
+      
+      await recalculateAuthoritativeState();
+      
+      return {
+        success: true,
+        processedAction: action,
+        stateChanges: {
+          parcels: { [parcelId]: gameState.core.parcels[parcelId] },
+          players: { [playerId]: Object.fromEntries([[playerId, gameState.core.players.get(playerId)]]) }
+        }
+      };
+    } finally {
+        parcelLocks.delete(parcelId);
     }
-  };
 }
 
 async function processConstructBuilding(action) {
-  const { parcelId, building, constructionStartDay, constructionDays, playerId } = action;
+  const { parcelId, playerId } = action;
   
-  if (!gameState.core.parcels[parcelId] || gameState.core.parcels[parcelId].owner !== playerId) {
-    return {
-      success: false,
-      error: 'UNAUTHORIZED',
-      message: 'You do not own this parcel'
-    };
-  }
-  
-  // Validate player and actions
+  // Validate player and parcel
   if (!gameState.core.players.has(playerId)) {
     return {
       success: false,
@@ -542,8 +662,17 @@ async function processConstructBuilding(action) {
     };
   }
   
+  const parcel = gameState.core.parcels[parcelId];
+  if (!parcel || parcel.owner !== playerId) {
+    return {
+      success: false,
+      error: 'INVALID_PARCEL',
+      message: 'Parcel not found or not owned by player'
+    };
+  }
+  
   const player = gameState.core.players.get(playerId);
-  const actionCost = 1; // Cost to construct a building
+  const actionCost = 1;
   
   // Check action availability
   if (player.actionManager.currentActions < actionCost) {
@@ -554,10 +683,9 @@ async function processConstructBuilding(action) {
     };
   }
   
-  // Update building
-  gameState.core.parcels[parcelId].building = building;
-  gameState.core.parcels[parcelId].constructionStartDay = constructionStartDay;
-  gameState.core.parcels[parcelId].constructionDays = constructionDays;
+  // Start construction (building already set from parcel purchase)
+  parcel.constructionStartDay = gameState.core.currentDay;
+  parcel.constructionDays = 3; // Default construction time
   
   // Deduct action cost
   player.actionManager.currentActions -= actionCost;
@@ -566,6 +694,7 @@ async function processConstructBuilding(action) {
   // Update versions
   gameState.version.global++;
   gameState.version.perParcel[parcelId] = gameState.version.global;
+  gameState.version.perPlayer[playerId] = gameState.version.global;
   gameState.meta.lastUpdate = Date.now();
   
   await recalculateAuthoritativeState();
@@ -574,34 +703,7 @@ async function processConstructBuilding(action) {
     success: true,
     processedAction: action,
     stateChanges: {
-      parcels: { [parcelId]: gameState.core.parcels[parcelId] }
-    }
-  };
-}
-
-async function processUpdateCash(action) {
-  const { playerId, amount } = action;
-  
-  if (!gameState.core.players.has(playerId)) {
-    return {
-      success: false,
-      error: 'PLAYER_NOT_FOUND',
-      message: 'Player not found'
-    };
-  }
-  
-  const player = gameState.core.players.get(playerId);
-  player.cash += amount;
-  
-  // Update versions
-  gameState.version.global++;
-  gameState.version.perPlayer[playerId] = gameState.version.global;
-  gameState.meta.lastUpdate = Date.now();
-  
-  return {
-    success: true,
-    processedAction: action,
-    stateChanges: {
+      parcels: { [parcelId]: parcel },
       players: { [playerId]: Object.fromEntries([[playerId, player]]) }
     }
   };
@@ -707,12 +809,13 @@ function broadcastToAll(message) {
   const messageStr = JSON.stringify(message);
   clients.forEach((client, clientId) => {
     if (client.ws.readyState === client.ws.OPEN) {
-      try {
-        client.ws.send(messageStr);
-      } catch (error) {
-        console.error(`Failed to send to ${clientId}:`, error);
-        clients.delete(clientId);
-      }
+      client.ws.send(messageStr, (error) => {
+        if (error) {
+          console.error(`Failed to send to ${clientId}:`, error);
+          client.ws.close();
+          clients.delete(clientId);
+        }
+      });
     }
   });
 }
@@ -1074,7 +1177,7 @@ async function recalculateAuthoritativeState() {
   gameState.calculated.treasury = totalTreasury + gameState.calculated.treasury;
   gameState.calculated.lastCalculated = Date.now();
   
-  console.log(`✅ State recalculated in ${Date.now() - startTime}ms: Pop=${gameState.calculated.population}, Treasury=$${Math.round(gameState.calculated.treasury)} (Unallocated: $${Math.round(gameState.core.governance.unallocatedFunds)})`);
+  // console.log(`✅ State recalculated in ${Date.now() - startTime}ms: Pop=${gameState.calculated.population}, Treasury=$${Math.round(gameState.calculated.treasury)} (Unallocated: $${Math.round(gameState.core.governance.unallocatedFunds)})`);
 }
 
 // Cleanup disconnected clients every 5 minutes
@@ -1330,6 +1433,253 @@ async function processAllocateLVTPoint(action, playerId) {
     }
   };
 }
+
+async function processEndAuctionNow(action, playerId) {
+    const { listingId, fee } = action;
+
+    const listing = gameState.core.auctions.get(listingId);
+
+    if (!listing) {
+        return { success: false, error: "LISTING_NOT_FOUND", message: "Auction listing not found." };
+    }
+
+    if (listing.seller !== playerId) {
+        return { success: false, error: "UNAUTHORIZED", message: "You are not the seller of this auction." };
+    }
+
+    const seller = gameState.core.players.get(listing.seller);
+    const buyer = gameState.core.players.get(listing.highBidder);
+
+    if (!seller) {
+        return { success: false, error: "SELLER_NOT_FOUND", message: "Auction seller not found." };
+    }
+
+    if (listing.highBidder && !buyer) {
+        return { success: false, error: "BUYER_NOT_FOUND", message: "Auction buyer not found." };
+    }
+
+    // Take the fee from the seller.
+    seller.cash -= fee;
+
+    // Transfer the bid amount from the buyer to the seller.
+    if (buyer) {
+        buyer.cash -= listing.currentBid;
+        seller.cash += listing.currentBid;
+    }
+
+    // End the auction.
+    listing.status = "ended_early";
+
+    // Update the game state and broadcast the changes.
+    await recalculateAuthoritativeState();
+    broadcastToAll({
+        type: "AUCTION_ENDED",
+        listingId,
+        listing,
+    });
+
+    return { success: true };
+}
+
+async function processCreateAuctionListing(action, playerId) {
+    const { listing } = action;
+
+    if (!listing) {
+        return { success: false, error: "INVALID_LISTING", message: "Listing data is required." };
+    }
+
+    const player = gameState.core.players.get(playerId);
+    if (!player) {
+        return { success: false, error: "PLAYER_NOT_FOUND", message: "Player not found." };
+    }
+
+    if (player.actionManager.currentActions < listing.quantity) {
+        return { success: false, error: "INSUFFICIENT_ACTIONS", message: "Not enough actions to sell." };
+    }
+
+    player.actionManager.currentActions -= listing.quantity;
+
+    listing.seller = playerId;
+    gameState.core.auctions.set(listing.id, listing);
+
+    await recalculateAuthoritativeState();
+    broadcastToAll({
+        type: "AUCTION_CREATED",
+        listing,
+    });
+
+    return { success: true };
+}
+
+async function processBuyNowListing(action, playerId) {
+    const { listingId } = action;
+
+    const listing = gameState.core.auctions.get(listingId);
+
+    if (!listing) {
+        return { success: false, error: "LISTING_NOT_FOUND", message: "Auction listing not found." };
+    }
+
+    if (listing.status !== 'active' || !listing.buyNowPrice) {
+        return { success: false, error: "BUY_NOW_NOT_AVAILABLE", message: "Buy now is not available for this listing." };
+    }
+
+    const buyer = gameState.core.players.get(playerId);
+    if (!buyer) {
+        return { success: false, error: "PLAYER_NOT_FOUND", message: "Player not found." };
+    }
+
+    if (buyer.cash < listing.buyNowPrice) {
+        return { success: false, error: "INSUFFICIENT_FUNDS", message: "Insufficient funds." };
+    }
+
+    const seller = gameState.core.players.get(listing.seller);
+    if (!seller) {
+        return { success: false, error: "SELLER_NOT_FOUND", message: "Seller not found." };
+    }
+
+    buyer.cash -= listing.buyNowPrice;
+    seller.cash += listing.buyNowPrice;
+    buyer.actionManager.currentActions += listing.quantity;
+
+    listing.status = 'sold';
+    listing.finalPrice = listing.buyNowPrice;
+    listing.winner = playerId;
+
+    await recalculateAuthoritativeState();
+    broadcastToAll({
+        type: "AUCTION_ENDED",
+        listingId,
+        listing,
+    });
+
+    return { success: true };
+}
+
+async function processCancelListing(action, playerId) {
+    const { listingId } = action;
+
+    const listing = gameState.core.auctions.get(listingId);
+
+    if (!listing) {
+        return { success: false, error: "LISTING_NOT_FOUND", message: "Auction listing not found." };
+    }
+
+    if (listing.seller !== playerId) {
+        return { success: false, error: "UNAUTHORIZED", message: "You are not the seller of this auction." };
+    }
+
+    const seller = gameState.core.players.get(playerId);
+    if (!seller) {
+        return { success: false, error: "PLAYER_NOT_FOUND", message: "Player not found." };
+    }
+
+    if (listing.currentBid > 0) {
+        const fee = calculateEndItNowFee(listing); // Assuming this function exists on the server
+        if (seller.cash < fee) {
+            return { success: false, error: "INSUFFICIENT_FUNDS", message: "Insufficient funds for cancellation fee." };
+        }
+        seller.cash -= fee;
+        gameState.core.governance.unallocatedFunds += fee;
+    }
+
+    seller.actionManager.currentActions += listing.quantity;
+    listing.status = 'cancelled';
+
+    await recalculateAuthoritativeState();
+    broadcastToAll({
+        type: "AUCTION_ENDED",
+        listingId,
+        listing,
+    });
+
+    return { success: true };
+}
+
+async function processBidOnListing(action, playerId) {
+    const { listingId, bidAmount } = action;
+
+    const listing = gameState.core.auctions.get(listingId);
+
+    if (!listing) {
+        return { success: false, error: "LISTING_NOT_FOUND", message: "Auction listing not found." };
+    }
+
+    if (listing.status !== 'active') {
+        return { success: false, error: "AUCTION_NOT_ACTIVE", message: "This auction is not active." };
+    }
+
+    const bidder = gameState.core.players.get(playerId);
+    if (!bidder) {
+        return { success: false, error: "PLAYER_NOT_FOUND", message: "Player not found." };
+    }
+
+    if (bidder.cash < bidAmount) {
+        return { success: false, error: "INSUFFICIENT_FUNDS", message: "Insufficient funds." };
+    }
+
+    if (bidAmount <= listing.currentBid) {
+        return { success: false, error: "BID_TOO_LOW", message: "Your bid must be higher than the current bid." };
+    }
+
+    // Refund the previous high bidder if there was one
+    if (listing.highBidder) {
+        const previousBidder = gameState.core.players.get(listing.highBidder);
+        if (previousBidder) {
+            previousBidder.cash += listing.currentBid;
+        }
+    }
+
+    bidder.cash -= bidAmount;
+    listing.currentBid = bidAmount;
+    listing.highBidder = playerId;
+
+    // Extend auction if bid is in the last 30 seconds
+    const timeRemaining = listing.expiresAt - Date.now();
+    if (timeRemaining < 30000) { // Less than 30 seconds remaining
+        listing.expiresAt += 5000; // Add 5 seconds
+    }
+
+    await recalculateAuthoritativeState();
+    broadcastToAll({
+        type: "AUCTION_UPDATED",
+        listingId,
+        listing,
+    });
+
+    return { success: true };
+}
+
+function calculateEndItNowFee(listing) {
+    if (!listing || listing.currentBid === 0) return 0;
+
+    // Calculate month progress using actual game calendar (0 = start of month, 1 = end of month)
+    const monthLengths = {
+        'SEPT': 30, 'OCT': 31, 'NOV': 30, 'DEC': 31,
+        'JAN': 31, 'FEB': 28, 'MAR': 31, 'APR': 30,
+        'MAY': 31, 'JUN': 30, 'JUL': 31, 'AUG': 31
+    };
+
+    const daysInMonth = monthLengths[gameState.core.currentMonth];
+    const daysElapsed = gameState.core.currentDay - 1; // Day 1 = 0 elapsed, Day 2 = 1 elapsed, etc.
+
+    // Add progress through current day
+    const msIntoDay = 0; // Simplified for server-side
+    const dayProgress = 0;
+    const totalDaysElapsed = daysElapsed + dayProgress;
+
+    // Calculate month progress (0 to 1)
+    const monthProgress = Math.max(0, Math.min(1, totalDaysElapsed / daysInMonth));
+
+    // Fee starts at 500% and decays to 0% over the month
+    const maxFeeMultiplier = 5.0; // 500%
+    const currentFeeMultiplier = maxFeeMultiplier * (1 - monthProgress);
+
+    // Fee is based on current winning bid
+    const baseFee = listing.currentBid * currentFeeMultiplier;
+    return Math.floor(baseFee);
+}
+
 
 // Helper function to calculate total allocated points for a player
 function getTotalAllocatedPoints(player) {
@@ -1683,6 +2033,916 @@ function startGameFromRoom(roomId) {
   // Reset room state for next game
   room.chatMessages = [];
 }
+
+// ====== NEW GAME LIFECYCLE HANDLERS ======
+
+function handleViewLeaderboard(ws, clientId, data) {
+  const limit = data.limit || 10;
+  const leaderboard = getTopLeaderboard(limit);
+  
+  ws.send(JSON.stringify({
+    type: 'LEADERBOARD_DATA',
+    leaderboard: leaderboard,
+    totalGames: cityLeaderboard.length,
+    timestamp: Date.now()
+  }));
+}
+
+function handleViewGameHistory(ws, clientId, data) {
+  const playerId = data.playerId;
+  const limit = data.limit || 20;
+  
+  // Filter games where this player participated
+  const playerGames = Array.from(gameHistory.values())
+    .filter(game => {
+      if (!game.snapshot || !game.snapshot.players) return false;
+      return Object.keys(game.snapshot.players).includes(playerId);
+    })
+    .sort((a, b) => b.endTime - a.endTime) // Most recent first
+    .slice(0, limit)
+    .map(game => ({
+      gameId: game.gameId,
+      cityName: game.cityName,
+      score: game.score,
+      playerCount: game.playerCount,
+      duration: game.duration,
+      endTime: game.endTime,
+      endReason: game.endReason,
+      rank: cityLeaderboard.findIndex(lb => lb.gameId === game.gameId) + 1
+    }));
+  
+  ws.send(JSON.stringify({
+    type: 'GAME_HISTORY_DATA',
+    games: playerGames,
+    totalPlayerGames: playerGames.length,
+    timestamp: Date.now()
+  }));
+}
+
+async function handleStartNewGame(ws, clientId, data) {
+  const { playerName = 'Player', playerColor = '#2196F3', playerEmoji = '🏠', cityName, maxPlayers = 4 } = data;
+  
+  // Force end the current game if it exists
+  if (gameState.lifecycle.gameId && gameState.lifecycle.status === 'active') {
+    console.log(`🔄 Force ending current game ${gameState.lifecycle.gameId} to start new game`);
+    endGame('manual_restart');
+  }
+  
+  // Initialize new game
+  const gameId = initializeNewGame(cityName || playerName + "'s City", maxPlayers);
+  
+  // Generate new player ID for this game
+  const playerId = 'player_' + Math.random().toString(36).substr(2, 9);
+  
+  // Join the new game
+  const joinResult = handlePlayerJoinGame(playerId);
+  if (!joinResult.success) {
+    ws.send(JSON.stringify({
+      type: 'NEW_GAME_FAILED',
+      error: joinResult.error,
+      message: joinResult.message,
+      timestamp: Date.now()
+    }));
+    return;
+  }
+  
+  // Create player
+  const player = {
+    id: playerId,
+    name: playerName,
+    color: playerColor,
+    emoji: playerEmoji,
+    joinedAt: Date.now(),
+    cash: 5000,
+    wealth: 5000,
+    actionManager: {
+      monthlyAllowance: 20,
+      currentActions: 20,
+      usedThisMonth: 0
+    },
+    votingPoints: 0,
+    ownedParcels: [],
+    lastSeen: Date.now(),
+    connected: true
+  };
+  
+  gameState.core.players.set(playerId, player);
+  gameState.version.perPlayer[playerId] = 0;
+  
+  // Update client mapping
+  const client = clients.get(clientId);
+  if (client) {
+    client.playerId = playerId;
+    gameState.meta.activeConnections.add(playerId);
+  }
+  
+  console.log(`🎮 Player ${playerName} started new game: ${gameId}`);
+  
+  // Send success response
+  ws.send(JSON.stringify({
+    type: 'NEW_GAME_STARTED',
+    gameId: gameId,
+    playerId: playerId,
+    player: player,
+    gameState: {
+      core: {
+        players: Object.fromEntries(gameState.core.players),
+        parcels: gameState.core.parcels,
+        auctions: Object.fromEntries(gameState.core.auctions),
+        currentMonth: gameState.core.currentMonth,
+        currentDay: gameState.core.currentDay,
+        gameSpeed: gameState.core.gameSpeed,
+        isPaused: gameState.core.isPaused,
+        governance: gameState.core.governance,
+        transportation: gameState.core.transportation
+      },
+      calculated: gameState.calculated,
+      version: gameState.version.global,
+      lifecycle: gameState.lifecycle
+    },
+    timestamp: Date.now()
+  }));
+}
+
+// ====== GAME LIFECYCLE MANAGEMENT ======
+
+// Initialize new game with unique ID and city name
+function initializeNewGame(cityName, maxPlayers = 4) {
+  const timestamp = Date.now();
+  const dateStr = new Date(timestamp).toISOString().split('T')[0]; // YYYY-MM-DD
+  const gameId = `${cityName || 'NewCity'}_${dateStr}_${nextGameId++}`;
+  
+  // Reset game state for new game
+  gameState.lifecycle = {
+    gameId: gameId,
+    cityName: cityName || `New City ${nextGameId - 1}`,
+    status: 'waiting', // 'waiting', 'active', 'ended', 'archived'
+    startTime: null,
+    endTime: null,
+    endReason: null,
+    maxPlayers: maxPlayers,
+    activePlayers: new Set(),
+    departedPlayers: new Set(),
+    allowRejoining: false,
+    gameLength: 365, // Days until auto-end
+    snapshot: null
+  };
+  
+  // Reset core game state
+  gameState.core.players.clear();
+  gameState.core.parcels = {};
+  gameState.core.auctions.clear();
+  gameState.core.currentMonth = 'SEPT';
+  gameState.core.currentDay = 1;
+  gameState.core.gameSpeed = 1;
+  gameState.core.isPaused = false;
+  
+  // Reset calculated state
+  gameState.calculated = {
+    treasury: 0,
+    population: 0,
+    vitality: {
+      energy: { supply: 0, demand: 0, balance: 0 },
+      food: { supply: 0, demand: 0, balance: 0 },
+      housing: { supply: 0, demand: 0, balance: 0 },
+      jobs: { supply: 0, demand: 0, balance: 0 }
+    },
+    marketMultipliers: {
+      energy: 1.0,
+      food: 1.0,
+      housing: 1.0,
+      jobs: 1.0
+    },
+    lastCalculated: Date.now()
+  };
+  
+  // Reset versions
+  gameState.version = {
+    global: 0,
+    perParcel: {},
+    perPlayer: {}
+  };
+  
+  gameState.meta.lastUpdate = Date.now();
+  
+  console.log(`🎮 Initialized new game: ${gameId} - "${cityName}"`);
+  return gameId;
+}
+
+// Handle player permanent departure
+function handlePlayerDeparture(playerId, reason = 'disconnect') {
+  if (!gameState.lifecycle.activePlayers.has(playerId)) {
+    console.log(`⚠️ Player ${playerId} not in active players, ignoring departure`);
+    return;
+  }
+  
+  console.log(`👋 Player ${playerId} departing permanently: ${reason}`);
+  
+  // Move from active to departed
+  gameState.lifecycle.activePlayers.delete(playerId);
+  gameState.lifecycle.departedPlayers.add(playerId);
+  
+  // Broadcast departure to remaining players
+  broadcastToAll({
+    type: 'PLAYER_DEPARTED',
+    playerId: playerId,
+    reason: reason,
+    activePlayers: Array.from(gameState.lifecycle.activePlayers),
+    timestamp: Date.now()
+  });
+  
+  // Check if all players have left
+  if (gameState.lifecycle.activePlayers.size === 0) {
+    console.log(`🏁 All players have left game ${gameState.lifecycle.gameId}`);
+    endGame('all_players_left');
+  }
+}
+
+// Handle player joining game
+function handlePlayerJoinGame(playerId) {
+  // Prevent rejoining if player already departed
+  if (gameState.lifecycle.departedPlayers.has(playerId)) {
+    console.log(`🚫 Player ${playerId} attempted to rejoin after departure`);
+    return {
+      success: false,
+      error: 'PERMANENT_DEPARTURE',
+      message: 'You have permanently left this game. Please start a new game.',
+      shouldRedirect: true
+    };
+  }
+  
+  // Check if game is full
+  if (gameState.lifecycle.activePlayers.size >= gameState.lifecycle.maxPlayers) {
+    return {
+      success: false,
+      error: 'GAME_FULL',
+      message: 'This game is full. Please join a different game.',
+      shouldRedirect: true
+    };
+  }
+  
+  // Check if game has ended
+  if (gameState.lifecycle.status === 'ended' || gameState.lifecycle.status === 'archived') {
+    return {
+      success: false,
+      error: 'GAME_ENDED',
+      message: 'This game has ended. Please start a new game.',
+      shouldRedirect: true
+    };
+  }
+  
+  // Add to active players
+  gameState.lifecycle.activePlayers.add(playerId);
+  
+  // Start game if this is the first player
+  if (gameState.lifecycle.status === 'waiting' && gameState.lifecycle.activePlayers.size === 1) {
+    gameState.lifecycle.status = 'active';
+    gameState.lifecycle.startTime = Date.now();
+    console.log(`🚀 Game ${gameState.lifecycle.gameId} started by first player ${playerId}`);
+  }
+  
+  return { success: true };
+}
+
+// End game and create snapshot
+function endGame(reason = 'manual') {
+  if (gameState.lifecycle.status === 'ended' || gameState.lifecycle.status === 'archived') {
+    console.log(`⚠️ Game ${gameState.lifecycle.gameId} already ended`);
+    return;
+  }
+  
+  console.log(`🏁 Ending game ${gameState.lifecycle.gameId}: ${reason}`);
+  
+  // Update lifecycle status
+  gameState.lifecycle.status = 'ended';
+  gameState.lifecycle.endTime = Date.now();
+  gameState.lifecycle.endReason = reason;
+  
+  // Create end-game snapshot
+  const snapshot = createGameSnapshot();
+  gameState.lifecycle.snapshot = snapshot;
+  
+  // Add to game history
+  const completedGame = {
+    gameId: gameState.lifecycle.gameId,
+    cityName: gameState.lifecycle.cityName,
+    startTime: gameState.lifecycle.startTime,
+    endTime: gameState.lifecycle.endTime,
+    endReason: reason,
+    playerCount: gameState.core.players.size,
+    duration: gameState.lifecycle.endTime - gameState.lifecycle.startTime,
+    snapshot: snapshot,
+    score: calculateGameScore(snapshot)
+  };
+  
+  gameHistory.set(gameState.lifecycle.gameId, completedGame);
+  
+  // Update leaderboard
+  updateLeaderboard(completedGame);
+  
+  // Broadcast game end to all remaining players
+  broadcastToAll({
+    type: 'GAME_ENDED',
+    reason: reason,
+    snapshot: snapshot,
+    leaderboard: getTopLeaderboard(10),
+    timestamp: Date.now()
+  });
+  
+  console.log(`📸 Game snapshot created for ${gameState.lifecycle.gameId}`);
+  
+  // Archive game after a delay
+  setTimeout(() => {
+    archiveGame(gameState.lifecycle.gameId);
+  }, 300000); // 5 minutes
+}
+
+// Create comprehensive game state snapshot for strategic analysis
+function createGameSnapshot() {
+  const snapshot = {
+    gameInfo: {
+      gameId: gameState.lifecycle.gameId,
+      cityName: gameState.lifecycle.cityName,
+      endTime: Date.now(),
+      createdAt: new Date().toISOString(),
+      duration: Date.now() - gameState.lifecycle.startTime,
+      finalDay: gameState.core.currentDay,
+      finalMonth: gameState.core.currentMonth,
+      endReason: gameState.lifecycle.endReason,
+      totalPlayers: gameState.lifecycle.activePlayers.size + gameState.lifecycle.departedPlayers.size,
+      activePlayers: gameState.lifecycle.activePlayers.size,
+      departedPlayers: gameState.lifecycle.departedPlayers.size
+    },
+    
+    // Complete player data for strategic analysis
+    players: Object.fromEntries(
+      Array.from(gameState.core.players.entries()).map(([id, player]) => [
+        id,
+        {
+          ...player,
+          // Add strategic metrics per player
+          totalLandValue: calculatePlayerLandValue(id),
+          buildingDistribution: calculatePlayerBuildingDistribution(id),
+          economicStrategy: analyzePlayerStrategy(id),
+          governanceInfluence: calculateGovernanceInfluence(id)
+        }
+      ])
+    ),
+    
+    // Complete city state
+    city: {
+      parcels: gameState.core.parcels,
+      transportation: gameState.core.transportation,
+      governance: gameState.core.governance,
+      buildingCounts: calculateBuildingCounts(),
+      landUsePattern: analyzeLandUsePattern(),
+      connectionNetwork: analyzeTransportationNetwork()
+    },
+    
+    // Enhanced metrics
+    metrics: {
+      population: gameState.calculated.population,
+      treasury: gameState.calculated.treasury,
+      vitality: gameState.calculated.vitality,
+      marketMultipliers: gameState.calculated.marketMultipliers,
+      avgParcelValue: calculateAverageParcelValue(),
+      economicConcentration: calculateEconomicConcentration(),
+      spatialDistribution: analyzeSpatialDistribution()
+    },
+    
+    // Strategic analysis
+    performance: {
+      totalRevenue: calculateTotalRevenue(),
+      totalExpenses: calculateTotalExpenses(),
+      efficiency: calculateEfficiency(),
+      sustainability: calculateSustainability(),
+      collaboration: calculateCollaborationIndex(),
+      competition: calculateCompetitionIndex(),
+      innovation: calculateInnovationScore()
+    },
+    
+    // Timeline of key events for replay analysis
+    timeline: gameState.meta.actionQueue?.slice(-100) || [], // Last 100 actions
+    
+    // Potential exploits/strategies identified
+    strategicInsights: {
+      dominantStrategies: identifyDominantStrategies(),
+      unusualPatterns: detectUnusualPatterns(),
+      efficiencyOpportunities: findEfficiencyOpportunities(),
+      governanceExploits: detectGovernanceExploits()
+    }
+  };
+  
+  return snapshot;
+}
+
+// Calculate game performance score for leaderboard
+function calculateGameScore(snapshot) {
+  const weights = {
+    population: 0.3,
+    treasury: 0.2,
+    sustainability: 0.25,
+    efficiency: 0.25
+  };
+  
+  // Normalize metrics to 0-100 scale
+  const populationScore = Math.min(100, (snapshot.metrics.population / 1000) * 100);
+  const treasuryScore = Math.min(100, Math.max(0, snapshot.metrics.treasury / 100000) * 100);
+  const sustainabilityScore = snapshot.performance.sustainability;
+  const efficiencyScore = snapshot.performance.efficiency;
+  
+  const totalScore = 
+    (populationScore * weights.population) +
+    (treasuryScore * weights.treasury) +
+    (sustainabilityScore * weights.sustainability) +
+    (efficiencyScore * weights.efficiency);
+  
+  return Math.round(totalScore);
+}
+
+// Strategic Analysis Helper Functions
+function calculatePlayerLandValue(playerId) {
+  let totalValue = 0;
+  Object.entries(gameState.core.parcels).forEach(([parcelId, parcel]) => {
+    if (parcel.owner === playerId && parcel.purchasePrice) {
+      totalValue += parcel.purchasePrice;
+    }
+  });
+  return totalValue;
+}
+
+function calculatePlayerBuildingDistribution(playerId) {
+  const distribution = {};
+  Object.entries(gameState.core.parcels).forEach(([parcelId, parcel]) => {
+    if (parcel.owner === playerId && parcel.building) {
+      distribution[parcel.building] = (distribution[parcel.building] || 0) + 1;
+    }
+  });
+  return distribution;
+}
+
+function analyzePlayerStrategy(playerId) {
+  const distribution = calculatePlayerBuildingDistribution(playerId);
+  const totalBuildings = Object.values(distribution).reduce((a, b) => a + b, 0);
+  
+  if (totalBuildings === 0) return 'none';
+  
+  // Analyze strategy based on building patterns
+  const residential = (distribution.house || 0) + (distribution.apartment || 0);
+  const commercial = (distribution.shop || 0) + (distribution.office || 0) + (distribution.market || 0);
+  const energy = (distribution.solar || 0) + (distribution.wind || 0);
+  const agriculture = distribution.farm || 0;
+  
+  const resRatio = residential / totalBuildings;
+  const comRatio = commercial / totalBuildings;
+  const enerRatio = energy / totalBuildings;
+  const agriRatio = agriculture / totalBuildings;
+  
+  if (enerRatio > 0.4) return 'energy_focused';
+  if (agriRatio > 0.3) return 'agricultural';
+  if (comRatio > 0.5) return 'commercial_focused';
+  if (resRatio > 0.6) return 'residential_focused';
+  if (Math.abs(resRatio - comRatio) < 0.2) return 'balanced';
+  
+  return 'mixed';
+}
+
+function calculateGovernanceInfluence(playerId) {
+  const player = gameState.core.players.get(playerId);
+  if (!player || !player.governance) return 0;
+  
+  // Sum all governance allocations for influence score
+  let influence = 0;
+  if (player.governance.playerAllocations) {
+    Object.values(player.governance.playerAllocations).forEach(allocation => {
+      influence += Math.abs(allocation);
+    });
+  }
+  return influence;
+}
+
+function calculateBuildingCounts() {
+  const counts = {};
+  Object.values(gameState.core.parcels).forEach(parcel => {
+    if (parcel.building) {
+      counts[parcel.building] = (counts[parcel.building] || 0) + 1;
+    }
+  });
+  return counts;
+}
+
+function analyzeLandUsePattern() {
+  const pattern = {
+    totalParcels: Object.keys(gameState.core.parcels).length,
+    ownedParcels: 0,
+    builtParcels: 0,
+    centerUtilization: 0,
+    edgeUtilization: 0
+  };
+  
+  Object.entries(gameState.core.parcels).forEach(([parcelId, parcel]) => {
+    if (parcel.owner) pattern.ownedParcels++;
+    if (parcel.building) pattern.builtParcels++;
+    
+    // Analyze spatial distribution
+    const [row, col] = parcelId.split('-').map(Number);
+    const distanceFromCenter = Math.max(Math.abs(row - 6), Math.abs(col - 6));
+    
+    if (parcel.building) {
+      if (distanceFromCenter <= 2) pattern.centerUtilization++;
+      else if (distanceFromCenter >= 5) pattern.edgeUtilization++;
+    }
+  });
+  
+  return pattern;
+}
+
+function analyzeTransportationNetwork() {
+  return {
+    roads: Object.keys(gameState.core.transportation.roads).length,
+    transitStops: Object.keys(gameState.core.transportation.transitStops).length,
+    transitRoutes: Object.keys(gameState.core.transportation.transitRoutes).length,
+    connectivity: calculateNetworkConnectivity()
+  };
+}
+
+function calculateNetworkConnectivity() {
+  // Simplified connectivity measure
+  const roads = Object.keys(gameState.core.transportation.roads).length;
+  const stops = Object.keys(gameState.core.transportation.transitStops).length;
+  const routes = Object.keys(gameState.core.transportation.transitRoutes).length;
+  
+  return roads + (stops * 2) + (routes * 3); // Weighted connectivity score
+}
+
+function calculateAverageParcelValue() {
+  const parcelsWithPrice = Object.values(gameState.core.parcels).filter(p => p.purchasePrice);
+  if (parcelsWithPrice.length === 0) return 0;
+  
+  const totalValue = parcelsWithPrice.reduce((sum, p) => sum + p.purchasePrice, 0);
+  return totalValue / parcelsWithPrice.length;
+}
+
+function calculateEconomicConcentration() {
+  const playerWealth = Array.from(gameState.core.players.values()).map(p => p.cash + p.wealth);
+  if (playerWealth.length <= 1) return 0;
+  
+  // Gini coefficient calculation for wealth concentration
+  playerWealth.sort((a, b) => a - b);
+  const n = playerWealth.length;
+  const totalWealth = playerWealth.reduce((a, b) => a + b, 0);
+  
+  if (totalWealth === 0) return 0;
+  
+  let giniSum = 0;
+  for (let i = 0; i < n; i++) {
+    giniSum += (2 * (i + 1) - n - 1) * playerWealth[i];
+  }
+  
+  return giniSum / (n * totalWealth);
+}
+
+function analyzeSpatialDistribution() {
+  const quadrants = { nw: 0, ne: 0, sw: 0, se: 0 };
+  
+  Object.entries(gameState.core.parcels).forEach(([parcelId, parcel]) => {
+    if (parcel.building) {
+      const [row, col] = parcelId.split('-').map(Number);
+      
+      if (row < 6 && col < 6) quadrants.nw++;
+      else if (row < 6 && col >= 6) quadrants.ne++;
+      else if (row >= 6 && col < 6) quadrants.sw++;
+      else quadrants.se++;
+    }
+  });
+  
+  return quadrants;
+}
+
+function calculateCollaborationIndex() {
+  // Measure how much players work together vs compete
+  let collaborationScore = 0;
+  
+  // Check for complementary building patterns
+  const players = Array.from(gameState.core.players.keys());
+  for (let i = 0; i < players.length; i++) {
+    for (let j = i + 1; j < players.length; j++) {
+      const dist1 = calculatePlayerBuildingDistribution(players[i]);
+      const dist2 = calculatePlayerBuildingDistribution(players[j]);
+      
+      // Award points for complementary strategies
+      const overlap = Object.keys(dist1).filter(building => dist2[building]).length;
+      const unique = Object.keys(dist1).length + Object.keys(dist2).length - overlap;
+      
+      if (unique > overlap) collaborationScore += unique - overlap;
+    }
+  }
+  
+  return Math.min(100, collaborationScore * 10); // Scale to 0-100
+}
+
+function calculateCompetitionIndex() {
+  // Measure direct competition between players
+  let competitionScore = 0;
+  const players = Array.from(gameState.core.players.keys());
+  
+  for (let i = 0; i < players.length; i++) {
+    for (let j = i + 1; j < players.length; j++) {
+      const dist1 = calculatePlayerBuildingDistribution(players[i]);
+      const dist2 = calculatePlayerBuildingDistribution(players[j]);
+      
+      // Award points for similar strategies (competition)
+      const overlap = Object.keys(dist1).filter(building => dist2[building]).length;
+      competitionScore += overlap;
+    }
+  }
+  
+  return Math.min(100, competitionScore * 15); // Scale to 0-100
+}
+
+function calculateInnovationScore() {
+  // Measure unusual or innovative building/strategy patterns
+  let innovationScore = 0;
+  
+  // Check for unusual building ratios
+  const counts = calculateBuildingCounts();
+  const totalBuildings = Object.values(counts).reduce((a, b) => a + b, 0);
+  
+  if (totalBuildings > 0) {
+    // Award points for balanced development
+    const types = Object.keys(counts).length;
+    const evenness = types / Math.max(1, Math.max(...Object.values(counts)));
+    innovationScore += evenness * 25;
+    
+    // Award points for advanced infrastructure
+    const transitScore = (counts.transitStop || 0) + (counts.transitRoute || 0) * 2;
+    innovationScore += Math.min(25, transitScore * 5);
+    
+    // Award points for energy independence
+    const energyProduction = (counts.solar || 0) + (counts.wind || 0);
+    const energyNeeds = totalBuildings * 0.3; // Rough estimate
+    if (energyProduction >= energyNeeds) innovationScore += 25;
+  }
+  
+  return Math.min(100, innovationScore);
+}
+
+function identifyDominantStrategies() {
+  const strategies = Array.from(gameState.core.players.values()).map(player => 
+    analyzePlayerStrategy(player.id)
+  );
+  
+  const strategyCounts = {};
+  strategies.forEach(strategy => {
+    strategyCounts[strategy] = (strategyCounts[strategy] || 0) + 1;
+  });
+  
+  return Object.entries(strategyCounts)
+    .sort(([,a], [,b]) => b - a)
+    .map(([strategy, count]) => ({ strategy, count }));
+}
+
+function detectUnusualPatterns() {
+  const patterns = [];
+  
+  // Check for extremely rapid expansion
+  const avgParcelsPerPlayer = Object.keys(gameState.core.parcels).length / Math.max(1, gameState.core.players.size);
+  if (avgParcelsPerPlayer > 20) {
+    patterns.push({ type: 'rapid_expansion', severity: 'high' });
+  }
+  
+  // Check for governance concentration
+  let maxGovernanceInfluence = 0;
+  gameState.core.players.forEach(player => {
+    const influence = calculateGovernanceInfluence(player.id);
+    if (influence > maxGovernanceInfluence) {
+      maxGovernanceInfluence = influence;
+    }
+  });
+  
+  if (maxGovernanceInfluence > 10) {
+    patterns.push({ type: 'governance_dominance', severity: 'medium' });
+  }
+  
+  return patterns;
+}
+
+function findEfficiencyOpportunities() {
+  const opportunities = [];
+  
+  // Check energy balance
+  const energyBalance = gameState.calculated.vitality.energy.balance;
+  if (energyBalance < -10) {
+    opportunities.push({ type: 'energy_shortage', impact: 'high' });
+  } else if (energyBalance > 20) {
+    opportunities.push({ type: 'energy_surplus', impact: 'medium' });
+  }
+  
+  // Check transportation efficiency
+  const connectivity = calculateNetworkConnectivity();
+  const buildings = Object.values(calculateBuildingCounts()).reduce((a, b) => a + b, 0);
+  
+  if (buildings > 15 && connectivity < buildings * 0.5) {
+    opportunities.push({ type: 'poor_connectivity', impact: 'high' });
+  }
+  
+  return opportunities;
+}
+
+function detectGovernanceExploits() {
+  const exploits = [];
+  
+  // Check for potential vote manipulation
+  const totalBudget = gameState.core.governance.totalBudget;
+  const unallocated = gameState.core.governance.unallocatedFunds;
+  
+  if (unallocated > totalBudget * 0.8) {
+    exploits.push({ type: 'budget_hoarding', risk: 'medium' });
+  }
+  
+  // Check for LVT rate manipulation
+  const lvtRate = gameState.core.governance.currentLvtRate;
+  if (lvtRate < 0.1 || lvtRate > 0.9) {
+    exploits.push({ type: 'extreme_lvt_rate', risk: 'high' });
+  }
+  
+  return exploits;
+}
+
+// Helper functions for performance metrics
+function calculateTotalRevenue() {
+  // This would sum up all revenue from buildings, auctions, etc.
+  // Simplified implementation
+  return Object.values(gameState.core.parcels).reduce((total, parcel) => {
+    if (parcel.building) {
+      // Add building revenue based on type
+      return total + (getBuildingRevenue(parcel.building) || 0);
+    }
+    return total;
+  }, 0);
+}
+
+function calculateTotalExpenses() {
+  // Sum up maintenance costs, construction costs, etc.
+  return Object.values(gameState.core.parcels).reduce((total, parcel) => {
+    if (parcel.building) {
+      return total + (getBuildingMaintenance(parcel.building) || 0);
+    }
+    return total;
+  }, 0);
+}
+
+function calculateEfficiency() {
+  // Calculate overall city efficiency (0-100)
+  const vitality = gameState.calculated.vitality;
+  const efficiencyScores = Object.values(vitality).map(v => {
+    if (v.demand === 0) return 100;
+    return Math.max(0, Math.min(100, (v.supply / v.demand) * 100));
+  });
+  return efficiencyScores.reduce((sum, score) => sum + score, 0) / efficiencyScores.length;
+}
+
+function calculateSustainability() {
+  // Calculate environmental/economic sustainability (0-100)
+  const energyBalance = gameState.calculated.vitality.energy.balance;
+  const foodBalance = gameState.calculated.vitality.food.balance;
+  const treasury = gameState.calculated.treasury;
+  
+  const energySustainability = Math.min(100, Math.max(0, (energyBalance + 50) * 2));
+  const foodSustainability = Math.min(100, Math.max(0, (foodBalance + 50) * 2));
+  const economicSustainability = Math.min(100, Math.max(0, treasury / 1000));
+  
+  return (energySustainability + foodSustainability + economicSustainability) / 3;
+}
+
+function getBuildingRevenue(buildingType) {
+  const revenues = {
+    'shop': 100,
+    'office': 300,
+    'market': 150
+  };
+  return revenues[buildingType] || 0;
+}
+
+function getBuildingMaintenance(buildingType) {
+  const maintenance = {
+    'house': 50,
+    'apartment': 120,
+    'shop': 75,
+    'office': 150,
+    'solar': 25,
+    'wind': 40,
+    'farm': 30,
+    'market': 90
+  };
+  return maintenance[buildingType] || 0;
+}
+
+// Update leaderboard with new completed game
+function updateLeaderboard(completedGame) {
+  cityLeaderboard.push(completedGame);
+  
+  // Sort by score (descending) then by duration (ascending for ties)
+  cityLeaderboard.sort((a, b) => {
+    if (b.score !== a.score) {
+      return b.score - a.score;
+    }
+    return a.duration - b.duration; // Faster completion wins ties
+  });
+  
+  // Keep only top 100 games
+  if (cityLeaderboard.length > 100) {
+    cityLeaderboard.splice(100);
+  }
+  
+  console.log(`📊 Leaderboard updated. ${completedGame.cityName} scored ${completedGame.score} points`);
+}
+
+// Get top N games from leaderboard
+function getTopLeaderboard(limit = 10) {
+  return cityLeaderboard.slice(0, limit).map((game, index) => ({
+    rank: index + 1,
+    gameId: game.gameId,
+    cityName: game.cityName,
+    score: game.score,
+    playerCount: game.playerCount,
+    duration: game.duration,
+    durationFormatted: formatDuration(game.duration),
+    endTime: game.endTime,
+    endDate: new Date(game.endTime).toLocaleDateString(),
+    endReason: game.endReason || 'completed',
+    strategy: game.snapshot?.strategicInsights?.dominantStrategies?.[0]?.strategy || 'unknown'
+  }));
+}
+
+// Helper function to format duration
+function formatDuration(milliseconds) {
+  const seconds = Math.floor(milliseconds / 1000);
+  const minutes = Math.floor(seconds / 60);
+  const hours = Math.floor(minutes / 60);
+  const days = Math.floor(hours / 24);
+  
+  if (days > 0) {
+    return `${days}d ${hours % 24}h`;
+  } else if (hours > 0) {
+    return `${hours}h ${minutes % 60}m`;
+  } else if (minutes > 0) {
+    return `${minutes}m ${seconds % 60}s`;
+  } else {
+    return `${seconds}s`;
+  }
+}
+
+// Archive completed game
+function archiveGame(gameId) {
+  const game = gameHistory.get(gameId);
+  if (!game) return;
+  
+  game.snapshot.archived = true;
+  game.status = 'archived';
+  
+  console.log(`📦 Archived game ${gameId}`);
+}
+
+// Check if game should end due to time limit
+function checkGameTimeLimit() {
+  if (gameState.lifecycle.status !== 'active') return;
+  
+  // Check if we've reached September 1st of the following year
+  if (gameState.core.currentMonth === 'SEPT' && gameState.core.currentDay === 1) {
+    // Check if this is the second September (game started in previous September)
+    const gameAgeInDays = (Date.now() - gameState.lifecycle.startTime) / (1000 * 60 * 60 * 24);
+    if (gameAgeInDays > 30) { // Game has been running for more than 30 real days (approximate)
+      endGame('time_limit');
+    }
+  }
+}
+
+// Monitor player connections and handle departures
+function monitorPlayerConnections() {
+  setInterval(() => {
+    // Check for players who haven't been seen recently
+    const now = Date.now();
+    const disconnectThreshold = 30000; // 30 seconds
+    
+    gameState.lifecycle.activePlayers.forEach(playerId => {
+      const player = gameState.core.players.get(playerId);
+      const client = clients.get(playerId);
+      
+      if (!client || !player || (player.lastSeen && now - player.lastSeen > disconnectThreshold)) {
+        // console.log(`🔌 Player ${playerId} appears disconnected`);
+        handlePlayerDeparture(playerId, 'disconnect');
+      }
+    });
+    
+    // Check game time limit
+    checkGameTimeLimit();
+    
+  }, 10000); // Check every 10 seconds
+}
+
+// Start monitoring when server starts
+monitorPlayerConnections();
 
 // Start server
 const PORT = process.env.PORT || 3000;
