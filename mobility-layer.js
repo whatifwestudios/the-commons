@@ -2552,8 +2552,8 @@ class MobilityLayer {
         
         // Use multiplayer system for road building
         if (this.game.multiplayerManager && this.game.multiplayerManager.isConnected) {
-            // Send road build action to server
-            this.game.multiplayerManager.broadcastAction({
+            // Create action data
+            const actionData = {
                 type: 'BUILD_ROAD',
                 roadKey: this.hoveredEdge,
                 roadType: this.selectedRoadType,
@@ -2562,6 +2562,46 @@ class MobilityLayer {
                 cost: totalCost,
                 isUpgrade: this.roads.has(this.hoveredEdge),
                 existingRoad: this.roads.get(this.hoveredEdge) || null
+            };
+            
+            // OPTIMISTIC UPDATE: Add road immediately for instant visual feedback
+            const roadData = {
+                type: this.selectedRoadType,
+                hasSidewalks: this.infrastructureOptions.sidewalks.active,
+                hasBikeLanes: this.infrastructureOptions.bikeLanes.active,
+                cost: totalCost,
+                isUpgrade: this.roads.has(this.hoveredEdge),
+                existingRoad: this.roads.get(this.hoveredEdge) || null,
+                timestamp: Date.now(),
+                optimistic: true // Mark as optimistic until server confirms
+            };
+            
+            // Store current state for rollback
+            const previousRoadData = this.roads.get(this.hoveredEdge) || null;
+            
+            // Add road to local map immediately
+            this.roads.set(this.hoveredEdge, roadData);
+            
+            // Send action and handle response
+            this.game.multiplayerManager.broadcastAction(actionData).then(result => {
+                if (!result.success) {
+                    // Rollback on failure
+                    if (previousRoadData) {
+                        this.roads.set(this.hoveredEdge, previousRoadData);
+                    } else {
+                        this.roads.delete(this.hoveredEdge);
+                    }
+                    this.game.scheduleRender?.();
+                }
+            }).catch(error => {
+                console.error('Road building failed:', error);
+                // Rollback on error
+                if (previousRoadData) {
+                    this.roads.set(this.hoveredEdge, previousRoadData);
+                } else {
+                    this.roads.delete(this.hoveredEdge);
+                }
+                this.game.scheduleRender?.();
             });
         } else {
             // Fallback to local road building for offline mode

@@ -1424,10 +1424,12 @@ class UniversalMultiplayerManager {
         
         // Sync roads with MobilityLayer
         if (transportationState.roads && this.game.mobilityLayer) {
-            // Clear existing roads and sync from server
-            this.game.mobilityLayer.roads.clear();
-            
+            // Update individual roads instead of clearing all (preserves optimistic updates)
             Object.entries(transportationState.roads).forEach(([roadKey, roadData]) => {
+                // Remove optimistic flag since this is server-confirmed
+                if (roadData) {
+                    delete roadData.optimistic;
+                }
                 this.game.mobilityLayer.roads.set(roadKey, roadData);
                 console.log(`🛣️ Synced road: ${roadKey}`, roadData);
             });
