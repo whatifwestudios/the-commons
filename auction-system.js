@@ -133,52 +133,336 @@ class AuctionSystem {
         const existingUI = document.getElementById('auction-ui');
         if (existingUI) existingUI.remove();
         
+        const totalValue = this.activeAuction.calculatedLandValue + this.activeAuction.buildingValue;
+        const phaseLabel = this.activeAuction.dutchPhase ? 'Dutch Phase' : 'Bidding Phase';
+        const phaseDescription = this.activeAuction.dutchPhase ? 
+            'Price decreasing automatically' : 
+            'Players can place competitive bids';
+        
         const auctionUI = document.createElement('div');
         auctionUI.id = 'auction-ui';
-        auctionUI.className = 'auction-overlay';
+        auctionUI.className = 'modal auction-modal';
         auctionUI.innerHTML = `
-            <div class="auction-panel">
-                <div class="auction-header">
-                    <h3>LAND AUCTION - ${this.activeAuction.coord}</h3>
-                    <span class="auction-timer" id="auction-timer">60</span>
+            <div class="modal-content parcel-auction">
+                <div class="modal-header">
+                    <h2>Parcel Auction - ${this.activeAuction.coord}</h2>
+                    <button class="modal-close" onclick="window.game.auctionSystem.cancelAuction()">&times;</button>
                 </div>
-                <div class="auction-info">
-                    <div class="info-row">
-                        <span>Current Owner:</span>
-                        <span>${this.activeAuction.currentOwner || 'UNOWNED'}</span>
+                <div class="modal-body">
+                    <div class="auction-tabs">
+                        <button class="tab-btn active" data-tab="current-auction">Live Auction</button>
+                        <button class="tab-btn" data-tab="parcel-details">Property Details</button>
+                        <button class="tab-btn" data-tab="auction-history">Bid History</button>
                     </div>
-                    <div class="info-row">
-                        <span>Land Value:</span>
-                        <span>$${this.activeAuction.calculatedLandValue.toLocaleString()}</span>
+                    
+                    <div class="tab-content active" id="current-auction">
+                        <div class="auction-status-card">
+                            <div class="auction-phase">
+                                <div class="phase-indicator ${this.activeAuction.dutchPhase ? 'dutch' : 'bidding'}">
+                                    <div class="phase-dot"></div>
+                                    <span class="phase-label">${phaseLabel}</span>
+                                </div>
+                                <div class="phase-description">${phaseDescription}</div>
+                            </div>
+                            
+                            <div class="auction-timer-section">
+                                <div class="timer-label">Time Remaining</div>
+                                <div class="timer-display" id="auction-timer">60s</div>
+                                <div class="timer-bar">
+                                    <div class="timer-progress" id="timer-progress"></div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="current-bid-card">
+                            <div class="bid-header">
+                                <h3>Current Price</h3>
+                                <div class="bid-trend ${this.activeAuction.dutchPhase ? 'decreasing' : 'stable'}">
+                                    <span class="trend-icon">${this.activeAuction.dutchPhase ? '↓' : '→'}</span>
+                                    <span class="trend-text">${this.activeAuction.dutchPhase ? 'Decreasing' : 'Stable'}</span>
+                                </div>
+                            </div>
+                            <div class="bid-amount-display">
+                                <span class="currency">$</span>
+                                <span class="amount" id="current-bid">${this.activeAuction.currentBid.toLocaleString()}</span>
+                            </div>
+                            <div class="bid-details">
+                                <div class="bid-breakdown">
+                                    <div class="breakdown-item">
+                                        <span class="label">Land Value:</span>
+                                        <span class="value">$${this.activeAuction.calculatedLandValue.toLocaleString()}</span>
+                                    </div>
+                                    ${this.activeAuction.buildingValue > 0 ? `
+                                    <div class="breakdown-item">
+                                        <span class="label">Building Value:</span>
+                                        <span class="value">$${this.activeAuction.buildingValue.toLocaleString()}</span>
+                                    </div>
+                                    <div class="breakdown-item total">
+                                        <span class="label">Total Value:</span>
+                                        <span class="value">$${totalValue.toLocaleString()}</span>
+                                    </div>
+                                    ` : ''}
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="bidding-section" id="bidding-section">
+                            <div class="bid-controls">
+                                <div class="quick-bid-buttons">
+                                    <button class="quick-bid-btn" data-increment="0.05">+5%</button>
+                                    <button class="quick-bid-btn" data-increment="0.10">+10%</button>
+                                    <button class="quick-bid-btn" data-increment="0.20">+20%</button>
+                                </div>
+                                <div class="custom-bid-form">
+                                    <input type="number" id="custom-bid-input" placeholder="Enter custom bid..." min="${this.activeAuction.currentBid + 1}">
+                                    <button class="btn-primary" id="place-custom-bid">Place Bid</button>
+                                </div>
+                                <button class="btn-primary large" id="place-bid-btn">
+                                    <span class="btn-icon">💰</span>
+                                    Accept Current Price
+                                </button>
+                            </div>
+                            
+                            <div class="bid-info">
+                                <div class="info-item">
+                                    <span class="label">Your Cash:</span>
+                                    <span class="value">$${this.game.playerCash.toLocaleString()}</span>
+                                </div>
+                                <div class="info-item">
+                                    <span class="label">After Purchase:</span>
+                                    <span class="value ${(this.game.playerCash - this.activeAuction.currentBid) < 0 ? 'insufficient' : ''}">
+                                        $${(this.game.playerCash - this.activeAuction.currentBid).toLocaleString()}
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
                     </div>
-                    <div class="info-row" ${this.activeAuction.buildingValue ? '' : 'style="display:none"'}>
-                        <span>Building Value:</span>
-                        <span>$${this.activeAuction.buildingValue.toLocaleString()}</span>
+                    
+                    <div class="tab-content" id="parcel-details">
+                        <div class="parcel-info-card">
+                            <div class="parcel-header">
+                                <h3>Property Information</h3>
+                                <div class="parcel-coordinate">${this.activeAuction.coord}</div>
+                            </div>
+                            <div class="parcel-details-grid">
+                                <div class="detail-item">
+                                    <span class="label">Current Owner:</span>
+                                    <span class="value">${this.activeAuction.currentOwner || 'Unowned'}</span>
+                                </div>
+                                <div class="detail-item">
+                                    <span class="label">Land Value:</span>
+                                    <span class="value">$${this.activeAuction.calculatedLandValue.toLocaleString()}</span>
+                                </div>
+                                ${this.activeAuction.buildingValue > 0 ? `
+                                <div class="detail-item">
+                                    <span class="label">Building Present:</span>
+                                    <span class="value">Yes</span>
+                                </div>
+                                <div class="detail-item">
+                                    <span class="label">Building Value:</span>
+                                    <span class="value">$${this.activeAuction.buildingValue.toLocaleString()}</span>
+                                </div>
+                                ` : `
+                                <div class="detail-item">
+                                    <span class="label">Building Present:</span>
+                                    <span class="value">No</span>
+                                </div>
+                                `}
+                                <div class="detail-item">
+                                    <span class="label">Auction Type:</span>
+                                    <span class="value">Dutch → English</span>
+                                </div>
+                            </div>
+                        </div>
                     </div>
-                </div>
-                <div class="auction-current-bid">
-                    <div class="bid-label">Current Bid</div>
-                    <div class="bid-amount" id="current-bid">$${this.activeAuction.currentBid.toLocaleString()}</div>
-                    <div class="bid-status" id="bid-status">Dutch Auction - Price Dropping</div>
-                </div>
-                <div class="auction-actions" id="auction-actions">
-                    <button class="auction-btn" id="place-bid-btn">PLACE BID</button>
-                </div>
-                <div class="auction-history" id="auction-history">
-                    <h4>Bid History</h4>
-                    <div class="history-content"></div>
+                    
+                    <div class="tab-content" id="auction-history">
+                        <div class="bid-history-card">
+                            <h3>Bidding Activity</h3>
+                            <div class="bid-list" id="bid-list">
+                                <div class="no-bids">
+                                    <div class="no-bids-icon">📋</div>
+                                    <div class="no-bids-text">No bids placed yet</div>
+                                    <div class="no-bids-subtext">Be the first to place a bid!</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
         `;
         
         document.body.appendChild(auctionUI);
         
-        // Close auction when clicking outside
-        auctionUI.addEventListener('click', (e) => {
-            if (e.target === auctionUI) {
-                this.endAuction();
-            }
+        // Add animation class
+        setTimeout(() => {
+            auctionUI.classList.add('visible');
+        }, 10);
+        
+        // Setup tab switching
+        this.setupAuctionTabs();
+        
+        // Setup bid controls
+        this.setupBidControls();
+        
+        // Update timer display
+        this.updateAuctionTimer();
+    }
+    
+    /**
+     * Setup auction tab switching
+     */
+    setupAuctionTabs() {
+        const tabButtons = document.querySelectorAll('.auction-tabs .tab-btn');
+        const tabContents = document.querySelectorAll('.tab-content');
+        
+        tabButtons.forEach(button => {
+            button.addEventListener('click', () => {
+                const targetTab = button.getAttribute('data-tab');
+                
+                // Update active tab button
+                tabButtons.forEach(btn => btn.classList.remove('active'));
+                button.classList.add('active');
+                
+                // Update active tab content
+                tabContents.forEach(content => {
+                    content.classList.remove('active');
+                    if (content.id === targetTab) {
+                        content.classList.add('active');
+                    }
+                });
+            });
         });
+    }
+    
+    /**
+     * Setup bid control event listeners
+     */
+    setupBidControls() {
+        // Quick bid buttons
+        const quickBidButtons = document.querySelectorAll('.quick-bid-btn');
+        quickBidButtons.forEach(button => {
+            button.addEventListener('click', () => {
+                const increment = parseFloat(button.getAttribute('data-increment'));
+                this.placeBid(increment);
+            });
+        });
+        
+        // Custom bid form
+        const customBidInput = document.getElementById('custom-bid-input');
+        const customBidButton = document.getElementById('place-custom-bid');
+        
+        if (customBidInput && customBidButton) {
+            customBidButton.addEventListener('click', () => {
+                const customAmount = parseInt(customBidInput.value);
+                if (customAmount && customAmount > this.activeAuction.currentBid) {
+                    // Calculate the percentage increase for custom bid
+                    const currentBid = this.activeAuction.currentBid;
+                    const customBidAsIncrement = (customAmount - currentBid) / currentBid;
+                    this.placeBid(customBidAsIncrement, customAmount);
+                    customBidInput.value = '';
+                } else {
+                    this.game.showNotification('Please enter a valid bid higher than current price', 'error');
+                }
+            });
+            
+            // Allow Enter key to submit custom bid
+            customBidInput.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') {
+                    customBidButton.click();
+                }
+            });
+        }
+        
+        // Accept current price button  
+        const placeBidButton = document.getElementById('place-bid-btn');
+        if (placeBidButton) {
+            placeBidButton.addEventListener('click', () => {
+                this.placeBid(0); // Accept current price
+            });
+        }
+    }
+    
+    /**
+     * Update auction timer display
+     */
+    updateAuctionTimer() {
+        if (!this.activeAuction) return;
+        
+        const now = Date.now();
+        const timeLeft = Math.max(0, this.activeAuction.endTime - now) / 1000;
+        const totalDuration = this.auctionDuration / 1000;
+        const progress = Math.max(0, 1 - (timeLeft / totalDuration));
+        
+        // Update timer display
+        const timerEl = document.getElementById('auction-timer');
+        if (timerEl) {
+            const minutes = Math.floor(timeLeft / 60);
+            const seconds = Math.floor(timeLeft % 60);
+            const timeString = minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`;
+            timerEl.textContent = timeString;
+            
+            // Add urgency styling for last 10 seconds
+            if (timeLeft <= 10) {
+                timerEl.classList.add('urgent');
+            } else {
+                timerEl.classList.remove('urgent');
+            }
+        }
+        
+        // Update progress bar
+        const progressEl = document.getElementById('timer-progress');
+        if (progressEl) {
+            progressEl.style.width = `${progress * 100}%`;
+            
+            // Change color based on time remaining
+            if (timeLeft <= 10) {
+                progressEl.style.background = 'linear-gradient(90deg, #ff4444, #ff6666)';
+            } else if (timeLeft <= 30) {
+                progressEl.style.background = 'linear-gradient(90deg, #ff9500, #ffb84d)';
+            } else {
+                progressEl.style.background = 'linear-gradient(90deg, #ff9500, #ffb84d)';
+            }
+        }
+        
+        // Update current bid display
+        const currentBidEl = document.getElementById('current-bid');
+        if (currentBidEl && this.activeAuction) {
+            currentBidEl.textContent = this.activeAuction.currentBid.toLocaleString();
+        }
+        
+        // Update bid trend indicator
+        const trendEl = document.querySelector('.bid-trend');
+        if (trendEl) {
+            const isDecreasing = this.activeAuction.dutchPhase && !this.activeAuction.currentBidder;
+            trendEl.className = `bid-trend ${isDecreasing ? 'decreasing' : 'stable'}`;
+            
+            const trendIcon = trendEl.querySelector('.trend-icon');
+            const trendText = trendEl.querySelector('.trend-text');
+            if (trendIcon && trendText) {
+                trendIcon.textContent = isDecreasing ? '↓' : '→';
+                trendText.textContent = isDecreasing ? 'Decreasing' : 'Stable';
+            }
+        }
+        
+        // Update phase indicator
+        const phaseIndicator = document.querySelector('.phase-indicator');
+        if (phaseIndicator) {
+            phaseIndicator.className = `phase-indicator ${this.activeAuction.dutchPhase ? 'dutch' : 'bidding'}`;
+            
+            const phaseLabel = phaseIndicator.querySelector('.phase-label');
+            if (phaseLabel) {
+                phaseLabel.textContent = this.activeAuction.dutchPhase ? 'Dutch Phase' : 'Bidding Phase';
+            }
+        }
+        
+        // Update after purchase amount
+        const afterPurchaseEl = document.querySelector('.bid-info .info-item:last-child .value');
+        if (afterPurchaseEl) {
+            const remaining = this.game.playerCash - this.activeAuction.currentBid;
+            afterPurchaseEl.textContent = `$${remaining.toLocaleString()}`;
+            afterPurchaseEl.className = remaining < 0 ? 'value insufficient' : 'value';
+        }
     }
     
     /**
@@ -197,11 +481,7 @@ class AuctionSystem {
             const timeLeft = Math.max(0, this.activeAuction.endTime - now) / 1000;
             
             // Update timer display
-            const timerEl = document.getElementById('auction-timer');
-            if (timerEl) {
-                timerEl.textContent = Math.ceil(timeLeft);
-                timerEl.className = timeLeft <= 10 ? 'auction-timer urgent' : 'auction-timer';
-            }
+            this.updateAuctionTimer();
             
             // Dutch auction phase - price drops
             if (this.activeAuction.dutchPhase && !this.activeAuction.currentBidder) {
@@ -230,7 +510,7 @@ class AuctionSystem {
     /**
      * Place a bid in the auction
      */
-    placeBid(increment = 0.05) {
+    placeBid(increment = 0.05, customAmount = null) {
         if (!this.activeAuction) return;
         
         // Handle Dutch auction phase
@@ -246,7 +526,13 @@ class AuctionSystem {
             this.updateAuctionActions();
         } else {
             // Regular bidding phase - increase bid
-            const newBid = Math.floor(this.activeAuction.currentBid * (1 + increment));
+            const newBid = customAmount || Math.floor(this.activeAuction.currentBid * (1 + increment));
+            
+            // Validate minimum bid
+            if (newBid <= this.activeAuction.currentBid) {
+                this.game.showNotification('Bid must be higher than current price', 'error');
+                return;
+            }
             
             // Check if player can afford this bid
             const totalCost = this.activeAuction.currentOwner && this.activeAuction.currentOwner !== 'player' 
