@@ -2557,8 +2557,12 @@ class IsometricGrid {
                     this.economicCache.playerParcels.add(key);
                     
                     // Age buildings and mark as dirty (all buildings age daily)
-                    if (parcel.building) {
+                    // Only age locally if not connected to multiplayer server
+                    if (parcel.building && (!this.multiplayerManager || !this.multiplayerManager.isConnected)) {
                         parcel.buildingAge++;
+                        this.markBuildingEconomicsDirty(row, col);
+                    } else if (parcel.building && this.multiplayerManager && this.multiplayerManager.isConnected) {
+                        // Just mark as dirty for recalculation, aging is handled by server
                         this.markBuildingEconomicsDirty(row, col);
                     }
                 }

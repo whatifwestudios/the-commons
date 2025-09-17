@@ -424,7 +424,10 @@ async function processPurchaseParcel(action) {
     owner: playerId,
     building: building,
     timestamp: Date.now(),
-    purchasePrice: purchasePrice || 0
+    purchasePrice: purchasePrice || 0,
+    buildingAge: 0,
+    decay: 0,
+    amenities: []
   };
   
   // Update player data
@@ -827,6 +830,62 @@ setInterval(async () => {
     }
   }
 }, 5000); // Every 5 seconds
+
+// Daily building aging system (every 60 seconds = 1 game day)
+setInterval(async () => {
+  console.log('🕐 Processing daily building aging...');
+  
+  let buildingsAged = 0;
+  let buildingsDecayed = 0;
+  
+  // Age all buildings
+  Object.entries(gameState.core.parcels).forEach(([parcelId, parcel]) => {
+    if (parcel.building && parcel.owner) {
+      // Age the building
+      parcel.buildingAge = (parcel.buildingAge || 0) + 1;
+      buildingsAged++;
+      
+      // Calculate decay based on age (buildings start decaying after 30 days)
+      if (parcel.buildingAge > 30) {
+        const ageOverThreshold = parcel.buildingAge - 30;
+        const decayRate = 0.002; // 0.2% per day after threshold
+        const newDecay = Math.min(0.8, ageOverThreshold * decayRate); // Max 80% decay
+        
+        if (newDecay > (parcel.decay || 0)) {
+          parcel.decay = newDecay;
+          buildingsDecayed++;
+        }
+      }
+      
+      // Mark parcel as updated
+      gameState.version.perParcel[parcelId] = gameState.version.global + 1;
+    }
+  });
+  
+  if (buildingsAged > 0) {
+    // Increment global version and recalculate
+    gameState.version.global++;
+    gameState.meta.lastUpdate = Date.now();
+    
+    await recalculateAuthoritativeState();
+    
+    // Broadcast aging updates to all clients
+    const agingMessage = {
+      type: 'BUILDING_AGING_UPDATE',
+      summary: {
+        buildingsAged,
+        buildingsDecayed,
+        gameDay: gameState.core.currentDay
+      },
+      timestamp: Date.now(),
+      version: gameState.version.global
+    };
+    
+    broadcastToAll(agingMessage);
+    
+    console.log(`📈 Buildings aged: ${buildingsAged}, Decayed: ${buildingsDecayed}`);
+  }
+}, 60000); // Every 60 seconds (1 game day)
 
 // Start server
 const PORT = process.env.PORT || 3000;

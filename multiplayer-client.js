@@ -275,6 +275,12 @@ class UniversalMultiplayerManager {
                 this.handleConstructionUpdate(data);
                 break;
                 
+            case 'BUILDING_AGING_UPDATE':
+                console.log('📈 Building aging update:', data.summary);
+                // Buildings age and decay is handled automatically via full state sync
+                // This message is just informational for logging
+                break;
+                
             default:
                 console.log('📨 Received server message:', data);
         }
@@ -647,6 +653,17 @@ class UniversalMultiplayerManager {
                         if (serverParcel.purchasePrice) {
                             if (!localParcel.landValue) localParcel.landValue = {};
                             localParcel.landValue.paidPrice = serverParcel.purchasePrice;
+                        }
+                        
+                        // Sync building age and decay
+                        if (serverParcel.buildingAge !== undefined) {
+                            localParcel.buildingAge = serverParcel.buildingAge;
+                        }
+                        if (serverParcel.decay !== undefined) {
+                            localParcel.decay = serverParcel.decay;
+                        }
+                        if (serverParcel.amenities) {
+                            localParcel.amenities = serverParcel.amenities;
                         }
                         
                         // Sync construction data
