@@ -4966,8 +4966,9 @@ class IsometricGrid {
             console.log('LVT point allocated successfully:', {
                 change,
                 newAllocation,
-            proposedRate: this.governance.proposedLvtRate
-        });
+                proposedRate: this.governance.proposedLvtRate
+            });
+        }
         return true;
     }
 
