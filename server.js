@@ -145,6 +145,8 @@ waitingRooms.set('default', defaultWaitingRoom);
 // Connected clients
 const clients = new Map();
 const parcelLocks = new Set();
+const auctionLocks = new Set();
+const roadLocks = new Set();
 
 // Health check endpoint
 app.get('/health', (req, res) => {
@@ -674,6 +676,28 @@ async function processConstructBuilding(action) {
       message: 'Parcel not found or not owned by player'
     };
   }
+
+  // IMPROVED: Check if building is already under construction or completed
+  if (parcel.constructionStartDay !== null && parcel.constructionStartDay !== undefined) {
+    const constructionInProgress = (gameState.core.currentDay - parcel.constructionStartDay) < parcel.constructionDays;
+    if (constructionInProgress) {
+      return {
+        success: false,
+        error: 'ALREADY_UNDER_CONSTRUCTION',
+        message: 'Building is already under construction'
+      };
+    }
+  }
+
+  // Check if building is already completed
+  if (parcel.constructionStartDay !== null && 
+      (gameState.core.currentDay - parcel.constructionStartDay) >= parcel.constructionDays) {
+    return {
+      success: false,
+      error: 'BUILDING_ALREADY_BUILT',
+      message: 'Building construction is already complete'
+    };
+  }
   
   const player = gameState.core.players.get(playerId);
   const actionCost = 1;
@@ -861,69 +885,94 @@ async function processLandPriceRequest(action) {
 async function processBuildRoad(action) {
   const { roadKey, roadType, hasSidewalks, hasBikeLanes, cost, isUpgrade, existingRoad, playerId } = action;
   
-  // Validate player and actions
-  if (!gameState.core.players.has(playerId)) {
+  // CRITICAL: Lock road to prevent concurrent building
+  if (roadLocks.has(roadKey)) {
     return {
       success: false,
-      error: 'INVALID_PLAYER',
-      message: 'Player not found'
+      error: 'ROAD_LOCKED',
+      message: 'This road segment is currently being built. Please try again.'
     };
   }
-  
-  const player = gameState.core.players.get(playerId);
-  const actionCost = 1;
-  const roadCost = cost || 500;
-  
-  // Check action and cash availability
-  if (player.actionManager.currentActions < actionCost) {
-    return {
-      success: false,
-      error: 'INSUFFICIENT_ACTIONS',
-      message: 'Not enough actions remaining'
-    };
-  }
-  
-  if (player.cash < roadCost) {
-    return {
-      success: false,
-      error: 'INSUFFICIENT_FUNDS',
-      message: `Not enough cash. Road costs $${roadCost}`
-    };
-  }
-  
-  // Build road
-  gameState.core.transportation.roads[roadKey] = {
-    type: roadType,
-    hasSidewalks: hasSidewalks,
-    hasBikeLanes: hasBikeLanes,
-    cost: roadCost,
-    isUpgrade: isUpgrade,
-    existingRoad: existingRoad,
-    builtBy: playerId,
-    timestamp: Date.now()
-  };
-  
-  // Deduct costs
-  player.cash -= roadCost;
-  player.actionManager.currentActions -= actionCost;
-  player.actionManager.usedThisMonth += actionCost;
-  
-  // Update versions
-  gameState.version.global++;
-  gameState.meta.lastUpdate = Date.now();
-  
-  await recalculateAuthoritativeState();
-  
-  return {
-    success: true,
-    processedAction: action,
-    stateChanges: {
-      transportation: {
-        roads: { [roadKey]: gameState.core.transportation.roads[roadKey] }
-      },
-      players: { [playerId]: Object.fromEntries([[playerId, player]]) }
+
+  roadLocks.add(roadKey);
+
+  try {
+    // Validate player and actions
+    if (!gameState.core.players.has(playerId)) {
+      return {
+        success: false,
+        error: 'INVALID_PLAYER',
+        message: 'Player not found'
+      };
     }
-  };
+
+    // Check if road already exists (unless this is an upgrade)
+    if (gameState.core.transportation.roads[roadKey] && !isUpgrade) {
+      return {
+        success: false,
+        error: 'ROAD_ALREADY_EXISTS',
+        message: 'This road segment already exists'
+      };
+    }
+    
+    const player = gameState.core.players.get(playerId);
+    const actionCost = 1;
+    const roadCost = cost || 500;
+    
+    // Check action and cash availability
+    if (player.actionManager.currentActions < actionCost) {
+      return {
+        success: false,
+        error: 'INSUFFICIENT_ACTIONS',
+        message: 'Not enough actions remaining'
+      };
+    }
+    
+    if (player.cash < roadCost) {
+      return {
+        success: false,
+        error: 'INSUFFICIENT_FUNDS',
+        message: `Not enough cash. Road costs $${roadCost}`
+      };
+    }
+  
+    // Build road
+    gameState.core.transportation.roads[roadKey] = {
+      type: roadType,
+      hasSidewalks: hasSidewalks,
+      hasBikeLanes: hasBikeLanes,
+      cost: roadCost,
+      isUpgrade: isUpgrade,
+      existingRoad: existingRoad,
+      builtBy: playerId,
+      timestamp: Date.now()
+    };
+    
+    // Deduct costs
+    player.cash -= roadCost;
+    player.actionManager.currentActions -= actionCost;
+    player.actionManager.usedThisMonth += actionCost;
+    
+    // Update versions
+    gameState.version.global++;
+    gameState.meta.lastUpdate = Date.now();
+    
+    await recalculateAuthoritativeState();
+    
+    return {
+      success: true,
+      processedAction: action,
+      stateChanges: {
+        transportation: {
+          roads: { [roadKey]: gameState.core.transportation.roads[roadKey] }
+        },
+        players: { [playerId]: Object.fromEntries([[playerId, player]]) }
+      }
+    };
+  } finally {
+    // CRITICAL: Always release road lock
+    roadLocks.delete(roadKey);
+  }
 }
 
 async function processBuildTransitStop(action) {
@@ -1608,55 +1657,76 @@ async function processCancelListing(action, playerId) {
 async function processBidOnListing(action, playerId) {
     const { listingId, bidAmount } = action;
 
-    const listing = gameState.core.auctions.get(listingId);
-
-    if (!listing) {
-        return { success: false, error: "LISTING_NOT_FOUND", message: "Auction listing not found." };
+    // CRITICAL: Lock auction to prevent concurrent bids
+    if (auctionLocks.has(listingId)) {
+        return { 
+            success: false, 
+            error: "AUCTION_LOCKED", 
+            message: "Another bid is being processed. Please try again." 
+        };
     }
 
-    if (listing.status !== 'active') {
-        return { success: false, error: "AUCTION_NOT_ACTIVE", message: "This auction is not active." };
-    }
+    auctionLocks.add(listingId);
 
-    const bidder = gameState.core.players.get(playerId);
-    if (!bidder) {
-        return { success: false, error: "PLAYER_NOT_FOUND", message: "Player not found." };
-    }
+    try {
+        const listing = gameState.core.auctions.get(listingId);
 
-    if (bidder.cash < bidAmount) {
-        return { success: false, error: "INSUFFICIENT_FUNDS", message: "Insufficient funds." };
-    }
-
-    if (bidAmount <= listing.currentBid) {
-        return { success: false, error: "BID_TOO_LOW", message: "Your bid must be higher than the current bid." };
-    }
-
-    // Refund the previous high bidder if there was one
-    if (listing.highBidder) {
-        const previousBidder = gameState.core.players.get(listing.highBidder);
-        if (previousBidder) {
-            previousBidder.cash += listing.currentBid;
+        if (!listing) {
+            return { success: false, error: "LISTING_NOT_FOUND", message: "Auction listing not found." };
         }
+
+        if (listing.status !== 'active') {
+            return { success: false, error: "AUCTION_NOT_ACTIVE", message: "This auction is not active." };
+        }
+
+        const bidder = gameState.core.players.get(playerId);
+        if (!bidder) {
+            return { success: false, error: "PLAYER_NOT_FOUND", message: "Player not found." };
+        }
+
+        if (bidder.cash < bidAmount) {
+            return { success: false, error: "INSUFFICIENT_FUNDS", message: "Insufficient funds." };
+        }
+
+        // Re-check current bid (could have changed while waiting for lock)
+        if (bidAmount <= listing.currentBid) {
+            return { success: false, error: "BID_TOO_LOW", message: "Your bid must be higher than the current bid." };
+        }
+
+        // ATOMIC TRANSACTION: All cash operations together
+        // Refund the previous high bidder if there was one
+        if (listing.highBidder) {
+            const previousBidder = gameState.core.players.get(listing.highBidder);
+            if (previousBidder) {
+                previousBidder.cash += listing.currentBid;
+            }
+        }
+
+        // Deduct from new bidder
+        bidder.cash -= bidAmount;
+        
+        // Update listing atomically
+        listing.currentBid = bidAmount;
+        listing.highBidder = playerId;
+
+        // Extend auction if bid is in the last 30 seconds
+        const timeRemaining = listing.expiresAt - Date.now();
+        if (timeRemaining < 30000) { // Less than 30 seconds remaining
+            listing.expiresAt += 5000; // Add 5 seconds
+        }
+
+        await recalculateAuthoritativeState();
+        broadcastToAll({
+            type: "AUCTION_UPDATED",
+            listingId,
+            listing,
+        });
+
+        return { success: true };
+    } finally {
+        // CRITICAL: Always release auction lock
+        auctionLocks.delete(listingId);
     }
-
-    bidder.cash -= bidAmount;
-    listing.currentBid = bidAmount;
-    listing.highBidder = playerId;
-
-    // Extend auction if bid is in the last 30 seconds
-    const timeRemaining = listing.expiresAt - Date.now();
-    if (timeRemaining < 30000) { // Less than 30 seconds remaining
-        listing.expiresAt += 5000; // Add 5 seconds
-    }
-
-    await recalculateAuthoritativeState();
-    broadcastToAll({
-        type: "AUCTION_UPDATED",
-        listingId,
-        listing,
-    });
-
-    return { success: true };
 }
 
 function calculateEndItNowFee(listing) {
