@@ -22,6 +22,11 @@ class UniversalMultiplayerManager {
         this.pendingActions = new Map();
         this.stateCache = null;
         
+        // Optimistic concurrency control
+        this.optimisticState = new Map(); // Track optimistic changes
+        this.rollbackStack = []; // Stack of changes that can be rolled back
+        this.maxRollbackDepth = 10;
+        
         // Heartbeat and connection management
         this.heartbeatInterval = null;
         this.heartbeatFrequency = 30000; // 30 seconds
@@ -540,7 +545,17 @@ class UniversalMultiplayerManager {
         if (this.pendingActions.has(actionId)) {
             this.pendingActions.delete(actionId);
         }
+        
+        // Confirm optimistic update if it exists
+        this.confirmOptimisticUpdate(actionId);
+        
+        // Apply any state changes from server
+        if (data.stateChanges) {
+            this.applyServerStateChanges(data.stateChanges);
+        }
+        
         this.actionCount++;
+        console.log(`✅ Action confirmed by server: ${actionId}`);
     }
     
     handleActionError(data) {
@@ -548,6 +563,9 @@ class UniversalMultiplayerManager {
         if (this.pendingActions.has(actionId)) {
             this.pendingActions.delete(actionId);
         }
+        
+        // Rollback optimistic update if it exists
+        const rolledBack = this.rollbackOptimisticUpdate(actionId, data.error);
         
         // Handle auction-specific errors
         if (data.error === 'AUCTION_STATE_CHANGED' && data.currentAuctionState) {
@@ -561,8 +579,15 @@ class UniversalMultiplayerManager {
         } else if (data.error === 'BID_SUPERSEDED') {
             // Another player bid higher
             this.showNotification(`Another player bid $${data.currentBid.toLocaleString()}. Try a higher amount.`, 'warning');
+        } else if (data.error === 'PARCEL_ALREADY_OWNED') {
+            // Another player purchased the parcel
+            this.showNotification('This parcel was purchased by another player', 'warning');
         } else {
             this.showNotification(data.message || 'Action failed', 'error');
+        }
+        
+        if (rolledBack) {
+            console.log(`🔄 Rolled back failed action: ${actionId}`);
         }
     }
     
@@ -885,6 +910,210 @@ class UniversalMultiplayerManager {
         });
         
         return result.success;
+    }
+    
+    // =====================================
+    // Phase 3: Optimistic Concurrency Control
+    // =====================================
+    
+    /**
+     * Apply an optimistic update immediately to the UI
+     * Store rollback information in case server rejects the action
+     */
+    applyOptimisticUpdate(action, rollbackData) {
+        const updateId = crypto.randomUUID();
+        
+        // Store rollback information
+        const rollbackInfo = {
+            id: updateId,
+            action: action,
+            rollbackData: rollbackData,
+            timestamp: Date.now()
+        };
+        
+        this.rollbackStack.push(rollbackInfo);
+        this.optimisticState.set(action.id, rollbackInfo);
+        
+        // Limit rollback stack size
+        if (this.rollbackStack.length > this.maxRollbackDepth) {
+            const removed = this.rollbackStack.shift();
+            this.optimisticState.delete(removed.action.id);
+        }
+        
+        console.log(`🚀 Applied optimistic update: ${action.type} (ID: ${updateId})`);
+        
+        return updateId;
+    }
+    
+    /**
+     * Confirm an optimistic update was accepted by server
+     */
+    confirmOptimisticUpdate(actionId) {
+        const rollbackInfo = this.optimisticState.get(actionId);
+        if (rollbackInfo) {
+            // Remove from tracking - update is confirmed
+            this.optimisticState.delete(actionId);
+            const index = this.rollbackStack.findIndex(r => r.id === rollbackInfo.id);
+            if (index !== -1) {
+                this.rollbackStack.splice(index, 1);
+            }
+            console.log(`✅ Confirmed optimistic update: ${rollbackInfo.action.type}`);
+        }
+    }
+    
+    /**
+     * Rollback an optimistic update that was rejected by server
+     */
+    rollbackOptimisticUpdate(actionId, reason = 'Server rejected') {
+        const rollbackInfo = this.optimisticState.get(actionId);
+        if (!rollbackInfo) {
+            console.warn(`⚠️ No rollback info found for action ${actionId}`);
+            return false;
+        }
+        
+        console.log(`🔄 Rolling back optimistic update: ${rollbackInfo.action.type} (${reason})`);
+        
+        // Apply rollback to game state
+        this.executeRollback(rollbackInfo);
+        
+        // Remove from tracking
+        this.optimisticState.delete(actionId);
+        const index = this.rollbackStack.findIndex(r => r.id === rollbackInfo.id);
+        if (index !== -1) {
+            this.rollbackStack.splice(index, 1);
+        }
+        
+        // Trigger re-render
+        if (this.game.scheduleRender) {
+            this.game.scheduleRender();
+        }
+        
+        return true;
+    }
+    
+    /**
+     * Execute rollback by restoring previous state
+     */
+    executeRollback(rollbackInfo) {
+        const { action, rollbackData } = rollbackInfo;
+        
+        switch (action.type) {
+            case 'PURCHASE_PARCEL':
+                this.rollbackParcelPurchase(action, rollbackData);
+                break;
+            case 'CONSTRUCT_BUILDING':
+                this.rollbackBuildingConstruction(action, rollbackData);
+                break;
+            default:
+                console.warn(`⚠️ No rollback handler for action type: ${action.type}`);
+        }
+    }
+    
+    /**
+     * Rollback a parcel purchase
+     */
+    rollbackParcelPurchase(action, rollbackData) {
+        const [row, col] = action.parcelId.split('-').map(Number);
+        if (this.game.grid[row] && this.game.grid[row][col]) {
+            const parcel = this.game.grid[row][col];
+            
+            // Restore previous state
+            parcel.owner = rollbackData.previousOwner;
+            parcel.building = rollbackData.previousBuilding;
+            if (rollbackData.previousLandValue) {
+                parcel.landValue = rollbackData.previousLandValue;
+            }
+            
+            // Restore player cash
+            if (rollbackData.previousCash !== undefined) {
+                this.game.playerCash = rollbackData.previousCash;
+                this.game.updateCashDisplay();
+            }
+            
+            console.log(`🔄 Rolled back parcel purchase at ${action.parcelId}`);
+        }
+    }
+    
+    /**
+     * Rollback a building construction
+     */
+    rollbackBuildingConstruction(action, rollbackData) {
+        const [row, col] = action.parcelId.split('-').map(Number);
+        if (this.game.grid[row] && this.game.grid[row][col]) {
+            const parcel = this.game.grid[row][col];
+            
+            // Restore previous building state
+            parcel.building = rollbackData.previousBuilding;
+            parcel.amenities = rollbackData.previousAmenities || [];
+            
+            // Restore construction data
+            if (rollbackData.previousConstructionStartDay !== undefined) {
+                parcel.constructionStartDay = rollbackData.previousConstructionStartDay;
+            } else {
+                delete parcel.constructionStartDay;
+            }
+            
+            if (rollbackData.previousConstructionDays !== undefined) {
+                parcel.constructionDays = rollbackData.previousConstructionDays;
+            } else {
+                delete parcel.constructionDays;
+            }
+            
+            // Restore player cash
+            if (rollbackData.previousCash !== undefined) {
+                this.game.playerCash = rollbackData.previousCash;
+                this.game.updateCashDisplay();
+            }
+            
+            console.log(`🔄 Rolled back building construction at ${action.parcelId}`);
+        }
+    }
+    
+    /**
+     * Clear all optimistic state (useful for reconnections)
+     */
+    clearOptimisticState() {
+        console.log(`🧹 Clearing ${this.optimisticState.size} optimistic updates`);
+        this.optimisticState.clear();
+        this.rollbackStack = [];
+    }
+    
+    /**
+     * Apply state changes received from server after action confirmation
+     */
+    applyServerStateChanges(stateChanges) {
+        console.log('📥 Applying server state changes:', stateChanges);
+        
+        // Apply parcel changes
+        if (stateChanges.parcels) {
+            Object.entries(stateChanges.parcels).forEach(([parcelId, serverParcel]) => {
+                const [row, col] = parcelId.split('-').map(Number);
+                if (this.game.grid[row] && this.game.grid[row][col]) {
+                    const localParcel = this.game.grid[row][col];
+                    
+                    // Update with authoritative server data
+                    Object.assign(localParcel, serverParcel);
+                    
+                    console.log(`✅ Updated parcel ${parcelId} with server data`);
+                }
+            });
+            
+            // Trigger re-render
+            if (this.game.scheduleRender) {
+                this.game.scheduleRender();
+            }
+        }
+        
+        // Apply other state changes (treasury, population, etc.)
+        if (stateChanges.treasury !== undefined) {
+            this.game.cityTreasury = stateChanges.treasury;
+            this.updateTreasuryDisplay();
+        }
+        
+        if (stateChanges.population !== undefined) {
+            this.game.totalPopulation = stateChanges.population;
+            this.updatePopulationDisplay();
+        }
     }
     
     // Display update methods
