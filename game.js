@@ -741,6 +741,7 @@ class MultiplayerManager {
     }
     
     onBuildingConstructed(row, col, building, constructionData = {}) {
+        console.log(`🏗️ Broadcasting building construction: ${building} at ${row}-${col}`, constructionData);
         this.broadcastAction({
             type: 'CONSTRUCT_BUILDING', 
             parcelId: `${row}-${col}`,
@@ -5702,10 +5703,13 @@ class IsometricGrid {
             
             // Broadcast building construction to other players WITH construction data
             if (this.multiplayerManager) {
+                console.log(`🏗️ Local building constructed: ${buildingId} at ${row}-${col}, broadcasting to multiplayer`);
                 this.multiplayerManager.onBuildingConstructed(row, col, buildingId, {
                     constructionStartDay: this.grid[row][col].constructionStartDay,
                     constructionDays: this.grid[row][col].constructionDays
                 });
+            } else {
+                console.log(`🏗️ Local building constructed: ${buildingId} at ${row}-${col}, NO MULTIPLAYER MANAGER`);
             }
             
             // Mark caches for updates

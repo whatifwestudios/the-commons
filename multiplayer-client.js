@@ -726,7 +726,7 @@ class UniversalMultiplayerManager {
                             delete localParcel._constructionProgress;
                         }
                         
-                        console.log(`🏠 Synced building at ${parcelId}: ${serverParcel.building} (owner: ${serverParcel.owner})`);
+                        console.log(`🏠 Synced building at ${parcelId}: ${serverParcel.building} (owner: ${serverParcel.owner})`, serverParcel);
                     } else if (localParcel.building) {
                         // Server says no building, but local has one - clear it
                         localParcel.building = null;

@@ -447,7 +447,10 @@ async function processPurchaseParcel(action) {
 async function processConstructBuilding(action) {
   const { parcelId, building, constructionStartDay, constructionDays, playerId } = action;
   
+  console.log(`🏗️ Server processing building construction: ${building} at ${parcelId} by ${playerId}`);
+  
   if (!gameState.core.parcels[parcelId] || gameState.core.parcels[parcelId].owner !== playerId) {
+    console.log(`❌ Building construction denied: Not owner of ${parcelId}`);
     return {
       success: false,
       error: 'UNAUTHORIZED',
@@ -459,6 +462,8 @@ async function processConstructBuilding(action) {
   gameState.core.parcels[parcelId].building = building;
   gameState.core.parcels[parcelId].constructionStartDay = constructionStartDay;
   gameState.core.parcels[parcelId].constructionDays = constructionDays;
+  
+  console.log(`✅ Server updated building at ${parcelId}: ${building}`);
   
   // Update versions
   gameState.version.global++;
