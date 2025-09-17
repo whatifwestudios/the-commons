@@ -453,9 +453,25 @@ class UniversalMultiplayerManager {
         }
         
         if (calculated.vitality) {
+            // Initialize vitality arrays if they don't exist
+            if (!this.game.vitalitySupply) this.game.vitalitySupply = {};
+            if (!this.game.vitalityDemand) this.game.vitalityDemand = {};
+            
+            // Map server's lowercase keys to game's uppercase keys
+            const keyMapping = {
+                'energy': 'ENERGY',
+                'food': 'FOOD', 
+                'housing': 'HOUSING',
+                'jobs': 'JOBS'
+            };
+            
             Object.entries(calculated.vitality).forEach(([metric, data]) => {
-                if (this.game.vitalityMetrics && this.game.vitalityMetrics[metric]) {
-                    Object.assign(this.game.vitalityMetrics[metric], data);
+                const gameKey = keyMapping[metric];
+                if (gameKey && data) {
+                    this.game.vitalitySupply[gameKey] = data.supply || 0;
+                    this.game.vitalityDemand[gameKey] = data.demand || 0;
+                    
+                    console.log(`🔄 Synced ${gameKey}: Supply=${data.supply}, Demand=${data.demand}, Balance=${data.balance}`);
                 }
             });
             this.game.updateVitalityDisplay();

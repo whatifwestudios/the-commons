@@ -8529,8 +8529,10 @@ class IsometricGrid {
     }
     
     updateVitalityDisplay() {
-        // Calculate vitality locally
-        this.calculateCityVitality();
+        // Only calculate vitality locally if not using server-side calculations
+        if (!this.multiplayerManager || !this.multiplayerManager.isConnected) {
+            this.calculateCityVitality();
+        }
         
         // Supply & Demand bars (Energy, Food, Housing, Jobs)
         const supplyDemandMetrics = ['ENERGY', 'FOOD', 'HOUSING', 'JOBS'];
