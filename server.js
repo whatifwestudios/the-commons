@@ -855,7 +855,7 @@ async function processLandPriceRequest(action) {
 }
 
 async function processBuildRoad(action) {
-  const { roadId, roadData, playerId } = action;
+  const { roadKey, roadType, hasSidewalks, hasBikeLanes, cost, isUpgrade, existingRoad, playerId } = action;
   
   // Validate player and actions
   if (!gameState.core.players.has(playerId)) {
@@ -868,7 +868,7 @@ async function processBuildRoad(action) {
   
   const player = gameState.core.players.get(playerId);
   const actionCost = 1;
-  const roadCost = roadData.cost || 500;
+  const roadCost = cost || 500;
   
   // Check action and cash availability
   if (player.actionManager.currentActions < actionCost) {
@@ -888,8 +888,13 @@ async function processBuildRoad(action) {
   }
   
   // Build road
-  gameState.core.transportation.roads[roadId] = {
-    ...roadData,
+  gameState.core.transportation.roads[roadKey] = {
+    type: roadType,
+    hasSidewalks: hasSidewalks,
+    hasBikeLanes: hasBikeLanes,
+    cost: roadCost,
+    isUpgrade: isUpgrade,
+    existingRoad: existingRoad,
     builtBy: playerId,
     timestamp: Date.now()
   };
@@ -910,7 +915,7 @@ async function processBuildRoad(action) {
     processedAction: action,
     stateChanges: {
       transportation: {
-        roads: { [roadId]: gameState.core.transportation.roads[roadId] }
+        roads: { [roadKey]: gameState.core.transportation.roads[roadKey] }
       },
       players: { [playerId]: Object.fromEntries([[playerId, player]]) }
     }
