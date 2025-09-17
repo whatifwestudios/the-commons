@@ -466,6 +466,11 @@ class UniversalMultiplayerManager {
             this.syncTransportationState(diff.changes.transportation);
         }
         
+        // Apply governance changes
+        if (diff.changes.governance) {
+            this.syncGovernanceState(diff.changes.governance);
+        }
+        
         this.localStateVersion = diff.version;
         this.game.updateDisplay();
     }
@@ -743,6 +748,11 @@ class UniversalMultiplayerManager {
         if (serverState.core.transportation) {
             this.syncTransportationState(serverState.core.transportation);
         }
+        
+        // Sync governance state
+        if (serverState.core.governance) {
+            this.syncGovernanceState(serverState.core.governance);
+        }
     }
     
     updatePlayersDisplay() {
@@ -906,6 +916,56 @@ class UniversalMultiplayerManager {
             return row2 > row1 ? 'bottom' : 'top';
         }
         return null;
+    }
+    
+    /**
+     * Sync governance state from server
+     */
+    syncGovernanceState(governanceState) {
+        console.log('🗳️ Syncing governance state from server...', governanceState);
+        
+        if (!this.game.governance) {
+            console.warn('⚠️ Game governance system not available');
+            return;
+        }
+        
+        // Sync global governance state
+        if (governanceState.categoryAllocations) {
+            this.game.governance.categoryAllocations = { ...governanceState.categoryAllocations };
+        }
+        
+        if (governanceState.currentLvtRate !== undefined) {
+            this.game.governance.currentLvtRate = governanceState.currentLvtRate;
+            this.game.governance.proposedLvtRate = governanceState.proposedLvtRate || governanceState.currentLvtRate;
+        }
+        
+        if (governanceState.unallocatedFunds !== undefined) {
+            this.game.governance.unallocatedFunds = governanceState.unallocatedFunds;
+        }
+        
+        if (governanceState.publicCoffers) {
+            this.game.governance.publicCoffers = { ...governanceState.publicCoffers };
+        }
+        
+        // Sync player-specific governance data from server player data
+        if (this.playerId && this.game.grid) {
+            const playerData = this.game.multiplayerManager?.players?.get(this.playerId);
+            if (playerData && playerData.governance) {
+                if (playerData.governance.playerAllocations) {
+                    this.game.governance.playerAllocations = { ...playerData.governance.playerAllocations };
+                }
+                if (playerData.governance.totalVotingPoints !== undefined) {
+                    this.game.governance.totalVotingPoints = playerData.governance.totalVotingPoints;
+                }
+            }
+        }
+        
+        // Update governance UI if the modal is open
+        if (this.game.updateGovernanceUI) {
+            this.game.updateGovernanceUI();
+        }
+        
+        console.log('🗳️ Governance state synced successfully');
     }
 }
 

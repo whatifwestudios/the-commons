@@ -384,6 +384,10 @@ async function processGameAction(action) {
       return await processBuildTransitStop(action);
     case 'CREATE_TRANSIT_ROUTE':
       return await processCreateTransitRoute(action);
+    case 'ALLOCATE_VOTE':
+      return await processAllocateVote(action, playerId);
+    case 'ALLOCATE_LVT_POINT':
+      return await processAllocateLVTPoint(action, playerId);
     default:
       throw new Error(`Unknown action type: ${action.type}`);
   }
@@ -649,7 +653,8 @@ function getClientSafeState() {
       currentDay: gameState.core.currentDay,
       gameSpeed: gameState.core.gameSpeed,
       isPaused: gameState.core.isPaused,
-      transportation: gameState.core.transportation
+      transportation: gameState.core.transportation,
+      governance: gameState.core.governance
     },
     calculated: gameState.calculated,
     version: gameState.version.global,
@@ -1155,6 +1160,205 @@ setInterval(async () => {
     console.log(`📈 Buildings aged: ${buildingsAged}, Decayed: ${buildingsDecayed}`);
   }
 }, 60000); // Every 60 seconds (1 game day)
+
+// Governance action processors
+async function processAllocateVote(action, playerId) {
+  const { category, change } = action;
+  
+  if (!gameState.core.players.has(playerId)) {
+    return {
+      success: false,
+      error: 'PLAYER_NOT_FOUND',
+      message: 'Player not found'
+    };
+  }
+  
+  const player = gameState.core.players.get(playerId);
+  
+  // Initialize player governance data if needed
+  if (!player.governance) {
+    player.governance = {
+      playerAllocations: {},
+      totalVotingPoints: 2 // Starting points
+    };
+  }
+  
+  // Initialize category allocation if needed
+  if (!player.governance.playerAllocations[category]) {
+    player.governance.playerAllocations[category] = 0;
+  }
+  
+  const currentAllocation = player.governance.playerAllocations[category];
+  const newAllocation = Math.max(0, currentAllocation + change);
+  
+  // Calculate total points that would be used after this change
+  const totalUsedPoints = getTotalAllocatedPoints(player) - currentAllocation + newAllocation;
+  
+  // Check if player has enough points
+  if (totalUsedPoints > player.governance.totalVotingPoints) {
+    return {
+      success: false,
+      error: 'INSUFFICIENT_POINTS',
+      message: `Not enough voting points: ${totalUsedPoints} > ${player.governance.totalVotingPoints}`
+    };
+  }
+  
+  // Apply the allocation
+  player.governance.playerAllocations[category] = newAllocation;
+  
+  // Recalculate global budget allocations based on all players
+  recalculateGlobalBudgetAllocations();
+  
+  // Update versions
+  gameState.version.global++;
+  gameState.version.perPlayer[playerId] = gameState.version.global;
+  gameState.meta.lastUpdate = Date.now();
+  
+  console.log(`🗳️ Player ${playerId} allocated ${change} points to ${category} (total: ${newAllocation})`);
+  
+  return {
+    success: true,
+    processedAction: action,
+    stateChanges: {
+      players: { [playerId]: player },
+      governance: gameState.core.governance
+    }
+  };
+}
+
+async function processAllocateLVTPoint(action, playerId) {
+  const { change } = action;
+  
+  if (!gameState.core.players.has(playerId)) {
+    return {
+      success: false,
+      error: 'PLAYER_NOT_FOUND',
+      message: 'Player not found'
+    };
+  }
+  
+  const player = gameState.core.players.get(playerId);
+  
+  // Initialize player governance data if needed
+  if (!player.governance) {
+    player.governance = {
+      playerAllocations: {},
+      totalVotingPoints: 2
+    };
+  }
+  
+  // Initialize LVT allocation if needed
+  if (!player.governance.playerAllocations.lvtRate) {
+    player.governance.playerAllocations.lvtRate = 0;
+  }
+  
+  const currentAllocation = player.governance.playerAllocations.lvtRate;
+  const newAllocation = currentAllocation + change; // Can be negative
+  
+  // Calculate total points that would be used after this change
+  const totalUsedPoints = getTotalAllocatedPoints(player) - Math.abs(currentAllocation) + Math.abs(newAllocation);
+  
+  // Check if player has enough points
+  if (totalUsedPoints > player.governance.totalVotingPoints) {
+    return {
+      success: false,
+      error: 'INSUFFICIENT_POINTS',
+      message: `Not enough voting points: ${totalUsedPoints} > ${player.governance.totalVotingPoints}`
+    };
+  }
+  
+  // Apply the allocation
+  player.governance.playerAllocations.lvtRate = newAllocation;
+  
+  // Recalculate global LVT rate based on all players
+  recalculateGlobalLVTRate();
+  
+  // Update versions
+  gameState.version.global++;
+  gameState.version.perPlayer[playerId] = gameState.version.global;
+  gameState.meta.lastUpdate = Date.now();
+  
+  console.log(`💰 Player ${playerId} allocated ${change} LVT points (total: ${newAllocation})`);
+  
+  return {
+    success: true,
+    processedAction: action,
+    stateChanges: {
+      players: { [playerId]: player },
+      governance: gameState.core.governance
+    }
+  };
+}
+
+// Helper function to calculate total allocated points for a player
+function getTotalAllocatedPoints(player) {
+  if (!player.governance || !player.governance.playerAllocations) {
+    return 0;
+  }
+  
+  let total = 0;
+  Object.entries(player.governance.playerAllocations).forEach(([key, value]) => {
+    if (key === 'lvtRate') {
+      total += Math.abs(value); // LVT points can be negative
+    } else {
+      total += value;
+    }
+  });
+  
+  return total;
+}
+
+// Recalculate global budget allocations based on all player votes
+function recalculateGlobalBudgetAllocations() {
+  const totalVotes = {};
+  let totalVotingPower = 0;
+  
+  // Aggregate all player votes
+  gameState.core.players.forEach(player => {
+    if (player.governance && player.governance.playerAllocations) {
+      Object.entries(player.governance.playerAllocations).forEach(([category, allocation]) => {
+        if (category !== 'lvtRate' && allocation > 0) {
+          totalVotes[category] = (totalVotes[category] || 0) + allocation;
+          totalVotingPower += allocation;
+        }
+      });
+    }
+  });
+  
+  // Calculate proportional allocations
+  if (totalVotingPower > 0) {
+    Object.keys(gameState.core.governance.categoryAllocations).forEach(category => {
+      const votes = totalVotes[category] || 0;
+      gameState.core.governance.categoryAllocations[category] = votes / totalVotingPower;
+    });
+  }
+  
+  console.log('🗳️ Recalculated budget allocations:', gameState.core.governance.categoryAllocations);
+}
+
+// Recalculate global LVT rate based on all player votes
+function recalculateGlobalLVTRate() {
+  let totalLVTVotes = 0;
+  let totalVoters = 0;
+  
+  // Aggregate all player LVT votes
+  gameState.core.players.forEach(player => {
+    if (player.governance && player.governance.playerAllocations && player.governance.playerAllocations.lvtRate !== undefined) {
+      totalLVTVotes += player.governance.playerAllocations.lvtRate;
+      totalVoters += 1;
+    }
+  });
+  
+  // Calculate average and apply to base rate
+  const baseLvtRate = 0.15; // 15% base rate
+  const averageVoteChange = totalVoters > 0 ? totalLVTVotes / totalVoters : 0;
+  const newRate = Math.max(0, Math.min(1, baseLvtRate + (averageVoteChange * 0.01))); // Each point = 1%
+  
+  gameState.core.governance.currentLvtRate = newRate;
+  gameState.core.governance.proposedLvtRate = newRate;
+  
+  console.log(`💰 Recalculated LVT rate: ${(newRate * 100).toFixed(2)}% (base: ${(baseLvtRate * 100).toFixed(2)}%, votes: ${totalLVTVotes})`);
+}
 
 // Start server
 const PORT = process.env.PORT || 3000;

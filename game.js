@@ -4904,50 +4904,68 @@ class IsometricGrid {
     }
     
     allocateVoteToCategory(category, change) {
-        const currentAllocation = this.governance.playerAllocations[category] || 0;
-        const newAllocation = Math.max(0, currentAllocation + change);
-        
-        // Calculate total points that would be used after this change
-        const totalUsedPoints = this.getTotalAllocatedPoints() - currentAllocation + newAllocation;
-        
-        // Check if player has enough points
-        if (totalUsedPoints > this.governance.totalVotingPoints) {
-            console.log(`Not enough points: ${totalUsedPoints} > ${this.governance.totalVotingPoints}`);
-            return false;
+        // Use multiplayer system for governance voting
+        if (this.multiplayerManager && this.multiplayerManager.isConnected) {
+            this.multiplayerManager.broadcastAction({
+                type: 'ALLOCATE_VOTE',
+                category: category,
+                change: change
+            });
+        } else {
+            // Fallback to local governance for offline mode
+            const currentAllocation = this.governance.playerAllocations[category] || 0;
+            const newAllocation = Math.max(0, currentAllocation + change);
+            
+            // Calculate total points that would be used after this change
+            const totalUsedPoints = this.getTotalAllocatedPoints() - currentAllocation + newAllocation;
+            
+            // Check if player has enough points
+            if (totalUsedPoints > this.governance.totalVotingPoints) {
+                console.log(`Not enough points: ${totalUsedPoints} > ${this.governance.totalVotingPoints}`);
+                return false;
+            }
+            
+            this.governance.playerAllocations[category] = newAllocation;
+            this.calculateBudgetAllocations();
+            this.updateGovernanceUI();
         }
-        
-        this.governance.playerAllocations[category] = newAllocation;
-        this.calculateBudgetAllocations();
-        this.updateGovernanceUI();
         return true;
     }
     
     allocateLVTPoint(change) {
-        const currentAllocation = this.governance.playerAllocations.lvtRate || 0;
-        const newAllocation = currentAllocation + change; // Can be negative
-        
-        // Calculate total points that would be used after this change
-        const totalUsedPoints = this.getTotalAllocatedPoints() - Math.abs(currentAllocation) + Math.abs(newAllocation);
-        
-        // Check if player has enough points
-        if (totalUsedPoints > this.governance.totalVotingPoints) {
-            console.log(`Not enough points: ${totalUsedPoints} > ${this.governance.totalVotingPoints}`);
-            return false;
-        }
-        
-        this.governance.playerAllocations.lvtRate = newAllocation;
-        
-        // Calculate new rate based on base rate + point allocations
-        this.governance.proposedLvtRate = Math.max(0, Math.min(1, this.governance.baseLvtRate + (newAllocation * 0.01)));
-        
-        // Apply changes immediately for real-time feedback
-        this.governance.currentLvtRate = this.governance.proposedLvtRate;
-        
-        this.updateGovernanceUI();
-        
-        console.log('LVT point allocated successfully:', {
-            change,
-            newAllocation,
+        // Use multiplayer system for LVT voting
+        if (this.multiplayerManager && this.multiplayerManager.isConnected) {
+            this.multiplayerManager.broadcastAction({
+                type: 'ALLOCATE_LVT_POINT',
+                change: change
+            });
+        } else {
+            // Fallback to local governance for offline mode
+            const currentAllocation = this.governance.playerAllocations.lvtRate || 0;
+            const newAllocation = currentAllocation + change; // Can be negative
+            
+            // Calculate total points that would be used after this change
+            const totalUsedPoints = this.getTotalAllocatedPoints() - Math.abs(currentAllocation) + Math.abs(newAllocation);
+            
+            // Check if player has enough points
+            if (totalUsedPoints > this.governance.totalVotingPoints) {
+                console.log(`Not enough points: ${totalUsedPoints} > ${this.governance.totalVotingPoints}`);
+                return false;
+            }
+            
+            this.governance.playerAllocations.lvtRate = newAllocation;
+            
+            // Calculate new rate based on base rate + point allocations
+            this.governance.proposedLvtRate = Math.max(0, Math.min(1, this.governance.baseLvtRate + (newAllocation * 0.01)));
+            
+            // Apply changes immediately for real-time feedback
+            this.governance.currentLvtRate = this.governance.proposedLvtRate;
+            
+            this.updateGovernanceUI();
+            
+            console.log('LVT point allocated successfully:', {
+                change,
+                newAllocation,
             proposedRate: this.governance.proposedLvtRate
         });
         return true;
