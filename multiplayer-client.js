@@ -1148,6 +1148,11 @@ class UniversalMultiplayerManager {
             }
         }
         
+        // Apply transportation changes (roads, transit stops, routes)
+        if (stateChanges.transportation) {
+            this.syncTransportationState(stateChanges.transportation);
+        }
+        
         // Apply other state changes (treasury, population, etc.)
         if (stateChanges.treasury !== undefined) {
             this.game.cityTreasury = stateChanges.treasury;
