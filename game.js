@@ -10289,7 +10289,12 @@ class IsometricGrid {
     
     getLandValueHeatmapColor(row, col) {
         const parcel = this.grid[row][col];
-        const landValue = Math.max(parcel.landValue.paidPrice, parcel.landValue.calculatedValue);
+        if (!parcel || !parcel.landValue) {
+            return '#2a2a2a'; // Default gray for missing data
+        }
+        const paidPrice = parcel.landValue.paidPrice || 0;
+        const calculatedValue = parcel.landValue.calculatedValue || 0;
+        const landValue = Math.max(paidPrice, calculatedValue);
         
         // Find min and max land values across all parcels for normalization
         let minValue = Infinity;
@@ -10298,14 +10303,22 @@ class IsometricGrid {
         for (let r = 0; r < this.gridSize; r++) {
             for (let c = 0; c < this.gridSize; c++) {
                 const p = this.grid[r][c];
-                const value = Math.max(p.landValue.paidPrice, p.landValue.calculatedValue);
+                if (!p || !p.landValue) continue;
+                const paidPrice = p.landValue.paidPrice || 0;
+                const calculatedValue = p.landValue.calculatedValue || 0;
+                const value = Math.max(paidPrice, calculatedValue);
                 minValue = Math.min(minValue, value);
                 maxValue = Math.max(maxValue, value);
             }
         }
         
+        // Handle case where no valid land values found
+        if (minValue === Infinity || maxValue === -Infinity || maxValue <= minValue) {
+            return '#2a2a2a'; // Default gray
+        }
+        
         // Normalize land value to 0-1 range
-        const normalizedValue = maxValue > minValue ? (landValue - minValue) / (maxValue - minValue) : 0;
+        const normalizedValue = (landValue - minValue) / (maxValue - minValue);
         
         // Create heatmap: blue (low) to red (high)
         // Blue: rgb(0, 100, 255)
@@ -10387,7 +10400,7 @@ class IsometricGrid {
     
     getParcelCashflow(row, col) {
         const parcel = this.grid[row][col];
-        if (!parcel.building || !parcel.owner) return 0;
+        if (!parcel || !parcel.building || !parcel.owner) return 0;
         
         const building = this.buildingManager.getBuildingById(parcel.building);
         if (!building) return 0;
