@@ -11977,8 +11977,19 @@ document.addEventListener('DOMContentLoaded', () => {
         if (startMultiplayerBtn) {
             startMultiplayerBtn.addEventListener('click', () => {
                 console.log('🚀 Starting multiplayer game from lobby...');
-                hideLobby();
-                startGame('multiplayer');
+                
+                // Send message to server to start game for all players
+                if (window.waitingRoomWS && window.waitingRoomWS.readyState === WebSocket.OPEN) {
+                    window.waitingRoomWS.send(JSON.stringify({
+                        type: 'START_MULTIPLAYER_GAME',
+                        roomId: 'default'
+                    }));
+                } else {
+                    // Fallback to local start if no WebSocket connection
+                    console.warn('⚠️ No WebSocket connection, starting locally');
+                    hideLobby();
+                    startGame('multiplayer');
+                }
             });
         }
         

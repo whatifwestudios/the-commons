@@ -2004,10 +2004,11 @@ body {
     display: none;
     min-width: 200px;
     max-width: 250px;
+    flex-direction: column;
 }
 
 .context-menu.visible {
-    display: block;
+    display: flex;
 }
 
 .context-header {

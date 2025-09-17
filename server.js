@@ -240,6 +240,10 @@ async function handleWebSocketMessage(ws, clientId, data) {
       await handleUpdateRoomSettings(ws, clientId, data);
       break;
       
+    case 'START_MULTIPLAYER_GAME':
+      await handleStartMultiplayerGame(ws, clientId, data);
+      break;
+      
     default:
       console.warn('Unknown message type:', data.type);
   }
@@ -1569,6 +1573,34 @@ async function handleUpdateRoomSettings(ws, clientId, data) {
   console.log(`⚙️ Room ${roomId} settings updated:`, room.settings);
 }
 
+async function handleStartMultiplayerGame(ws, clientId, data) {
+  const { roomId = 'default' } = data;
+  
+  const room = waitingRooms.get(roomId);
+  if (!room || !room.players.has(clientId)) {
+    ws.send(JSON.stringify({
+      type: 'ERROR',
+      error: 'UNAUTHORIZED',
+      message: 'You are not authorized to start this game'
+    }));
+    return;
+  }
+  
+  if (room.players.size < 2) {
+    ws.send(JSON.stringify({
+      type: 'ERROR',
+      error: 'INSUFFICIENT_PLAYERS',
+      message: 'Need at least 2 players to start multiplayer game'
+    }));
+    return;
+  }
+  
+  console.log(`🚀 Starting multiplayer game in room ${roomId} with ${room.players.size} players`);
+  
+  // Start the game for all players in the room
+  startGameFromRoom(roomId);
+}
+
 // Helper functions for waiting room
 function broadcastToRoom(roomId, message, excludeClientId = null) {
   const room = waitingRooms.get(roomId);
@@ -1630,7 +1662,7 @@ function checkAutoStart(roomId) {
 
 function startGameFromRoom(roomId) {
   const room = waitingRooms.get(roomId);
-  if (!room || room.status !== 'starting') return;
+  if (!room) return;
   
   room.status = 'in-game';
   
