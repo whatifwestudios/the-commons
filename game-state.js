@@ -5,7 +5,8 @@
  */
 
 class GameState {
-    constructor() {
+    constructor(game = null) {
+        this.game = game;
         // Centralized game state
         this.state = {
             // Player state (multiplayer-ready structure)
@@ -116,6 +117,15 @@ class GameState {
      * All state changes MUST go through this method
      */
     dispatch(action) {
+        // Forward auction actions to multiplayer manager if available
+        if (action.type.startsWith('START_AUCTION') || action.type.startsWith('PLACE_BID') || action.type.startsWith('END_AUCTION')) {
+            if (this.game && this.game.multiplayerManager && this.game.multiplayerManager.isConnected) {
+                // Forward to server for multiplayer sync
+                this.game.multiplayerManager.broadcastAction(action);
+                return;
+            }
+        }
+        
         // Batch updates for performance
         if (this.updateTimer) {
             this.batchedUpdates.push(action);

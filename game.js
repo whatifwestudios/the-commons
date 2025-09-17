@@ -762,7 +762,7 @@ class IsometricGrid {
         this.contextMenu = document.getElementById('context-menu');
         
         // Initialize state management system
-        this.gameState = new GameState();
+        this.gameState = new GameState(this);
         
         // Initialize performance monitoring
         this.perfMonitor = new PerformanceMonitor();
@@ -11597,7 +11597,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const previewName = document.getElementById('preview-name');
     const previewTile = document.getElementById('preview-tile');
     const previewEmoji = previewTile?.querySelector('.preview-emoji');
-    const startGameBtn = document.getElementById('start-game-btn');
+    const startSoloBtn = document.getElementById('start-solo-btn');
+    const joinWaitingBtn = document.getElementById('join-waiting-btn');
     
     // Debug: Check if elements exist
     console.log('🔧 Setup elements found:', {
@@ -11607,8 +11608,11 @@ document.addEventListener('DOMContentLoaded', () => {
         previewName: !!previewName,
         previewTile: !!previewTile,
         previewEmoji: !!previewEmoji,
-        startGameBtn: !!startGameBtn
+        startSoloBtn: !!startSoloBtn,
+        joinWaitingBtn: !!joinWaitingBtn,
+        waitingRoom: !!document.getElementById('waiting-room')
     });
+    
     
     // Expanded color palette
     const allColors = [
@@ -11733,13 +11737,14 @@ document.addEventListener('DOMContentLoaded', () => {
         previewName.textContent = name;
     });
     
-    // Start game button
-    startGameBtn.addEventListener('click', () => {
+    // Function to start the game (shared logic)
+    function startGame(gameMode = 'solo') {
         const playerName = playerHandle.value || 'Player';
         const playerSettings = {
             name: playerName,
             color: selectedColor,
-            emoji: selectedEmoji
+            emoji: selectedEmoji,
+            gameMode: gameMode
         };
         
         // Save player settings
@@ -11879,7 +11884,462 @@ document.addEventListener('DOMContentLoaded', () => {
         // setupSidebarMultipliers(); // Removed - economic balance controls moved to dev tools only
         setupCashflowMenu();
         setupVitalityTooltips();
-    });
+    }
+    
+    // Setup button event listener for new two-phase flow
+    const continueToLobbyBtn = document.getElementById('continue-to-lobby-btn');
+    if (continueToLobbyBtn) {
+        continueToLobbyBtn.addEventListener('click', () => {
+            console.log('🚀 Continuing to lobby...');
+            showLobby();
+        });
+    }
+    
+    // Function to show the lobby (Phase 2)
+    function showLobby() {
+        const setupScreen = document.getElementById('setup-screen');
+        const waitingRoom = document.getElementById('waiting-room');
+        
+        if (!waitingRoom) {
+            console.error('❌ Lobby element not found!');
+            return;
+        }
+        
+        // Clean class-based state management
+        if (setupScreen) {
+            setupScreen.classList.add('hidden');
+            setupScreen.classList.remove('visible');
+        }
+        
+        waitingRoom.classList.remove('hidden');
+        waitingRoom.classList.add('visible');
+        
+        // Initialize lobby functionality
+        initializeLobby();
+    }
+    
+    // Initialize lobby functionality
+    function initializeLobby() {
+        const backBtn = document.getElementById('back-to-setup-btn');
+        const chatInput = document.getElementById('chat-input');
+        const sendBtn = document.getElementById('send-message-btn');
+        const startSoloBtn = document.getElementById('start-solo-from-lobby');
+        const joinMultiplayerBtn = document.getElementById('join-multiplayer-queue');
+        const startMultiplayerBtn = document.getElementById('start-multiplayer-game');
+        const multiplayerSettings = document.getElementById('multiplayer-settings');
+        
+        // Add current player to lobby
+        const playerName = playerHandle.value || 'Player';
+        const playerSettings = {
+            name: playerName,
+            color: selectedColor,
+            emoji: selectedEmoji
+        };
+        
+        // Connect to WebSocket for lobby
+        connectToWaitingRoom(playerSettings);
+        addPlayerToRoom(playerSettings);
+        
+        // Back to setup button
+        if (backBtn) {
+            backBtn.addEventListener('click', () => {
+                hideLobby();
+            });
+        }
+        
+        // Solo play button
+        if (startSoloBtn) {
+            startSoloBtn.addEventListener('click', () => {
+                console.log('🎮 Starting solo game from lobby...');
+                hideLobby();
+                startGame('solo');
+            });
+        }
+        
+        // Multiplayer queue button
+        if (joinMultiplayerBtn) {
+            joinMultiplayerBtn.addEventListener('click', () => {
+                console.log('👥 Joining multiplayer queue...');
+                // Show multiplayer settings
+                if (multiplayerSettings) {
+                    multiplayerSettings.style.display = 'block';
+                }
+                // Update UI to show "in queue" state
+                joinMultiplayerBtn.classList.add('selected');
+                joinMultiplayerBtn.querySelector('.mode-description').textContent = 'Looking for players...';
+                
+                // Reset server to normal auto-start settings
+                resetMultiplayerSettings();
+            });
+        }
+        
+        // Start multiplayer game button
+        if (startMultiplayerBtn) {
+            startMultiplayerBtn.addEventListener('click', () => {
+                console.log('🚀 Starting multiplayer game from lobby...');
+                hideLobby();
+                startGame('multiplayer');
+            });
+        }
+        
+        // Chat functionality
+        if (chatInput && sendBtn) {
+            const sendMessage = () => {
+                const message = chatInput.value.trim();
+                if (message) {
+                    // Send message to server via WebSocket
+                    if (window.waitingRoomWS && window.waitingRoomWS.readyState === WebSocket.OPEN) {
+                        window.waitingRoomWS.send(JSON.stringify({
+                            type: 'SEND_CHAT_MESSAGE',
+                            message: message,
+                            roomId: 'default'
+                        }));
+                    }
+                    chatInput.value = '';
+                }
+            };
+            
+            sendBtn.addEventListener('click', sendMessage);
+            chatInput.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') {
+                    sendMessage();
+                }
+            });
+        }
+    }
+    
+    // Function to reset multiplayer settings to enable auto-start
+    function resetMultiplayerSettings() {
+        if (window.waitingRoomWS && window.waitingRoomWS.readyState === WebSocket.OPEN) {
+            window.waitingRoomWS.send(JSON.stringify({
+                type: 'UPDATE_ROOM_SETTINGS',
+                settings: {
+                    minPlayers: 2,
+                    targetSize: 4,
+                    autoStart: true
+                },
+                roomId: 'default'
+            }));
+        }
+    }
+    
+    // Function to disconnect from waiting room
+    function disconnectFromWaitingRoom() {
+        if (window.waitingRoomWS && window.waitingRoomWS.readyState === WebSocket.OPEN) {
+            window.waitingRoomWS.send(JSON.stringify({
+                type: 'LEAVE_WAITING_ROOM'
+            }));
+            window.waitingRoomWS.close();
+            window.waitingRoomWS = null;
+        }
+    }
+    
+    // Function to hide lobby and return to setup
+    function hideLobby() {
+        // Disconnect from lobby first
+        disconnectFromWaitingRoom();
+        
+        const setupScreen = document.getElementById('setup-screen');
+        const waitingRoom = document.getElementById('waiting-room');
+        
+        // Clean class-based state management
+        if (waitingRoom) {
+            waitingRoom.classList.add('hidden');
+            waitingRoom.classList.remove('visible');
+        }
+        
+        if (setupScreen) {
+            setupScreen.classList.remove('hidden');
+            setupScreen.classList.add('visible');
+        }
+        
+        console.log('✅ Returned to setup screen with clean class management');
+    }
+    
+    // Function to add a player to the waiting room
+    function addPlayerToRoom(player) {
+        const playersList = document.getElementById('waiting-players-list');
+        const playerCount = document.getElementById('player-count');
+        const statusText = document.getElementById('room-status-text');
+        const startBtn = document.getElementById('start-game-from-room');
+        
+        // Create player element
+        const playerElement = document.createElement('div');
+        playerElement.className = 'player-item';
+        playerElement.innerHTML = `
+            <div class="player-avatar" style="background-color: ${player.color}">
+                ${player.emoji}
+            </div>
+            <div class="player-info">
+                <div class="player-name">${player.name}</div>
+                <div class="player-status">Ready</div>
+            </div>
+        `;
+        
+        playersList.appendChild(playerElement);
+        
+        // Player count will be updated when server responds
+        playerCount.textContent = '0';
+        statusText.textContent = 'Connecting to waiting room...';
+    }
+    
+    // Function to add a chat message
+    function addChatMessage(author, message, isOwn = false, isSystem = false) {
+        const chatMessages = document.getElementById('chat-messages');
+        
+        const messageElement = document.createElement('div');
+        
+        if (isSystem) {
+            messageElement.className = 'system-message';
+            messageElement.textContent = message;
+        } else {
+            messageElement.className = `chat-message${isOwn ? ' own' : ''}`;
+            
+            const currentTime = new Date().toLocaleTimeString([], { 
+                hour: '2-digit', 
+                minute: '2-digit' 
+            });
+            
+            messageElement.innerHTML = `
+                <div class="message-header">
+                    <span class="message-author">${author}</span>
+                    <span class="message-time">${currentTime}</span>
+                </div>
+                <div class="message-text">${message}</div>
+            `;
+        }
+        
+        chatMessages.appendChild(messageElement);
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+    }
+    
+    // Function to connect to waiting room WebSocket
+    function connectToWaitingRoom(playerSettings) {
+        // Connect to the same WebSocket server
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const wsUrl = `${protocol}//${window.location.host}`;
+        
+        window.waitingRoomWS = new WebSocket(wsUrl);
+        
+        window.waitingRoomWS.onopen = () => {
+            console.log('🔗 Connected to waiting room WebSocket');
+            
+            // Join the waiting room
+            window.waitingRoomWS.send(JSON.stringify({
+                type: 'JOIN_WAITING_ROOM',
+                player: playerSettings,
+                roomId: 'default'
+            }));
+        };
+        
+        window.waitingRoomWS.onmessage = (event) => {
+            try {
+                const data = JSON.parse(event.data);
+                handleWaitingRoomMessage(data);
+            } catch (error) {
+                console.error('❌ Error parsing waiting room message:', error);
+            }
+        };
+        
+        window.waitingRoomWS.onclose = () => {
+            console.log('📱 Waiting room WebSocket disconnected');
+        };
+        
+        window.waitingRoomWS.onerror = (error) => {
+            console.error('❌ Waiting room WebSocket error:', error);
+        };
+    }
+    
+    // Function to handle waiting room WebSocket messages
+    function handleWaitingRoomMessage(data) {
+        console.log('📨 Waiting room message:', data);
+        
+        switch (data.type) {
+            case 'JOINED_WAITING_ROOM':
+                updateWaitingRoomFromServer(data.room);
+                break;
+                
+            case 'PLAYER_JOINED_ROOM':
+                addPlayerToRoomFromServer(data.player);
+                updatePlayerCount(data.playerCount);
+                break;
+                
+            case 'PLAYER_LEFT_ROOM':
+                removePlayerFromRoom(data.playerId);
+                updatePlayerCount(data.playerCount);
+                break;
+                
+            case 'CHAT_MESSAGE':
+                addChatMessageFromServer(data.message);
+                break;
+                
+            case 'ROOM_SETTINGS_UPDATED':
+                updateRoomSettings(data.settings);
+                break;
+                
+            case 'GAME_STARTING':
+                showGameStarting(data);
+                break;
+                
+            case 'GAME_STARTED':
+                startGameFromWaitingRoom(data.players);
+                break;
+                
+            case 'CONNECTED':
+                console.log('🔗 WebSocket connected to server');
+                break;
+                
+            case 'ERROR':
+                console.error('❌ Waiting room error:', data.error, data.message);
+                break;
+                
+            default:
+                console.warn('Unknown waiting room message type:', data.type);
+        }
+    }
+    
+    // Helper functions for waiting room WebSocket integration
+    function updateWaitingRoomFromServer(room) {
+        // Update player list
+        const playersList = document.getElementById('waiting-players-list');
+        playersList.innerHTML = '';
+        
+        room.players.forEach(player => {
+            addPlayerToRoomFromServer(player);
+        });
+        
+        // Update chat with server messages
+        room.chatMessages.forEach(message => {
+            addChatMessageFromServer(message);
+        });
+        
+        // Update room settings
+        updateRoomSettings(room.settings);
+        updatePlayerCount(room.players.length);
+    }
+    
+    function addPlayerToRoomFromServer(player) {
+        const playersList = document.getElementById('waiting-players-list');
+        
+        const playerElement = document.createElement('div');
+        playerElement.className = 'player-item';
+        playerElement.dataset.playerId = player.id;
+        playerElement.innerHTML = `
+            <div class="player-avatar" style="background-color: ${player.color}">
+                ${player.emoji}
+            </div>
+            <div class="player-info">
+                <div class="player-name">${player.name}</div>
+                <div class="player-status">${player.status}</div>
+            </div>
+        `;
+        
+        playersList.appendChild(playerElement);
+    }
+    
+    function removePlayerFromRoom(playerId) {
+        const playerElement = document.querySelector(`[data-player-id="${playerId}"]`);
+        if (playerElement) {
+            playerElement.remove();
+        }
+    }
+    
+    function addChatMessageFromServer(message) {
+        const chatMessages = document.getElementById('chat-messages');
+        const messageElement = document.createElement('div');
+        
+        if (message.type === 'system') {
+            messageElement.className = 'system-message';
+            messageElement.textContent = message.text;
+        } else {
+            messageElement.className = 'chat-message';
+            
+            const currentTime = new Date(message.timestamp).toLocaleTimeString([], { 
+                hour: '2-digit', 
+                minute: '2-digit' 
+            });
+            
+            messageElement.innerHTML = `
+                <div class="message-header">
+                    <span class="message-author">${message.author}</span>
+                    <span class="message-time">${currentTime}</span>
+                </div>
+                <div class="message-text">${message.text}</div>
+            `;
+        }
+        
+        chatMessages.appendChild(messageElement);
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+    }
+    
+    function updatePlayerCount(count) {
+        const playerCount = document.getElementById('player-count');
+        const statusText = document.getElementById('room-status-text');
+        const startMultiplayerBtn = document.getElementById('start-multiplayer-game');
+        const minPlayers = 2; // Fixed minimum for multiplayer
+        
+        // Update player count display
+        if (playerCount) {
+            playerCount.textContent = count;
+        }
+        
+        // Update status text for lobby
+        if (statusText) {
+            if (count === 1) {
+                statusText.textContent = 'Choose a game mode to continue';
+            } else {
+                statusText.textContent = `${count} players in lobby`;
+            }
+        }
+        
+        // Update multiplayer button state
+        if (startMultiplayerBtn) {
+            if (count >= minPlayers) {
+                startMultiplayerBtn.disabled = false;
+                const startInfo = startMultiplayerBtn.parentElement.querySelector('.start-info');
+                if (startInfo) startInfo.textContent = 'Click to start multiplayer game';
+            } else {
+                startMultiplayerBtn.disabled = true;
+                const startInfo = startMultiplayerBtn.parentElement.querySelector('.start-info');
+                if (startInfo) startInfo.textContent = `Need at least ${minPlayers} players to start`;
+            }
+        }
+    }
+    
+    function updateRoomSettings(settings) {
+        const gameSizeSelect = document.getElementById('game-size-select');
+        const autoStartCheckbox = document.getElementById('auto-start');
+        
+        if (gameSizeSelect) gameSizeSelect.value = settings.targetSize;
+        if (autoStartCheckbox) autoStartCheckbox.checked = settings.autoStart;
+        
+        console.log('🔧 Room settings updated:', settings);
+    }
+    
+    function showGameStarting(data) {
+        const statusText = document.getElementById('room-status-text');
+        if (statusText) {
+            statusText.textContent = data.message;
+        }
+        
+        // Add system message to chat
+        addChatMessage('System', data.message, false, true);
+    }
+    
+    function startGameFromWaitingRoom(players) {
+        console.log('🚀 Starting multiplayer game with players:', players);
+        
+        // Close waiting room WebSocket
+        if (window.waitingRoomWS) {
+            window.waitingRoomWS.close();
+            window.waitingRoomWS = null;
+        }
+        
+        // Hide lobby and start game
+        hideLobby();
+        startGame('multiplayer');
+    }
+    
     
     // Keyboard shortcut to toggle testing mode (Ctrl+Shift+M)
     document.addEventListener('keydown', (e) => {
@@ -11892,7 +12352,9 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // Magic link button event listener
-    document.getElementById('magic-link-btn').addEventListener('click', () => {
+    const magicLinkBtn = document.getElementById('magic-link-btn');
+    if (magicLinkBtn) {
+        magicLinkBtn.addEventListener('click', () => {
         const emailInput = document.getElementById('player-email');
         const email = emailInput.value.trim();
         
@@ -11943,7 +12405,8 @@ document.addEventListener('DOMContentLoaded', () => {
         localStorage.setItem('theCommons_playerEmail', email);
         
         console.log(`🔗 Magic link request for: ${email}`);
-    });
+        });
+    }
     
     
     document.getElementById('city-name').textContent = generateCityName().toUpperCase();

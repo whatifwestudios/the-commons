@@ -37,6 +37,14 @@ class UniversalMultiplayerManager {
         this.actionCount = 0;
         this.syncCount = 0;
         
+        // Server time synchronization
+        this.serverTimeOffset = 0;
+        this.lastServerTime = null;
+        this.timeSync = {
+            samples: [],
+            maxSamples: 10
+        };
+        
         // Auto-detect environment
         this.baseUrl = this.detectEnvironment();
         
@@ -256,6 +264,9 @@ class UniversalMultiplayerManager {
                 this.lastHeartbeat = Date.now();
                 if (data.version) {
                     this.serverStateVersion = data.version;
+                }
+                if (data.serverTime) {
+                    this.updateServerTimeSync(data.serverTime);
                 }
                 break;
                 
@@ -537,7 +548,22 @@ class UniversalMultiplayerManager {
         if (this.pendingActions.has(actionId)) {
             this.pendingActions.delete(actionId);
         }
-        this.showNotification(data.message || 'Action failed', 'error');
+        
+        // Handle auction-specific errors
+        if (data.error === 'AUCTION_STATE_CHANGED' && data.currentAuctionState) {
+            // Sync the updated auction state
+            if (this.game.auctionSystem) {
+                this.game.auctionSystem.onAuctionStateUpdate({
+                    [data.currentAuctionState.id]: data.currentAuctionState
+                });
+            }
+            this.showNotification('Auction updated by another player. Please try again.', 'warning');
+        } else if (data.error === 'BID_SUPERSEDED') {
+            // Another player bid higher
+            this.showNotification(`Another player bid $${data.currentBid.toLocaleString()}. Try a higher amount.`, 'warning');
+        } else {
+            this.showNotification(data.message || 'Action failed', 'error');
+        }
     }
     
     handleConnectionLoss() {
@@ -765,6 +791,23 @@ class UniversalMultiplayerManager {
         if (serverState.core.governance) {
             this.syncGovernanceState(serverState.core.governance);
         }
+        
+        // Sync auction state
+        if (serverState.core.auctions && this.game.auctionSystem) {
+            const auctionsObject = {};
+            if (serverState.core.auctions instanceof Map) {
+                // Convert Map to object for onAuctionStateUpdate
+                for (const [auctionId, auctionData] of serverState.core.auctions) {
+                    auctionsObject[auctionId] = auctionData;
+                }
+            } else {
+                // Already an object
+                Object.assign(auctionsObject, serverState.core.auctions);
+            }
+            
+            this.game.auctionSystem.onAuctionStateUpdate(auctionsObject);
+            console.log(`🔨 Synced ${Object.keys(auctionsObject).length} active auctions`);
+        }
     }
     
     updatePlayersDisplay() {
@@ -785,8 +828,30 @@ class UniversalMultiplayerManager {
             syncs: this.syncCount,
             version: this.localStateVersion,
             serverVersion: this.serverStateVersion,
-            pendingActions: this.pendingActions.size
+            pendingActions: this.pendingActions.size,
+            serverTimeOffset: this.serverTimeOffset
         };
+    }
+    
+    /**
+     * Update server time synchronization
+     */
+    updateServerTimeSync(serverTime) {
+        const now = Date.now();
+        const roundTripTime = now - this.lastHeartbeat;
+        const estimatedServerTime = serverTime + (roundTripTime / 2);
+        const offset = estimatedServerTime - now;
+        
+        // Add to samples for averaging
+        this.timeSync.samples.push(offset);
+        if (this.timeSync.samples.length > this.timeSync.maxSamples) {
+            this.timeSync.samples.shift();
+        }
+        
+        // Calculate average offset to smooth out network jitter
+        this.serverTimeOffset = this.timeSync.samples.reduce((a, b) => a + b, 0) / this.timeSync.samples.length;
+        
+        console.log(`⏰ Server time offset: ${this.serverTimeOffset}ms (samples: ${this.timeSync.samples.length})`);
     }
     
     // Hook into existing game actions to broadcast them

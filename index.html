@@ -1701,55 +1701,143 @@
     <div id="setup-screen" class="setup-screen">
         <div class="setup-content">
             <h2>Welcome to The Commons</h2>
-            <p>Build a city that thrives. Customize your identity, start a solo session or join others for multiplayer fun.</p>
+            <p>Build a city that thrives. Join others in multiplayer or practice solo.</p>
             
             <div class="setup-form">
-                <div class="setup-field">
-                    <label for="player-handle">Your Handle</label>
-                    <input type="text" id="player-handle" placeholder="What should we call you?" maxlength="20" value="Player">
-                </div>
-                
-                <div class="setup-field">
-                    <label>Your Color</label>
-                    <div class="color-picker">
-                        <!-- Colors will be dynamically generated -->
-                    </div>
-                </div>
-                
-                <div class="setup-field">
-                    <label>Your Symbol</label>
-                    <div class="emoji-picker">
-                        <!-- Emojis will be dynamically generated -->
-                    </div>
-                </div>
-                
-                <div class="setup-preview">
-                    <div class="preview-container">
-                        <div class="preview-tile" id="preview-tile">
-                            <span class="preview-emoji">🏠</span>
-                        </div>
-                        <div class="preview-info">
-                            <span class="preview-name" id="preview-name">Player</span>
-                            <span class="preview-subtitle">Your Avatar</span>
-                        </div>
-                    </div>
-                </div>
-                
-                <div class="setup-multiplayer-section">
-                    <div class="section-divider">
-                        <span>OR</span>
+                <!-- Left Column: Player Customization -->
+                <div class="setup-column-left">
+                    <div class="setup-field">
+                        <label for="player-handle">Your Handle</label>
+                        <input type="text" id="player-handle" placeholder="What should we call you?" maxlength="20" value="Player">
                     </div>
                     
                     <div class="setup-field">
-                        <label for="player-email">Email for Magic Link</label>
-                        <input type="email" id="player-email" placeholder="your@email.com" />
+                        <label>Your Color</label>
+                        <div class="color-picker">
+                            <!-- Colors will be dynamically generated -->
+                        </div>
                     </div>
                     
-                    <button class="setup-magic-btn" id="magic-link-btn">Send Magic Link</button>
-                    <p class="magic-link-help">We'll send you a link to join multiplayer sessions</p>
+                    <div class="setup-field">
+                        <label>Your Symbol</label>
+                        <div class="emoji-picker">
+                            <!-- Emojis will be dynamically generated -->
+                        </div>
+                    </div>
+                    
+                    <div class="setup-preview">
+                        <div class="preview-container">
+                            <div class="preview-tile" id="preview-tile">
+                                <span class="preview-emoji">🏠</span>
+                            </div>
+                            <div class="preview-info">
+                                <span class="preview-name" id="preview-name">Player</span>
+                                <span class="preview-subtitle">Your Avatar</span>
+                            </div>
+                        </div>
+                    </div>
                 </div>
                 
-                <button class="setup-start-btn" id="start-game-btn">Start Solo Sesh</button>
+                <!-- Right Column: Continue to Lobby -->
+                <div class="setup-column-right">
+                    <div class="setup-continue">
+                        <h3>Ready to Build?</h3>
+                        <p>Choose your playstyle and connect with other city builders</p>
+                        
+                        <button class="continue-btn" id="continue-to-lobby-btn">
+                            <span class="continue-icon">🚀</span>
+                            <span class="continue-title">Continue to Lobby</span>
+                            <span class="continue-description">Choose solo or multiplayer</span>
+                        </button>
+                        
+                        <div class="setup-info">
+                            <p>• Chat with other players</p>
+                            <p>• Choose to play solo or team up</p>
+                            <p>• Games support 2-12 players</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Game Lobby (hidden by default) -->
+    <div id="waiting-room" class="waiting-room hidden">
+        <div class="waiting-room-content">
+            <div class="waiting-room-header">
+                <h2>Waiting Room</h2>
+                <button class="back-btn" id="back-to-setup-btn">← Back to Setup</button>
+            </div>
+            
+            <div class="waiting-room-body">
+                <div class="waiting-room-left">
+                    <div class="game-mode-section">
+                        <h3>Choose Your Experience</h3>
+                        
+                        <button class="lobby-mode-btn solo-mode" id="start-solo-from-lobby">
+                            <span class="mode-icon">🎮</span>
+                            <div class="mode-info">
+                                <span class="mode-title">Play Solo</span>
+                                <span class="mode-description">Practice building on your own</span>
+                            </div>
+                        </button>
+                        
+                        <button class="lobby-mode-btn multiplayer-mode" id="join-multiplayer-queue">
+                            <span class="mode-icon">👥</span>
+                            <div class="mode-info">
+                                <span class="mode-title">Join Multiplayer</span>
+                                <span class="mode-description">Build cities with others</span>
+                            </div>
+                        </button>
+                    </div>
+                    
+                    <div class="players-section">
+                        <h3>Players in Lobby</h3>
+                        <div class="players-list" id="waiting-players-list">
+                            <!-- Players will be populated here -->
+                        </div>
+                        <div class="room-status">
+                            <p><span id="player-count">1</span> players online</p>
+                            <p id="room-status-text">Choose a game mode to continue</p>
+                        </div>
+                    </div>
+                    
+                    <div class="game-settings" id="multiplayer-settings" style="display: none;">
+                        <h3>Multiplayer Settings</h3>
+                        <div class="setting">
+                            <label for="game-size-select">Target Size:</label>
+                            <select id="game-size-select">
+                                <option value="2">2 players</option>
+                                <option value="4" selected>4 players</option>
+                                <option value="6">6 players</option>
+                                <option value="8">8 players</option>
+                                <option value="12">12 players</option>
+                            </select>
+                        </div>
+                        <div class="setting">
+                            <label for="auto-start">Auto-start when ready:</label>
+                            <input type="checkbox" id="auto-start" checked>
+                        </div>
+                        
+                        <button id="start-multiplayer-game" class="start-game-btn" disabled>
+                            Start Multiplayer Game
+                        </button>
+                        <p class="start-info">Need at least 2 players to start</p>
+                    </div>
+                </div>
+                
+                <div class="waiting-room-right">
+                    <div class="chat-section">
+                        <h3>Chat</h3>
+                        <div class="chat-messages" id="chat-messages">
+                            <div class="system-message">Welcome to the waiting room! Chat with other players while you wait.</div>
+                        </div>
+                        <div class="chat-input-section">
+                            <input type="text" id="chat-input" placeholder="Type a message..." maxlength="200">
+                            <button id="send-message-btn">Send</button>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
     </div>

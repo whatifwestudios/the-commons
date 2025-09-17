@@ -100,6 +100,26 @@ let gameState = {
   }
 };
 
+// Waiting room management
+const waitingRooms = new Map();
+let roomIdCounter = 1;
+
+// Default waiting room (global room for now)
+const defaultWaitingRoom = {
+  id: 'default',
+  players: new Map(),
+  chatMessages: [],
+  settings: {
+    targetSize: 4,
+    minPlayers: 10, // Temporarily set high to disable auto-start for testing
+    autoStart: true
+  },
+  status: 'waiting', // waiting, starting, in-game
+  createdAt: Date.now()
+};
+
+waitingRooms.set('default', defaultWaitingRoom);
+
 // Connected clients
 const clients = new Map();
 
@@ -202,6 +222,22 @@ async function handleWebSocketMessage(ws, clientId, data) {
       
     case 'REQUEST_SYNC':
       handleRequestSync(ws, clientId, data);
+      break;
+      
+    case 'JOIN_WAITING_ROOM':
+      await handleJoinWaitingRoom(ws, clientId, data);
+      break;
+      
+    case 'LEAVE_WAITING_ROOM':
+      await handleLeaveWaitingRoom(ws, clientId, data);
+      break;
+      
+    case 'SEND_CHAT_MESSAGE':
+      await handleChatMessage(ws, clientId, data);
+      break;
+      
+    case 'UPDATE_ROOM_SETTINGS':
+      await handleUpdateRoomSettings(ws, clientId, data);
       break;
       
     default:
@@ -350,6 +386,7 @@ function handleHeartbeat(ws, clientId, data) {
   ws.send(JSON.stringify({
     type: 'HEARTBEAT_ACK',
     timestamp: Date.now(),
+    serverTime: Date.now(),
     version: gameState.version.global
   }));
 }
@@ -1358,6 +1395,261 @@ function recalculateGlobalLVTRate() {
   gameState.core.governance.proposedLvtRate = newRate;
   
   console.log(`💰 Recalculated LVT rate: ${(newRate * 100).toFixed(2)}% (base: ${(baseLvtRate * 100).toFixed(2)}%, votes: ${totalLVTVotes})`);
+}
+
+// Waiting Room Handler Functions
+async function handleJoinWaitingRoom(ws, clientId, data) {
+  const { player, roomId = 'default' } = data;
+  
+  if (!player || !player.name) {
+    ws.send(JSON.stringify({
+      type: 'ERROR',
+      error: 'INVALID_PLAYER_DATA',
+      message: 'Player data is required'
+    }));
+    return;
+  }
+  
+  const room = waitingRooms.get(roomId);
+  if (!room) {
+    ws.send(JSON.stringify({
+      type: 'ERROR',
+      error: 'ROOM_NOT_FOUND',
+      message: 'Waiting room not found'
+    }));
+    return;
+  }
+  
+  // Add player to room
+  const playerData = {
+    id: clientId,
+    name: player.name,
+    color: player.color || '#52C77E',
+    emoji: player.emoji || '🏠',
+    joinedAt: Date.now(),
+    status: 'ready'
+  };
+  
+  room.players.set(clientId, playerData);
+  
+  // Update client record
+  const client = clients.get(clientId);
+  if (client) {
+    client.roomId = roomId;
+  }
+  
+  console.log(`👥 Player ${player.name} joined waiting room ${roomId}`);
+  
+  // Send room state to joining player
+  ws.send(JSON.stringify({
+    type: 'JOINED_WAITING_ROOM',
+    room: {
+      id: room.id,
+      players: Array.from(room.players.values()),
+      chatMessages: room.chatMessages.slice(-20), // Last 20 messages
+      settings: room.settings,
+      status: room.status
+    }
+  }));
+  
+  // Broadcast player joined to other players in room
+  broadcastToRoom(roomId, {
+    type: 'PLAYER_JOINED_ROOM',
+    player: playerData,
+    playerCount: room.players.size
+  }, clientId);
+  
+  // Add system message
+  addChatMessageToRoom(roomId, {
+    type: 'system',
+    text: `${player.name} joined the room`,
+    timestamp: Date.now()
+  });
+  
+  // Check if room should auto-start
+  if (room.settings.autoStart && room.players.size >= room.settings.minPlayers) {
+    setTimeout(() => checkAutoStart(roomId), 1000);
+  }
+}
+
+async function handleLeaveWaitingRoom(ws, clientId, data) {
+  const client = clients.get(clientId);
+  if (!client || !client.roomId) return;
+  
+  const room = waitingRooms.get(client.roomId);
+  if (!room) return;
+  
+  const player = room.players.get(clientId);
+  if (player) {
+    room.players.delete(clientId);
+    client.roomId = null;
+    
+    console.log(`👋 Player ${player.name} left waiting room ${room.id}`);
+    
+    // Broadcast player left to other players
+    broadcastToRoom(room.id, {
+      type: 'PLAYER_LEFT_ROOM',
+      playerId: clientId,
+      playerCount: room.players.size
+    });
+    
+    // Add system message
+    addChatMessageToRoom(room.id, {
+      type: 'system',
+      text: `${player.name} left the room`,
+      timestamp: Date.now()
+    });
+  }
+}
+
+async function handleChatMessage(ws, clientId, data) {
+  const { message, roomId = 'default' } = data;
+  
+  if (!message || message.trim().length === 0) return;
+  
+  const client = clients.get(clientId);
+  const room = waitingRooms.get(roomId);
+  
+  if (!room || !room.players.has(clientId)) {
+    ws.send(JSON.stringify({
+      type: 'ERROR',
+      error: 'NOT_IN_ROOM',
+      message: 'You are not in this waiting room'
+    }));
+    return;
+  }
+  
+  const player = room.players.get(clientId);
+  const chatMessage = {
+    id: Date.now().toString(),
+    type: 'player',
+    author: player.name,
+    authorId: clientId,
+    text: message.trim().substring(0, 200), // Limit message length
+    timestamp: Date.now()
+  };
+  
+  addChatMessageToRoom(roomId, chatMessage);
+  
+  console.log(`💬 Chat in ${roomId}: ${player.name}: ${chatMessage.text}`);
+}
+
+async function handleUpdateRoomSettings(ws, clientId, data) {
+  const { settings, roomId = 'default' } = data;
+  
+  const room = waitingRooms.get(roomId);
+  if (!room || !room.players.has(clientId)) {
+    ws.send(JSON.stringify({
+      type: 'ERROR',
+      error: 'UNAUTHORIZED',
+      message: 'You are not authorized to update room settings'
+    }));
+    return;
+  }
+  
+  // Update settings (with validation)
+  if (settings.targetSize && settings.targetSize >= 2 && settings.targetSize <= 12) {
+    room.settings.targetSize = settings.targetSize;
+  }
+  
+  if (settings.minPlayers && settings.minPlayers >= 2 && settings.minPlayers <= room.settings.targetSize) {
+    room.settings.minPlayers = settings.minPlayers;
+  }
+  
+  if (typeof settings.autoStart === 'boolean') {
+    room.settings.autoStart = settings.autoStart;
+  }
+  
+  // Broadcast updated settings to all players in room
+  broadcastToRoom(roomId, {
+    type: 'ROOM_SETTINGS_UPDATED',
+    settings: room.settings
+  });
+  
+  console.log(`⚙️ Room ${roomId} settings updated:`, room.settings);
+}
+
+// Helper functions for waiting room
+function broadcastToRoom(roomId, message, excludeClientId = null) {
+  const room = waitingRooms.get(roomId);
+  if (!room) return;
+  
+  room.players.forEach((player, clientId) => {
+    if (clientId === excludeClientId) return;
+    
+    const client = clients.get(clientId);
+    if (client && client.ws.readyState === 1) {
+      client.ws.send(JSON.stringify(message));
+    }
+  });
+}
+
+function addChatMessageToRoom(roomId, message) {
+  const room = waitingRooms.get(roomId);
+  if (!room) return;
+  
+  room.chatMessages.push(message);
+  
+  // Keep only last 100 messages
+  if (room.chatMessages.length > 100) {
+    room.chatMessages = room.chatMessages.slice(-100);
+  }
+  
+  // Broadcast message to all players in room
+  broadcastToRoom(roomId, {
+    type: 'CHAT_MESSAGE',
+    message: message
+  });
+}
+
+function checkAutoStart(roomId) {
+  const room = waitingRooms.get(roomId);
+  if (!room || room.status !== 'waiting') return;
+  
+  if (room.players.size >= room.settings.minPlayers && room.settings.autoStart) {
+    // Start game countdown
+    room.status = 'starting';
+    
+    broadcastToRoom(roomId, {
+      type: 'GAME_STARTING',
+      countdown: 5,
+      message: 'Game starting in 5 seconds...'
+    });
+    
+    addChatMessageToRoom(roomId, {
+      type: 'system',
+      text: 'Minimum players reached! Game starting in 5 seconds...',
+      timestamp: Date.now()
+    });
+    
+    setTimeout(() => {
+      startGameFromRoom(roomId);
+    }, 5000);
+  }
+}
+
+function startGameFromRoom(roomId) {
+  const room = waitingRooms.get(roomId);
+  if (!room || room.status !== 'starting') return;
+  
+  room.status = 'in-game';
+  
+  // Move all players from waiting room to game
+  const playersToStart = Array.from(room.players.values());
+  
+  broadcastToRoom(roomId, {
+    type: 'GAME_STARTED',
+    players: playersToStart
+  });
+  
+  console.log(`🚀 Starting game from room ${roomId} with ${playersToStart.length} players`);
+  
+  // Clear room players (they're now in game)
+  room.players.clear();
+  room.status = 'waiting';
+  
+  // Reset room state for next game
+  room.chatMessages = [];
 }
 
 // Start server

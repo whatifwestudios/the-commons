@@ -76,7 +76,7 @@ class AuctionSystem {
         }
         
         // Check if player has enough actions to start auction
-        if (challengingPlayerId === 'player' && this.game.actionManager) {
+        if (this.isCurrentPlayer(challengingPlayerId) && this.game.actionManager) {
             if (!this.game.actionManager.canUseActions(1)) {
                 this.game.showNotification('Need 1 action to start an auction', 'error');
                 return false;
@@ -119,17 +119,30 @@ class AuctionSystem {
             lastDutchUpdate: Date.now()
         };
         
-        // Add to active auctions
-        this.activeAuctions.set(auctionId, auction);
-        
         // Use action for starting auction
-        if (challengingPlayerId === 'player' && this.game.actionManager) {
-            this.game.actionManager.useActions(1);
+        if (this.isCurrentPlayer(challengingPlayerId) && this.game.actionManager) {
+            if (!this.game.actionManager.useActions(1)) {
+                return false;
+            }
         }
         
-        // Show modals for both players
-        this.showAuctionModals(auction);
-        this.startAuctionTimer(auctionId);
+        // Send auction start to server for multiplayer sync
+        if (this.game.gameState) {
+            this.game.gameState.dispatch({
+                type: 'START_AUCTION',
+                auctionId: auctionId,
+                row: row,
+                col: col,
+                challengingPlayerId: challengingPlayerId,
+                auctionData: auction
+            });
+        } else {
+            // Fallback for solo play - add to local auctions
+            this.activeAuctions.set(auctionId, auction);
+            this.showAuctionModals(auction);
+            this.startAuctionTimer(auctionId);
+        }
+        
         this.updateSidebar();
         
         // Hide context menu
@@ -174,13 +187,13 @@ class AuctionSystem {
      */
     showAuctionModals(auction) {
         // Show modal for challenging player
-        if (auction.challengingPlayer === 'player') {
+        if (this.isCurrentPlayer(auction.challengingPlayer)) {
             this.showAuctionModal(auction, 'challenger');
         }
         
         // Show modal for current owner (if not the same as challenger)
         if (auction.currentOwner && auction.currentOwner !== auction.challengingPlayer) {
-            if (auction.currentOwner === 'player') {
+            if (this.isCurrentPlayer(auction.currentOwner)) {
                 this.showAuctionModal(auction, 'owner');
             }
         }
@@ -415,9 +428,9 @@ class AuctionSystem {
                         <div class="auction-price">$${auction.currentBid.toLocaleString()}</div>
                         <div class="auction-time" id="sidebar-timer-${auction.id}">60s</div>
                         <div class="auction-players">
-                            <span class="current-owner">${auction.currentOwner || 'Unowned'}</span>
+                            <span class="current-owner">${auction.currentOwner ? this.getPlayerDisplayName(auction.currentOwner) : 'Unowned'}</span>
                             <span class="vs">vs</span>
-                            <span class="challenger">${auction.challengingPlayer}</span>
+                            <span class="challenger">${this.getPlayerDisplayName(auction.challengingPlayer)}</span>
                         </div>
                         <button class="view-auction-btn" onclick="window.game.auctionSystem.focusAuction('${auction.id}')">
                             View
@@ -639,14 +652,15 @@ class AuctionSystem {
                 return;
             }
             
-            const now = Date.now();
+            // Use server-synchronized time
+            const now = this.getServerTime();
             const timeLeft = Math.max(0, auction.endTime - now) / 1000;
             
             // Update timer display
             this.updateAuctionTimer(auctionId);
             
-            // Dutch auction phase - price drops
-            if (auction.dutchPhase && !auction.currentBidder) {
+            // Dutch auction phase - price drops (only in solo mode, server handles in multiplayer)
+            if (auction.dutchPhase && !auction.currentBidder && !this.game.multiplayerManager?.isConnected) {
                 const timeSinceLastUpdate = now - auction.lastDutchUpdate;
                 if (timeSinceLastUpdate >= this.dutchUpdateInterval) {
                     const minPrice = auction.initialLandValue;
@@ -665,9 +679,15 @@ class AuctionSystem {
                 }
             }
             
-            // End auction when time expires
+            // End auction when time expires (server handles in multiplayer, local handles in solo)
             if (timeLeft <= 0) {
-                this.endAuction(auctionId);
+                if (this.game.multiplayerManager?.isConnected) {
+                    // In multiplayer, server handles ending - just update UI
+                    this.updateAuctionEndedState(auctionId);
+                } else {
+                    // In solo mode, handle locally
+                    this.endAuction(auctionId);
+                }
             }
         }, 100); // Update every 100ms for smooth timer
         
@@ -681,19 +701,8 @@ class AuctionSystem {
         const auction = this.activeAuctions.get(auctionId);
         if (!auction) return;
         
-        // Handle Dutch auction phase
-        if (auction.dutchPhase) {
-            auction.dutchPhase = false;
-            auction.currentBidder = 'player';
-            auction.bidHistory.push({
-                bidder: 'player',
-                amount: auction.currentBid,
-                timestamp: Date.now()
-            });
-            
-            this.updateAuctionActions(auctionId);
-        } else {
-            // Regular bidding phase - increase bid
+        // Validate bid before sending to server
+        if (!auction.dutchPhase) {
             const newBid = customAmount || Math.floor(auction.currentBid * (1 + increment));
             
             // Validate minimum bid
@@ -703,7 +712,7 @@ class AuctionSystem {
             }
             
             // Check if player can afford this bid
-            const totalCost = auction.currentOwner && auction.currentOwner !== 'player' 
+            const totalCost = auction.currentOwner && !this.isCurrentPlayer(auction.currentOwner)
                 ? newBid + auction.buildingValue 
                 : newBid;
                 
@@ -711,20 +720,21 @@ class AuctionSystem {
                 this.game.showInsufficientFundsFeedback();
                 return;
             }
-            
-            auction.currentBid = newBid;
-            auction.currentBidder = 'player';
-            auction.bidHistory.push({
-                bidder: 'player',
-                amount: newBid,
-                timestamp: Date.now()
+        }
+        
+        // Send bid to server for multiplayer sync
+        if (this.game.gameState) {
+            this.game.gameState.dispatch({
+                type: 'PLACE_BID',
+                auctionId: auctionId,
+                playerId: this.game.playerId,
+                bidAmount: increment,
+                customAmount: customAmount,
+                clientAuctionVersion: auction.lastUpdateVersion || 0
             });
-            
-            // Extend time if bid placed near end
-            const timeLeft = (auction.endTime - Date.now()) / 1000;
-            if (timeLeft <= this.bidExtensionThreshold) {
-                auction.endTime += this.bidExtensionTime;
-            }
+        } else {
+            // Fallback for solo play - update locally
+            this.updateAuctionLocally(auctionId, increment, customAmount);
         }
         
         // Update UI
@@ -847,6 +857,71 @@ class AuctionSystem {
                 }
             });
         }
+    }
+    
+    /**
+     * Get server-synchronized time (with offset correction)
+     */
+    getServerTime() {
+        const localTime = Date.now();
+        const serverOffset = this.game.multiplayerManager?.serverTimeOffset || 0;
+        return localTime + serverOffset;
+    }
+    
+    /**
+     * Update UI when auction ends (server will handle the actual ending)
+     */
+    updateAuctionEndedState(auctionId) {
+        const auction = this.activeAuctions.get(auctionId);
+        if (!auction) return;
+        
+        // Update timer displays to show "Ended"
+        const timerElements = document.querySelectorAll(`[id*="timer-${auctionId}"]`);
+        timerElements.forEach(el => {
+            el.textContent = 'Ended';
+            el.classList.add('auction-ended');
+        });
+        
+        // Disable bid buttons
+        const bidButtons = document.querySelectorAll(`[id*="bid-${auctionId}"]`);
+        bidButtons.forEach(btn => {
+            btn.disabled = true;
+            btn.textContent = 'Auction Ended';
+        });
+    }
+    
+    /**
+     * Get player display name from player ID
+     */
+    getPlayerDisplayName(playerId) {
+        if (!playerId) return 'Unknown';
+        
+        // Handle legacy 'player' ID for current player
+        if (playerId === 'player') {
+            return this.game.playerSettings?.name || 'You';
+        }
+        
+        // Get player name from multiplayer manager
+        if (this.game.multiplayerManager && this.game.multiplayerManager.players) {
+            const player = this.game.multiplayerManager.players.get(playerId);
+            if (player) {
+                return player.name || player.id;
+            }
+        }
+        
+        // Fallback to player ID
+        return playerId;
+    }
+    
+    /**
+     * Check if player ID represents the current player
+     */
+    isCurrentPlayer(playerId) {
+        if (playerId === 'player') return true;
+        if (this.game.multiplayerManager && this.game.multiplayerManager.playerId) {
+            return playerId === this.game.multiplayerManager.playerId;
+        }
+        return false;
     }
     
     /**
@@ -1000,6 +1075,126 @@ class AuctionSystem {
             // Don't automatically restart timers on import
             // Let the game decide when to resume
         }
+    }
+    
+    /**
+     * Update auction locally (solo play fallback)
+     */
+    updateAuctionLocally(auctionId, increment, customAmount) {
+        const auction = this.activeAuctions.get(auctionId);
+        if (!auction) return;
+        
+        // Handle Dutch auction phase
+        if (auction.dutchPhase) {
+            auction.dutchPhase = false;
+            auction.currentBidder = 'player';
+            auction.bidHistory.push({
+                bidder: 'player',
+                amount: auction.currentBid,
+                timestamp: Date.now()
+            });
+            
+            this.updateAuctionActions(auctionId);
+        } else {
+            // Regular bidding phase - increase bid
+            const newBid = customAmount || Math.floor(auction.currentBid * (1 + increment));
+            
+            auction.currentBid = newBid;
+            auction.currentBidder = 'player';
+            auction.bidHistory.push({
+                bidder: 'player',
+                amount: newBid,
+                timestamp: Date.now()
+            });
+            
+            // Extend time if bid placed near end
+            const timeLeft = (auction.endTime - Date.now()) / 1000;
+            if (timeLeft <= this.bidExtensionThreshold) {
+                auction.endTime += this.bidExtensionTime;
+            }
+        }
+        
+        // Update UI immediately for solo play
+        this.updateAuctionDisplay(auctionId);
+    }
+    
+    /**
+     * Handle server auction updates (multiplayer)
+     */
+    onAuctionStateUpdate(auctions) {
+        // Sync local auction state with server state
+        if (!auctions) return;
+        
+        // Update existing auctions or add new ones
+        Object.entries(auctions).forEach(([auctionId, auctionData]) => {
+            if (auctionData === null) {
+                // Auction was deleted on server
+                this.removeAuction(auctionId);
+            } else if (auctionData) {
+                // Update or add auction
+                this.activeAuctions.set(auctionId, auctionData);
+                this.updateAuctionDisplay(auctionId);
+                
+                // Start timer if this is a new auction
+                if (!this.auctionIntervals.has(auctionId)) {
+                    this.startAuctionTimer(auctionId);
+                }
+            }
+        });
+        
+        this.updateSidebar();
+    }
+    
+    /**
+     * Update auction display for a specific auction
+     */
+    updateAuctionDisplay(auctionId) {
+        const auction = this.activeAuctions.get(auctionId);
+        if (!auction) return;
+        
+        // Update current bid display
+        const currentBidEl = document.getElementById(`current-bid-${auctionId}`);
+        if (currentBidEl) {
+            currentBidEl.textContent = `$${auction.currentBid.toLocaleString()}`;
+        }
+        
+        // Update current bidder display
+        const currentBidderEl = document.getElementById(`current-bidder-${auctionId}`);
+        if (currentBidderEl) {
+            currentBidderEl.textContent = auction.currentBidder ? this.getPlayerDisplayName(auction.currentBidder) : 'None';
+        }
+        
+        // Update bid history
+        this.updateBidHistory(auctionId);
+        
+        // Update auction actions if in bidding phase
+        if (!auction.dutchPhase) {
+            this.updateAuctionActions(auctionId);
+        }
+    }
+    
+    /**
+     * Remove auction and clean up
+     */
+    removeAuction(auctionId) {
+        // Clear timer
+        if (this.auctionIntervals.has(auctionId)) {
+            clearInterval(this.auctionIntervals.get(auctionId));
+            this.auctionIntervals.delete(auctionId);
+        }
+        
+        // Remove from active auctions
+        this.activeAuctions.delete(auctionId);
+        
+        // Remove modal if open
+        const modal = document.getElementById(`auction-ui-${auctionId}-challenger`);
+        if (modal) modal.remove();
+        
+        const ownerModal = document.getElementById(`auction-ui-${auctionId}-owner`);
+        if (ownerModal) ownerModal.remove();
+        
+        // Update sidebar
+        this.updateSidebar();
     }
 }
 

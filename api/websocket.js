@@ -14,6 +14,7 @@ let gameState = {
   core: {
     players: new Map(),
     parcels: {},
+    auctions: new Map(), // Active auctions: auctionId -> auction data
     currentMonth: 'SEPT',
     currentDay: 1,
     gameSpeed: 1,
@@ -252,6 +253,7 @@ function handleReset(corsHeaders) {
     core: {
       players: new Map(),
       parcels: {},
+      auctions: new Map(),
       currentMonth: 'SEPT',
       currentDay: 1,
       gameSpeed: 1,
@@ -385,6 +387,12 @@ async function processAction(action) {
       return await processUpdateCash(action);
     case 'ADVANCE_TIME':
       return await processAdvanceTime(action);
+    case 'START_AUCTION':
+      return await processStartAuction(action);
+    case 'PLACE_BID':
+      return await processPlaceBid(action);
+    case 'END_AUCTION':
+      return await processEndAuction(action);
     default:
       throw new Error(`Unknown action type: ${type}`);
   }
@@ -895,4 +903,245 @@ function broadcastStateDiff(oldState, newState) {
     
     console.log(`Broadcasted diff with ${Object.keys(diff.changes).length} change categories`);
   }
+}
+
+// Auction processing functions
+async function processStartAuction(action) {
+  const { auctionId, row, col, challengingPlayerId, auctionData } = action;
+  
+  // Validate coordinates
+  if (row < 0 || row >= 32 || col < 0 || col >= 32) {
+    return {
+      success: false,
+      error: 'INVALID_COORDINATES',
+      message: 'Invalid parcel coordinates'
+    };
+  }
+  
+  // Check if parcel exists
+  const parcelId = `${row}-${col}`;
+  if (!gameState.core.parcels[parcelId]) {
+    return {
+      success: false,
+      error: 'PARCEL_NOT_FOUND',
+      message: 'No parcel at this location'
+    };
+  }
+  
+  // Check if auction already exists for this parcel
+  for (const auction of gameState.core.auctions.values()) {
+    if (auction.row === row && auction.col === col) {
+      return {
+        success: false,
+        error: 'AUCTION_EXISTS',
+        message: 'Auction already exists for this parcel'
+      };
+    }
+  }
+  
+  // Check maximum concurrent auctions (2)
+  if (gameState.core.auctions.size >= 2) {
+    return {
+      success: false,
+      error: 'MAX_AUCTIONS',
+      message: 'Maximum 2 concurrent auctions allowed'
+    };
+  }
+  
+  // Create auction
+  const auction = {
+    ...auctionData,
+    id: auctionId,
+    row,
+    col,
+    challengingPlayer: challengingPlayerId,
+    startTime: Date.now(),
+    endTime: Date.now() + 60000, // 60 seconds
+    bidHistory: [],
+    dutchPhase: true,
+    lastDutchUpdate: Date.now(),
+    lastUpdateVersion: gameState.version.global + 1
+  };
+  
+  gameState.core.auctions.set(auctionId, auction);
+  
+  // Set up server-side auction timer for automatic ending
+  setTimeout(() => {
+    const currentAuction = gameState.core.auctions.get(auctionId);
+    if (currentAuction && Date.now() >= currentAuction.endTime) {
+      // Auto-end auction if it's still active
+      processEndAuction({ auctionId, reason: 'timer_expired' });
+    }
+  }, 61000); // 61 seconds to account for any timing differences
+  
+  // Update versions
+  gameState.version.global++;
+  gameState.meta.lastUpdate = Date.now();
+  
+  return {
+    success: true,
+    processedAction: action,
+    stateChanges: {
+      auctions: { [auctionId]: auction }
+    }
+  };
+}
+
+async function processPlaceBid(action) {
+  const { auctionId, playerId, bidAmount, customAmount, clientAuctionVersion } = action;
+  
+  const auction = gameState.core.auctions.get(auctionId);
+  if (!auction) {
+    return {
+      success: false,
+      error: 'AUCTION_NOT_FOUND',
+      message: 'Auction not found'
+    };
+  }
+  
+  // Check if auction has ended
+  if (Date.now() > auction.endTime) {
+    return {
+      success: false,
+      error: 'AUCTION_ENDED',
+      message: 'Auction has already ended'
+    };
+  }
+  
+  // Race condition protection: check if auction state has changed since client's last view
+  if (clientAuctionVersion && auction.lastUpdateVersion && clientAuctionVersion < auction.lastUpdateVersion) {
+    return {
+      success: false,
+      error: 'AUCTION_STATE_CHANGED',
+      message: 'Auction state has changed, please refresh and try again',
+      currentAuctionState: auction
+    };
+  }
+  
+  // Check for conflicting bid (someone bid higher while this bid was in transit)
+  if (!auction.dutchPhase && customAmount && customAmount <= auction.currentBid) {
+    return {
+      success: false,
+      error: 'BID_SUPERSEDED',
+      message: 'Another player has placed a higher bid',
+      currentBid: auction.currentBid,
+      currentBidder: auction.currentBidder
+    };
+  }
+  
+  // Handle Dutch auction phase
+  if (auction.dutchPhase) {
+    auction.currentBidder = playerId;
+    auction.dutchPhase = false; // End Dutch phase when first bid is placed
+    
+    // Extend auction if bid placed near end
+    const timeLeft = auction.endTime - Date.now();
+    if (timeLeft < 5000) { // Less than 5 seconds left
+      auction.endTime += 2000; // Add 2 seconds
+    }
+  } else {
+    // Regular bidding phase - validate bid amount
+    const minBid = customAmount || auction.currentBid * (1 + (bidAmount || 0.05));
+    if ((customAmount || auction.currentBid * (1 + bidAmount)) <= auction.currentBid) {
+      return {
+        success: false,
+        error: 'BID_TOO_LOW',
+        message: 'Bid must be higher than current bid'
+      };
+    }
+    
+    auction.currentBid = customAmount || auction.currentBid * (1 + bidAmount);
+    auction.currentBidder = playerId;
+    
+    // Extend auction if bid placed near end
+    const timeLeft = auction.endTime - Date.now();
+    if (timeLeft < 5000) { // Less than 5 seconds left
+      auction.endTime += 2000; // Add 2 seconds
+    }
+  }
+  
+  // Add to bid history
+  auction.bidHistory.push({
+    playerId,
+    amount: auction.currentBid,
+    timestamp: Date.now()
+  });
+  
+  // Update auction version for conflict detection
+  auction.lastUpdateVersion = gameState.version.global + 1;
+  
+  // Update versions
+  gameState.version.global++;
+  gameState.meta.lastUpdate = Date.now();
+  
+  return {
+    success: true,
+    processedAction: action,
+    stateChanges: {
+      auctions: { [auctionId]: auction }
+    }
+  };
+}
+
+async function processEndAuction(action) {
+  const { auctionId, reason = 'completed' } = action;
+  
+  const auction = gameState.core.auctions.get(auctionId);
+  if (!auction) {
+    return {
+      success: false,
+      error: 'AUCTION_NOT_FOUND',
+      message: 'Auction not found'
+    };
+  }
+  
+  // Determine winner and transfer ownership
+  const parcelId = `${auction.row}-${auction.col}`;
+  const parcel = gameState.core.parcels[parcelId];
+  
+  if (auction.currentBidder && parcel) {
+    // Transfer ownership
+    const previousOwner = parcel.owner;
+    parcel.owner = auction.currentBidder;
+    
+    // Update player cash (simplified - in real implementation would need to validate player has enough cash)
+    const winner = gameState.core.players.get(auction.currentBidder);
+    if (winner) {
+      winner.cash -= auction.currentBid;
+    }
+    
+    // Pay previous owner if exists
+    if (previousOwner && previousOwner !== auction.currentBidder) {
+      const previousPlayer = gameState.core.players.get(previousOwner);
+      if (previousPlayer) {
+        previousPlayer.cash += auction.currentBid;
+      }
+    }
+  }
+  
+  // Remove auction
+  gameState.core.auctions.delete(auctionId);
+  
+  // Update versions
+  gameState.version.global++;
+  gameState.version.perParcel[parcelId] = gameState.version.global;
+  if (auction.currentBidder) {
+    gameState.version.perPlayer[auction.currentBidder] = gameState.version.global;
+  }
+  gameState.meta.lastUpdate = Date.now();
+  
+  return {
+    success: true,
+    processedAction: action,
+    auctionResult: {
+      winner: auction.currentBidder,
+      finalBid: auction.currentBid,
+      reason
+    },
+    stateChanges: {
+      auctions: { [auctionId]: null }, // Mark as deleted
+      parcels: { [parcelId]: parcel },
+      players: auction.currentBidder ? { [auction.currentBidder]: Object.fromEntries([[auction.currentBidder, gameState.core.players.get(auction.currentBidder)]]) } : {}
+    }
+  };
 }
