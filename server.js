@@ -322,6 +322,10 @@ async function handleWebSocketMessage(ws, clientId, data) {
       await handleStartNewGame(ws, clientId, data);
       break;
       
+    case 'ACTION_BATCH':
+      await handleActionBatch(ws, clientId, data);
+      break;
+      
     default:
       console.warn('Unknown message type:', data.type);
   }
@@ -2167,6 +2171,76 @@ async function handleStartNewGame(ws, clientId, data) {
     },
     timestamp: Date.now()
   }));
+}
+
+async function handleActionBatch(ws, clientId, data) {
+  const { actions, compressed, batchId, clientVersion } = data;
+  
+  // Get player ID from client
+  const client = clients.get(clientId);
+  if (!client || !client.playerId) {
+    ws.send(JSON.stringify({
+      type: 'ACTION_BATCH_ERROR',
+      batchId: batchId,
+      error: 'INVALID_CLIENT',
+      message: 'Client not associated with player'
+    }));
+    return;
+  }
+  
+  const playerId = client.playerId;
+  console.log(`📦 Processing action batch from ${playerId}: ${actions.length} actions`);
+  
+  // Process each action in the batch
+  const results = [];
+  for (const action of actions) {
+    try {
+      // Add player ID to action
+      const actionWithPlayer = { ...action, playerId };
+      const result = await processAction(actionWithPlayer, playerId);
+      results.push({
+        actionId: action.id,
+        success: result.success,
+        result: result,
+        error: result.error,
+        message: result.message
+      });
+      
+      // If action succeeded, broadcast to other clients
+      if (result.success) {
+        ws.send(JSON.stringify({
+          type: 'ACTION_SUCCESS',
+          actionId: action.id,
+          result: result,
+          version: gameState.version.global
+        }));
+      } else {
+        ws.send(JSON.stringify({
+          type: 'ACTION_ERROR',
+          actionId: action.id,
+          error: result.error,
+          message: result.message
+        }));
+      }
+    } catch (error) {
+      console.error(`❌ Error processing action ${action.id}:`, error);
+      results.push({
+        actionId: action.id,
+        success: false,
+        error: 'PROCESSING_ERROR',
+        message: error.message
+      });
+      
+      ws.send(JSON.stringify({
+        type: 'ACTION_ERROR',
+        actionId: action.id,
+        error: 'PROCESSING_ERROR',
+        message: error.message
+      }));
+    }
+  }
+  
+  console.log(`✅ Batch processed: ${results.filter(r => r.success).length}/${results.length} actions succeeded`);
 }
 
 // ====== GAME LIFECYCLE MANAGEMENT ======
