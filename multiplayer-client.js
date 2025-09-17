@@ -27,6 +27,16 @@ class UniversalMultiplayerManager {
         this.rollbackStack = []; // Stack of changes that can be rolled back
         this.maxRollbackDepth = 10;
         
+        // Phase 4: Performance optimizations
+        this.actionBatch = []; // Queue for batching actions
+        this.batchTimeout = null; // Timer for batch sending
+        this.batchDelay = 50; // Milliseconds to wait before sending batch
+        this.maxBatchSize = 10; // Maximum actions per batch
+        this.compressionEnabled = true; // Enable delta compression
+        
+        // Initialize predictive cache
+        this.initPredictiveCache();
+        
         // Heartbeat and connection management
         this.heartbeatInterval = null;
         this.heartbeatFrequency = 30000; // 30 seconds
@@ -302,7 +312,7 @@ class UniversalMultiplayerManager {
         }
     }
     
-    async broadcastAction(action) {
+    async broadcastAction(action, batchable = true) {
         if (!this.isConnected || !this.playerId) {
             console.warn('⚠️ Not connected to server');
             return { success: false, error: 'NOT_CONNECTED' };
@@ -322,6 +332,11 @@ class UniversalMultiplayerManager {
             timestamp: Date.now(),
             retries: 0
         });
+        
+        // Check if action should be batched
+        if (batchable && this.shouldBatchAction(enhancedAction)) {
+            return this.addToBatch(enhancedAction);
+        }
         
         try {
             if (this.connectionType === 'websocket') {
@@ -1114,6 +1129,201 @@ class UniversalMultiplayerManager {
             this.game.totalPopulation = stateChanges.population;
             this.updatePopulationDisplay();
         }
+    }
+    
+    // =====================================
+    // Phase 4: Performance Optimizations
+    // =====================================
+    
+    /**
+     * Determine if an action should be batched
+     */
+    shouldBatchAction(action) {
+        // Don't batch critical actions that need immediate processing
+        const nonBatchableActions = [
+            'PLACE_BID', // Auction bids need immediate processing
+            'START_AUCTION', // Auction starts are time-critical
+            'END_AUCTION', // Auction ends are time-critical
+            'CHALLENGE_AUCTION' // Auction challenges are time-critical
+        ];
+        
+        return !nonBatchableActions.includes(action.type);
+    }
+    
+    /**
+     * Add action to batch queue
+     */
+    addToBatch(action) {
+        this.actionBatch.push(action);
+        console.log(`📦 Added action to batch: ${action.type} (batch size: ${this.actionBatch.length})`);
+        
+        // Send immediately if batch is full
+        if (this.actionBatch.length >= this.maxBatchSize) {
+            this.flushBatch();
+            return { success: true, batched: true, immediate: true };
+        }
+        
+        // Set timeout to send batch if not already set
+        if (!this.batchTimeout) {
+            this.batchTimeout = setTimeout(() => {
+                this.flushBatch();
+            }, this.batchDelay);
+        }
+        
+        return { success: true, batched: true, immediate: false };
+    }
+    
+    /**
+     * Send all batched actions immediately
+     */
+    async flushBatch() {
+        if (this.actionBatch.length === 0) return;
+        
+        // Clear timeout
+        if (this.batchTimeout) {
+            clearTimeout(this.batchTimeout);
+            this.batchTimeout = null;
+        }
+        
+        const batch = [...this.actionBatch];
+        this.actionBatch = [];
+        
+        console.log(`🚀 Sending action batch with ${batch.length} actions`);
+        
+        try {
+            if (this.connectionType === 'websocket') {
+                await this.sendWebSocketBatch(batch);
+            } else {
+                // For SSE, send actions individually (no batch support)
+                for (const action of batch) {
+                    await this.sendSSEAction(action);
+                }
+            }
+        } catch (error) {
+            console.error('❌ Error sending batch:', error);
+            // Re-add failed actions to pending (they'll be retried individually)
+            batch.forEach(action => {
+                this.broadcastAction(action, false); // Don't re-batch failed actions
+            });
+        }
+    }
+    
+    /**
+     * Send a batch of actions via WebSocket
+     */
+    async sendWebSocketBatch(actions) {
+        const compressedBatch = this.compressionEnabled ? this.compressBatch(actions) : actions;
+        
+        const message = {
+            type: 'ACTION_BATCH',
+            actions: compressedBatch,
+            compressed: this.compressionEnabled,
+            batchId: crypto.randomUUID(),
+            clientVersion: this.localStateVersion
+        };
+        
+        this.connection.send(JSON.stringify(message));
+        console.log(`📡 Sent compressed batch: ${actions.length} actions → ${JSON.stringify(message).length} bytes`);
+        
+        return { success: true, batched: true };
+    }
+    
+    /**
+     * Compress a batch of actions using delta compression
+     */
+    compressBatch(actions) {
+        if (actions.length <= 1) return actions;
+        
+        const compressed = [actions[0]]; // First action is always full
+        
+        for (let i = 1; i < actions.length; i++) {
+            const currentAction = actions[i];
+            const previousAction = actions[i - 1];
+            
+            // Create delta by removing redundant fields
+            const delta = this.createActionDelta(currentAction, previousAction);
+            compressed.push(delta);
+        }
+        
+        const originalSize = JSON.stringify(actions).length;
+        const compressedSize = JSON.stringify(compressed).length;
+        const savings = ((originalSize - compressedSize) / originalSize * 100).toFixed(1);
+        
+        console.log(`🗜️ Compressed batch: ${originalSize} → ${compressedSize} bytes (${savings}% savings)`);
+        
+        return compressed;
+    }
+    
+    /**
+     * Create a delta between two actions
+     */
+    createActionDelta(current, previous) {
+        const delta = { _delta: true, id: current.id };
+        
+        // Only include fields that differ from previous action
+        Object.keys(current).forEach(key => {
+            if (key !== 'id' && current[key] !== previous[key]) {
+                delta[key] = current[key];
+            }
+        });
+        
+        return delta;
+    }
+    
+    /**
+     * Predictive state caching for frequently accessed data
+     */
+    initPredictiveCache() {
+        this.stateCache = {
+            parcels: new Map(),
+            buildings: new Map(),
+            lastAccessed: new Map(),
+            hitCount: 0,
+            missCount: 0
+        };
+        
+        // Periodically clean cache
+        setInterval(() => {
+            this.cleanPredictiveCache();
+        }, 60000); // Clean every minute
+    }
+    
+    /**
+     * Clean old entries from predictive cache
+     */
+    cleanPredictiveCache() {
+        if (!this.stateCache) return;
+        
+        const now = Date.now();
+        const maxAge = 300000; // 5 minutes
+        
+        // Clean parcel cache
+        this.stateCache.parcels.forEach((value, key) => {
+            const lastAccessed = this.stateCache.lastAccessed.get(key) || 0;
+            if (now - lastAccessed > maxAge) {
+                this.stateCache.parcels.delete(key);
+                this.stateCache.lastAccessed.delete(key);
+            }
+        });
+        
+        console.log(`🧹 Cleaned predictive cache: ${this.stateCache.parcels.size} entries remaining`);
+    }
+    
+    /**
+     * Get cache statistics for monitoring
+     */
+    getCacheStats() {
+        if (!this.stateCache) return null;
+        
+        const total = this.stateCache.hitCount + this.stateCache.missCount;
+        const hitRate = total > 0 ? (this.stateCache.hitCount / total * 100).toFixed(1) : 0;
+        
+        return {
+            entries: this.stateCache.parcels.size,
+            hits: this.stateCache.hitCount,
+            misses: this.stateCache.missCount,
+            hitRate: `${hitRate}%`
+        };
     }
     
     // Display update methods
