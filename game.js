@@ -7869,9 +7869,12 @@ class IsometricGrid {
             this.openSidebarSection(playersSection);
             this.updatePlayersList();
             
-            // Auto-close vitality panel when entering players view
+            // Auto-close vitality and mobility panels when entering players view
             if (!vitalitySection.classList.contains('collapsed')) {
                 this.closeSidebarSection(vitalitySection);
+            }
+            if (!mobilitySection.classList.contains('collapsed')) {
+                this.closeSidebarSection(mobilitySection);
             }
         } else {
             // Leaving special views - open vitality panel, close special panels
