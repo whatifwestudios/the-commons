@@ -1,3 +1,757 @@
+/**
+ * Multiplayer Manager for real-time state synchronization
+ */
+class MultiplayerManager {
+    constructor(game) {
+        this.game = game;
+        this.playerId = null;
+        this.players = new Map();
+        this.eventSource = null;
+        this.isConnected = false;
+        this.reconnectAttempts = 0;
+        this.maxReconnectAttempts = 10;
+        this.baseUrl = window.location.origin; // Use same origin for Vercel
+        
+        // Enhanced state management
+        this.localStateVersion = 0;
+        this.serverStateVersion = 0;
+        this.pendingActions = new Map();
+        this.stateCache = null;
+        
+        // Heartbeat and connection management
+        this.heartbeatInterval = null;
+        this.heartbeatFrequency = 30000; // 30 seconds
+        this.lastHeartbeat = null;
+        this.connectionTimeout = null;
+        
+        // Reconnection strategy
+        this.reconnectDelay = 1000; // Start with 1 second
+        this.maxReconnectDelay = 30000; // Max 30 seconds
+        this.backoffMultiplier = 1.5;
+        
+        // Performance metrics
+        this.latencyHistory = [];
+        this.actionCount = 0;
+        this.syncCount = 0;
+        
+        console.log('🎮 Enhanced MultiplayerManager initialized');
+        this.startConnectionMonitoring();
+    }
+    
+    // Connection monitoring and heartbeat system
+    startConnectionMonitoring() {
+        // Monitor connection health every 10 seconds
+        setInterval(() => {
+            if (this.isConnected && this.lastHeartbeat) {
+                const timeSinceLastHeartbeat = Date.now() - this.lastHeartbeat;
+                if (timeSinceLastHeartbeat > this.heartbeatFrequency * 2) {
+                    console.warn('⚠️ Heartbeat timeout, reconnecting...');
+                    this.handleConnectionLoss();
+                }
+            }
+        }, 10000);
+        
+        // Send periodic heartbeats
+        this.heartbeatInterval = setInterval(() => {
+            this.sendHeartbeat();
+        }, this.heartbeatFrequency);
+    }
+    
+    async sendHeartbeat() {
+        if (!this.isConnected || !this.playerId) return;
+        
+        try {
+            const startTime = Date.now();
+            const response = await fetch(`${this.baseUrl}/api/websocket?action=heartbeat&playerId=${this.playerId}&version=${this.localStateVersion}`);
+            const result = await response.json();
+            
+            if (result.success) {
+                const latency = Date.now() - startTime;
+                this.recordLatency(latency);
+                this.lastHeartbeat = Date.now();
+                this.serverStateVersion = result.version;
+                
+                // Check for version mismatch
+                if (result.version > this.localStateVersion + 5) {
+                    console.log('📦 State version mismatch detected, requesting full sync...');
+                    this.requestFullSync();
+                }
+            }
+        } catch (error) {
+            console.error('💔 Heartbeat failed:', error);
+            this.handleConnectionLoss();
+        }
+    }
+    
+    recordLatency(latency) {
+        this.latencyHistory.push(latency);
+        if (this.latencyHistory.length > 10) {
+            this.latencyHistory.shift();
+        }
+        
+        const avgLatency = this.latencyHistory.reduce((a, b) => a + b, 0) / this.latencyHistory.length;
+        if (avgLatency > 1000) {
+            console.warn(`⚠️ High latency detected: ${avgLatency.toFixed(0)}ms`);
+        }
+    }
+    
+    async requestFullSync() {
+        try {
+            const response = await fetch(`${this.baseUrl}/api/websocket?action=sync&playerId=${this.playerId}&version=${this.localStateVersion}`);
+            const result = await response.json();
+            
+            if (result.success && result.type === 'FULL_SYNC') {
+                console.log('🔄 Performing full state sync...');
+                this.syncGameState(result.gameState);
+                this.localStateVersion = result.version;
+                this.syncCount++;
+            }
+        } catch (error) {
+            console.error('❌ Full sync failed:', error);
+        }
+    }
+    
+    handleConnectionLoss() {
+        this.isConnected = false;
+        if (this.eventSource) {
+            this.eventSource.close();
+            this.eventSource = null;
+        }
+        
+        console.log('📱 Connection lost, attempting to reconnect...');
+        this.scheduleReconnect();
+    }
+    
+    scheduleReconnect() {
+        if (this.reconnectAttempts >= this.maxReconnectAttempts) {
+            console.error('❌ Max reconnection attempts reached');
+            this.showConnectionError();
+            return;
+        }
+        
+        const delay = Math.min(
+            this.reconnectDelay * Math.pow(this.backoffMultiplier, this.reconnectAttempts),
+            this.maxReconnectDelay
+        );
+        
+        console.log(`⏳ Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts + 1}/${this.maxReconnectAttempts})`);
+        
+        setTimeout(() => {
+            this.reconnectAttempts++;
+            this.connect();
+        }, delay);
+    }
+    
+    showConnectionError() {
+        // Show user-friendly connection error
+        const errorDiv = document.createElement('div');
+        errorDiv.className = 'multiplayer-error';
+        errorDiv.innerHTML = `
+            <div style="position: fixed; top: 20px; right: 20px; background: #ff4444; color: white; padding: 15px; border-radius: 8px; z-index: 1000; max-width: 300px;">
+                <h4>🔌 Connection Lost</h4>
+                <p>Unable to connect to multiplayer server. Playing in offline mode.</p>
+                <button onclick="this.parentElement.parentElement.remove(); window.location.reload();" style="background: white; color: #ff4444; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer;">
+                    Retry Connection
+                </button>
+            </div>
+        `;
+        document.body.appendChild(errorDiv);
+    }
+    
+    async connect() {
+        try {
+            console.log('🔌 Connecting to multiplayer server...');
+            
+            // First, join the game to get a player ID, sending player settings
+            const playerSettings = this.game.playerSettings || {};
+            const joinParams = new URLSearchParams({
+                action: 'join',
+                playerId: this.getStoredPlayerId() || '',
+                playerName: playerSettings.name || 'Player',
+                playerColor: playerSettings.color || '#2196F3',
+                playerEmoji: playerSettings.emoji || '🏠'
+            });
+            
+            const joinResponse = await fetch(`${this.baseUrl}/api/websocket?${joinParams}`);
+            const joinData = await joinResponse.json();
+            
+            this.playerId = joinData.playerId;
+            localStorage.setItem('multiplayer_player_id', this.playerId);
+            
+            console.log(`✅ Connected as player: ${this.playerId}`);
+            
+            // Update local state with any existing game state
+            if (joinData.gameState) {
+                this.syncGameState(joinData.gameState);
+            }
+            
+            // Update players list
+            if (joinData.players) {
+                joinData.players.forEach(player => {
+                    this.players.set(player.id, player);
+                });
+                this.updatePlayersDisplay();
+            }
+            
+            // Start listening for real-time updates
+            this.startEventStream();
+            
+            this.isConnected = true;
+            this.reconnectAttempts = 0;
+            
+        } catch (error) {
+            console.error('❌ Failed to connect to multiplayer server:', error);
+            this.scheduleReconnect();
+        }
+    }
+    
+    startEventStream() {
+        if (this.eventSource) {
+            this.eventSource.close();
+        }
+        
+        this.eventSource = new EventSource(`${this.baseUrl}/api/websocket?action=stream&playerId=${this.playerId}`);
+        
+        this.eventSource.onmessage = (event) => {
+            try {
+                const data = JSON.parse(event.data);
+                this.handleServerMessage(data);
+            } catch (error) {
+                console.error('❌ Error parsing server message:', error);
+            }
+        };
+        
+        this.eventSource.onerror = (error) => {
+            console.error('❌ EventSource error:', error);
+            this.isConnected = false;
+            this.scheduleReconnect();
+        };
+        
+        this.eventSource.onopen = () => {
+            console.log('📡 Real-time connection established');
+        };
+    }
+    
+    handleServerMessage(data) {
+        switch (data.type) {
+            case 'STREAM_CONNECTED':
+                console.log('🔗 Stream connection established');
+                this.localStateVersion = data.version;
+                this.syncGameState(data.gameState);
+                if (data.players) {
+                    data.players.forEach(player => {
+                        this.players.set(player.id, player);
+                    });
+                    this.updatePlayersDisplay();
+                }
+                break;
+                
+            case 'STATE_UPDATE':
+                this.syncGameState(data.gameState);
+                if (data.players) {
+                    data.players.forEach(player => {
+                        this.players.set(player.id, player);
+                    });
+                    this.updatePlayersDisplay();
+                }
+                break;
+                
+            case 'STATE_DIFF':
+                console.log('📦 Applying state diff...');
+                this.applyStateDiff(data.diff);
+                break;
+                
+            case 'ACTION_PROCESSED':
+                console.log('✅ Action processed:', data.action.type);
+                this.handleActionProcessed(data);
+                break;
+                
+            case 'PLAYER_JOINED':
+                console.log(`👥 Player joined: ${data.player.name}`);
+                this.players.set(data.player.id, data.player);
+                this.updatePlayersDisplay();
+                this.showNotification(`${data.player.name} joined the game`, 'info');
+                break;
+                
+            case 'PLAYER_LEFT':
+                console.log(`👋 Player left: ${data.playerId}`);
+                this.players.delete(data.playerId);
+                this.updatePlayersDisplay();
+                break;
+                
+            case 'HEARTBEAT':
+                this.lastHeartbeat = Date.now();
+                this.serverStateVersion = data.version;
+                break;
+                
+            case 'GAME_RESET':
+                console.log('🔄 Game reset by server');
+                this.localStateVersion = 0;
+                location.reload(); // Force page refresh for clean slate
+                break;
+                
+            case 'CONFLICT_DETECTED':
+                console.warn('⚠️ Action conflict detected:', data.conflict);
+                this.handleConflict(data.conflict);
+                break;
+                
+            default:
+                console.log('📨 Received server message:', data);
+        }
+    }
+    
+    applyStateDiff(diff) {
+        if (diff.version <= this.localStateVersion) {
+            console.log('⏸️ Ignoring old diff version');
+            return;
+        }
+        
+        console.log(`📦 Applying diff v${this.localStateVersion} → v${diff.version}`);
+        
+        // Apply parcel changes
+        if (diff.changes.parcels) {
+            Object.entries(diff.changes.parcels).forEach(([parcelId, parcelData]) => {
+                const [row, col] = parcelId.split('-').map(Number);
+                if (this.game.grid[row] && this.game.grid[row][col]) {
+                    if (parcelData === null) {
+                        // Parcel was reset/removed
+                        this.game.grid[row][col].owner = null;
+                        this.game.grid[row][col].building = null;
+                    } else {
+                        // Update parcel data
+                        Object.assign(this.game.grid[row][col], parcelData);
+                    }
+                }
+            });
+        }
+        
+        // Apply player changes
+        if (diff.changes.players) {
+            Object.entries(diff.changes.players).forEach(([playerId, playerData]) => {
+                if (playerData === null) {
+                    this.players.delete(playerId);
+                } else {
+                    this.players.set(playerId, playerData);
+                    
+                    // Update local player data if it's current player
+                    if (playerId === this.playerId) {
+                        this.game.playerCash = playerData.cash || this.game.playerCash;
+                        this.game.playerActions = playerData.actions || this.game.playerActions;
+                    }
+                }
+            });
+            this.updatePlayersDisplay();
+        }
+        
+        // Apply calculated state changes
+        if (diff.changes.calculated) {
+            this.updateCalculatedState(diff.changes.calculated);
+        }
+        
+        // Apply world state changes
+        if (diff.changes.world) {
+            if (diff.changes.world.currentDay !== undefined) {
+                this.game.currentDay = diff.changes.world.currentDay;
+            }
+            if (diff.changes.world.currentMonth !== undefined) {
+                this.game.currentMonth = diff.changes.world.currentMonth;
+            }
+        }
+        
+        this.localStateVersion = diff.version;
+        this.game.updateDisplay();
+    }
+    
+    updateCalculatedState(calculated) {
+        // Update treasury display
+        if (calculated.treasury !== undefined) {
+            this.game.cityTreasury = calculated.treasury;
+            this.updateTreasuryDisplay();
+        }
+        
+        // Update population display
+        if (calculated.population !== undefined) {
+            this.game.totalPopulation = calculated.population;
+            this.updatePopulationDisplay();
+        }
+        
+        // Update vitality metrics
+        if (calculated.vitality) {
+            Object.entries(calculated.vitality).forEach(([metric, data]) => {
+                if (this.game.vitalityMetrics && this.game.vitalityMetrics[metric]) {
+                    Object.assign(this.game.vitalityMetrics[metric], data);
+                }
+            });
+            this.game.updateVitalityDisplay();
+        }
+    }
+    
+    handleActionProcessed(data) {
+        const actionId = data.action.id;
+        if (this.pendingActions.has(actionId)) {
+            this.pendingActions.delete(actionId);
+        }
+        
+        // Apply state changes
+        if (data.stateChanges) {
+            this.applyStateDiff({ 
+                version: data.version,
+                changes: data.stateChanges,
+                timestamp: data.timestamp
+            });
+        }
+        
+        this.actionCount++;
+    }
+    
+    handleConflict(conflict) {
+        console.warn('⚠️ Handling conflict:', conflict);
+        
+        // Show user notification
+        this.showNotification(`Action conflict: ${conflict.message}`, 'warning');
+        
+        // Request fresh state sync
+        this.requestFullSync();
+    }
+    
+    showNotification(message, type = 'info') {
+        const notification = document.createElement('div');
+        notification.className = `multiplayer-notification notification-${type}`;
+        notification.style.cssText = `
+            position: fixed;
+            top: 80px;
+            right: 20px;
+            background: ${type === 'warning' ? '#ff9800' : type === 'error' ? '#f44336' : '#4caf50'};
+            color: white;
+            padding: 12px 16px;
+            border-radius: 6px;
+            z-index: 1000;
+            max-width: 300px;
+            opacity: 0;
+            transform: translateX(100%);
+            transition: all 0.3s ease;
+        `;
+        notification.textContent = message;
+        
+        document.body.appendChild(notification);
+        
+        // Animate in
+        requestAnimationFrame(() => {
+            notification.style.opacity = '1';
+            notification.style.transform = 'translateX(0)';
+        });
+        
+        // Auto remove after 5 seconds
+        setTimeout(() => {
+            notification.style.opacity = '0';
+            notification.style.transform = 'translateX(100%)';
+            setTimeout(() => notification.remove(), 300);
+        }, 5000);
+    }
+    
+    async broadcastAction(action) {
+        if (!this.isConnected || !this.playerId) {
+            console.warn('⚠️ Not connected to multiplayer server');
+            return { success: false, error: 'NOT_CONNECTED' };
+        }
+        
+        // Add action metadata
+        const enhancedAction = {
+            ...action,
+            id: crypto.randomUUID(),
+            timestamp: Date.now(),
+            clientVersion: this.localStateVersion,
+            playerId: this.playerId
+        };
+        
+        // Track pending action
+        this.pendingActions.set(enhancedAction.id, {
+            action: enhancedAction,
+            timestamp: Date.now(),
+            retries: 0
+        });
+        
+        try {
+            const startTime = Date.now();
+            const response = await fetch(`${this.baseUrl}/api/websocket?action=action&playerId=${this.playerId}&version=${this.localStateVersion}`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Client-Version': this.localStateVersion.toString()
+                },
+                body: JSON.stringify(enhancedAction)
+            });
+            
+            const result = await response.json();
+            const latency = Date.now() - startTime;
+            this.recordLatency(latency);
+            
+            if (result.success) {
+                console.log(`✅ Action ${enhancedAction.type} sent successfully (${latency}ms)`);
+                this.actionCount++;
+                
+                // Handle immediate server version update
+                if (result.serverVersion) {
+                    this.serverStateVersion = result.serverVersion;
+                }
+                
+                // Check for version mismatch requiring sync
+                if (result.requiresSync) {
+                    this.requestFullSync();
+                }
+            } else {
+                console.error('❌ Failed to broadcast action:', result);
+                this.pendingActions.delete(enhancedAction.id);
+                
+                // Handle specific error types
+                if (result.error === 'VERSION_TOO_OLD') {
+                    this.requestFullSync();
+                } else if (result.error === 'PARCEL_ALREADY_OWNED') {
+                    this.showNotification(result.message, 'warning');
+                }
+            }
+            
+            return result;
+        } catch (error) {
+            console.error('❌ Error broadcasting action:', error);
+            this.pendingActions.delete(enhancedAction.id);
+            
+            // Handle network errors with retry logic
+            const pendingAction = this.pendingActions.get(enhancedAction.id);
+            if (pendingAction && pendingAction.retries < 3) {
+                pendingAction.retries++;
+                console.log(`🔄 Retrying action ${enhancedAction.type} (attempt ${pendingAction.retries})`);
+                
+                setTimeout(() => {
+                    this.retryAction(enhancedAction);
+                }, 1000 * pendingAction.retries);
+            }
+            
+            return { success: false, error: 'NETWORK_ERROR', message: error.message };
+        }
+    }
+    
+    async retryAction(action) {
+        console.log(`🔄 Retrying action: ${action.type}`);
+        
+        // Update timestamp for retry
+        action.timestamp = Date.now();
+        action.clientVersion = this.localStateVersion;
+        
+        return this.broadcastAction(action);
+    }
+    
+    // Cleanup old pending actions
+    cleanupPendingActions() {
+        const now = Date.now();
+        const timeout = 30000; // 30 seconds
+        
+        for (const [actionId, pendingAction] of this.pendingActions) {
+            if (now - pendingAction.timestamp > timeout) {
+                console.warn(`⏰ Removing stale pending action: ${pendingAction.action.type}`);
+                this.pendingActions.delete(actionId);
+            }
+        }
+    }
+    
+    // Get connection status for UI
+    getConnectionStatus() {
+        return {
+            connected: this.isConnected,
+            playerId: this.playerId,
+            players: this.players.size,
+            latency: this.latencyHistory.length > 0 
+                ? Math.round(this.latencyHistory.reduce((a, b) => a + b, 0) / this.latencyHistory.length)
+                : 0,
+            actions: this.actionCount,
+            syncs: this.syncCount,
+            version: this.localStateVersion,
+            serverVersion: this.serverStateVersion,
+            pendingActions: this.pendingActions.size
+        };
+    }
+    
+    syncGameState(serverState) {
+        if (!serverState) return;
+        
+        // Sync parcel ownership
+        if (serverState.parcels) {
+            Object.entries(serverState.parcels).forEach(([parcelId, parcelData]) => {
+                const [row, col] = parcelId.split('-').map(Number);
+                if (this.game.grid[row] && this.game.grid[row][col]) {
+                    const tile = this.game.grid[row][col];
+                    
+                    // Always sync all parcel data to prevent desync
+                    let hasChanged = false;
+                    
+                    if (tile.owner !== parcelData.owner) {
+                        console.log(`🔄 Syncing owner change: ${parcelId} ${tile.owner} → ${parcelData.owner}`);
+                        tile.owner = parcelData.owner;
+                        hasChanged = true;
+                    }
+                    
+                    if (tile.building !== parcelData.building) {
+                        console.log(`🔄 Syncing building change: ${parcelId} ${tile.building} → ${parcelData.building}`);
+                        tile.building = parcelData.building;
+                        hasChanged = true;
+                    }
+                    
+                    // Always sync construction data (can change without building ID changing)
+                    if (parcelData.constructionStartDay !== undefined && 
+                        tile.constructionStartDay !== parcelData.constructionStartDay) {
+                        tile.constructionStartDay = parcelData.constructionStartDay;
+                        hasChanged = true;
+                    }
+                    if (parcelData.constructionDays !== undefined &&
+                        tile.constructionDays !== parcelData.constructionDays) {
+                        tile.constructionDays = parcelData.constructionDays;
+                        hasChanged = true;
+                    }
+                    
+                    if (hasChanged) {
+                        // Mark for visual update and force cache invalidation
+                        this.game.dirtyRegions.add(`${row}-${col}`);
+                        this.game.markVitalityDirty();
+                        this.game.markBuildingEconomicsDirty(row, col);
+                    }
+                }
+            });
+        }
+        
+        // Sync marketplace listings
+        if (serverState.marketplace && serverState.marketplace.listings) {
+            this.game.actionManager.marketplace.listings = serverState.marketplace.listings;
+            // Update marketplace display if modal is open
+            if (document.getElementById('action-marketplace-modal').classList.contains('visible')) {
+                this.game.updateMarketplaceModal();
+            }
+            this.game.updateMarketplaceDisplay();
+        }
+        
+        // Schedule render if we have updates
+        if (this.game.dirtyRegions.size > 0) {
+            this.game.scheduleRender();
+        }
+    }
+    
+    updatePlayersDisplay() {
+        // Add visual indicator of other players
+        const playerCount = this.players.size;
+        const playersOnline = Array.from(this.players.values()).filter(p => p.id !== this.playerId);
+        
+        // Update player menu or add status indicator
+        const playerBtn = document.getElementById('player-btn');
+        if (playerBtn && playersOnline.length > 0) {
+            playerBtn.textContent = `PLAYER (${playerCount} online)`;
+        }
+        
+        console.log(`👥 ${playerCount} players online:`, Array.from(this.players.keys()));
+    }
+    
+    scheduleReconnect() {
+        if (this.reconnectAttempts >= this.maxReconnectAttempts) {
+            console.error('❌ Max reconnection attempts reached');
+            return;
+        }
+        
+        const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts), 30000); // Exponential backoff, max 30s
+        this.reconnectAttempts++;
+        
+        console.log(`🔄 Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts})`);
+        
+        setTimeout(() => {
+            this.connect();
+        }, delay);
+    }
+    
+    getStoredPlayerId() {
+        return localStorage.getItem('multiplayer_player_id');
+    }
+    
+    disconnect() {
+        if (this.eventSource) {
+            this.eventSource.close();
+            this.eventSource = null;
+        }
+        this.isConnected = false;
+        console.log('🔌 Disconnected from multiplayer server');
+    }
+    
+    // Hook into existing game actions to broadcast them
+    async onParcelPurchased(row, col, building, purchasePrice, playerCash) {
+        const result = await this.broadcastAction({
+            type: 'PURCHASE_PARCEL',
+            parcelId: `${row}-${col}`,
+            building: building,
+            purchasePrice: purchasePrice,
+            timestamp: Date.now()
+        });
+        
+        // Handle purchase collision
+        if (!result.success && result.error === 'PARCEL_ALREADY_OWNED') {
+            // Rollback the optimistic purchase
+            this.rollbackParcelPurchase(row, col, purchasePrice, playerCash);
+            
+            // Show conflict notification
+            this.showPurchaseConflict(result.currentOwner, row, col);
+            
+            return false; // Purchase failed
+        }
+        
+        return result.success;
+    }
+    
+    rollbackParcelPurchase(row, col, purchasePrice, originalCash) {
+        // Revert the local state
+        this.game.grid[row][col].owner = null;
+        this.game.grid[row][col].landValue.paidPrice = 0;
+        this.game.playerCash = originalCash; // Restore original cash
+        
+        // Force re-render to show the rollback
+        this.game.scheduleRender();
+        this.game.updateVitalityDisplay();
+        this.game.updateDemographicsDisplay();
+        this.game.calculateCurrentCashflow();
+        this.game.updatePlayerStats();
+        
+        console.log(`🔄 Rolled back parcel purchase at ${row}-${col}`);
+    }
+    
+    showPurchaseConflict(currentOwner, row, col) {
+        // Get the current owner's display name and color
+        let ownerName = 'Another player';
+        let ownerColor = '#999';
+        
+        if (this.players.has(currentOwner)) {
+            const owner = this.players.get(currentOwner);
+            ownerName = currentOwner === this.playerId ? 'You' : `Player ${currentOwner.slice(-4)}`;
+            ownerColor = owner.color || '#999';
+        }
+        
+        // Show visual notification
+        if (this.game.showNotification) {
+            this.game.showNotification(
+                `Parcel ${row}-${col} was already purchased by ${ownerName}`, 
+                'conflict',
+                4000
+            );
+        }
+        
+        console.log(`⚠️ Purchase conflict: Parcel ${row}-${col} owned by ${ownerName}`);
+    }
+    
+    onBuildingConstructed(row, col, building, constructionData = {}) {
+        this.broadcastAction({
+            type: 'CONSTRUCT_BUILDING', 
+            parcelId: `${row}-${col}`,
+            building: building,
+            constructionStartDay: constructionData.constructionStartDay,
+            constructionDays: constructionData.constructionDays,
+            timestamp: Date.now()
+        });
+    }
+}
+
 class IsometricGrid {
     constructor(canvas, gridSize = 12) {
         this.canvas = canvas;
@@ -251,6 +1005,7 @@ class IsometricGrid {
         this.hoveredTile = null; // {row, col} of currently hovered tile
         this.selectedParcel = null; // Currently selected parcel for reach display
         this.parcelReach = null; // Cached reach calculation for selected parcel
+        this.hoverInfluenceRadius = null; // Set of tiles influenced by hover
         
         // Transportation System - Clean slate
         this.transportationSystem = new TransportationSystem(this);
@@ -272,7 +1027,7 @@ class IsometricGrid {
         // Hover effect system (simplified, no blur)
         this.bobAmount = 0.5; // Bob amount in pixels
         this.bobSpeed = 0.009; // Bob animation speed
-        this.liftAmount = 1; // Base elevation for hovered buildings
+        this.liftAmount = 3; // Base elevation for hovered buildings
         
         this.constructionAnimations = new Set(); // Set of buildings currently animating construction
         this.lastDayStartTime = performance.now(); // Track when current day started
@@ -419,10 +1174,33 @@ class IsometricGrid {
         // Update countdown every second
         setInterval(() => {
             this.updateMonthCountdown();
+            this.updateAuctionCountdowns(); // Update auction timers
         }, 1000);
+        
+        // Periodic sync check to catch any state drift (every 10 seconds)
+        if (this.multiplayerManager) {
+            setInterval(() => {
+                this.checkForStateDrift();
+            }, 10000);
+        }
         
         // Setup marketplace button
         this.setupActionMarketplace();
+        
+        // Initialize multiplayer system
+        this.multiplayerManager = new UniversalMultiplayerManager(this);
+        this.multiplayerManager.connect();
+        
+        // Start action marketplace timer for auction expiration
+        this.startActionMarketplaceTimer();
+    }
+    
+    isCurrentPlayer(owner) {
+        if (owner === 'player') return true; // Legacy single-player mode
+        if (this.multiplayerManager && this.multiplayerManager.playerId) {
+            return owner === this.multiplayerManager.playerId;
+        }
+        return false;
     }
 
     startGame() {
@@ -449,6 +1227,12 @@ class IsometricGrid {
         
         // Start live tooltip updates for time-based tooltips
         this.startLiveTooltipUpdates();
+        
+        // Load existing player settings if available
+        this.loadPlayerSettings();
+        
+        // Update player button with current settings
+        this.updatePlayerButton();
     }
     
     // Action Marketplace Functions
@@ -535,6 +1319,12 @@ class IsometricGrid {
         if (this.actionManager.marketplace.avgPrice > 0) {
             document.getElementById('modal-avg-price').textContent = `$${Math.round(this.actionManager.marketplace.avgPrice).toLocaleString()}`;
         }
+        
+        // Refresh marketplace listings if we're on that tab
+        const activeTab = document.querySelector('.marketplace-tabs .tab-btn.active');
+        if (activeTab && activeTab.getAttribute('data-tab') === 'marketplace') {
+            this.refreshMarketplaceListings();
+        }
     }
     
     listActionsForSale() {
@@ -553,10 +1343,13 @@ class IsometricGrid {
             return;
         }
         
+        // Calculate end of month expiration
+        const endOfMonth = this.getEndOfMonthTimestamp();
+        
         // Create listing
         const listing = {
             id: this.actionManager.marketplace.nextListingId++,
-            seller: 'player', // Would be player ID in multiplayer
+            seller: (this.multiplayerManager && this.multiplayerManager.playerId) ? this.multiplayerManager.playerId : 'player',
             quantity: quantity,
             reservePrice: reservePrice,
             buyNowPrice: buyNowPrice || null,
@@ -564,7 +1357,7 @@ class IsometricGrid {
             highBidder: null,
             status: 'active',
             createdAt: Date.now(),
-            expiresAt: Date.now() + (60 * 60 * 1000), // 1 hour
+            expiresAt: endOfMonth,
             month: this.gameDate.month
         };
         
@@ -575,6 +1368,15 @@ class IsometricGrid {
         // Add to marketplace
         this.actionManager.marketplace.listings.push(listing);
         
+        // Broadcast to other players
+        if (this.multiplayerManager) {
+            this.multiplayerManager.broadcastAction({
+                type: 'CREATE_AUCTION_LISTING',
+                listing: listing,
+                timestamp: Date.now()
+            });
+        }
+        
         // Clear form
         document.getElementById('sell-quantity').value = 1;
         document.getElementById('sell-reserve').value = '';
@@ -583,6 +1385,57 @@ class IsometricGrid {
         // Visual confirmation via UI update - notification removed to reduce clutter
         this.updateMarketplaceModal();
         this.switchMarketplaceTab('marketplace');
+    }
+    
+    getEndOfMonthTimestamp() {
+        // Calculate end of current month based on actual game calendar
+        const monthLengths = {
+            'SEPT': 30, 'OCT': 31, 'NOV': 30, 'DEC': 31,
+            'JAN': 31, 'FEB': 28, 'MAR': 31, 'APR': 30,
+            'MAY': 31, 'JUN': 30, 'JUL': 31, 'AUG': 31
+        };
+        
+        const daysInMonth = monthLengths[this.gameDate.month];
+        const daysRemaining = daysInMonth - this.gameDate.day;
+        
+        // Time remaining in current day (in milliseconds)
+        const msIntoDay = performance.now() - (this.lastDayStartTime || Date.now());
+        const msRemainingInDay = this.dayLength - msIntoDay;
+        
+        // Total milliseconds remaining in month
+        const totalMsRemaining = (daysRemaining * this.dayLength) + msRemainingInDay;
+        
+        return Date.now() + totalMsRemaining;
+    }
+    
+    calculateEndItNowFee(listing) {
+        if (!listing || listing.currentBid === 0) return 0;
+        
+        // Calculate month progress using actual game calendar (0 = start of month, 1 = end of month)
+        const monthLengths = {
+            'SEPT': 30, 'OCT': 31, 'NOV': 30, 'DEC': 31,
+            'JAN': 31, 'FEB': 28, 'MAR': 31, 'APR': 30,
+            'MAY': 31, 'JUN': 30, 'JUL': 31, 'AUG': 31
+        };
+        
+        const daysInMonth = monthLengths[this.gameDate.month];
+        const daysElapsed = this.gameDate.day - 1; // Day 1 = 0 elapsed, Day 2 = 1 elapsed, etc.
+        
+        // Add progress through current day
+        const msIntoDay = performance.now() - (this.lastDayStartTime || Date.now());
+        const dayProgress = Math.max(0, Math.min(1, msIntoDay / this.dayLength));
+        const totalDaysElapsed = daysElapsed + dayProgress;
+        
+        // Calculate month progress (0 to 1)
+        const monthProgress = Math.max(0, Math.min(1, totalDaysElapsed / daysInMonth));
+        
+        // Fee starts at 500% and decays to 0% over the month
+        const maxFeeMultiplier = 5.0; // 500%
+        const currentFeeMultiplier = maxFeeMultiplier * (1 - monthProgress);
+        
+        // Fee is based on current winning bid
+        const baseFee = listing.currentBid * currentFeeMultiplier;
+        return Math.floor(baseFee);
     }
     
     refreshMarketplaceListings() {
@@ -602,22 +1455,96 @@ class IsometricGrid {
             
             listingEl.innerHTML = `
                 <div class="listing-info">
-                    <div class="listing-seller">Seller: ${listing.seller}</div>
+                    <div class="listing-seller">Seller: ${this.getPlayerDisplayName(listing.seller)}</div>
                     <div class="listing-quantity">${listing.quantity} actions</div>
                     <div class="listing-prices">
-                        <span class="listing-reserve">Reserve: $${listing.reservePrice.toLocaleString()}</span>
-                        ${listing.buyNowPrice ? `<span class="listing-buynow">Buy Now: $${listing.buyNowPrice.toLocaleString()}</span>` : ''}
+                        <span class="listing-reserve">${listing.currentBid >= listing.reservePrice ? 'Starting Price Met' : `Starting Price: $${listing.reservePrice.toLocaleString()}`}</span>
+                        ${listing.currentBid > 0 ? `<span class="listing-current-bid">Current Bid: $${listing.currentBid.toLocaleString()}</span>` : ''}
+                        ${listing.buyNowPrice ? `<span class="listing-buynow">Buy Now: $${this.getInflatedBuyNowPrice(listing).toLocaleString()} <span class="reserve-countdown" id="reserve-countdown-${listing.id}"></span></span>` : ''}
                     </div>
+                    <div class="listing-time" id="listing-timer-${listing.id}">Expires: End of ${listing.month}</div>
                 </div>
                 <div class="listing-actions">
-                    ${listing.seller !== 'player' ? `
-                        <button class="btn-bid" onclick="window.game.bidOnListing(${listing.id})">Place Bid</button>
-                        ${listing.buyNowPrice ? `<button class="btn-buynow" onclick="window.game.buyNowListing(${listing.id})">Buy Now</button>` : ''}
-                    ` : '<span style="color: #888;">Your listing</span>'}
+                    ${this.isCurrentPlayer(listing.seller) ? `
+                        ${listing.currentBid === 0 ? `
+                            <button class="btn-cancel" onclick="window.game.cancelListing(${listing.id})">Cancel</button>
+                        ` : `
+                            <button class="btn-cancel" onclick="window.game.cancelListing(${listing.id})" title="Cancel auction and take back actions (they will expire) for the fee">
+                                Cancel ($${this.calculateEndItNowFee(listing).toLocaleString()} fee)
+                            </button>
+                        `}
+                    ` : `
+                        <button class="btn-bid" onclick="window.game.bidOnListing(${listing.id})">
+                            Bid $${listing.currentBid > 0 ? Math.ceil(listing.currentBid * 1.1).toLocaleString() : listing.reservePrice.toLocaleString()}
+                        </button>
+                        ${listing.buyNowPrice ? `
+                            <button class="btn-buynow" onclick="window.game.buyNowListing(${listing.id})">
+                                Buy Now $${this.getInflatedBuyNowPrice(listing).toLocaleString()}
+                            </button>
+                        ` : ''}
+                    `}
+                    <button class="btn-end-now" onclick="window.game.endAuctionNow(${listing.id})" title="End auction early for a fee">
+                        End It Now ($${this.calculateEndItNowFee(listing).toLocaleString()} fee)
+                    </button>
                 </div>
             `;
             
             container.appendChild(listingEl);
+        });
+        
+        // Start live countdown updates for all listings
+        this.updateAuctionCountdowns();
+    }
+    
+    updateAuctionCountdowns() {
+        // Update countdown timers for active listings
+        this.actionManager.marketplace.listings.forEach(listing => {
+            if (listing.status !== 'active') return;
+            
+            const timerEl = document.getElementById(`listing-timer-${listing.id}`);
+            if (!timerEl) return;
+            
+            // Calculate time remaining until auction expires (may be extended by bids)
+            const timeRemaining = Math.max(0, listing.expiresAt - Date.now());
+            
+            if (timeRemaining > 0) {
+                // Format as days, hours, minutes, seconds
+                const days = Math.floor(timeRemaining / (24 * 60 * 60 * 1000));
+                const hours = Math.floor((timeRemaining % (24 * 60 * 60 * 1000)) / (60 * 60 * 1000));
+                const minutes = Math.floor((timeRemaining % (60 * 60 * 1000)) / (60 * 1000));
+                const seconds = Math.floor((timeRemaining % (60 * 1000)) / 1000);
+                
+                let timeText;
+                if (days > 0) {
+                    timeText = `${days}d ${hours}h ${minutes}m`;
+                } else if (hours > 0) {
+                    timeText = `${hours}h ${minutes}m ${seconds}s`;
+                } else if (minutes > 0) {
+                    timeText = `${minutes}m ${seconds}s`;
+                } else {
+                    timeText = `${seconds}s`;
+                }
+                
+                timerEl.textContent = `Expires: ${timeText}`;
+                timerEl.className = timeRemaining < 30000 ? 'listing-time urgent' : 'listing-time';
+            } else {
+                timerEl.textContent = 'EXPIRED';
+                timerEl.className = 'listing-time expired';
+            }
+            
+            // Update fee countdown (every ~10 seconds) - only shows on Buy Now line when there are bids
+            const reserveCountdownEl = document.getElementById(`reserve-countdown-${listing.id}`);
+            if (reserveCountdownEl && listing.currentBid > 0 && listing.buyNowPrice) {
+                const currentTime = Date.now();
+                const tenSecondCycle = 10000; // 10 seconds
+                const timeInCycle = currentTime % tenSecondCycle;
+                const secondsUntilShrink = Math.ceil((tenSecondCycle - timeInCycle) / 1000);
+                
+                reserveCountdownEl.textContent = `(fee shrinks in ${secondsUntilShrink}s)`;
+                reserveCountdownEl.className = secondsUntilShrink <= 3 ? 'reserve-countdown urgent' : 'reserve-countdown';
+            } else if (reserveCountdownEl) {
+                reserveCountdownEl.textContent = '';
+            }
         });
     }
     
@@ -625,6 +1552,399 @@ class IsometricGrid {
         const container = document.getElementById('transaction-history');
         container.innerHTML = '<p style="color: #888; text-align: center; padding: 20px;">No transactions yet</p>';
         // Would populate with actual transaction history in full implementation
+    }
+    
+    bidOnListing(listingId) {
+        const listing = this.actionManager.marketplace.listings.find(l => l.id === listingId);
+        if (!listing || listing.status !== 'active') {
+            this.showNotification('Listing not available', 'error');
+            return;
+        }
+        
+        // Check if current player is the seller
+        const currentPlayerId = (this.multiplayerManager && this.multiplayerManager.playerId) ? this.multiplayerManager.playerId : 'player';
+        if (listing.seller === currentPlayerId) {
+            this.showNotification('Cannot bid on your own listing', 'error');
+            return;
+        }
+        
+        // Bidding increment - can exceed buy-now price
+        const bidIncrement = Math.max(100, Math.round(listing.reservePrice * 0.1));
+        const newBid = Math.max(listing.reservePrice, listing.currentBid + bidIncrement);
+        
+        if (this.playerCash < newBid) {
+            this.showNotification(`Insufficient funds! Need $${newBid.toLocaleString()}`, 'error');
+            return;
+        }
+        
+        // Check if bid is in last 30 seconds and extend timer
+        const timeRemaining = listing.expiresAt - Date.now();
+        if (timeRemaining < 30000) { // Less than 30 seconds remaining
+            listing.expiresAt += 5000; // Add 5 seconds
+            console.log('🕐 Bid in last 30 seconds - extending auction by 5 seconds');
+        }
+        
+        listing.currentBid = newBid;
+        listing.highBidder = currentPlayerId;
+        
+        // Broadcast bid to other players
+        if (this.multiplayerManager) {
+            this.multiplayerManager.broadcastAction({
+                type: 'BID_ON_LISTING',
+                listingId: listingId,
+                bidAmount: newBid,
+                timestamp: Date.now()
+            });
+        }
+        
+        this.showNotification(`Bid placed: $${newBid.toLocaleString()}`, 'success');
+        this.refreshMarketplaceListings();
+    }
+    
+    buyNowListing(listingId) {
+        const listing = this.actionManager.marketplace.listings.find(l => l.id === listingId);
+        if (!listing || listing.status !== 'active' || !listing.buyNowPrice) {
+            this.showNotification('Buy now not available', 'error');
+            return;
+        }
+        
+        // Check if current player is the seller
+        const currentPlayerId = (this.multiplayerManager && this.multiplayerManager.playerId) ? this.multiplayerManager.playerId : 'player';
+        if (listing.seller === currentPlayerId) {
+            this.showNotification('Cannot buy your own listing', 'error');
+            return;
+        }
+        
+        if (this.playerCash < listing.buyNowPrice) {
+            this.showNotification(`Insufficient funds! Need $${listing.buyNowPrice.toLocaleString()}`, 'error');
+            return;
+        }
+        
+        // Complete the purchase
+        this.playerCash -= listing.buyNowPrice;
+        this.actionManager.currentActions += listing.quantity;
+        
+        // Mark listing as sold
+        listing.status = 'sold';
+        listing.finalPrice = listing.buyNowPrice;
+        listing.winner = currentPlayerId;
+        
+        // Broadcast purchase to other players
+        if (this.multiplayerManager) {
+            this.multiplayerManager.broadcastAction({
+                type: 'BUY_NOW_LISTING',
+                listingId: listingId,
+                timestamp: Date.now()
+            });
+        }
+        
+        // Update marketplace stats
+        this.actionManager.marketplace.priceHistory.push({
+            price: listing.buyNowPrice,
+            quantity: listing.quantity,
+            date: Date.now()
+        });
+        
+        // Recalculate average price
+        const recent = this.actionManager.marketplace.priceHistory.slice(-10);
+        this.actionManager.marketplace.avgPrice = recent.reduce((sum, sale) => sum + sale.price, 0) / recent.length;
+        
+        this.showNotification(`Purchased ${listing.quantity} actions for $${listing.buyNowPrice.toLocaleString()}`, 'success');
+        this.updateActionDisplay();
+        this.updatePlayerStats();
+        this.refreshMarketplaceListings();
+    }
+    
+    cancelListing(listingId) {
+        const listing = this.actionManager.marketplace.listings.find(l => l.id === listingId);
+        if (!listing || listing.status !== 'active') {
+            this.showNotification('Listing not available', 'error');
+            return;
+        }
+        
+        // Check if current player is the seller
+        const currentPlayerId = (this.multiplayerManager && this.multiplayerManager.playerId) ? this.multiplayerManager.playerId : 'player';
+        if (listing.seller !== currentPlayerId) {
+            this.showNotification('Can only cancel your own listings', 'error');
+            return;
+        }
+        
+        let fee = 0;
+        
+        // If there are bids, charge the End It Now fee to cancel
+        if (listing.currentBid > 0) {
+            fee = this.calculateEndItNowFee(listing);
+            
+            if (this.playerCash < fee) {
+                this.showNotification(`Cannot cancel: insufficient funds for $${fee.toLocaleString()} fee`, 'error');
+                return;
+            }
+            
+            if (!confirm(`Cancel auction for $${fee.toLocaleString()} fee? Actions will be returned but will expire at month end.`)) {
+                return;
+            }
+            
+            // Charge the fee
+            this.playerCash -= fee;
+            this.governance.unallocatedFunds += fee; // Fee goes to city treasury
+        }
+        
+        // Cancel the listing
+        listing.status = 'cancelled';
+        this.actionManager.currentActions += listing.quantity; // Return actions to seller
+        
+        // Broadcast cancellation to other players
+        if (this.multiplayerManager) {
+            this.multiplayerManager.broadcastAction({
+                type: 'CANCEL_LISTING',
+                listingId: listingId,
+                timestamp: Date.now()
+            });
+        }
+        
+        this.showNotification(`Listing cancelled: ${listing.quantity} actions returned${fee > 0 ? ` (Fee: $${fee.toLocaleString()})` : ''}`, 'info');
+        this.updateActionDisplay();
+        this.refreshMarketplaceListings();
+    }
+    
+    endAuctionNow(listingId) {
+        const listing = this.actionManager.marketplace.listings.find(l => l.id === listingId);
+        if (!listing || listing.status !== 'active') {
+            this.showNotification('Listing not available', 'error');
+            return;
+        }
+        
+        // Check if current player is the seller
+        const currentPlayerId = (this.multiplayerManager && this.multiplayerManager.playerId) ? this.multiplayerManager.playerId : 'player';
+        if (listing.seller !== currentPlayerId) {
+            this.showNotification('Can only end your own auctions', 'error');
+            return;
+        }
+        
+        // Check if there are any bids
+        if (listing.currentBid === 0) {
+            this.showNotification('No bids to end - just cancel the listing', 'error');
+            return;
+        }
+        
+        // Calculate fee
+        const fee = this.calculateEndItNowFee(listing);
+        
+        // Check if player can afford the fee
+        if (this.playerCash < fee) {
+            this.showNotification(`Insufficient funds for End It Now fee: $${fee.toLocaleString()}`, 'error');
+            return;
+        }
+        
+        // Confirm the action
+        const feePercentage = Math.round((fee / listing.currentBid) * 100);
+        if (!confirm(`End auction now for $${listing.currentBid.toLocaleString()}?\n\nEnd It Now fee: $${fee.toLocaleString()} (${feePercentage}%)\nYou'll receive: $${(listing.currentBid - fee).toLocaleString()}`)) {
+            return;
+        }
+        
+        // Process the early ending
+        this.playerCash -= fee; // Pay fee to treasury
+        this.playerCash += listing.currentBid - fee; // Receive bid minus fee
+        
+        // Add fee to city treasury
+        if (this.governance && this.governance.unallocatedFunds !== undefined) {
+            this.governance.unallocatedFunds += fee;
+        }
+        
+        // Mark auction as ended early
+        listing.status = 'ended_early';
+        listing.finalPrice = listing.currentBid;
+        listing.winner = listing.highBidder;
+        listing.endItNowFee = fee;
+        
+        // Award actions to winner if they're the current player
+        if (listing.highBidder === currentPlayerId) {
+            this.actionManager.currentActions += listing.quantity;
+        }
+        
+        // Broadcast to other players
+        if (this.multiplayerManager) {
+            this.multiplayerManager.broadcastAction({
+                type: 'END_AUCTION_NOW',
+                listingId: listingId,
+                fee: fee,
+                timestamp: Date.now()
+            });
+        }
+        
+        // Update marketplace stats
+        this.actionManager.marketplace.priceHistory.push({
+            price: listing.currentBid,
+            quantity: listing.quantity,
+            date: Date.now(),
+            endedEarly: true
+        });
+        
+        // Recalculate average price
+        const recent = this.actionManager.marketplace.priceHistory.slice(-10);
+        if (recent.length > 0) {
+            this.actionManager.marketplace.avgPrice = recent.reduce((sum, sale) => sum + sale.price, 0) / recent.length;
+        }
+        
+        this.showNotification(`Auction ended early. Fee: $${fee.toLocaleString()} paid to city treasury`, 'success');
+        this.updateActionDisplay();
+        this.updatePlayerStats();
+        this.refreshMarketplaceListings();
+    }
+    
+    async resetServerState() {
+        if (!confirm('Reset server state? This will clear all multiplayer data including players, parcels, and marketplace listings.')) {
+            return;
+        }
+        
+        try {
+            const response = await fetch('/api/websocket?action=reset', {
+                method: 'GET'
+            });
+            
+            const result = await response.json();
+            
+            if (result.success) {
+                this.showNotification('Server state reset successfully', 'success');
+                
+                // Reset local multiplayer state
+                if (this.multiplayerManager) {
+                    this.multiplayerManager.players.clear();
+                }
+                
+                // Clear local marketplace
+                this.actionManager.marketplace = {
+                    listings: [],
+                    priceHistory: [],
+                    avgPrice: 0,
+                    nextListingId: 1
+                };
+                
+                this.refreshMarketplaceListings();
+                this.updateMarketplaceModal();
+            } else {
+                this.showNotification('Failed to reset server state', 'error');
+            }
+        } catch (error) {
+            console.error('Reset server state error:', error);
+            this.showNotification('Error resetting server state', 'error');
+        }
+    }
+    
+    loadPlayerSettings() {
+        try {
+            const savedSettings = localStorage.getItem('theCommons_playerSettings');
+            if (savedSettings && !this.playerSettings) {
+                this.playerSettings = JSON.parse(savedSettings);
+            }
+        } catch (error) {
+            console.error('Failed to load player settings:', error);
+        }
+    }
+    
+    updatePlayerButton() {
+        const playerBtn = document.getElementById('player-btn');
+        if (playerBtn) {
+            const playerName = this.playerSettings?.name || 'PLAYER';
+            playerBtn.innerHTML = `${playerName.toUpperCase()}<span class="indicator">▼</span>`;
+        }
+    }
+    
+    getPlayerDisplayName(playerId) {
+        if (!playerId) return 'Unknown';
+        
+        // Check if it's the current player
+        if (playerId === 'player' || (this.multiplayerManager?.playerId === playerId)) {
+            return 'You';
+        }
+        
+        // Get player name from multiplayer manager
+        if (this.multiplayerManager && this.multiplayerManager.players.has(playerId)) {
+            const player = this.multiplayerManager.players.get(playerId);
+            return player.name || playerId.slice(-4);
+        }
+        
+        // Fallback to last 4 characters of ID
+        return playerId.slice(-4);
+    }
+    
+    getInflatedBuyNowPrice(listing) {
+        if (!listing.buyNowPrice) return 0;
+        
+        // If there are no bids, just return the normal buy now price
+        if (!listing.currentBid || listing.currentBid === 0) {
+            return listing.buyNowPrice;
+        }
+        
+        // Calculate the End It Now fee and add it to the buy now price
+        const endItNowFee = this.calculateEndItNowFee(listing);
+        return listing.buyNowPrice + endItNowFee;
+    }
+    
+    startActionMarketplaceTimer() {
+        // Auctions now process at month-end during game progression
+        // This function kept for compatibility but no longer needed
+    }
+    
+    processExpiredAuctions() {
+        let anyExpired = false;
+        
+        this.actionManager.marketplace.listings.forEach(listing => {
+            if (listing.status === 'active' && listing.month !== this.gameDate.month) {
+                // Auction expired
+                if (listing.currentBid > 0 && listing.highBidder) {
+                    // Someone won the auction
+                    listing.status = 'sold';
+                    listing.finalPrice = listing.currentBid;
+                    listing.winner = listing.highBidder;
+                    
+                    // Update price history
+                    this.actionManager.marketplace.priceHistory.push({
+                        price: listing.currentBid,
+                        quantity: listing.quantity,
+                        date: Date.now()
+                    });
+                    
+                    // Handle payment and transfer
+                    const currentPlayerId = (this.multiplayerManager && this.multiplayerManager.playerId) ? this.multiplayerManager.playerId : 'player';
+                    
+                    // If player won, give them the actions and charge them
+                    if (listing.highBidder === currentPlayerId) {
+                        this.playerCash -= listing.currentBid;
+                        this.actionManager.currentActions += listing.quantity;
+                        this.showNotification(`Won auction: ${listing.quantity} actions for $${listing.currentBid.toLocaleString()}`, 'success');
+                    }
+                    
+                    // If player was the seller, give them 100% of winning price
+                    if (listing.seller === currentPlayerId) {
+                        this.playerCash += listing.currentBid;
+                        this.showNotification(`Auction sold: ${listing.quantity} actions for $${listing.currentBid.toLocaleString()}`, 'success');
+                    }
+                } else {
+                    // No bids - return actions to seller
+                    listing.status = 'expired';
+                    const currentPlayerId = (this.multiplayerManager && this.multiplayerManager.playerId) ? this.multiplayerManager.playerId : 'player';
+                    if (listing.seller === currentPlayerId) {
+                        this.actionManager.currentActions += listing.quantity;
+                        this.showNotification(`Auction expired: ${listing.quantity} actions returned`, 'info');
+                    }
+                }
+                anyExpired = true;
+            }
+        });
+        
+        if (anyExpired) {
+            // Recalculate average price
+            const recent = this.actionManager.marketplace.priceHistory.slice(-10);
+            if (recent.length > 0) {
+                this.actionManager.marketplace.avgPrice = recent.reduce((sum, sale) => sum + sale.price, 0) / recent.length;
+            }
+            
+            this.updateActionDisplay();
+            this.updatePlayerStats();
+            this.updateMarketplaceModal();
+            this.updateMarketplaceDisplay();
+        }
     }
     
     
@@ -1113,6 +2433,9 @@ class IsometricGrid {
             // NEW: Refresh actions at month start
             this.refreshMonthlyActions();
             
+            // Process expired auctions at month end
+            this.processExpiredAuctions();
+            
             // Award voting points and trigger governance button animation
             this.governanceSystem.processMonthlyGovernance();
         } else {
@@ -1229,7 +2552,7 @@ class IsometricGrid {
             for (let col = 0; col < this.gridSize; col++) {
                 const parcel = this.grid[row][col];
                 
-                if (parcel.owner === 'player') {
+                if (this.isCurrentPlayer(parcel.owner)) {
                     const key = `${row}-${col}`;
                     this.economicCache.playerParcels.add(key);
                     
@@ -1249,7 +2572,7 @@ class IsometricGrid {
             const [row, col] = key.split('-').map(Number);
             const parcel = this.grid[row][col];
             
-            if (parcel.owner === 'player') {
+            if (this.isCurrentPlayer(parcel.owner)) {
                 const stats = this.calculateBuildingEconomics(parcel, row, col);
                 this.economicCache.buildingStats.set(key, stats);
             } else {
@@ -1554,25 +2877,6 @@ class IsometricGrid {
         }
     }
 
-    buildBuilding(row, col, buildingId) {
-        const coord = this.getParcelCoordinate(row, col);
-        const buildingCost = this.getBuildingCost(buildingId);
-        
-        // NEW: Check if player has enough actions
-        if (!this.useAction('constructBuilding', this.actionCosts.constructBuilding)) {
-            this.hideContextMenu();
-            return;
-        }
-        
-        // Get building info for public funding calculation
-        const building = this.buildingManager.getBuildingById(buildingId);
-        
-        // Use centralized cost calculation with public funding
-        const fundingInfo = this.calculateBuildingCostWithFunding(building, buildingCost);
-        
-        // Delegate to building system
-        return this.buildingSystem.buildBuilding(row, col, buildingId, fundingInfo);
-    }
 
     getBuildingCost(buildingId) {
         // Delegate to building manager
@@ -1598,14 +2902,17 @@ class IsometricGrid {
         let totalBedrooms = 0;
         let totalJobs = 0;
         let schoolCapacity = 0;
+        let buildingCount = 0;
         
-        // Get bedroom counts and jobs from COMPLETED player-owned buildings only
+        // Get bedroom counts and jobs from ALL COMPLETED buildings (city-wide)
         for (let row = 0; row < this.gridSize; row++) {
             for (let col = 0; col < this.gridSize; col++) {
                 const parcel = this.grid[row][col];
                 
-                // Skip if no building or not player owned
-                if (!parcel || !parcel.building || parcel.owner !== 'player') continue;
+                // Skip if no building (but count ALL owned buildings, not just current player's)
+                if (!parcel || !parcel.building || !parcel.owner || parcel.owner === 'unclaimed') continue;
+                
+                buildingCount++;
                 
                 // Add bedroom and job counts for completed buildings
                 const building = this.buildingManager.getBuildingById(parcel.building);
@@ -1616,7 +2923,36 @@ class IsometricGrid {
             }
         }
         
-        return Math.min(totalBedrooms, totalJobs); // Population limited by available housing AND jobs
+        const totalPopulation = Math.min(totalBedrooms, totalJobs); // Population limited by available housing AND jobs
+        
+        console.log(`👥 Population calculation: ${buildingCount} buildings, ${totalBedrooms} bedrooms, ${totalJobs} jobs → ${totalPopulation} residents`);
+        return totalPopulation;
+    }
+    
+    // Check for state drift between clients
+    checkForStateDrift() {
+        if (!this.multiplayerManager?.isConnected) return;
+        
+        const currentPop = this.calculatePopulation();
+        const buildingCount = this.countAllBuildings();
+        
+        console.log(`🔍 State check: ${buildingCount} buildings, ${currentPop} residents`);
+        
+        // Force a sync request to server to compare state
+        // This will trigger syncGameState if there are differences
+    }
+    
+    countAllBuildings() {
+        let count = 0;
+        for (let row = 0; row < this.gridSize; row++) {
+            for (let col = 0; col < this.gridSize; col++) {
+                const parcel = this.grid[row][col];
+                if (parcel && parcel.building && parcel.owner && parcel.owner !== 'unclaimed') {
+                    count++;
+                }
+            }
+        }
+        return count;
     }
 
     calculateTotalWealth() {
@@ -1832,7 +3168,7 @@ class IsometricGrid {
         for (let row = 0; row < this.gridSize; row++) {
             for (let col = 0; col < this.gridSize; col++) {
                 const parcel = this.grid[row][col];
-                if (parcel && parcel.owner === 'player') {
+                if (parcel && this.isCurrentPlayer(parcel.owner)) {
                     ownedParcels++;
                     if (parcel.building) {
                         ownedBuildings++;
@@ -1969,7 +3305,7 @@ class IsometricGrid {
         for (let row = 0; row < this.gridSize; row++) {
             for (let col = 0; col < this.gridSize; col++) {
                 const parcel = this.grid[row][col];
-                if (parcel && parcel.owner === 'player') {
+                if (parcel && this.isCurrentPlayer(parcel.owner)) {
                     // Add land value
                     if (parcel.landValue && parcel.landValue.current) {
                         assetValue += parcel.landValue.current;
@@ -2069,7 +3405,7 @@ class IsometricGrid {
         let totalJobs = 0;
         let schoolCapacity = 0;
         
-        // Get bedroom counts and jobs from COMPLETED player-owned buildings only
+        // Get bedroom counts and jobs from ALL COMPLETED buildings (city-wide)
         for (let row = 0; row < this.gridSize; row++) {
             for (let col = 0; col < this.gridSize; col++) {
                 const parcel = this.grid[row][col];
@@ -2079,7 +3415,8 @@ class IsometricGrid {
                     parcel.constructionDays > 0 && 
                     (this.currentDay - parcel.constructionStartDay) < parcel.constructionDays;
                 
-                if (parcel.owner === 'player' && parcel.building && !isUnderConstruction) {
+                // Count ALL owned buildings in the city, not just current player's
+                if (parcel.owner && parcel.owner !== 'unclaimed' && parcel.building && !isUnderConstruction) {
                     const building = this.buildingManager.getBuildingById(parcel.building);
                     if (building && building.population) {
                         totalBedrooms += building.population.bedroomsAdded || 0;
@@ -2285,7 +3622,8 @@ class IsometricGrid {
     
     showBuildingDataInsights(row, col) {
         const parcel = this.grid[row][col];
-        if (!parcel || !parcel.building || parcel.owner !== 'player') {
+        // Allow viewing data insights for ANY building (full transparency)
+        if (!parcel || !parcel.building || !parcel.owner || parcel.owner === 'unclaimed') {
             return;
         }
         
@@ -2506,14 +3844,21 @@ class IsometricGrid {
                 let content = `<strong>${building.name}</strong> (${coord})<br>`;
                 
                 // Ownership
-                if (parcel.owner === 'player') {
+                if (this.isCurrentPlayer(parcel.owner)) {
                     content += '👤 <span style="color: #4CAF50">Owned by You</span><br>';
+                } else if (parcel.owner && parcel.owner !== 'unclaimed') {
+                    // Competitor-owned building
+                    let ownerName = parcel.owner;
+                    if (this.competitorNames && this.competitorNames[parcel.owner]) {
+                        ownerName = this.competitorNames[parcel.owner];
+                    }
+                    content += `🏛️ <span style="color: #9E9E9E">Owned by ${ownerName}</span><br>`;
                 } else {
                     content += '🏛️ <span style="color: #9E9E9E">City Owned</span><br>';
                 }
                 
-                // For player-owned buildings, show performance score and simple suggestions
-                if (parcel.owner === 'player') {
+                // Show performance score and economics for ALL buildings (full transparency)
+                if (parcel.owner && parcel.owner !== 'unclaimed') {
                     // Calculate overall performance score (0-100)
                     let performanceScore = 100;
                     const improvements = [];
@@ -2660,18 +4005,36 @@ class IsometricGrid {
                 return content;
             }
         } else {
-            // Empty land
+            // Empty parcel - check ownership
             const price = this.getParcelPrice(row, col);
             const landValue = parcel.landValue?.calculatedValue || price;
             
-            let content = `<strong>Empty Land</strong> (${coord})<br>`;
-            content += `💰 Purchase Price: $${price}<br>`;
-            if (landValue !== price) {
-                content += `📈 Market Value: $${landValue}<br>`;
+            if (this.isCurrentPlayer(parcel.owner)) {
+                // Player-owned empty land
+                let content = `<strong>Your Land</strong> (${coord})<br>`;
+                content += '👤 <span style="color: #4CAF50">Owned by You</span><br>';
+                content += `📈 Land Value: $${landValue}<br>`;
+                content += '<br><em>Right-click to build or auction</em>';
+                return content;
+            } else if (parcel.owner && parcel.owner !== 'unclaimed') {
+                // Competitor-owned empty land
+                let ownerName = parcel.owner;
+                if (this.competitorNames && this.competitorNames[parcel.owner]) {
+                    ownerName = this.competitorNames[parcel.owner];
+                }
+                let content = `<strong>Empty Land</strong> (${coord})<br>`;
+                content += `🏛️ <span style="color: #9E9E9E">Owned by ${ownerName}</span><br>`;
+                content += `📈 Land Value: $${landValue}<br>`;
+                return content;
+            } else {
+                // Unowned empty land
+                let content = `<strong>Empty Land</strong> (${coord})<br>`;
+                content += `💰 Purchase Price: $${price}<br>`;
+                if (landValue !== price) {
+                    content += `📈 Market Value: $${landValue}<br>`;
+                }
+                return content;
             }
-            
-            
-            return content;
         }
         
         return null;
@@ -2760,7 +4123,7 @@ class IsometricGrid {
                 }
                 
                 // Owner information
-                if (parcel.owner === 'player') {
+                if (this.isCurrentPlayer(parcel.owner)) {
                     const emoji = (this.playerSettings && this.playerSettings.emoji) || '🏠';
                     content += `${emoji} <span style="color: #4CAF50">OWNED</span>`;
                 } else if (parcel.owner) {
@@ -3002,10 +4365,15 @@ class IsometricGrid {
     // Legacy road drawing functions removed - now using TransportationSystem
     
     showContextMenu(row, col, mouseX, mouseY) {
+        console.log('🎯 showContextMenu called:', { row, col, mouseX, mouseY });
+        
         // Early return if context menu element doesn't exist or doesn't have querySelector
         if (!this.contextMenu || typeof this.contextMenu.querySelector !== 'function') {
+            console.error('❌ Context menu element not found or invalid');
             return;
         }
+        
+        console.log('✅ Context menu element exists');
         
         // Set the selected tile and calculate reach
         this.selectedTile = { row, col };
@@ -3050,11 +4418,13 @@ class IsometricGrid {
             buyBtn.onclick = () => this.buyParcel(row, col);
             contentEl.appendChild(buyBtn);
             
-        } else if (parcel.owner === 'player') {
+        } else if (this.isCurrentPlayer(parcel.owner)) {
             // Player-owned parcel
             const playerName = (this.playerSettings && this.playerSettings.name) || 'PLAYER';
             statusEl.textContent = `OWNED BY ${playerName.toUpperCase()}`;
             statusEl.classList.add('owned');
+            
+            console.log('✅ Recognized as current player parcel');
             
             if (!parcel.building) {
                 // Empty parcel - show auction and building categories
@@ -3338,7 +4708,7 @@ class IsometricGrid {
                 const y = row * cellSize;
                 
                 // Draw parcel ownership
-                if (parcel.owner === 'player') {
+                if (this.isCurrentPlayer(parcel.owner)) {
                     // Use player's selected color for minimap
                     if (this.playerSettings && this.playerSettings.color) {
                         const hex = this.playerSettings.color.replace('#', '');
@@ -3706,7 +5076,8 @@ class IsometricGrid {
         for (let row = 0; row < this.gridSize; row++) {
             for (let col = 0; col < this.gridSize; col++) {
                 const parcel = this.grid[row][col];
-                if (parcel.owner === 'player') {
+                // Collect LVT from ALL owned parcels in the city
+                if (parcel.owner && parcel.owner !== 'unclaimed') {
                     const landValue = Math.max(parcel.landValue.paidPrice, parcel.landValue.calculatedValue);
                     totalLVT += landValue * this.governance.currentLvtRate / 12; // Monthly portion
                 }
@@ -3823,6 +5194,7 @@ class IsometricGrid {
                     buildingBtn.className = 'building-btn disabled';
                     buildingBtn.style.opacity = '0.6';
                     buildingBtn.style.borderLeft = '3px solid #ff6b6b';
+                    buildingBtn.disabled = true; // Actually disable the button
                 }
                 
                 const fullCost = building.economics?.buildCost || building.cost || 0;
@@ -4076,7 +5448,7 @@ class IsometricGrid {
         this.scheduleRender();
     }
     
-    buyParcel(row, col) {
+    async buyParcel(row, col) {
         const coord = this.getParcelCoordinate(row, col);
         // Use static distance-based pricing for initial purchases
         const price = this.getParcelPrice(row, col);
@@ -4107,22 +5479,41 @@ class IsometricGrid {
         }
         
         
-        // Process purchase locally
-        if (true) { // Always use local processing
-            this.playerCash -= price;
-            this.grid[row][col].owner = 'player';
-            this.grid[row][col].landValue.paidPrice = price;
-            this.grid[row][col].landValue.lastAuctionDay = this.currentDay;
+        // Store original state for potential rollback
+        const originalCash = this.playerCash;
+        
+        // Process purchase optimistically (immediately)
+        this.playerCash -= price;
+        // Use actual player ID if multiplayer is active, otherwise 'player'
+        this.grid[row][col].owner = (this.multiplayerManager && this.multiplayerManager.playerId) 
+            ? this.multiplayerManager.playerId 
+            : 'player';
+        this.grid[row][col].landValue.paidPrice = price;
+        this.grid[row][col].landValue.lastAuctionDay = this.currentDay;
+        
+        // Broadcast parcel purchase to other players and handle conflicts
+        if (this.multiplayerManager) {
+            const success = await this.multiplayerManager.onParcelPurchased(row, col, null, price, originalCash);
             
-            // Update calculated land values for all parcels
-            this.updateAllLandValues();
-            
-            this.updateVitalityDisplay();
-            this.updateDemographicsDisplay();
-            this.calculateCurrentCashflow();
-            this.updatePlayerStats();
-            this.scheduleRender();
+            if (!success) {
+                // Purchase was rejected - rollback already handled by MultiplayerManager
+                // Refund the action since purchase failed
+                this.actionManager.currentActions += this.actionCosts.purchaseParcel;
+                this.actionManager.usedThisMonth -= this.actionCosts.purchaseParcel;
+                this.updateActionDisplay();
+                this.hideContextMenu();
+                return;
+            }
         }
+        
+        // Update calculated land values for all parcels
+        this.updateAllLandValues();
+        
+        this.updateVitalityDisplay();
+        this.updateDemographicsDisplay();
+        this.calculateCurrentCashflow();
+        this.updatePlayerStats();
+        this.scheduleRender();
         
         this.hideContextMenu();
     }
@@ -4199,7 +5590,7 @@ class IsometricGrid {
         const coord = this.getParcelCoordinate(row, col);
         const buildingCost = this.getBuildingCost(buildingId);
         
-        // NEW: Check if player has enough actions
+        // Check if player has enough actions
         if (!this.useAction('constructBuilding', this.actionCosts.constructBuilding)) {
             this.hideContextMenu();
             return;
@@ -4238,17 +5629,13 @@ class IsometricGrid {
 
         // Check if parcel already has a building
         if (this.grid[row][col].building) {
-            console.log(`Building placement blocked: parcel (${row},${col}) already has building:`, this.grid[row][col].building);
             return;
         }
 
         // Check if player owns this parcel
-        const expectedOwner = 'player';
-        
-        if (this.grid[row][col].owner !== expectedOwner) {
+        if (!this.isCurrentPlayer(this.grid[row][col].owner)) {
             return;
         }
-        
         
         // Process building locally
         if (true) { // Always use local processing
@@ -4264,12 +5651,7 @@ class IsometricGrid {
             
             this.grid[row][col].building = buildingId;
             
-            // Mark caches for updates
-            this.markBuildingEconomicsDirty(row, col);
-            this.markVitalityDirty(row, col);
-            this.markPrereqDirty();
-            
-            // Set construction start day and duration
+            // Set construction start day and duration BEFORE broadcasting
             if (building && building.economics) {
                 // Start construction from current day, but building should show as under construction initially
                 this.grid[row][col].constructionStartDay = this.currentDay;
@@ -4281,8 +5663,20 @@ class IsometricGrid {
                 if (this.grid[row][col].constructionDays < 3) {
                     this.grid[row][col].constructionDays = 3;
                 }
-                
             }
+            
+            // Broadcast building construction to other players WITH construction data
+            if (this.multiplayerManager) {
+                this.multiplayerManager.onBuildingConstructed(row, col, buildingId, {
+                    constructionStartDay: this.grid[row][col].constructionStartDay,
+                    constructionDays: this.grid[row][col].constructionDays
+                });
+            }
+            
+            // Mark caches for updates
+            this.markBuildingEconomicsDirty(row, col);
+            this.markVitalityDirty(row, col);
+            this.markPrereqDirty();
             
             // Mark region as dirty for cache invalidation (performance optimization)
             this.markRegionDirty(row, col, 3);
@@ -4310,7 +5704,7 @@ class IsometricGrid {
         const reasons = [];
         
         // Check if parcel is owned by player
-        if (this.grid[row][col].owner !== 'player') {
+        if (!this.isCurrentPlayer(this.grid[row][col].owner)) {
             // Skip - players can only access building menu on owned parcels
         }
         
@@ -4396,6 +5790,11 @@ class IsometricGrid {
         parcel.building = null;
         parcel.amenities = [];
         
+        // Broadcast demolition to other players
+        if (this.multiplayerManager) {
+            this.multiplayerManager.onBuildingConstructed(row, col, null);
+        }
+        
         // Reset building-specific properties
         parcel.buildingAge = 0;
         parcel.decay = 0;
@@ -4439,6 +5838,11 @@ class IsometricGrid {
         
         // Replace the building
         this.grid[row][col].building = upgradeId;
+        
+        // Broadcast building upgrade to other players
+        if (this.multiplayerManager) {
+            this.multiplayerManager.onBuildingConstructed(row, col, upgradeId);
+        }
         
         // Mark building for economic recalculation
         this.markBuildingEconomicsDirty(row, col);
@@ -6427,6 +7831,7 @@ class IsometricGrid {
     handlePanelTransitions(layerName) {
         const vitalitySection = document.querySelector('[data-target="vitality"]').parentElement;
         const mobilitySection = document.querySelector('[data-target="mobility-panel"]').parentElement;
+        const playersSection = document.querySelector('[data-target="players-panel"]').parentElement;
         
         if (layerName === 'mobility') {
             // Entering mobility view - open mobility panel, optionally close vitality
@@ -6436,15 +7841,133 @@ class IsometricGrid {
             if (!vitalitySection.classList.contains('collapsed')) {
                 this.closeSidebarSection(vitalitySection);
             }
+        } else if (layerName === 'players') {
+            // Entering players view - open players panel, update player list
+            this.openSidebarSection(playersSection);
+            this.updatePlayersList();
+            
+            // Auto-close vitality panel when entering players view
+            if (!vitalitySection.classList.contains('collapsed')) {
+                this.closeSidebarSection(vitalitySection);
+            }
         } else {
-            // Leaving mobility view - open vitality panel, optionally close mobility
+            // Leaving special views - open vitality panel, close special panels
             this.openSidebarSection(vitalitySection);
             
-            // Auto-close mobility panel when leaving mobility view (can be reopened manually)  
+            // Auto-close mobility panel when leaving mobility view
             if (!mobilitySection.classList.contains('collapsed')) {
                 this.closeSidebarSection(mobilitySection);
             }
+            
+            // Auto-close players panel when leaving players view
+            if (playersSection && !playersSection.classList.contains('collapsed')) {
+                this.closeSidebarSection(playersSection);
+            }
         }
+    }
+    
+    updatePlayersList() {
+        const playersList = document.getElementById('players-list');
+        if (!playersList) return;
+        
+        playersList.innerHTML = '';
+        
+        // Get all players including current player
+        const allPlayers = new Map();
+        
+        // Add current player
+        if (this.multiplayerManager && this.multiplayerManager.playerId) {
+            const currentPlayerId = this.multiplayerManager.playerId;
+            if (this.multiplayerManager.players.has(currentPlayerId)) {
+                allPlayers.set(currentPlayerId, {
+                    ...this.multiplayerManager.players.get(currentPlayerId),
+                    isCurrent: true
+                });
+            }
+        }
+        
+        // Add other players
+        if (this.multiplayerManager && this.multiplayerManager.players) {
+            this.multiplayerManager.players.forEach((player, playerId) => {
+                if (!allPlayers.has(playerId)) {
+                    allPlayers.set(playerId, { ...player, isCurrent: false });
+                }
+            });
+        }
+        
+        // Count parcels for each player
+        const parcelCounts = new Map();
+        for (let row = 0; row < this.gridSize; row++) {
+            for (let col = 0; col < this.gridSize; col++) {
+                const tile = this.grid[row][col];
+                if (tile.owner && tile.owner !== 'unowned') {
+                    parcelCounts.set(tile.owner, (parcelCounts.get(tile.owner) || 0) + 1);
+                }
+            }
+        }
+        
+        // Create player items
+        allPlayers.forEach((player, playerId) => {
+            const parcelCount = parcelCounts.get(playerId) || 0;
+            
+            const playerItem = document.createElement('div');
+            playerItem.className = `player-item ${player.isCurrent ? 'current-player' : ''}`;
+            playerItem.dataset.playerId = playerId;
+            
+            playerItem.innerHTML = `
+                <div class="player-info">
+                    <div class="player-color-indicator" style="background-color: ${player.color}"></div>
+                    <span class="player-name">${player.isCurrent ? 'You' : `Player ${playerId.slice(-4)}`}</span>
+                </div>
+                <div class="player-stats">
+                    <span class="parcel-count">${parcelCount} parcels</span>
+                </div>
+            `;
+            
+            // Add click handler for filtering
+            playerItem.addEventListener('click', () => {
+                this.togglePlayerFilter(playerId);
+            });
+            
+            playersList.appendChild(playerItem);
+        });
+        
+        // Add clear filter button functionality
+        const clearFilterBtn = document.getElementById('clear-player-filter');
+        if (clearFilterBtn) {
+            clearFilterBtn.addEventListener('click', () => {
+                this.clearPlayerFilter();
+            });
+        }
+    }
+    
+    togglePlayerFilter(playerId) {
+        // Toggle filter state
+        if (this.filteredPlayerId === playerId) {
+            this.clearPlayerFilter();
+        } else {
+            this.filteredPlayerId = playerId;
+            this.updatePlayerFilterDisplay();
+            this.scheduleRender();
+        }
+    }
+    
+    clearPlayerFilter() {
+        this.filteredPlayerId = null;
+        this.updatePlayerFilterDisplay();
+        this.scheduleRender();
+    }
+    
+    updatePlayerFilterDisplay() {
+        const playerItems = document.querySelectorAll('.player-item');
+        playerItems.forEach(item => {
+            const playerId = item.dataset.playerId;
+            if (this.filteredPlayerId === playerId) {
+                item.classList.add('filtered');
+            } else {
+                item.classList.remove('filtered');
+            }
+        });
     }
     
     openSidebarSection(sectionElement) {
@@ -8139,7 +9662,7 @@ class IsometricGrid {
         
         if (img.complete && !img.broken && img.naturalWidth > 0) {
             // Get adjustable building parameters (same as simple buildings)
-            const yOffset = window.buildingPositionControls?.yOffset || 12;
+            const yOffset = window.buildingPositionControls?.yOffset || 22;
             const heightMultiplier = window.buildingPositionControls?.heightMultiplier || 1.0;
             const widthMultiplier = window.buildingPositionControls?.widthMultiplier || 1.0;
             
@@ -8264,7 +9787,7 @@ class IsometricGrid {
         const color = buildingColors[category] || '#6b7280';
         
         // Get adjustable building parameters (with defaults)
-        const yOffset = window.buildingPositionControls?.yOffset || 12;
+        const yOffset = window.buildingPositionControls?.yOffset || 22;
         const heightMultiplier = window.buildingPositionControls?.heightMultiplier || 1.0;
         const widthMultiplier = window.buildingPositionControls?.widthMultiplier || 1.0;
         
@@ -8559,7 +10082,7 @@ class IsometricGrid {
                 // Base parcel color based on ownership (only for empty parcels)
                 if (!parcel.owner) {
                     return '#2a2a2a'; // Unowned - gray
-                } else if (parcel.owner === 'player') {
+                } else if (this.isCurrentPlayer(parcel.owner)) {
                     // Use player's selected color with transparency
                     if (this.playerSettings && this.playerSettings.color) {
                         const hex = this.playerSettings.color.replace('#', '');
@@ -8648,7 +10171,7 @@ class IsometricGrid {
         // Show ownership with clear colors for better visibility
         if (!parcel.owner) {
             return '#1a1a1a'; // Dark gray for unowned
-        } else if (parcel.owner === 'player') {
+        } else if (this.isCurrentPlayer(parcel.owner)) {
             // Use player's selected color with higher opacity for better visibility
             if (this.playerSettings && this.playerSettings.color) {
                 const hex = this.playerSettings.color.replace('#', '');
@@ -8698,7 +10221,7 @@ class IsometricGrid {
         
         // Calculate land tax if owned by player
         let landTax = 0;
-        if (parcel.owner === 'player') {
+        if (this.isCurrentPlayer(parcel.owner)) {
             const dailyLVTRate = 0.50 / 365; // 50% annual LVT (matching existing system)
             landTax = parcel.landValue.paidPrice * dailyLVTRate;
         }
@@ -8955,6 +10478,11 @@ class IsometricGrid {
             this.drawParcelReach();
         }
         
+        // Draw hover influence radius
+        if (this.hoverInfluenceRadius && this.hoverInfluenceRadius.size > 0) {
+            this.drawHoverInfluenceRadius();
+        }
+        
         // Street edge drawing removed
         
         // Draw cashflow numbers if in cashflow layer mode
@@ -9038,10 +10566,130 @@ class IsometricGrid {
         this.ctx.setTransform(currentTransform);
     }
     
-    // Minimal hover state - just for tooltips and selection
+    // Update parcel illumination to show building influence radius
     updateParcelIllumination(cursorTile) {
-        // No special effects, just update render if needed
+        if (!cursorTile) {
+            // Clear any existing hover effects
+            this.hoverInfluenceRadius = null;
+            this.scheduleRender();
+            return;
+        }
+        
+        // Calculate influence radius for the hovered parcel
+        this.hoverInfluenceRadius = this.calculateHoverInfluenceRadius(cursorTile.row, cursorTile.col);
         this.scheduleRender();
+    }
+    
+    // Calculate the influence radius for hover effects (8 adjacent + road connections)
+    calculateHoverInfluenceRadius(row, col) {
+        const influencedTiles = new Set();
+        
+        // Always include the 8 adjacent parcels (basic radius - yellow)
+        for (let dr = -1; dr <= 1; dr++) {
+            for (let dc = -1; dc <= 1; dc++) {
+                const newRow = row + dr;
+                const newCol = col + dc;
+                
+                if (newRow >= 0 && newRow < this.gridSize && 
+                    newCol >= 0 && newCol < this.gridSize) {
+                    // Skip center tile (that's the main hover)
+                    if (dr === 0 && dc === 0) continue;
+                    
+                    influencedTiles.add(`${newRow},${newCol}`);
+                }
+            }
+        }
+        
+        // Get all parcels connected via roads using a simpler approach
+        const roadConnectedParcels = this.getRoadConnectedParcels(row, col);
+        
+        // Add road-connected parcels that aren't already in basic radius
+        roadConnectedParcels.forEach(parcelKey => {
+            if (!influencedTiles.has(parcelKey)) {
+                influencedTiles.add(`${parcelKey}:extended`);
+            }
+        });
+        
+        return influencedTiles;
+    }
+    
+    // Get all parcels connected to this position via roads (simplified)
+    getRoadConnectedParcels(startRow, startCol) {
+        const connectedParcels = new Set();
+        const transportNetwork = this.buildTransportNetwork();
+        
+        // If no roads exist, return empty set
+        if (!transportNetwork.roads || transportNetwork.roads.size === 0) {
+            return connectedParcels;
+        }
+        
+        // Use BFS to find all connected parcels via roads
+        const visited = new Set();
+        const queue = [`${startRow},${startCol}`];
+        visited.add(`${startRow},${startCol}`);
+        
+        while (queue.length > 0) {
+            const currentKey = queue.shift();
+            const [currentRow, currentCol] = currentKey.split(',').map(Number);
+            
+            // Check all parcels in the grid to see if they're connected to current position
+            for (let r = 0; r < this.gridSize; r++) {
+                for (let c = 0; c < this.gridSize; c++) {
+                    const targetKey = `${r},${c}`;
+                    
+                    if (visited.has(targetKey)) continue;
+                    
+                    // Check if there's a direct road connection
+                    if (this.hasDirectRoadConnection(currentRow, currentCol, r, c, transportNetwork.roads)) {
+                        visited.add(targetKey);
+                        queue.push(targetKey);
+                        connectedParcels.add(targetKey);
+                    }
+                }
+            }
+        }
+        
+        return connectedParcels;
+    }
+    
+    // Check if two parcels have a direct road connection
+    hasDirectRoadConnection(row1, col1, row2, col2, roads) {
+        const key1 = `${row1},${col1}`;
+        const key2 = `${row2},${col2}`;
+        
+        // Check if either parcel connects to the other
+        const connections1 = roads.get(key1) || [];
+        const connections2 = roads.get(key2) || [];
+        
+        return connections1.some(conn => conn.row === row2 && conn.col === col2) ||
+               connections2.some(conn => conn.row === row1 && conn.col === col1);
+    }
+    
+    // Draw hover influence radius with different intensities for adjacent vs road-connected
+    drawHoverInfluenceRadius() {
+        if (!this.hoverInfluenceRadius) return;
+        
+        this.ctx.save();
+        
+        // Draw influence tiles with different colors based on connection type
+        this.hoverInfluenceRadius.forEach(tileKey => {
+            const isExtended = tileKey.includes(':extended');
+            const actualKey = isExtended ? tileKey.split(':')[0] : tileKey;
+            const [row, col] = actualKey.split(',').map(Number);
+            
+            // Different styling for adjacent vs road-connected
+            if (isExtended) {
+                // Road-connected tiles: subtle blue glow
+                const alpha = 0.15;
+                this.drawTileHighlight(col, row, `rgba(33, 150, 243, ${alpha})`, 0);
+            } else {
+                // Adjacent tiles: stronger white glow
+                const alpha = 0.25;
+                this.drawTileHighlight(col, row, `rgba(255, 255, 255, ${alpha})`, 0);
+            }
+        });
+        
+        this.ctx.restore();
     }
     
     // Depth-of-field rendering with tilt-shift blur
@@ -9546,10 +11194,10 @@ class IsometricGrid {
                 this.hoverStartTime = performance.now();
                 this.selectorOpacity = 1.0;
                 
-                // Start bounce animation for buildings
+                // Start hover lift for buildings
                 const parcel = this.grid[tile.row][tile.col];
                 if (parcel && parcel.building) {
-                    this.startContinuousBob(); // Skip bounce, go directly to gentle bob
+                    this.startContinuousBob(); // Direct lift, no bounce
                 }
             }
             // Show tooltip using stored mouse event coordinates
@@ -9683,6 +11331,8 @@ class IsometricGrid {
             
             if (tile && tile.row >= 0 && tile.row < this.gridSize &&
                 tile.col >= 0 && tile.col < this.gridSize) {
+                
+                console.log('🖱️ Valid tile clicked:', tile);
                 
                 // Check if clicking the same selected tile - toggle it off
                 if (this.selectedTile && 
@@ -10563,7 +12213,7 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // Initialize building position controls
     window.buildingPositionControls = {
-        yOffset: 12,
+        yOffset: 22,
         heightMultiplier: 1.0,
         widthMultiplier: 1.0
     };
@@ -10610,11 +12260,11 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     
     document.getElementById('reset-building-position').addEventListener('click', () => {
-        yOffsetSlider.value = 12;
+        yOffsetSlider.value = 22;
         heightSlider.value = 1.0;
         widthSlider.value = 1.0;
         
-        window.buildingPositionControls.yOffset = 12;
+        window.buildingPositionControls.yOffset = 22;
         window.buildingPositionControls.heightMultiplier = 1.0;
         window.buildingPositionControls.widthMultiplier = 1.0;
         
@@ -12144,6 +13794,7 @@ function setupRoadControls(game) {
         game.scheduleRender();
     });
 }
+
 
 
 });

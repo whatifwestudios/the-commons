@@ -248,7 +248,7 @@ class GovernanceSystem {
                         }
                         if (parcel.building) {
                             totalBuildings++;
-                            if (parcel.owner === 'player') {
+                            if (this.game.isCurrentPlayer(parcel.owner)) {
                                 playerBuildings++;
                             }
                         }

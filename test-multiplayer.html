@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Multiplayer Test - The Commons</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #0f0f0f;
+            color: #ffffff;
+            margin: 0;
+            padding: 20px;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+        }
+        .status-card {
+            background: #1a1a1a;
+            border: 1px solid #333;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 10px 0;
+        }
+        .connected { border-color: #4CAF50; }
+        .disconnected { border-color: #f44336; }
+        .connecting { border-color: #ff9800; }
+        
+        .button {
+            background: #4CAF50;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        .button:hover { background: #45a049; }
+        .button:disabled { background: #666; cursor: not-allowed; }
+        
+        .log {
+            background: #000;
+            border: 1px solid #333;
+            border-radius: 4px;
+            padding: 10px;
+            height: 200px;
+            overflow-y: auto;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            margin: 10px 0;
+        }
+        
+        .players {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        .player {
+            background: #333;
+            padding: 8px 12px;
+            border-radius: 4px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .status-indicator {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #4CAF50;
+        }
+        .disconnected .status-indicator {
+            background: #f44336;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎮 Multiplayer Test Dashboard</h1>
+        
+        <div class="status-card" id="connectionStatus">
+            <h3>Connection Status</h3>
+            <div id="statusText">Disconnected</div>
+            <div id="statusDetails"></div>
+        </div>
+        
+        <div class="status-card">
+            <h3>Player Control</h3>
+            <input type="text" id="playerName" placeholder="Player Name" style="padding: 8px; margin: 5px; background: #333; color: white; border: 1px solid #555; border-radius: 4px;">
+            <input type="color" id="playerColor" value="#2196F3" style="margin: 5px;">
+            <button class="button" onclick="connectToGame()">Join Game</button>
+            <button class="button" onclick="disconnect()">Disconnect</button>
+        </div>
+        
+        <div class="status-card">
+            <h3>Test Actions</h3>
+            <button class="button" onclick="testPurchaseParcel()">Test Purchase Parcel</button>
+            <button class="button" onclick="testConstructBuilding()">Test Construct Building</button>
+            <button class="button" onclick="testUpdateCash()">Test Update Cash</button>
+            <button class="button" onclick="sendHeartbeat()">Send Heartbeat</button>
+        </div>
+        
+        <div class="status-card">
+            <h3>Connected Players</h3>
+            <div id="playersList" class="players">
+                <div>No players connected</div>
+            </div>
+        </div>
+        
+        <div class="status-card">
+            <h3>Game State</h3>
+            <div id="gameState">
+                <div>Treasury: $<span id="treasury">0</span></div>
+                <div>Population: <span id="population">0</span></div>
+                <div>Version: <span id="version">0</span></div>
+            </div>
+        </div>
+        
+        <div class="status-card">
+            <h3>Connection Log</h3>
+            <div id="log" class="log"></div>
+            <button class="button" onclick="clearLog()">Clear Log</button>
+        </div>
+    </div>
+
+    <script src="multiplayer-client.js"></script>
+    <script>
+        class TestGame {
+            constructor() {
+                this.playerSettings = {};
+                this.playerCash = 5000;
+                this.playerActions = 20;
+                this.currentDay = 1;
+                this.currentMonth = 'SEPT';
+                this.cityTreasury = 0;
+                this.totalPopulation = 0;
+                this.grid = {};
+                this.vitalityMetrics = {};
+            }
+            
+            updateDisplay() {
+                document.getElementById('treasury').textContent = this.cityTreasury;
+                document.getElementById('population').textContent = this.totalPopulation;
+                log('Display updated');
+            }
+            
+            updateVitalityDisplay() {
+                log('Vitality display updated');
+            }
+        }
+
+        const game = new TestGame();
+        let multiplayerManager = null;
+
+        function log(message) {
+            const logDiv = document.getElementById('log');
+            const timestamp = new Date().toLocaleTimeString();
+            logDiv.innerHTML += `<div>[${timestamp}] ${message}</div>`;
+            logDiv.scrollTop = logDiv.scrollHeight;
+        }
+
+        function clearLog() {
+            document.getElementById('log').innerHTML = '';
+        }
+
+        function updateConnectionStatus(status) {
+            const statusCard = document.getElementById('connectionStatus');
+            const statusText = document.getElementById('statusText');
+            const statusDetails = document.getElementById('statusDetails');
+            
+            statusCard.className = 'status-card ' + status.toLowerCase();
+            statusText.textContent = status;
+            
+            if (multiplayerManager) {
+                const connStatus = multiplayerManager.getConnectionStatus();
+                statusDetails.innerHTML = `
+                    <div>Type: ${connStatus.type || 'unknown'}</div>
+                    <div>Players: ${connStatus.players}</div>
+                    <div>Latency: ${connStatus.latency}ms</div>
+                    <div>Actions: ${connStatus.actions}</div>
+                    <div>Version: ${connStatus.version}/${connStatus.serverVersion}</div>
+                    <div>Pending: ${connStatus.pendingActions}</div>
+                `;
+                
+                document.getElementById('version').textContent = connStatus.version;
+            }
+        }
+
+        function updatePlayersList(players) {
+            const playersDiv = document.getElementById('playersList');
+            if (players.size === 0) {
+                playersDiv.innerHTML = '<div>No players connected</div>';
+                return;
+            }
+            
+            playersDiv.innerHTML = '';
+            players.forEach(player => {
+                const playerDiv = document.createElement('div');
+                playerDiv.className = 'player';
+                playerDiv.innerHTML = `
+                    <div class="status-indicator"></div>
+                    <span style="color: ${player.color};">${player.emoji}</span>
+                    <span>${player.name}</span>
+                    <span>$${player.cash}</span>
+                `;
+                playersDiv.appendChild(playerDiv);
+            });
+        }
+
+        function connectToGame() {
+            const playerName = document.getElementById('playerName').value || 'TestPlayer';
+            const playerColor = document.getElementById('playerColor').value;
+            
+            game.playerSettings = {
+                name: playerName,
+                color: playerColor,
+                emoji: '🧪'
+            };
+            
+            if (multiplayerManager) {
+                multiplayerManager = null;
+            }
+            
+            multiplayerManager = new UniversalMultiplayerManager(game);
+            
+            // Override some methods for testing
+            const originalHandleServerMessage = multiplayerManager.handleServerMessage.bind(multiplayerManager);
+            multiplayerManager.handleServerMessage = function(data) {
+                log(`📨 Received: ${data.type}`);
+                originalHandleServerMessage(data);
+                
+                // Update UI
+                if (data.type === 'JOIN_SUCCESS' || data.type === 'PLAYER_JOINED' || data.type === 'PLAYER_LEFT') {
+                    updatePlayersList(this.players);
+                }
+                
+                if (data.type === 'JOIN_SUCCESS') {
+                    updateConnectionStatus('Connected');
+                    log(`✅ Joined as ${data.player.name} (${data.playerId})`);
+                }
+                
+                if (data.type === 'STATE_DIFF' && data.diff.changes.calculated) {
+                    const calc = data.diff.changes.calculated;
+                    if (calc.treasury !== undefined) {
+                        game.cityTreasury = calc.treasury;
+                        document.getElementById('treasury').textContent = calc.treasury;
+                    }
+                    if (calc.population !== undefined) {
+                        game.totalPopulation = calc.population;
+                        document.getElementById('population').textContent = calc.population;
+                    }
+                }
+            };
+            
+            const originalHandleConnectionLoss = multiplayerManager.handleConnectionLoss.bind(multiplayerManager);
+            multiplayerManager.handleConnectionLoss = function() {
+                updateConnectionStatus('Disconnected');
+                log('❌ Connection lost');
+                originalHandleConnectionLoss();
+            };
+            
+            updateConnectionStatus('Connecting');
+            log('🔌 Connecting to multiplayer server...');
+            multiplayerManager.connect();
+        }
+
+        function disconnect() {
+            if (multiplayerManager) {
+                multiplayerManager.handleConnectionLoss();
+                multiplayerManager = null;
+            }
+            updateConnectionStatus('Disconnected');
+            log('👋 Disconnected');
+        }
+
+        function testPurchaseParcel() {
+            if (!multiplayerManager) {
+                log('❌ Not connected');
+                return;
+            }
+            
+            const parcelId = `${Math.floor(Math.random() * 20)}-${Math.floor(Math.random() * 20)}`;
+            const action = {
+                type: 'PURCHASE_PARCEL',
+                parcelId: parcelId,
+                building: 'house',
+                purchasePrice: 1000
+            };
+            
+            log(`🏠 Testing parcel purchase: ${parcelId}`);
+            multiplayerManager.broadcastAction(action);
+        }
+
+        function testConstructBuilding() {
+            if (!multiplayerManager) {
+                log('❌ Not connected');
+                return;
+            }
+            
+            const parcelId = `${Math.floor(Math.random() * 20)}-${Math.floor(Math.random() * 20)}`;
+            const action = {
+                type: 'CONSTRUCT_BUILDING',
+                parcelId: parcelId,
+                building: 'shop',
+                constructionStartDay: 1,
+                constructionDays: 3
+            };
+            
+            log(`🏗️ Testing building construction: ${parcelId}`);
+            multiplayerManager.broadcastAction(action);
+        }
+
+        function testUpdateCash() {
+            if (!multiplayerManager) {
+                log('❌ Not connected');
+                return;
+            }
+            
+            const amount = Math.floor(Math.random() * 1000) - 500; // Random between -500 and 500
+            const action = {
+                type: 'UPDATE_CASH',
+                amount: amount
+            };
+            
+            log(`💰 Testing cash update: ${amount > 0 ? '+' : ''}${amount}`);
+            multiplayerManager.broadcastAction(action);
+        }
+
+        function sendHeartbeat() {
+            if (!multiplayerManager) {
+                log('❌ Not connected');
+                return;
+            }
+            
+            log('💓 Sending heartbeat...');
+            multiplayerManager.sendHeartbeat();
+        }
+
+        // Initialize
+        updateConnectionStatus('Disconnected');
+        log('🧪 Multiplayer test dashboard loaded');
+        log('📝 Instructions:');
+        log('1. Enter a player name and click "Join Game"');
+        log('2. Open this page in multiple browser windows');
+        log('3. Test actions and watch real-time synchronization');
+        log('4. Check server logs in terminal for backend activity');
+    </script>
+</body>
+</html>

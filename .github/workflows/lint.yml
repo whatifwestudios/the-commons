@@ -1,0 +1,38 @@
+name: Lint Code
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+        
+    - name: Install dependencies
+      run: npm ci
+      
+    - name: Run ESLint
+      run: npm run lint:check
+      
+    - name: Check for multiplayer compatibility issues
+      run: |
+        echo "Checking for common multiplayer bugs..."
+        if grep -r "owner === 'player'" --include="*.js" .; then
+          echo "❌ Found hardcoded 'player' owner checks!"
+          echo "Use this.isCurrentPlayer(owner) instead for multiplayer compatibility"
+          exit 1
+        else
+          echo "✅ No hardcoded 'player' owner checks found"
+        fi

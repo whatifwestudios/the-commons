@@ -70,7 +70,7 @@ class BuildingSystem {
         
         // Check affordability
         const cost = fundingInfo ? fundingInfo.playerCost : this.calculateBuildingCostWithFunding(building);
-        if (owner === 'player' && this.game.playerCash < cost) {
+        if (this.game.isCurrentPlayer(owner) && this.game.playerCash < cost) {
             this.game.showNotification('Insufficient funds!', 'error');
             return false;
         }
@@ -101,7 +101,7 @@ class BuildingSystem {
         }
         
         // Deduct cost and use action
-        if (owner === 'player') {
+        if (this.game.isCurrentPlayer(owner)) {
             this.game.playerCash -= cost;
             this.game.useAction('build');
             this.playerBuildings.add(`${row},${col}`);
@@ -227,7 +227,7 @@ class BuildingSystem {
         }
         
         // Remove from tracking
-        if (parcel.owner === 'player') {
+        if (this.game.isCurrentPlayer(parcel.owner)) {
             this.playerBuildings.delete(`${row},${col}`);
             
             const buildingId = parcel.building;
@@ -486,7 +486,7 @@ class BuildingSystem {
             const [row, col] = key.split(',').map(Number);
             const parcel = this.game.grid[row][col];
             
-            if (parcel && parcel.owner === 'player') {
+            if (parcel && this.game.isCurrentPlayer(parcel.owner)) {
                 const stats = this.calculateBuildingEconomics(parcel, row, col);
                 this.economicCache.buildingStats.set(key, stats);
             } else {
@@ -583,7 +583,12 @@ class BuildingSystem {
         for (let row = 0; row < this.game.gridSize; row++) {
             for (let col = 0; col < this.game.gridSize; col++) {
                 const parcel = this.game.grid[row][col];
-                if (parcel && parcel.building && parcel.owner === owner) {
+                // Handle both legacy 'player' and actual player IDs
+                const isTargetOwner = (owner === 'player') ? 
+                    this.game.isCurrentPlayer(parcel.owner) : 
+                    parcel.owner === owner;
+                    
+                if (parcel && parcel.building && isTargetOwner) {
                     buildings.push({ row, col, parcel });
                 }
             }
@@ -591,6 +596,22 @@ class BuildingSystem {
         return buildings;
     }
     
+    /**
+     * Get ALL buildings in the city (for transparency/city-wide views)
+     */
+    getAllBuildings() {
+        const buildings = [];
+        for (let row = 0; row < this.game.gridSize; row++) {
+            for (let col = 0; col < this.game.gridSize; col++) {
+                const parcel = this.game.grid[row][col];
+                if (parcel && parcel.building && parcel.owner && parcel.owner !== 'unclaimed') {
+                    buildings.push({ row, col, parcel });
+                }
+            }
+        }
+        return buildings;
+    }
+
     /**
      * Get building info for display
      */

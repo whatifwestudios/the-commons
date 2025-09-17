@@ -192,8 +192,15 @@ class RenderingSystem {
         this.drawParcelBorders(row, col, this.tileWidth, this.tileHeight);
         
         // Draw building if present with construction animation
-        if (parcel && parcel.building && this.game.currentLayer !== 'mobility') {
-            this.drawBuildingWithConstruction(parcel.building, 0, -this.tileHeight / 4, row, col, parcel);
+        if (parcel && parcel.building && this.game.currentLayer !== 'mobility' && this.game.currentLayer !== 'players') {
+            // Check for hover effect
+            const isHovered = this.game.hoveredTile && this.game.hoveredTile.row === row && this.game.hoveredTile.col === col;
+            const hoverOffset = isHovered ? -(this.game.currentElevation || 0) : 0;
+            
+            this.drawBuildingWithConstruction(parcel.building, 0, -this.tileHeight / 4 + hoverOffset, row, col, parcel);
+            
+            // Draw efficiency hazard indicator if needed
+            this.drawEfficiencyIndicator(row, col, iso.x, iso.y + hoverOffset);
         }
         
         this.ctx.restore();
@@ -225,16 +232,83 @@ class RenderingSystem {
         // Based on owner
         if (!parcel.owner) {
             return '#2a2a2a'; // Unowned - charcoal gray
-        } else if (parcel.owner === 'player') {
-            // Use player's selected color with some transparency/modification
-            if (this.game.playerSettings && this.game.playerSettings.color) {
-                return this.game.playerSettings.color;
-            }
-            return 'rgba(255, 255, 255, 0.4)'; // Fallback to white with transparency
         } else {
-            // Competitor owned - use assigned colors
-            return this.game.getCompetitorColor ? this.game.getCompetitorColor(parcel.owner) : '#6a6a6a';
+            // Players layer filtering
+            if (this.game.currentLayer === 'players') {
+                if (this.game.filteredPlayerId) {
+                    // Show filtered player in full color, others dimmed
+                    if (parcel.owner === this.game.filteredPlayerId) {
+                        return this.getPlayerColor(parcel.owner);
+                    } else {
+                        return 'rgba(60, 60, 60, 0.3)'; // Dimmed for non-filtered players
+                    }
+                } else {
+                    // No filter - show all players normally
+                    return this.getPlayerColor(parcel.owner);
+                }
+            } else {
+                // Other layers - show all players normally
+                return this.getPlayerColor(parcel.owner);
+            }
         }
+    }
+    
+    /**
+     * Check if the given owner is the current player
+     */
+    isCurrentPlayer(owner) {
+        if (owner === 'player') return true; // Legacy single-player mode
+        if (this.game.multiplayerManager && this.game.multiplayerManager.playerId) {
+            return owner === this.game.multiplayerManager.playerId;
+        }
+        return false;
+    }
+    
+    /**
+     * Get color for a multiplayer participant
+     */
+    getPlayerColor(playerId) {
+        if (!playerId) return '#6a6a6a';
+        
+        // Get color from multiplayer manager if available
+        if (this.game.multiplayerManager && this.game.multiplayerManager.players.has(playerId)) {
+            const player = this.game.multiplayerManager.players.get(playerId);
+            if (player.color) {
+                // Convert hex color to rgba with transparency
+                return this.hexToRgba(player.color, 0.4);
+            }
+        }
+        
+        // Fallback: deterministic colors based on player ID
+        const colors = [
+            'rgba(33, 150, 243, 0.4)',  // Blue
+            'rgba(255, 152, 0, 0.4)',   // Orange  
+            'rgba(156, 39, 176, 0.4)',  // Purple
+            'rgba(255, 193, 7, 0.4)',   // Amber
+            'rgba(244, 67, 54, 0.4)',   // Red
+            'rgba(96, 125, 139, 0.4)',  // Blue Grey
+            'rgba(139, 195, 74, 0.4)',  // Light Green
+            'rgba(255, 87, 34, 0.4)'    // Deep Orange
+        ];
+        
+        // Hash player ID to get consistent color
+        let hash = 0;
+        for (let i = 0; i < playerId.length; i++) {
+            hash = ((hash << 5) - hash) + playerId.charCodeAt(i);
+            hash = hash & hash; // Convert to 32-bit integer
+        }
+        
+        return colors[Math.abs(hash) % colors.length];
+    }
+    
+    /**
+     * Convert hex color to rgba with transparency
+     */
+    hexToRgba(hex, alpha = 1) {
+        const r = parseInt(hex.slice(1, 3), 16);
+        const g = parseInt(hex.slice(3, 5), 16);
+        const b = parseInt(hex.slice(5, 7), 16);
+        return `rgba(${r}, ${g}, ${b}, ${alpha})`;
     }
     
     /**
@@ -244,8 +318,20 @@ class RenderingSystem {
         const parcel = this.game.grid[row][col];
         
         // Different border styles based on state
-        if (parcel && parcel.owner === 'player') {
-            this.ctx.strokeStyle = '#4CAF50';
+        if (parcel && parcel.owner) {
+            // All players get their server-assigned color as border
+            if (this.game.multiplayerManager && this.game.multiplayerManager.players.has(parcel.owner)) {
+                const player = this.game.multiplayerManager.players.get(parcel.owner);
+                if (player.color) {
+                    // Use solid hex color for border
+                    this.ctx.strokeStyle = player.color;
+                } else {
+                    this.ctx.strokeStyle = '#999';
+                }
+            } else {
+                // Fallback for legacy single-player mode
+                this.ctx.strokeStyle = this.isCurrentPlayer(parcel.owner) ? '#4CAF50' : '#999';
+            }
             this.ctx.lineWidth = 2;
         } else {
             this.ctx.strokeStyle = '#666';
@@ -409,7 +495,7 @@ class RenderingSystem {
         // Use proper aspect-ratio preserving scaling like the original system
         const widthMultiplier = window.buildingPositionControls?.widthMultiplier || 1.0;
         const heightMultiplier = window.buildingPositionControls?.heightMultiplier || 1.0;
-        const yOffset = window.buildingPositionControls?.yOffset || 12;
+        const yOffset = window.buildingPositionControls?.yOffset || 22;
         
         // Fill diamond width completely (preserving aspect ratio)
         const baseDrawWidth = this.tileWidth * widthMultiplier;
@@ -482,7 +568,7 @@ class RenderingSystem {
         // Use proper aspect-ratio preserving scaling
         const widthMultiplier = window.buildingPositionControls?.widthMultiplier || 1.0;
         const heightMultiplier = window.buildingPositionControls?.heightMultiplier || 1.0;
-        const yOffset = window.buildingPositionControls?.yOffset || 12;
+        const yOffset = window.buildingPositionControls?.yOffset || 22;
         
         // Fill diamond width completely (preserving aspect ratio)
         const baseDrawWidth = this.tileWidth * widthMultiplier;
@@ -526,7 +612,7 @@ class RenderingSystem {
         // Use same sizing logic as images but for rectangles
         const widthMultiplier = window.buildingPositionControls?.widthMultiplier || 1.0;
         const heightMultiplier = window.buildingPositionControls?.heightMultiplier || 1.0;
-        const yOffset = window.buildingPositionControls?.yOffset || 12;
+        const yOffset = window.buildingPositionControls?.yOffset || 22;
         
         // Fallback buildings use a standard aspect ratio (4:3)
         const buildingWidth = this.tileWidth * widthMultiplier;
@@ -573,7 +659,7 @@ class RenderingSystem {
         // Use same sizing logic as images but for rectangles  
         const widthMultiplier = window.buildingPositionControls?.widthMultiplier || 1.0;
         const heightMultiplier = window.buildingPositionControls?.heightMultiplier || 1.0;
-        const yOffset = window.buildingPositionControls?.yOffset || 12;
+        const yOffset = window.buildingPositionControls?.yOffset || 22;
         
         // Fallback buildings use a standard aspect ratio (4:3)
         const buildingWidth = this.tileWidth * widthMultiplier;
@@ -638,6 +724,16 @@ class RenderingSystem {
      * Draw special effects (parcel reach, selection, etc.)
      */
     drawSpecialEffects() {
+        // Draw hover influence radius FIRST (so it appears under other highlights)
+        if (this.game.hoverInfluenceRadius && this.game.hoverInfluenceRadius.size > 0) {
+            this.drawHoverInfluenceRadius();
+        }
+        
+        // Draw white border for the core hovered parcel
+        if (this.game.hoveredTile) {
+            this.drawHoveredParcelBorder();
+        }
+        
         // Draw parcel reach if active
         if (this.game.parcelReach) {
             this.drawParcelReach();
@@ -647,6 +743,64 @@ class RenderingSystem {
         if (this.game.selectedTile) {
             this.drawSelectedTileHighlight();
         }
+    }
+    
+    /**
+     * Draw white border for the core hovered parcel
+     */
+    drawHoveredParcelBorder() {
+        if (!this.game.hoveredTile) return;
+        
+        const { row, col } = this.game.hoveredTile;
+        const iso = this.toIsometric(col, row);
+        
+        this.ctx.save();
+        this.ctx.globalAlpha = 0.8;
+        this.ctx.strokeStyle = 'rgba(255, 255, 255, 1)'; // White
+        this.ctx.lineWidth = 2;
+        
+        // Draw diamond border for the hovered parcel
+        this.drawDiamond(iso.x, iso.y, this.tileWidth, this.tileHeight);
+        this.ctx.stroke();
+        
+        this.ctx.restore();
+    }
+
+    /**
+     * Draw hover influence radius with border highlights for adjacent vs road-connected
+     */
+    drawHoverInfluenceRadius() {
+        if (!this.game.hoverInfluenceRadius) return;
+        
+        this.ctx.save();
+        
+        // Draw influence tiles with different border colors based on connection type
+        this.game.hoverInfluenceRadius.forEach(tileKey => {
+            const isExtended = tileKey.includes(':extended');
+            const actualKey = isExtended ? tileKey.split(':')[0] : tileKey;
+            const [row, col] = actualKey.split(',').map(Number);
+            
+            const iso = this.toIsometric(col, row);
+            
+            // Different styling for adjacent vs road-connected
+            if (isExtended) {
+                // Road-connected tiles: blue border showing transportation reach
+                this.ctx.globalAlpha = 0.4;
+                this.ctx.strokeStyle = 'rgba(33, 150, 243, 1)';
+                this.ctx.lineWidth = 1;
+            } else {
+                // Adjacent tiles: yellow border for immediate neighbors
+                this.ctx.globalAlpha = 0.4;
+                this.ctx.strokeStyle = 'rgba(255, 235, 59, 1)'; // Soft yellow
+                this.ctx.lineWidth = 1.5;
+            }
+            
+            // Draw diamond border only
+            this.drawDiamond(iso.x, iso.y, this.tileWidth, this.tileHeight);
+            this.ctx.stroke();
+        });
+        
+        this.ctx.restore();
     }
     
     /**
@@ -878,6 +1032,60 @@ class RenderingSystem {
     clearImageCache() {
         this.buildingImageCache.clear();
         this.imageLoadPromises.clear();
+    }
+    
+    /**
+     * Draw efficiency hazard indicator for buildings under 80% efficiency
+     */
+    drawEfficiencyIndicator(row, col, x, y) {
+        const parcel = this.game.grid[row][col];
+        if (!parcel || !parcel.building) return;
+        
+        // Don't show hazard during construction
+        if (parcel.constructionStartDay !== null && parcel.constructionDays > 0) {
+            const totalConstructionTimeMs = parcel.constructionDays * this.game.dayDuration;
+            const elapsedTimeMs = (this.game.currentDay - parcel.constructionStartDay) * this.game.dayDuration + 
+                                  (performance.now() - (this.game.lastDayStartTime || Date.now()));
+            
+            if (elapsedTimeMs < totalConstructionTimeMs) {
+                return; // Still under construction
+            }
+        }
+        
+        // Get building efficiency from the economic engine
+        const efficiency = this.game.buildingEfficiencies?.get(`${row},${col}`) || 1.0;
+        
+        // Only show hazard if efficiency is below 80%
+        if (efficiency >= 0.8) return;
+        
+        // Calculate building height to position hazard above it
+        const widthMultiplier = window.buildingPositionControls?.widthMultiplier || 1.0;
+        const heightMultiplier = window.buildingPositionControls?.heightMultiplier || 1.0;
+        const yOffset = window.buildingPositionControls?.yOffset || 22;
+        
+        // Calculate building dimensions (same logic as in renderBuildingImage)
+        const baseDrawWidth = this.tileWidth * widthMultiplier;
+        // Assume standard 4:3 aspect ratio for buildings when we can't get actual image dimensions
+        const baseDrawHeight = (baseDrawWidth * 0.75) * heightMultiplier;
+        
+        // Position hazard 10px above the top of the building
+        const buildingTop = y + this.tileHeight/2 - baseDrawHeight + yOffset;
+        const hazardY = buildingTop - 10;
+        
+        // Draw hazard emoji at fixed position above building
+        this.ctx.save();
+        this.ctx.font = '16px Arial';
+        this.ctx.textAlign = 'center';
+        this.ctx.textBaseline = 'middle';
+        
+        // Draw with slight shadow for visibility
+        this.ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
+        this.ctx.fillText('⚠️', x + 1, hazardY + 1);
+        
+        this.ctx.fillStyle = '#FFD700';
+        this.ctx.fillText('⚠️', x, hazardY);
+        
+        this.ctx.restore();
     }
     
     /**

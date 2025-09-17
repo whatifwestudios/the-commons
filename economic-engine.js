@@ -185,8 +185,9 @@ class EconomicEngine {
         let totalLVT = 0;
         const breakdown = [];
         
-        // Calculate building economics
-        const playerBuildings = this.game.buildingSystem?.getBuildingsByOwner('player') || [];
+        // Calculate building economics for current player's buildings
+        const currentPlayerId = this.game.multiplayerManager?.playerId || 'player';
+        const playerBuildings = this.game.buildingSystem?.getBuildingsByOwner(currentPlayerId) || [];
         
         playerBuildings.forEach(({ row, col, parcel }) => {
             const economics = this.game.buildingSystem.calculateBuildingEconomics(parcel, row, col);

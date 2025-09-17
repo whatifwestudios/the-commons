@@ -240,6 +240,12 @@ body {
     color: #ffffff;
 }
 
+.dropdown-divider {
+    height: 1px;
+    background: #2a2a2a;
+    margin: 8px 0;
+}
+
 .layer-option.active {
     background: #0066cc;
     color: #ffffff;
@@ -1401,6 +1407,73 @@ body {
 .btn-buynow {
     background: linear-gradient(135deg, #42B96E 0%, #2E8B57 100%);
     color: white;
+}
+
+.btn-cancel {
+    background: #444;
+    color: #ccc;
+    border: 1px solid #666;
+}
+
+.btn-end-now {
+    background: linear-gradient(135deg, #FF6B35 0%, #E74C3C 100%);
+    color: white;
+    font-size: 12px;
+}
+
+.btn-reset-server {
+    background: linear-gradient(135deg, #E74C3C 0%, #C0392B 100%);
+    color: white;
+    padding: 10px 16px;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-weight: 600;
+    transition: all 0.2s;
+}
+
+.btn-reset-server:hover {
+    background: linear-gradient(135deg, #C0392B 0%, #A93226 100%);
+    transform: translateY(-1px);
+}
+
+.listing-current-bid {
+    color: #FFD700;
+    font-weight: 600;
+}
+
+.listing-time {
+    font-size: 11px;
+    color: #888;
+    margin-top: 4px;
+}
+
+.listing-time.urgent {
+    color: #FF6B35;
+    font-weight: 600;
+    animation: pulse 1s infinite;
+}
+
+.listing-time.expired {
+    color: #E74C3C;
+    font-weight: 600;
+}
+
+@keyframes pulse {
+    0% { opacity: 1; }
+    50% { opacity: 0.6; }
+    100% { opacity: 1; }
+}
+
+.reserve-countdown {
+    font-size: 10px;
+    color: #888;
+    font-style: italic;
+}
+
+.reserve-countdown.urgent {
+    color: #FF6B35;
+    animation: pulse 1s infinite;
 }
 
 .section-header {
@@ -6138,6 +6211,10 @@ body {
     background: #ff9800;
 }
 
+.notification.conflict::before {
+    background: #9C27B0;
+}
+
 .notification:hover {
     transform: translateX(-4px) scale(1.02);
     box-shadow: 
@@ -6153,5 +6230,99 @@ body {
     padding-bottom: 0;
     max-height: 0;
     transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Players Panel Styles */
+.players-legend {
+    padding: 10px;
+}
+
+.legend-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+    font-size: 11px;
+    color: #999;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+.clear-filter-btn {
+    background: none;
+    border: 1px solid #444;
+    color: #999;
+    padding: 2px 6px;
+    font-size: 9px;
+    cursor: pointer;
+    border-radius: 3px;
+    transition: all 0.2s ease;
+}
+
+.clear-filter-btn:hover {
+    border-color: #666;
+    color: #fff;
+}
+
+.players-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.player-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px;
+    background: #1a1a1a;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    border: 1px solid transparent;
+}
+
+.player-item:hover {
+    background: #222;
+    border-color: #444;
+}
+
+.player-item.filtered {
+    background: rgba(76, 175, 80, 0.1);
+    border-color: rgba(76, 175, 80, 0.3);
+}
+
+.player-item.current-player {
+    border-color: #4CAF50;
+}
+
+.player-info {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.player-color-indicator {
+    width: 12px;
+    height: 12px;
+    border-radius: 2px;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.player-name {
+    font-size: 11px;
+    color: #fff;
+    font-weight: 500;
+}
+
+.player-stats {
+    font-size: 10px;
+    color: #999;
+    text-align: right;
+}
+
+.parcel-count {
+    display: block;
+    line-height: 1.2;
 }
 

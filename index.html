@@ -429,6 +429,10 @@
                     <button class="dropdown-item" id="save-game">
                         💾 Save Game
                     </button>
+                    <div class="dropdown-divider"></div>
+                    <button class="dropdown-item" id="reset-server-btn-menu" onclick="window.game?.resetServerState()">
+                        🔄 Reset Server
+                    </button>
                 </div>
             </div>
         </div>
@@ -459,6 +463,9 @@
                     </button>
                     <button class="dropdown-item layer-option" id="layer-mobility" data-layer="mobility">
                         🚶 Mobility View
+                    </button>
+                    <button class="dropdown-item layer-option" id="layer-players" data-layer="players">
+                        👥 Players View
                     </button>
                 </div>
             </div>
@@ -695,6 +702,7 @@
                                 </div>
                             </div>
                         </div>
+                        
                     </div>
                     <div class="tab-content" id="building-creator">
                         <div class="dev-section">
@@ -1211,6 +1219,23 @@
                         <div class="metric-row">
                             <span class="metric-label">TOTAL ROADS</span>
                             <span class="metric-value" id="total-roads">0</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="sidebar-section collapsible">
+                <div class="section-header" data-target="players-panel">
+                    <span>PLAYERS</span>
+                    <span class="collapse-icon">▶</span>
+                </div>
+                <div id="players-panel" class="section-content collapsed">
+                    <div class="players-legend">
+                        <div class="legend-header">
+                            <span>Player Ownership</span>
+                            <button id="clear-player-filter" class="clear-filter-btn">Clear Filter</button>
+                        </div>
+                        <div id="players-list" class="players-list">
+                            <!-- Players will be populated by JavaScript -->
                         </div>
                     </div>
                 </div>
@@ -2075,6 +2100,7 @@
     <script src="ui-manager.js"></script>
     <script src="mobility-layer.js"></script>
     <script src="tooltip-manager.js"></script>
+    <script src="multiplayer-client.js"></script>
     <script src="game.js"></script>
 </body>
 </html>
