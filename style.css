@@ -121,6 +121,7 @@ body {
     font-weight: 600;
     letter-spacing: 0.5px;
     color: #666666;
+    padding-left: 20px;
 }
 
 .info-value {
@@ -150,7 +151,7 @@ body {
     display: flex;
     flex-direction: row !important;
     align-items: center;
-    gap: 6px;
+    gap: 4px;
 }
 
 /* Auction Sidebar */
@@ -292,7 +293,7 @@ body {
 .zoom-controls {
     display: flex;
     gap: 4px;
-    padding: 6px 16px;
+    padding: 6px 6px;
 }
 
 .zoom-btn {
@@ -4026,9 +4027,8 @@ body {
 
 .metric-value {
     color: #DAA520;
-    font-size: 16px;
-    font-weight: 700;
-    text-shadow: 0 0 8px rgba(218, 165, 32, 0.4);
+    font-size: 12px;
+    font-weight: 500;
 }
 
 .lvt-adjuster .metric-label {
@@ -4371,7 +4371,6 @@ body {
     color: #DAA520;
     font-size: 15px;
     font-weight: 700;
-    text-shadow: 0 0 8px rgba(218, 165, 32, 0.3);
     background: rgba(218, 165, 32, 0.08);
     padding: 4px 8px;
     border-radius: 6px;
