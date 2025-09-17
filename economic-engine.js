@@ -197,12 +197,15 @@ class EconomicEngine {
             totalLVT += economics.lvt;
             
             breakdown.push({
-                coordinate: this.game.getParcelCoordinate(row, col),
-                building: economics.buildingName,
+                coordinates: this.game.getParcelCoordinate(row, col),
+                buildingName: economics.buildingName,
+                buildingAge: parcel.buildingAge || 0,
+                decay: parcel.decay || 0,
+                landValue: parcel.landValue?.paidPrice || 0,
                 revenue: economics.revenue,
                 maintenance: economics.maintenance,
                 lvt: economics.lvt,
-                net: economics.netIncome
+                netCashflow: economics.netIncome
             });
         });
         
