@@ -916,18 +916,9 @@ async function processBuildRoad(action) {
     }
     
     const player = gameState.core.players.get(playerId);
-    const actionCost = 1;
     const roadCost = cost || 500;
     
-    // Check action and cash availability
-    if (player.actionManager.currentActions < actionCost) {
-      return {
-        success: false,
-        error: 'INSUFFICIENT_ACTIONS',
-        message: 'Not enough actions remaining'
-      };
-    }
-    
+    // Check cash availability (roads don't cost actions)
     if (player.cash < roadCost) {
       return {
         success: false,
@@ -948,10 +939,8 @@ async function processBuildRoad(action) {
       timestamp: Date.now()
     };
     
-    // Deduct costs
+    // Deduct costs (only cash, no actions for roads)
     player.cash -= roadCost;
-    player.actionManager.currentActions -= actionCost;
-    player.actionManager.usedThisMonth += actionCost;
     
     // Update versions
     gameState.version.global++;
