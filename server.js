@@ -371,6 +371,8 @@ async function processGameAction(action) {
       return await processAdvanceTime(action);
     case 'TREASURY_FEE':
       return await processTreasuryFee(action);
+    case 'REQUEST_LAND_PRICE':
+      return await processLandPriceRequest(action);
     default:
       throw new Error(`Unknown action type: ${action.type}`);
   }
@@ -410,21 +412,25 @@ async function processPurchaseParcel(action) {
     };
   }
   
-  // Check cash availability  
-  if (player.cash < (purchasePrice || 0)) {
+  // Calculate authoritative land price
+  const [row, col] = parcelId.split('-').map(Number);
+  const authoritativePrice = calculateParcelPrice(row, col);
+  
+  // Check cash availability using server price (ignore client's suggested price)
+  if (player.cash < authoritativePrice) {
     return {
       success: false,
       error: 'INSUFFICIENT_FUNDS',
-      message: 'Not enough cash for this purchase'
+      message: `Not enough cash. This parcel costs $${authoritativePrice} but you have $${Math.round(player.cash)}`
     };
   }
   
-  // Process purchase
+  // Process purchase using authoritative price
   gameState.core.parcels[parcelId] = {
     owner: playerId,
     building: building,
     timestamp: Date.now(),
-    purchasePrice: purchasePrice || 0,
+    purchasePrice: authoritativePrice,
     buildingAge: 0,
     decay: 0,
     amenities: []
@@ -432,14 +438,14 @@ async function processPurchaseParcel(action) {
   
   // Update player data
   player.ownedParcels.push(parcelId);
-  player.cash -= purchasePrice || 0;
+  player.cash -= authoritativePrice;
   
   // Deduct action cost
   player.actionManager.currentActions -= actionCost;
   player.actionManager.usedThisMonth += actionCost;
   
   // Add immediate LVT fee to treasury (typically 1-2% of purchase price)
-  const lvtFee = (purchasePrice || 0) * 0.01; // 1% immediate LVT fee
+  const lvtFee = authoritativePrice * 0.01; // 1% immediate LVT fee
   gameState.core.governance.unallocatedFunds += lvtFee;
   
   // Update versions
@@ -653,6 +659,40 @@ function broadcastToAll(message) {
   });
 }
 
+async function processLandPriceRequest(action) {
+  const { parcelId, playerId } = action;
+  
+  if (!parcelId) {
+    return {
+      success: false,
+      error: 'INVALID_PARCEL',
+      message: 'Parcel ID is required'
+    };
+  }
+  
+  // Check if parcel is already owned
+  if (gameState.core.parcels[parcelId]?.owner) {
+    return {
+      success: false,
+      error: 'PARCEL_ALREADY_OWNED',
+      message: 'This parcel has already been purchased',
+      currentOwner: gameState.core.parcels[parcelId].owner
+    };
+  }
+  
+  // Calculate price
+  const [row, col] = parcelId.split('-').map(Number);
+  const price = calculateParcelPrice(row, col);
+  
+  return {
+    success: true,
+    parcelId: parcelId,
+    price: price,
+    coordinates: `${row}-${col}`,
+    processedAction: action
+  };
+}
+
 function broadcastToOthers(excludeClientId, message) {
   const messageStr = JSON.stringify(message);
   clients.forEach((client, clientId) => {
@@ -665,6 +705,34 @@ function broadcastToOthers(excludeClientId, message) {
       }
     }
   });
+}
+
+// Server-side land value calculation
+function calculateParcelPrice(row, col) {
+  // Same algorithm as client, but server-authoritative
+  const centerRow = 6.5;
+  const centerCol = 6.5;
+  
+  // Calculate Chebyshev distance (max of row/col distance)
+  const distanceFromCenter = Math.max(
+    Math.abs(row - centerRow),
+    Math.abs(col - centerCol)
+  );
+  
+  // Maximum distance is about 6.5 (from center to corner)
+  const maxDistance = 6.5;
+  
+  // Linear interpolation from $500 (center) to $100 (perimeter)
+  const priceRange = 500 - 100; // $400 range
+  const priceReduction = (distanceFromCenter / maxDistance) * priceRange;
+  
+  const basePrice = 500 - priceReduction;
+  
+  // Add some variance for realism (±10%)
+  const variance = (Math.random() - 0.5) * 0.2; // -10% to +10%
+  const finalPrice = Math.max(100, basePrice * (1 + variance));
+  
+  return Math.round(finalPrice);
 }
 
 // Import the authoritative state calculator
