@@ -292,7 +292,7 @@ async function handleGameAction(ws, clientId, data) {
   };
   
   try {
-    const result = await processGameAction(action);
+    const result = await processGameAction(action, client.playerId);
     
     if (result.success) {
       // Send success response to sender
@@ -364,7 +364,7 @@ function handleRequestSync(ws, clientId, data) {
   }));
 }
 
-async function processGameAction(action) {
+async function processGameAction(action, playerId) {
   switch (action.type) {
     case 'PURCHASE_PARCEL':
       return await processPurchaseParcel(action);
