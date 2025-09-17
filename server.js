@@ -2197,7 +2197,7 @@ async function handleActionBatch(ws, clientId, data) {
     try {
       // Add player ID to action
       const actionWithPlayer = { ...action, playerId };
-      const result = await processAction(actionWithPlayer, playerId);
+      const result = await processGameAction(actionWithPlayer, playerId);
       results.push({
         actionId: action.id,
         success: result.success,
