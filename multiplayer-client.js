@@ -422,7 +422,18 @@ class UniversalMultiplayerManager {
                     
                     if (playerId === this.playerId) {
                         this.game.playerCash = playerData.cash || this.game.playerCash;
-                        this.game.playerActions = playerData.actions || this.game.playerActions;
+                        
+                        // Sync action manager data from server
+                        if (playerData.actionManager && this.game.actionManager) {
+                            this.game.actionManager.currentActions = playerData.actionManager.currentActions;
+                            this.game.actionManager.usedThisMonth = playerData.actionManager.usedThisMonth;
+                            this.game.actionManager.monthlyAllowance = playerData.actionManager.monthlyAllowance;
+                            
+                            // Update action display
+                            if (this.game.updateActionDisplay) {
+                                this.game.updateActionDisplay();
+                            }
+                        }
                     }
                 }
             });
@@ -678,6 +689,26 @@ class UniversalMultiplayerManager {
             // Update related systems
             if (this.game.updateVitalityDisplay) {
                 this.game.updateVitalityDisplay();
+            }
+        }
+        
+        // Sync player data (cash, actions)
+        if (serverState.core.players && this.playerId) {
+            const playerData = serverState.core.players[this.playerId];
+            if (playerData) {
+                this.game.playerCash = playerData.cash || this.game.playerCash;
+                
+                // Sync action manager data from server
+                if (playerData.actionManager && this.game.actionManager) {
+                    this.game.actionManager.currentActions = playerData.actionManager.currentActions;
+                    this.game.actionManager.usedThisMonth = playerData.actionManager.usedThisMonth;
+                    this.game.actionManager.monthlyAllowance = playerData.actionManager.monthlyAllowance;
+                    
+                    // Update action display
+                    if (this.game.updateActionDisplay) {
+                        this.game.updateActionDisplay();
+                    }
+                }
             }
         }
         

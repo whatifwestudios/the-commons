@@ -222,7 +222,11 @@ async function handleJoinGame(ws, clientId, data) {
     joinedAt: Date.now(),
     cash: 5000,
     wealth: 5000,
-    actions: 20,
+    actionManager: {
+      monthlyAllowance: 20,
+      currentActions: 20,
+      usedThisMonth: 0
+    },
     votingPoints: 0,
     ownedParcels: [],
     lastSeen: Date.now(),
@@ -385,6 +389,36 @@ async function processPurchaseParcel(action) {
     };
   }
   
+  // Validate player and actions
+  if (!gameState.core.players.has(playerId)) {
+    return {
+      success: false,
+      error: 'INVALID_PLAYER',
+      message: 'Player not found'
+    };
+  }
+  
+  const player = gameState.core.players.get(playerId);
+  const actionCost = 1; // Cost to purchase a parcel
+  
+  // Check action availability
+  if (player.actionManager.currentActions < actionCost) {
+    return {
+      success: false,
+      error: 'INSUFFICIENT_ACTIONS',
+      message: 'Not enough actions remaining'
+    };
+  }
+  
+  // Check cash availability  
+  if (player.cash < (purchasePrice || 0)) {
+    return {
+      success: false,
+      error: 'INSUFFICIENT_FUNDS',
+      message: 'Not enough cash for this purchase'
+    };
+  }
+  
   // Process purchase
   gameState.core.parcels[parcelId] = {
     owner: playerId,
@@ -394,11 +428,12 @@ async function processPurchaseParcel(action) {
   };
   
   // Update player data
-  if (gameState.core.players.has(playerId)) {
-    const player = gameState.core.players.get(playerId);
-    player.ownedParcels.push(parcelId);
-    player.cash -= purchasePrice || 0;
-  }
+  player.ownedParcels.push(parcelId);
+  player.cash -= purchasePrice || 0;
+  
+  // Deduct action cost
+  player.actionManager.currentActions -= actionCost;
+  player.actionManager.usedThisMonth += actionCost;
   
   // Add immediate LVT fee to treasury (typically 1-2% of purchase price)
   const lvtFee = (purchasePrice || 0) * 0.01; // 1% immediate LVT fee
@@ -433,10 +468,35 @@ async function processConstructBuilding(action) {
     };
   }
   
+  // Validate player and actions
+  if (!gameState.core.players.has(playerId)) {
+    return {
+      success: false,
+      error: 'INVALID_PLAYER',
+      message: 'Player not found'
+    };
+  }
+  
+  const player = gameState.core.players.get(playerId);
+  const actionCost = 1; // Cost to construct a building
+  
+  // Check action availability
+  if (player.actionManager.currentActions < actionCost) {
+    return {
+      success: false,
+      error: 'INSUFFICIENT_ACTIONS',
+      message: 'Not enough actions remaining'
+    };
+  }
+  
   // Update building
   gameState.core.parcels[parcelId].building = building;
   gameState.core.parcels[parcelId].constructionStartDay = constructionStartDay;
   gameState.core.parcels[parcelId].constructionDays = constructionDays;
+  
+  // Deduct action cost
+  player.actionManager.currentActions -= actionCost;
+  player.actionManager.usedThisMonth += actionCost;
   
   // Update versions
   gameState.version.global++;
