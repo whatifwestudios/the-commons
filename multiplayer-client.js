@@ -582,6 +582,17 @@ class UniversalMultiplayerManager {
         if (window.game?.serverStatsMonitor) {
             window.game.serverStatsMonitor.syncStats.confirmedActions++;
             window.game.serverStatsMonitor.syncStats.pendingActions = this.pendingActions.size;
+            
+            // Track road building
+            if (data.stateChanges?.transportation?.roads) {
+                const roads = Object.values(data.stateChanges.transportation.roads);
+                roads.forEach(road => {
+                    if (road) {
+                        window.game.serverStatsMonitor.elementStats.roads.built++;
+                        window.game.serverStatsMonitor.elementStats.roads.cost += road.cost || 0;
+                    }
+                });
+            }
         }
     }
     

@@ -31,6 +31,7 @@ class ServerStatsMonitor {
             players: { local: 0, remote: 0, total: 0 },
             buildings: { local: 0, synced: 0, pending: 0 },
             parcels: { owned: 0, unclaimed: 0, total: 0 },
+            roads: { built: 0, total: 0, cost: 0 },
             transactions: { sent: 0, received: 0, failed: 0 }
         };
         
@@ -268,6 +269,15 @@ class ServerStatsMonitor {
     }
     
     /**
+     * Format currency for display
+     */
+    formatCurrency(amount) {
+        if (amount < 1000) return amount.toString();
+        if (amount < 1000000) return (amount / 1000).toFixed(1) + 'K';
+        return (amount / 1000000).toFixed(1) + 'M';
+    }
+    
+    /**
      * Get latency color based on value
      */
     getLatencyColor(latency) {
@@ -291,6 +301,11 @@ class ServerStatsMonitor {
         const isMultiplayer = game?.multiplayerManager?.isConnected || false;
         const playerId = game?.multiplayerManager?.playerId || 'N/A';
         const gameId = game?.multiplayerManager?.gameId || 'N/A';
+        
+        // Update road count from current game state
+        if (game?.mobilityLayer?.roads) {
+            this.elementStats.roads.total = game.mobilityLayer.roads.size;
+        }
         
         // Connection status
         const connectionColor = isMultiplayer ? '#4CAF50' : '#F44336';
@@ -355,7 +370,9 @@ class ServerStatsMonitor {
                         <div>Players: <span style="color: #52C77E;">${this.elementStats.players.total}</span></div>
                         <div>Buildings: <span style="color: #52C77E;">${this.elementStats.buildings.synced}</span></div>
                         <div>Parcels: <span style="color: #52C77E;">${this.elementStats.parcels.total}</span></div>
+                        <div>Roads: <span style="color: #2196F3;">${this.elementStats.roads.total}</span></div>
                         <div>Pending: <span style="color: #FFC107;">${this.elementStats.buildings.pending}</span></div>
+                        <div>Road Cost: <span style="color: #888;">$${this.formatCurrency(this.elementStats.roads.cost)}</span></div>
                     </div>
                 </div>
                 
