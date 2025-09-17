@@ -1350,7 +1350,7 @@ function recalculateGlobalLVTRate() {
   });
   
   // Calculate average and apply to base rate
-  const baseLvtRate = 0.15; // 15% base rate
+  const baseLvtRate = 0.50; // 50% base rate (matching initial game state)
   const averageVoteChange = totalVoters > 0 ? totalLVTVotes / totalVoters : 0;
   const newRate = Math.max(0, Math.min(1, baseLvtRate + (averageVoteChange * 0.01))); // Each point = 1%
   
