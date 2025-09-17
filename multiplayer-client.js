@@ -613,11 +613,78 @@ class UniversalMultiplayerManager {
     }
     
     syncGameState(serverState) {
-        // Implement the same syncGameState logic from the original
-        if (!serverState) return;
+        if (!serverState || !serverState.core) return;
         
-        // This would contain the same logic as the original MultiplayerManager
-        console.log('🔄 Syncing game state...');
+        console.log('🔄 Syncing game state...', serverState);
+        
+        // Sync parcels and buildings to the local grid
+        if (serverState.core.parcels && this.game.grid) {
+            Object.entries(serverState.core.parcels).forEach(([parcelId, serverParcel]) => {
+                const [row, col] = parcelId.split('-').map(Number);
+                
+                // Ensure the grid location exists
+                if (this.game.grid[row] && this.game.grid[row][col]) {
+                    const localParcel = this.game.grid[row][col];
+                    
+                    // Sync building data
+                    if (serverParcel.building) {
+                        localParcel.building = serverParcel.building;
+                        localParcel.owner = serverParcel.owner;
+                        localParcel.timestamp = serverParcel.timestamp;
+                        
+                        // Sync purchase/land value data
+                        if (serverParcel.purchasePrice) {
+                            if (!localParcel.landValue) localParcel.landValue = {};
+                            localParcel.landValue.paidPrice = serverParcel.purchasePrice;
+                        }
+                        
+                        // Sync construction data
+                        if (serverParcel.constructionStartDay !== undefined) {
+                            localParcel.constructionStartDay = serverParcel.constructionStartDay;
+                            localParcel.constructionDays = serverParcel.constructionDays;
+                            localParcel._isUnderConstruction = true;
+                        } else {
+                            delete localParcel.constructionStartDay;
+                            delete localParcel.constructionDays;
+                            delete localParcel._isUnderConstruction;
+                            delete localParcel._constructionProgress;
+                        }
+                        
+                        console.log(`🏠 Synced building at ${parcelId}: ${serverParcel.building} (owner: ${serverParcel.owner})`);
+                    } else if (localParcel.building) {
+                        // Server says no building, but local has one - clear it
+                        localParcel.building = null;
+                        localParcel.owner = null;
+                        delete localParcel.constructionStartDay;
+                        delete localParcel.constructionDays;
+                        delete localParcel._isUnderConstruction;
+                        delete localParcel._constructionProgress;
+                        
+                        console.log(`🏗️ Cleared building at ${parcelId}`);
+                    }
+                    
+                    // Mark region dirty for re-rendering
+                    if (this.game.markRegionDirty) {
+                        this.game.markRegionDirty(row, col, 1);
+                    }
+                }
+            });
+            
+            // Trigger a full re-render to show all synced buildings
+            if (this.game.scheduleRender) {
+                this.game.scheduleRender();
+            }
+            
+            // Update related systems
+            if (this.game.updateVitalityDisplay) {
+                this.game.updateVitalityDisplay();
+            }
+        }
+        
+        // Sync calculated state (treasury, population, vitality)
+        if (serverState.calculated) {
+            this.updateCalculatedState(serverState.calculated);
+        }
     }
     
     updatePlayersDisplay() {
