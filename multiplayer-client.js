@@ -270,6 +270,11 @@ class UniversalMultiplayerManager {
                 console.error('❌ Server error:', data.error, data.message);
                 break;
                 
+            case 'CONSTRUCTION_UPDATE':
+                console.log('🏗️ Construction progress update');
+                this.handleConstructionUpdate(data);
+                break;
+                
             default:
                 console.log('📨 Received server message:', data);
         }
@@ -662,6 +667,47 @@ class UniversalMultiplayerManager {
         const populationElement = document.getElementById('total-residents');
         if (populationElement && this.game.totalPopulation !== undefined) {
             populationElement.textContent = this.game.totalPopulation.toLocaleString();
+        }
+    }
+    
+    handleConstructionUpdate(data) {
+        if (!data.construction || !this.game.grid) return;
+        
+        Object.entries(data.construction).forEach(([parcelId, constructionData]) => {
+            const [row, col] = parcelId.split('-').map(Number);
+            
+            if (this.game.grid[row] && this.game.grid[row][col]) {
+                const parcel = this.game.grid[row][col];
+                
+                // Update construction progress
+                parcel._constructionProgress = constructionData.progress;
+                parcel._isUnderConstruction = !constructionData.isComplete;
+                
+                if (constructionData.isComplete) {
+                    // Construction completed
+                    console.log(`🏗️ Construction completed at ${parcelId}: ${constructionData.building}`);
+                    delete parcel.constructionStartDay;
+                    delete parcel.constructionDays;
+                    delete parcel._constructionProgress;
+                    delete parcel._isUnderConstruction;
+                } else {
+                    // Still under construction
+                    parcel.constructionStartDay = constructionData.constructionStartDay;
+                    parcel.constructionDays = constructionData.constructionDays;
+                    
+                    console.log(`🏗️ Construction progress at ${parcelId}: ${Math.round(constructionData.progress * 100)}%`);
+                }
+                
+                // Mark this region for re-rendering
+                if (this.game.markRegionDirty) {
+                    this.game.markRegionDirty(row, col, 1);
+                }
+            }
+        });
+        
+        // Trigger a re-render to show construction progress
+        if (this.game.scheduleRender) {
+            this.game.scheduleRender();
         }
     }
 }

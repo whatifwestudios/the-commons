@@ -715,6 +715,59 @@ setInterval(() => {
   });
 }, 5 * 60 * 1000);
 
+// Broadcast construction progress updates every 5 seconds
+setInterval(async () => {
+  let hasConstructionUpdates = false;
+  let constructionUpdates = {};
+  
+  // Check all parcels for ongoing construction
+  Object.entries(gameState.core.parcels).forEach(([parcelId, parcel]) => {
+    if (parcel.constructionStartDay !== undefined && parcel.constructionDays > 0) {
+      // Calculate construction progress (simplified - assumes 1 day = real time)
+      const daysPassed = gameState.core.currentDay - parcel.constructionStartDay;
+      const progress = Math.min(1.0, Math.max(0.0, daysPassed / parcel.constructionDays));
+      
+      // Store construction progress
+      constructionUpdates[parcelId] = {
+        building: parcel.building,
+        constructionStartDay: parcel.constructionStartDay,
+        constructionDays: parcel.constructionDays,
+        progress: progress,
+        isComplete: progress >= 1.0
+      };
+      
+      hasConstructionUpdates = true;
+      
+      // If construction is complete, clean up construction fields
+      if (progress >= 1.0) {
+        delete parcel.constructionStartDay;
+        delete parcel.constructionDays;
+        gameState.version.global++;
+        gameState.version.perParcel[parcelId] = gameState.version.global;
+      }
+    }
+  });
+  
+  // Broadcast construction updates if any exist
+  if (hasConstructionUpdates) {
+    const constructionMessage = {
+      type: 'CONSTRUCTION_UPDATE',
+      construction: constructionUpdates,
+      timestamp: Date.now(),
+      version: gameState.version.global
+    };
+    
+    broadcastToAll(constructionMessage);
+    
+    // Recalculate state if any construction completed
+    const completedCount = Object.values(constructionUpdates).filter(c => c.isComplete).length;
+    if (completedCount > 0) {
+      await recalculateAuthoritativeState();
+      console.log(`🏗️ ${completedCount} buildings completed construction`);
+    }
+  }
+}, 5000); // Every 5 seconds
+
 // Start server
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
