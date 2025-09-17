@@ -445,7 +445,7 @@ async function processPurchaseParcel(action) {
 }
 
 async function processConstructBuilding(action) {
-  const { parcelId, building, constructionStartDay, constructionDays, playerId } = action;
+  const { parcelId, building, constructionStartDay, constructionDays, amenities, playerId } = action;
   
   console.log(`🏗️ Server processing building construction: ${building} at ${parcelId} by ${playerId}`);
   
@@ -462,6 +462,12 @@ async function processConstructBuilding(action) {
   gameState.core.parcels[parcelId].building = building;
   gameState.core.parcels[parcelId].constructionStartDay = constructionStartDay;
   gameState.core.parcels[parcelId].constructionDays = constructionDays;
+  
+  // Update amenities if provided
+  if (amenities !== undefined) {
+    gameState.core.parcels[parcelId].amenities = amenities;
+    console.log(`✅ Server updated amenities at ${parcelId}:`, amenities);
+  }
   
   console.log(`✅ Server updated building at ${parcelId}: ${building}`);
   

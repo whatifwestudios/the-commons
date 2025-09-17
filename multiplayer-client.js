@@ -880,6 +880,7 @@ class UniversalMultiplayerManager {
             building: building,
             constructionStartDay: constructionData.constructionStartDay,
             constructionDays: constructionData.constructionDays,
+            amenities: constructionData.amenities,
             timestamp: Date.now()
         });
         

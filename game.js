@@ -5728,7 +5728,8 @@ class IsometricGrid {
                 console.log(`🏗️ Local building constructed: ${buildingId} at ${row}-${col}, broadcasting to multiplayer`);
                 this.multiplayerManager.onBuildingConstructed(row, col, buildingId, {
                     constructionStartDay: this.grid[row][col].constructionStartDay,
-                    constructionDays: this.grid[row][col].constructionDays
+                    constructionDays: this.grid[row][col].constructionDays,
+                    amenities: this.grid[row][col].amenities || []
                 });
             } else {
                 console.log(`🏗️ Local building constructed: ${buildingId} at ${row}-${col}, NO MULTIPLAYER MANAGER`);
@@ -5902,7 +5903,11 @@ class IsometricGrid {
         
         // Broadcast building upgrade to other players
         if (this.multiplayerManager) {
-            this.multiplayerManager.onBuildingConstructed(row, col, upgradeId);
+            this.multiplayerManager.onBuildingConstructed(row, col, upgradeId, {
+                constructionStartDay: this.grid[row][col].constructionStartDay,
+                constructionDays: this.grid[row][col].constructionDays,
+                amenities: this.grid[row][col].amenities || []
+            });
         }
         
         // Mark building for economic recalculation
@@ -5945,6 +5950,16 @@ class IsometricGrid {
         // Add amenity to parcel
         if (!this.grid[row][col].amenities.includes(amenityId)) {
             this.grid[row][col].amenities.push(amenityId);
+        }
+        
+        // Broadcast amenity addition to other players
+        if (this.multiplayerManager) {
+            console.log(`🏗️ Broadcasting amenity addition: ${amenityId} at ${row}-${col}`);
+            this.multiplayerManager.onBuildingConstructed(row, col, this.grid[row][col].building, {
+                constructionStartDay: this.grid[row][col].constructionStartDay,
+                constructionDays: this.grid[row][col].constructionDays,
+                amenities: this.grid[row][col].amenities
+            });
         }
         
         // Update vitality and re-render
