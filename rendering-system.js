@@ -516,49 +516,29 @@ class RenderingSystem {
             this.ctx.restore();
         }
         
-        // Draw building image with construction progress (pixel-by-pixel reveal)
+        // Apply desaturation and dimming for buildings under construction
         if (constructionProgress < 1.0) {
-            const revealHeight = Math.floor(baseDrawHeight * constructionProgress);
-            
-            if (revealHeight > 0) {
-                // Create clipping path for bottom-up reveal
-                this.ctx.save();
-                this.ctx.beginPath();
-                this.ctx.rect(
-                    x - baseDrawWidth/2, 
-                    imageY + elevationOffset + (baseDrawHeight - revealHeight), 
-                    baseDrawWidth, 
-                    revealHeight
-                );
-                this.ctx.clip();
-                
-                // Draw the complete building (clipped to reveal area)
-                this.ctx.drawImage(
-                    img, 
-                    x - baseDrawWidth/2, 
-                    imageY + elevationOffset, 
-                    baseDrawWidth, 
-                    baseDrawHeight
-                );
-                
-                this.ctx.restore();
-            }
-        } else {
-            // Draw complete building
-            this.ctx.drawImage(
-                img, 
-                x - baseDrawWidth/2, 
-                imageY + elevationOffset, 
-                baseDrawWidth, 
-                baseDrawHeight
-            );
+            this.ctx.save();
+            // Apply sepia/desaturated filter for under construction
+            this.ctx.filter = 'sepia(0.8) saturate(0.3) brightness(0.6) contrast(0.7)';
+            this.ctx.globalAlpha = 0.7;
         }
         
-        // Draw construction overlay if under construction
-        const parcel = this.game.grid[row]?.[col];
-        if (parcel?._isUnderConstruction) {
-            this.drawConstructionOverlay(x, y, constructionProgress);
+        // Always draw the complete building (no pixel-by-pixel reveal)
+        this.ctx.drawImage(
+            img, 
+            x - baseDrawWidth/2, 
+            imageY + elevationOffset, 
+            baseDrawWidth, 
+            baseDrawHeight
+        );
+        
+        // Restore context if construction effects were applied
+        if (constructionProgress < 1.0) {
+            this.ctx.restore();
         }
+        
+        // Construction overlay removed - buildings show desaturated/sepia instead
     }
     
     /**
