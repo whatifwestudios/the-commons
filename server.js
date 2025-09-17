@@ -2335,6 +2335,13 @@ function initializeNewGame(cityName, maxPlayers = 4) {
   gameState.core.gameSpeed = 1;
   gameState.core.isPaused = false;
   
+  // Reset transportation system
+  gameState.core.transportation = {
+    roads: {},
+    transitStops: {},
+    transitRoutes: {}
+  };
+  
   // Reset calculated state
   gameState.calculated = {
     treasury: 0,

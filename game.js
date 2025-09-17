@@ -1805,6 +1805,13 @@ class IsometricGrid {
                     this.multiplayerManager.players.clear();
                 }
                 
+                // Clear mobility layer roads
+                if (this.mobilityLayer) {
+                    this.mobilityLayer.roads.clear();
+                    this.mobilityLayer.transitStops.clear();
+                    this.mobilityLayer.transitRoutes.clear();
+                }
+                
                 // Clear local marketplace
                 this.actionManager.marketplace = {
                     listings: [],
