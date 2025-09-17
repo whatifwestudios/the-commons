@@ -620,6 +620,19 @@ class UniversalMultiplayerManager {
             pendingActions: this.pendingActions.size
         };
     }
+    
+    // Hook into existing game actions to broadcast them
+    async onParcelPurchased(row, col, building, purchasePrice, playerCash) {
+        const result = await this.broadcastAction({
+            type: 'PURCHASE_PARCEL',
+            parcelId: `${row}-${col}`,
+            building: building,
+            purchasePrice: purchasePrice,
+            playerCash: playerCash
+        });
+        
+        return result.success;
+    }
 }
 
 // Export for use
