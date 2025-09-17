@@ -27,7 +27,37 @@ let gameState = {
     currentMonth: 'SEPT',
     currentDay: 1,
     gameSpeed: 1,
-    isPaused: false
+    isPaused: false,
+    governance: {
+      budgetCategories: ['housing', 'commercial', 'industrial', 'utilities', 'transport', 'education', 'healthcare', 'emergency', 'parks', 'ubi'],
+      categoryAllocations: {
+        housing: 0,
+        commercial: 0,
+        industrial: 0,
+        utilities: 0,
+        transport: 0,
+        education: 0,
+        healthcare: 0,
+        emergency: 0,
+        parks: 0,
+        ubi: 0
+      },
+      publicCoffers: {
+        housing: 0,
+        commercial: 0,
+        industrial: 0,
+        utilities: 0,
+        transport: 0,
+        education: 0,
+        healthcare: 0,
+        emergency: 0,
+        parks: 0,
+        ubi: 0
+      },
+      unallocatedFunds: 0,
+      totalBudget: 0,
+      currentLvtRate: 0.50
+    }
   },
   
   // Calculated state (server-authoritative)
@@ -335,6 +365,8 @@ async function processGameAction(action) {
       return await processUpdateCash(action);
     case 'ADVANCE_TIME':
       return await processAdvanceTime(action);
+    case 'TREASURY_FEE':
+      return await processTreasuryFee(action);
     default:
       throw new Error(`Unknown action type: ${action.type}`);
   }
@@ -367,6 +399,10 @@ async function processPurchaseParcel(action) {
     player.ownedParcels.push(parcelId);
     player.cash -= purchasePrice || 0;
   }
+  
+  // Add immediate LVT fee to treasury (typically 1-2% of purchase price)
+  const lvtFee = (purchasePrice || 0) * 0.01; // 1% immediate LVT fee
+  gameState.core.governance.unallocatedFunds += lvtFee;
   
   // Update versions
   gameState.version.global++;
@@ -466,6 +502,59 @@ async function processAdvanceTime(action) {
         currentDay: day,
         currentMonth: month
       }
+    }
+  };
+}
+
+async function processTreasuryFee(action) {
+  const { playerId, amount, reason } = action;
+  
+  // Validate inputs
+  if (!playerId || !gameState.core.players.has(playerId)) {
+    return {
+      success: false,
+      error: 'INVALID_PLAYER',
+      message: 'Player not found'
+    };
+  }
+  
+  if (!amount || amount <= 0) {
+    return {
+      success: false,
+      error: 'INVALID_AMOUNT',
+      message: 'Fee amount must be positive'
+    };
+  }
+  
+  const player = gameState.core.players.get(playerId);
+  
+  // Check if player has enough cash
+  if (player.cash < amount) {
+    return {
+      success: false,
+      error: 'INSUFFICIENT_FUNDS',
+      message: 'Player does not have enough cash for this fee'
+    };
+  }
+  
+  // Process fee transaction
+  player.cash -= amount;
+  gameState.core.governance.unallocatedFunds += amount;
+  
+  // Update versions
+  gameState.version.global++;
+  gameState.version.perPlayer[playerId] = gameState.version.global;
+  gameState.meta.lastUpdate = Date.now();
+  
+  await recalculateAuthoritativeState();
+  
+  console.log(`💰 ${reason || 'Fee'}: $${amount} from ${player.name} → Treasury`);
+  
+  return {
+    success: true,
+    processedAction: action,
+    stateChanges: {
+      players: { [playerId]: Object.fromEntries([[playerId, player]]) }
     }
   };
 }
@@ -586,10 +675,28 @@ async function recalculateAuthoritativeState() {
     }
   });
   
+  // Add economic performance to treasury (daily building revenue minus maintenance)
   gameState.calculated.treasury += Math.max(0, totalRevenue - totalMaintenance);
+  
+  // Calculate comprehensive treasury from governance system
+  let totalTreasury = 0;
+  
+  // Add all allocated funds in public coffers
+  Object.values(gameState.core.governance.publicCoffers).forEach(amount => {
+    totalTreasury += amount || 0;
+  });
+  
+  // Add unallocated funds
+  totalTreasury += gameState.core.governance.unallocatedFunds || 0;
+  
+  // Add LVT collection to unallocated funds (this would normally happen during daily time advance)
+  gameState.core.governance.unallocatedFunds += gameState.calculated.treasury;
+  
+  // Update final treasury total
+  gameState.calculated.treasury = totalTreasury + gameState.calculated.treasury;
   gameState.calculated.lastCalculated = Date.now();
   
-  console.log(`✅ State recalculated in ${Date.now() - startTime}ms: Pop=${gameState.calculated.population}, Treasury=$${Math.round(gameState.calculated.treasury)}`);
+  console.log(`✅ State recalculated in ${Date.now() - startTime}ms: Pop=${gameState.calculated.population}, Treasury=$${Math.round(gameState.calculated.treasury)} (Unallocated: $${Math.round(gameState.core.governance.unallocatedFunds)})`);
 }
 
 // Cleanup disconnected clients every 5 minutes

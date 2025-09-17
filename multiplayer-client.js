@@ -633,6 +633,21 @@ class UniversalMultiplayerManager {
         
         return result.success;
     }
+    
+    // Display update methods
+    updateTreasuryDisplay() {
+        const treasuryElement = document.getElementById('city-treasury');
+        if (treasuryElement && this.game.cityTreasury !== undefined) {
+            treasuryElement.textContent = `$${Math.round(this.game.cityTreasury).toLocaleString()}`;
+        }
+    }
+    
+    updatePopulationDisplay() {
+        const populationElement = document.getElementById('total-residents');
+        if (populationElement && this.game.totalPopulation !== undefined) {
+            populationElement.textContent = this.game.totalPopulation.toLocaleString();
+        }
+    }
 }
 
 // Export for use
