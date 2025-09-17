@@ -691,8 +691,9 @@ class UniversalMultiplayerManager {
                 if (this.game.grid[row] && this.game.grid[row][col]) {
                     const localParcel = this.game.grid[row][col];
                     
-                    // Sync building data
-                    if (serverParcel.building) {
+                    // Sync parcel data (building AND/OR ownership)
+                    if (serverParcel.building || serverParcel.owner) {
+                        // Sync building (might be null for empty owned parcels)
                         localParcel.building = serverParcel.building;
                         localParcel.owner = serverParcel.owner;
                         localParcel.timestamp = serverParcel.timestamp;
@@ -726,9 +727,13 @@ class UniversalMultiplayerManager {
                             delete localParcel._constructionProgress;
                         }
                         
-                        console.log(`🏠 Synced building at ${parcelId}: ${serverParcel.building} (owner: ${serverParcel.owner})`, serverParcel);
-                    } else if (localParcel.building) {
-                        // Server says no building, but local has one - clear it
+                        if (serverParcel.building) {
+                            console.log(`🏠 Synced building at ${parcelId}: ${serverParcel.building} (owner: ${serverParcel.owner})`, serverParcel);
+                        } else {
+                            console.log(`🏞️ Synced ownership at ${parcelId}: empty parcel (owner: ${serverParcel.owner})`, serverParcel);
+                        }
+                    } else if (localParcel.building || localParcel.owner) {
+                        // Server says no building AND no owner, but local has something - clear it
                         localParcel.building = null;
                         localParcel.owner = null;
                         delete localParcel.constructionStartDay;
@@ -736,7 +741,7 @@ class UniversalMultiplayerManager {
                         delete localParcel._isUnderConstruction;
                         delete localParcel._constructionProgress;
                         
-                        console.log(`🏗️ Cleared building at ${parcelId}`);
+                        console.log(`🏗️ Cleared parcel at ${parcelId}`);
                     }
                     
                     // Mark region dirty for re-rendering
