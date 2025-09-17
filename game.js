@@ -1233,6 +1233,29 @@ class IsometricGrid {
         
         // Update player button with current settings
         this.updatePlayerButton();
+        
+        // Initialize panel states - ensure players panel is collapsed by default
+        this.initializePanelStates();
+    }
+    
+    initializePanelStates() {
+        // Ensure players panel is collapsed on game start (only visible on players layer)
+        const playersSection = document.querySelector('[data-target="players-panel"]');
+        if (playersSection) {
+            const parentSection = playersSection.parentElement;
+            if (parentSection && !parentSection.classList.contains('collapsed')) {
+                this.closeSidebarSection(parentSection);
+            }
+        }
+        
+        // Ensure vitality panel is open by default (main panel for normal layer)
+        const vitalitySection = document.querySelector('[data-target="vitality"]');
+        if (vitalitySection) {
+            const parentSection = vitalitySection.parentElement;
+            if (parentSection && parentSection.classList.contains('collapsed')) {
+                this.openSidebarSection(parentSection);
+            }
+        }
     }
     
     // Action Marketplace Functions
