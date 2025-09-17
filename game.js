@@ -4828,16 +4828,28 @@ class IsometricGrid {
                 const voteCount = playerAllocations[category] || 0;
                 usedPoints += voteCount;
                 
-                categoryEl.querySelector('.vote-count').textContent = voteCount;
-                categoryEl.querySelector('.category-allocation').textContent = 
-                    `${(this.governance.categoryAllocations[category] * 100).toFixed(1)}%`;
+                const voteCountEl = categoryEl.querySelector('.vote-count');
+                if (voteCountEl) {
+                    voteCountEl.textContent = voteCount;
+                }
                 
-                if (category === 'ubi') {
-                    const ubiPerCitizen = this.governance.publicCoffers[category] / Math.max(1, this.calculatePopulation());
-                    categoryEl.querySelector('.category-coffers span').textContent = ubiPerCitizen.toFixed(2);
-                } else {
-                    categoryEl.querySelector('.category-coffers span').textContent = 
-                        this.governance.publicCoffers[category].toLocaleString();
+                const allocationEl = categoryEl.querySelector('.category-allocation');
+                if (allocationEl) {
+                    const allocation = (this.governance.categoryAllocations && this.governance.categoryAllocations[category]) || 0;
+                    allocationEl.textContent = `${(allocation * 100).toFixed(1)}%`;
+                }
+                
+                // Update coffers display with null safety
+                const coffersEl = categoryEl.querySelector('.category-coffers span');
+                if (coffersEl) {
+                    if (category === 'ubi') {
+                        const ubiAmount = (this.governance.publicCoffers && this.governance.publicCoffers[category]) || 0;
+                        const ubiPerCitizen = ubiAmount / Math.max(1, this.calculatePopulation());
+                        coffersEl.textContent = ubiPerCitizen.toFixed(2);
+                    } else {
+                        const cofferAmount = (this.governance.publicCoffers && this.governance.publicCoffers[category]) || 0;
+                        coffersEl.textContent = cofferAmount.toLocaleString();
+                    }
                 }
             }
         });
