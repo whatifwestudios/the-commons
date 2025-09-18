@@ -2005,6 +2005,13 @@ class MultiplayerManager {
         if (calculated.buildingEfficiencies) {
             this.game.buildingEfficiencies = calculated.buildingEfficiencies;
             console.log(`🏢 Synced efficiency data for ${Object.keys(calculated.buildingEfficiencies).length} buildings`);
+            
+            // Debug: Log a sample efficiency
+            if (Object.keys(calculated.buildingEfficiencies).length > 0) {
+                const sampleParcel = Object.keys(calculated.buildingEfficiencies)[0];
+                const sampleData = calculated.buildingEfficiencies[sampleParcel];
+                console.log(`🔍 Client received efficiency: ${sampleParcel} = ${sampleData.efficiency}%, needs: ${sampleData.unsatisfiedNeeds?.length || 0}`);
+            }
         }
     }
     

@@ -1200,6 +1200,8 @@ async function recalculateAuthoritativeState() {
     return;
   }
   
+  console.log(`🔍 Debug: Starting calculation - Version: ${gameState.version.global}, Dirty parcels: ${calculationCache.dirtyParcels.size}`);
+  
   // Sync calculated values from authoritative sources
   gameState.calculated.treasury = gameState.core.governance?.unallocatedFunds || 0;
   gameState.calculated.population = 0; // Will be calculated below
@@ -1342,8 +1344,16 @@ async function recalculateAuthoritativeState() {
   const calculationTime = Date.now() - startTime;
   const buildingCount = buildingParcels.length;
   const uniqueBuildingTypes = Object.keys(buildingCounts).length;
+  const efficiencyCount = Object.keys(gameState.calculated.buildingEfficiencies).length;
   
-  console.log(`🚀 Optimized calculation complete: ${calculationTime}ms | ${buildingCount} buildings (${uniqueBuildingTypes} types) | Pop=${gameState.calculated.population} | Treasury=$${Math.round(gameState.calculated.treasury)}`);
+  console.log(`🚀 Optimized calculation complete: ${calculationTime}ms | ${buildingCount} buildings (${uniqueBuildingTypes} types) | ${efficiencyCount} efficiency calcs | Pop=${gameState.calculated.population} | Treasury=$${Math.round(gameState.calculated.treasury)}`);
+  
+  // Debug: Log a sample of building efficiencies
+  if (efficiencyCount > 0) {
+    const sampleParcel = Object.keys(gameState.calculated.buildingEfficiencies)[0];
+    const sampleData = gameState.calculated.buildingEfficiencies[sampleParcel];
+    console.log(`🔍 Debug sample efficiency: ${sampleParcel} = ${sampleData.efficiency}%, needs: ${sampleData.unsatisfiedNeeds.length}`);
+  }
 }
 
 // Cleanup disconnected clients every 5 minutes

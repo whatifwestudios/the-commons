@@ -200,7 +200,10 @@ class TooltipDataCollector {
             const parcelId = `${row}-${col}`;
             const serverEfficiency = this.game.buildingEfficiencies?.[parcelId];
             
+            console.log(`🔍 Tooltip debug: Checking server efficiency for ${parcelId}, found:`, serverEfficiency);
+            
             if (serverEfficiency && serverEfficiency.unsatisfiedNeeds) {
+                console.log(`🔍 Processing ${serverEfficiency.unsatisfiedNeeds.length} unsatisfied needs from server`);
                 serverEfficiency.unsatisfiedNeeds.forEach(need => {
                     let emoji = '❓';
                     switch(need.type) {
