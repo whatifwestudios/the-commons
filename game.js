@@ -2108,7 +2108,7 @@ class IsometricGrid {
             if (cloudOpacity <= 0) return;
             
             // Convert world coordinates to screen coordinates
-            const screenPos = this.worldToScreenCoords(cloud.x, cloud.y);
+            const screenPos = this.worldToScreen(cloud.x, cloud.y);
             
             this.ctx.save();
             this.ctx.globalAlpha = cloudOpacity;
@@ -2610,32 +2610,46 @@ class IsometricGrid {
         const coord = this.getParcelCoordinate(row, col);
         
         if (parcel.building) {
-            // Use new clean tooltip system for buildings
+            // Test new tooltip system for buildings
             try {
                 const tooltipData = this.tooltipDataCollector.getBuildingTooltipData(row, col);
                 if (tooltipData) {
                     return this.tooltipRenderer.renderBuildingTooltip(tooltipData);
-                } else {
-                    return `<strong>Building Error</strong><br>Could not load building data`;
                 }
             } catch (error) {
-                console.error('❌ Tooltip error:', error);
-                return this.tooltipRenderer.renderErrorTooltip(`Failed to load building data: ${error.message}`);
+                console.error('❌ New tooltip system error:', error);
+                // Fall back to old system
             }
-        } else {
-            // Building ID exists but building not found in manager - this is the bug!
-            console.warn(`🚨 TOOLTIP BUG: Building ID "${parcel.building}" exists but not found in buildingManager!`);
-            console.log(`🔍 BuildingManager state:`, {
-                hasManager: !!this.buildingManager,
-                categoriesCount: this.buildingManager?.getCategories?.()?.length,
-                sampleBuildings: this.buildingManager?.buildings ? Object.keys(this.buildingManager.buildings).slice(0, 5) : 'no buildings'
-            });
             
-            // Show a temporary debug tooltip instead of falling through to empty land
-            return `<strong>🚨 DEBUG: Missing Building</strong> (${coord})<br>Building ID: ${parcel.building}<br>Owner: ${parcel.owner}<br><em>Building definition not found</em>`;
-        }
-        } else {
-            // Empty parcel - check ownership
+            // Fallback to old system
+            const building = this.buildingManager.getBuildingById(parcel.building);
+            if (building) {
+                let content = `<strong>${building.name}</strong><br>`;
+                
+                // Ownership - use player's chosen name
+                if (this.isCurrentPlayer(parcel.owner)) {
+                    const playerName = this.playerSettings?.name || 'You';
+                    content += `<strong>Owned by:</strong> ${playerName}<br>`;
+                } else if (parcel.owner && parcel.owner !== 'unclaimed') {
+                    // Get multiplayer player name if available
+                    let ownerName = parcel.owner;
+                    if (this.multiplayerManager && this.multiplayerManager.players.has(parcel.owner)) {
+                        const player = this.multiplayerManager.players.get(parcel.owner);
+                        ownerName = player.name || ownerName;
+                    } else if (this.competitorNames && this.competitorNames[parcel.owner]) {
+                        ownerName = this.competitorNames[parcel.owner];
+                    }
+                    content += `<strong>Owned by:</strong> ${ownerName}<br>`;
+                } else {
+                    content += '<strong>Owned by:</strong> City<br>';
+                }
+                
+                // Show construction progress if building is under construction
+                const isUnderConstruction = parcel._isUnderConstruction || 
+                    (parcel.constructionStartDay !== null && parcel.constructionDays > 0 &&
+                     (this.gameDate.day - parcel.constructionStartDay) < parcel.constructionDays);
+                
+                if (isUnderConstruction) {
                     let progressPercent = 0;
                     
                     // Use cached progress if available, otherwise calculate
