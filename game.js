@@ -3172,6 +3172,15 @@ class IsometricGrid {
         this.scheduleRender();
     }
     
+    hideStreetEdgeContextMenu() {
+        // Hide street edge context menu if it exists
+        // This is called when switching layers to clear layer-specific UI
+        const streetEdgeMenu = document.getElementById('street-edge-context-menu');
+        if (streetEdgeMenu) {
+            streetEdgeMenu.classList.remove('visible');
+        }
+    }
+    
     // Legacy road design functions removed - functionality moved to TransportationSystem
     
     generateTransitStopId() {
