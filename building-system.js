@@ -97,9 +97,13 @@ class BuildingSystem {
             parcel.constructionDays = building.construction.days;
             
             // Create dust cloud effect at construction start
+            console.log('🌪️ Attempting to create dust cloud for building construction');
             if (this.game.createDustCloud) {
                 const worldPos = this.game.toIsometric(col, row);
+                console.log('🌪️ Creating dust cloud at', worldPos);
                 this.game.createDustCloud(worldPos.x, worldPos.y, 'building');
+            } else {
+                console.log('❌ createDustCloud method not found on game object');
             }
         } else {
             // Instant construction

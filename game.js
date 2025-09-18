@@ -2046,6 +2046,7 @@ class IsometricGrid {
     
     // Create dust cloud effect at construction start
     createDustCloud(x, y, type = 'building') {
+        console.log('🌪️ createDustCloud called with:', x, y, type);
         const key = `${x}-${y}-${Date.now()}`;
         const duration = 800 + Math.random() * 400; // 800-1200ms randomized
         
@@ -2058,12 +2059,15 @@ class IsometricGrid {
             particles: this.generateDustParticles(6 + Math.floor(Math.random() * 4)) // 6-9 particles
         });
         
+        console.log('🌪️ Dust cloud created, total clouds:', this.dustClouds.size);
+        
         // Schedule render to show the effect
         this.scheduleRender();
         
         // Clean up after effect completes
         setTimeout(() => {
             this.dustClouds.delete(key);
+            console.log('🌪️ Dust cloud cleaned up, remaining:', this.dustClouds.size);
         }, duration + 100);
     }
     
@@ -2086,6 +2090,10 @@ class IsometricGrid {
     // Render all active dust clouds
     renderDustClouds() {
         const currentTime = performance.now();
+        
+        if (this.dustClouds.size > 0) {
+            console.log('🌪️ Rendering', this.dustClouds.size, 'dust clouds');
+        }
         
         this.dustClouds.forEach((cloud, key) => {
             const elapsed = currentTime - cloud.startTime;
