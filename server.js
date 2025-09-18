@@ -18,142 +18,13 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static('.'));
 
-// Enhanced game state with versioning and metadata
-let gameState = {
-  // Core game state
-  core: {
-    players: new Map(),
-    parcels: {},
-    auctions: new Map(),
-    currentMonth: 'SEPT',
-    currentDay: 1,
-    gameSpeed: 1,
-    isPaused: false,
-    governance: {
-      budgetCategories: ['education', 'healthcare', 'infrastructure', 'housing', 'culture', 'recreation', 'commercial', 'civic', 'emergency', 'ubi'],
-      categoryAllocations: {
-        education: 0,
-        healthcare: 0,
-        infrastructure: 0,
-        housing: 0,
-        culture: 0,
-        recreation: 0,
-        commercial: 0,
-        civic: 0,
-        emergency: 0,
-        ubi: 0
-      },
-      publicCoffers: {
-        education: 0,
-        healthcare: 0,
-        infrastructure: 0,
-        housing: 0,
-        culture: 0,
-        recreation: 0,
-        commercial: 0,
-        civic: 0,
-        emergency: 0,
-        ubi: 0
-      },
-      unallocatedFunds: 0,
-      totalBudget: 0,
-      currentLvtRate: 0.50
-    },
-    transportation: {
-      roads: {}, // key: "row1,col1-row2,col2", value: road data
-      transitStops: {}, // key: "row,col", value: stop data
-      transitRoutes: {} // key: routeId, value: route data
-    }
-  },
-  
-  // Calculated state (server-authoritative)
-  calculated: {
-    treasury: 0,
-    population: 0,
-    vitality: {
-      energy: { supply: 0, demand: 0, balance: 0 },
-      food: { supply: 0, demand: 0, balance: 0 },
-      housing: { supply: 0, demand: 0, balance: 0 },
-      jobs: { supply: 0, demand: 0, balance: 0 }
-    },
-    marketMultipliers: {
-      energy: 1.0,
-      food: 1.0,
-      housing: 1.0,
-      jobs: 1.0
-    },
-    lastCalculated: Date.now()
-  },
-  
-  // Version control for conflict resolution
-  version: {
-    global: 0,
-    perParcel: {},
-    perPlayer: {}
-  },
-  
-  // Server metadata
-  meta: {
-    lastUpdate: Date.now(),
-    activeConnections: new Set(),
-    actionQueue: [],
-    conflictLog: []
-  },
-  
-  // Game lifecycle management
-  lifecycle: {
-    gameId: null, // Unique game identifier
-    cityName: null, // Player-chosen city name
-    status: 'waiting', // 'waiting', 'active', 'ended', 'archived'
-    startTime: null,
-    endTime: null,
-    endReason: null, // 'all_players_left', 'time_limit', 'manual'
-    maxPlayers: 4,
-    activePlayers: new Set(), // Currently connected players
-    departedPlayers: new Set(), // Players who left permanently
-    allowRejoining: false, // Whether players can rejoin after leaving
-    gameLength: 365, // Days until auto-end (1 year = Sept 1 to Sept 1)
-    snapshot: null // End-game state snapshot
-  }
-};
+// Game instances - one per active room/game
+const gameInstances = new Map();
 
-// Waiting room management
-const waitingRooms = new Map();
-
-// Game history and leaderboard system
-const gameHistory = new Map(); // Map<gameId, completedGameState>
-const cityLeaderboard = []; // Array of completed games sorted by performance
-let nextGameId = 1;
-let roomIdCounter = 1;
-
-// Default waiting room (global room for now)
-const defaultWaitingRoom = {
-  id: 'default',
-  players: new Map(),
-  chatMessages: [],
-  settings: {
-    targetSize: 4,
-    minPlayers: 10, // Temporarily set high to disable auto-start for testing
-    autoStart: true
-  },
-  status: 'waiting', // waiting, starting, in-game
-  createdAt: Date.now()
-};
-
-waitingRooms.set('default', defaultWaitingRoom);
-
-// Connected clients
-const clients = new Map();
-const parcelLocks = new Set();
-const auctionLocks = new Set();
-const roadLocks = new Set();
-
-// Reset endpoint - clears all game state
-app.post('/reset', (req, res) => {
-  console.log('🔄 Server reset requested');
-
-  // Reset game state to initial state
-  gameState = {
+// Create a new game state template
+function createGameStateTemplate() {
+  return {
+    // Core game state
     core: {
       players: new Map(),
       parcels: {},
@@ -193,11 +64,13 @@ app.post('/reset', (req, res) => {
         currentLvtRate: 0.50
       },
       transportation: {
-        roads: {},
-        transitStops: {},
-        transitRoutes: {}
+        roads: {}, // key: "row1,col1-row2,col2", value: road data
+        transitStops: {}, // key: "row,col", value: stop data
+        transitRoutes: {} // key: routeId, value: route data
       }
     },
+
+    // Calculated state (server-authoritative)
     calculated: {
       treasury: 0,
       population: 0,
@@ -215,26 +88,109 @@ app.post('/reset', (req, res) => {
       },
       lastCalculated: Date.now()
     },
+
+    // Version control for conflict resolution
     version: {
       global: 0,
       perParcel: {},
       perPlayer: {}
     },
+
+    // Server metadata
     meta: {
       lastUpdate: Date.now(),
       activeConnections: new Set(),
       actionQueue: [],
       conflictLog: []
     },
+
+    // Game lifecycle management
     lifecycle: {
-      status: 'waiting',
-      gameId: null,
-      activePlayers: new Set(),
-      readyPlayers: new Set(),
-      gameStartTime: null,
-      lastActivityTime: Date.now()
+      gameId: null, // Unique game identifier
+      cityName: null, // Player-chosen city name
+      status: 'waiting', // 'waiting', 'active', 'ended', 'archived'
+      startTime: null,
+      endTime: null,
+      endReason: null, // 'all_players_left', 'time_limit', 'manual'
+      maxPlayers: 4,
+      activePlayers: new Set(), // Currently connected players
+      departedPlayers: new Set(), // Players who left permanently
+      allowRejoining: false, // Whether players can rejoin after leaving
+      gameLength: 365, // Days until auto-end (1 year = Sept 1 to Sept 1)
+      snapshot: null // End-game state snapshot
     }
   };
+}
+
+// Get or create game instance for a room
+function getGameInstance(roomId) {
+  if (!gameInstances.has(roomId)) {
+    gameInstances.set(roomId, createGameStateTemplate());
+  }
+  return gameInstances.get(roomId);
+}
+
+// Get game instance for a client (based on their room)
+function getGameInstanceForClient(clientId) {
+  const client = clients.get(clientId);
+  if (!client) return getGameInstance('default');
+
+  // If client is in a room, use that room's game instance
+  if (client.roomId) {
+    const room = waitingRooms.get(client.roomId);
+    if (room && room.gameInstanceId) {
+      return getGameInstance(room.gameInstanceId);
+    }
+  }
+
+  // Default fallback
+  return getGameInstance('default');
+}
+
+// Legacy compatibility - default to 'default' room for now
+let gameState = getGameInstance('default');
+
+// Waiting room management
+const waitingRooms = new Map();
+
+// Game history and leaderboard system
+const gameHistory = new Map(); // Map<gameId, completedGameState>
+const cityLeaderboard = []; // Array of completed games sorted by performance
+let nextGameId = 1;
+let roomIdCounter = 1;
+
+// Default waiting room (global room for now)
+const defaultWaitingRoom = {
+  id: 'default',
+  players: new Map(),
+  chatMessages: [],
+  settings: {
+    targetSize: 4,
+    minPlayers: 10, // Temporarily set high to disable auto-start for testing
+    autoStart: true
+  },
+  status: 'waiting', // waiting, starting, in-game
+  gameInstanceId: 'default', // Links to gameInstances Map
+  createdAt: Date.now()
+};
+
+waitingRooms.set('default', defaultWaitingRoom);
+
+// Connected clients
+const clients = new Map();
+const parcelLocks = new Set();
+const auctionLocks = new Set();
+const roadLocks = new Set();
+
+// Reset endpoint - clears all game state
+app.post('/reset', (req, res) => {
+  console.log('🔄 Server reset requested');
+
+  // Clear all game instances
+  gameInstances.clear();
+
+  // Reset default game state reference
+  gameState = getGameInstance('default');
 
   // Disconnect all clients
   clients.forEach((client, clientId) => {
@@ -261,6 +217,7 @@ app.post('/reset', (req, res) => {
     minPlayers: 2,
     autoStart: true,
     chatMessages: [],
+    gameInstanceId: 'default', // Links to gameInstances Map
     createdAt: Date.now()
   };
   waitingRooms.set('default', defaultWaitingRoom);
@@ -322,9 +279,29 @@ app.post('/api/permanent-departure', (req, res) => {
 // API endpoint for resetting server state
 app.post('/api/reset', (req, res) => {
   try {
-    // Reset the game state
-    resetGameState();
-    
+    // Clear all game instances
+    gameInstances.clear();
+
+    // Reset default game state reference
+    gameState = getGameInstance('default');
+
+    // Reset waiting rooms
+    waitingRooms.clear();
+    const defaultWaitingRoom = {
+      id: 'default',
+      players: new Map(),
+      chatMessages: [],
+      settings: {
+        targetSize: 4,
+        minPlayers: 10, // Temporarily set high to disable auto-start for testing
+        autoStart: true
+      },
+      status: 'waiting',
+      gameInstanceId: 'default',
+      createdAt: Date.now()
+    };
+    waitingRooms.set('default', defaultWaitingRoom);
+
     res.json({
       success: true,
       message: 'Server state reset successfully',
@@ -2433,12 +2410,15 @@ function startGameFromRoom(roomId) {
 
   room.status = 'in-game';
 
+  // Get the game instance for this room
+  const gameState = getGameInstance(room.gameInstanceId || roomId);
+
   // Move all players from waiting room to game
   const playersToStart = Array.from(room.players.values());
 
   // CRITICAL FIX: Initialize a new active game when starting from room
   if (gameState.lifecycle.status === 'ended' || gameState.lifecycle.status === 'archived' || !gameState.lifecycle.gameId) {
-    const gameId = initializeNewGame("Multiplayer Session");
+    const gameId = initializeNewGameForRoom(roomId, "Multiplayer Session");
     console.log(`🎮 New multiplayer game initialized: ${gameId} for room ${roomId}`);
   }
 
@@ -2451,11 +2431,11 @@ function startGameFromRoom(roomId) {
     const client = clients.get(clientId);
     if (client && client.playerId) {
       gameState.lifecycle.activePlayers.add(client.playerId);
-      console.log(`✅ Added player ${client.playerId} to active game`);
+      console.log(`✅ Added player ${client.playerId} to active game in room ${roomId}`);
     }
   });
 
-  console.log(`🚀 Game ${gameState.lifecycle.gameId} now active with ${gameState.lifecycle.activePlayers.size} players`);
+  console.log(`🚀 Game ${gameState.lifecycle.gameId} now active with ${gameState.lifecycle.activePlayers.size} players in room ${roomId}`);
 
   broadcastToRoom(roomId, {
     type: 'GAME_STARTED',
@@ -2689,10 +2669,17 @@ async function handleActionBatch(ws, clientId, data) {
 
 // Initialize new game with unique ID and city name
 function initializeNewGame(cityName, maxPlayers = 4) {
+  return initializeNewGameForRoom('default', cityName, maxPlayers);
+}
+
+function initializeNewGameForRoom(roomId, cityName, maxPlayers = 4) {
   const timestamp = Date.now();
   const dateStr = new Date(timestamp).toISOString().split('T')[0]; // YYYY-MM-DD
   const gameId = `${cityName || 'NewCity'}_${dateStr}_${nextGameId++}`;
-  
+
+  // Get the game instance for this room
+  const gameState = getGameInstance(roomId);
+
   // Reset game state for new game
   gameState.lifecycle = {
     gameId: gameId,
