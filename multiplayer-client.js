@@ -85,29 +85,34 @@ class RailwayMultiplayerManager {
         
         this.connection = new WebSocket(wsUrl);
         
-        this.connection.onopen = () => {
-            console.log('📡 WebSocket connection established');
-            this.sendJoinGame();
-        };
-        
-        this.connection.onmessage = (event) => {
-            try {
-                const data = JSON.parse(event.data);
-                this.handleServerMessage(data);
-            } catch (error) {
-                console.error('❌ Error parsing WebSocket message:', error);
-            }
-        };
-        
-        this.connection.onclose = (event) => {
-            console.log('📱 WebSocket connection closed:', event.code);
-            this.handleConnectionLoss();
-        };
-        
-        this.connection.onerror = (error) => {
-            console.error('❌ WebSocket error:', error);
-            this.handleConnectionLoss();
-        };
+        // Return a promise that resolves when the connection is established
+        return new Promise((resolve, reject) => {
+            this.connection.onopen = () => {
+                console.log('📡 WebSocket connection established');
+                this.sendJoinGame();
+                resolve(); // Connection is ready
+            };
+            
+            this.connection.onmessage = (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    this.handleServerMessage(data);
+                } catch (error) {
+                    console.error('❌ Error parsing WebSocket message:', error);
+                }
+            };
+            
+            this.connection.onclose = (event) => {
+                console.log('📱 WebSocket connection closed:', event.code);
+                this.handleConnectionLoss();
+            };
+            
+            this.connection.onerror = (error) => {
+                console.error('❌ WebSocket error:', error);
+                this.handleConnectionLoss();
+                reject(error); // Connection failed
+            };
+        });
     }
     
     
@@ -290,6 +295,12 @@ class RailwayMultiplayerManager {
     }
     
     async sendWebSocketAction(action) {
+        // Check WebSocket state before sending
+        if (!this.connection || this.connection.readyState !== WebSocket.OPEN) {
+            console.warn('❌ Cannot send action: WebSocket not ready. State:', this.connection?.readyState);
+            throw new Error('WebSocket not ready');
+        }
+        
         const message = {
             type: 'ACTION',
             action: action,
@@ -1221,6 +1232,12 @@ class RailwayMultiplayerManager {
      * Send a batch of actions via WebSocket
      */
     async sendWebSocketBatch(actions) {
+        // Check WebSocket state before sending
+        if (!this.connection || this.connection.readyState !== WebSocket.OPEN) {
+            console.warn('❌ Cannot send batch: WebSocket not ready. State:', this.connection?.readyState);
+            throw new Error('WebSocket not ready');
+        }
+        
         const compressedBatch = this.compressionEnabled ? this.compressBatch(actions) : actions;
         
         const message = {
