@@ -284,6 +284,9 @@ class IsometricGrid {
         this.lastDayStartTime = performance.now(); // Track when current day started
         this.pixelRowTimestamps = new Map(); // Track when each pixel row was revealed: "row,col" -> [timestamps]
         
+        // Dust cloud effects for construction starts
+        this.dustClouds = new Map(); // Track active dust clouds: key -> {startTime, duration, x, y, type}
+        
         // Sub-menu hover management
         this.currentSubmenu = null; // Currently visible submenu element
         this.submenuTimer = null; // Timer for submenu hide delay
@@ -2041,6 +2044,82 @@ class IsometricGrid {
         return false;
     }
     
+    // Create dust cloud effect at construction start
+    createDustCloud(x, y, type = 'building') {
+        const key = `${x}-${y}-${Date.now()}`;
+        const duration = 800 + Math.random() * 400; // 800-1200ms randomized
+        
+        this.dustClouds.set(key, {
+            startTime: performance.now(),
+            duration: duration,
+            x: x,
+            y: y,
+            type: type,
+            particles: this.generateDustParticles(6 + Math.floor(Math.random() * 4)) // 6-9 particles
+        });
+        
+        // Schedule render to show the effect
+        this.scheduleRender();
+        
+        // Clean up after effect completes
+        setTimeout(() => {
+            this.dustClouds.delete(key);
+        }, duration + 100);
+    }
+    
+    // Generate randomized dust particles
+    generateDustParticles(count) {
+        const particles = [];
+        for (let i = 0; i < count; i++) {
+            particles.push({
+                offsetX: (Math.random() - 0.5) * 30, // Spread over 30 pixels
+                offsetY: (Math.random() - 0.5) * 20, // Spread over 20 pixels
+                size: 2 + Math.random() * 3, // 2-5 pixel size
+                opacity: 0.3 + Math.random() * 0.4, // 0.3-0.7 initial opacity
+                velocityX: (Math.random() - 0.5) * 0.5, // Slow horizontal drift
+                velocityY: -0.5 - Math.random() * 0.3 // Upward movement
+            });
+        }
+        return particles;
+    }
+    
+    // Render all active dust clouds
+    renderDustClouds() {
+        const currentTime = performance.now();
+        
+        this.dustClouds.forEach((cloud, key) => {
+            const elapsed = currentTime - cloud.startTime;
+            const progress = Math.min(elapsed / cloud.duration, 1);
+            
+            // Fade out over time
+            const cloudOpacity = 1 - progress;
+            if (cloudOpacity <= 0) return;
+            
+            // Convert world coordinates to screen coordinates
+            const screenPos = this.worldToScreen(cloud.x, cloud.y);
+            
+            this.ctx.save();
+            this.ctx.globalAlpha = cloudOpacity;
+            
+            // Render each particle
+            cloud.particles.forEach(particle => {
+                const particleProgress = progress;
+                const particleX = screenPos.x + particle.offsetX + (particle.velocityX * elapsed * 0.05);
+                const particleY = screenPos.y + particle.offsetY + (particle.velocityY * elapsed * 0.05);
+                const particleOpacity = particle.opacity * cloudOpacity;
+                const particleSize = particle.size * (1 - particleProgress * 0.3); // Shrink slightly
+                
+                this.ctx.globalAlpha = particleOpacity;
+                this.ctx.fillStyle = '#8B7355'; // Dusty brown color
+                this.ctx.beginPath();
+                this.ctx.arc(particleX, particleY, particleSize, 0, Math.PI * 2);
+                this.ctx.fill();
+            });
+            
+            this.ctx.restore();
+        });
+    }
+    
     // Live tooltip updates for time-based content
     startLiveTooltipUpdates() {
         // Update time-based tooltips every second
@@ -2521,20 +2600,24 @@ class IsometricGrid {
         if (parcel.building) {
             const building = this.buildingManager.getBuildingById(parcel.building);
             if (building) {
-                let content = `<strong>${building.name}</strong> (${coord})<br>`;
+                let content = `<strong>${building.name}</strong><br>`;
                 
-                // Ownership
+                // Ownership - use player's chosen name
                 if (this.isCurrentPlayer(parcel.owner)) {
-                    content += '👤 <span style="color: #4CAF50">Owned by You</span><br>';
+                    const playerName = this.playerSettings?.name || 'You';
+                    content += `<strong>Owned by:</strong> ${playerName}<br>`;
                 } else if (parcel.owner && parcel.owner !== 'unclaimed') {
-                    // Competitor-owned building
+                    // Get multiplayer player name if available
                     let ownerName = parcel.owner;
-                    if (this.competitorNames && this.competitorNames[parcel.owner]) {
+                    if (this.multiplayerManager && this.multiplayerManager.players.has(parcel.owner)) {
+                        const player = this.multiplayerManager.players.get(parcel.owner);
+                        ownerName = player.name || ownerName;
+                    } else if (this.competitorNames && this.competitorNames[parcel.owner]) {
                         ownerName = this.competitorNames[parcel.owner];
                     }
-                    content += `🏛️ <span style="color: #9E9E9E">Owned by ${ownerName}</span><br>`;
+                    content += `<strong>Owned by:</strong> ${ownerName}<br>`;
                 } else {
-                    content += '🏛️ <span style="color: #9E9E9E">City Owned</span><br>';
+                    content += '<strong>Owned by:</strong> City<br>';
                 }
                 
                 // Show construction progress if building is under construction

@@ -2632,6 +2632,18 @@ class MobilityLayer {
                         hasBikeLanes: this.infrastructureOptions.bikeLanes.active,
                         builtTime: Date.now()
                     });
+                    
+                    // Create dust cloud effect for road construction
+                    if (this.game.createDustCloud && this.hoveredEdge) {
+                        const edgeParts = this.hoveredEdge.split(',').map(Number);
+                        if (edgeParts.length === 4) {
+                            const centerX = (edgeParts[0] + edgeParts[2]) / 2;
+                            const centerY = (edgeParts[1] + edgeParts[3]) / 2;
+                            const worldPos = this.game.toIsometric(centerX, centerY);
+                            this.game.createDustCloud(worldPos.x, worldPos.y, 'road');
+                        }
+                    }
+                    
                     this.game.showNotification(`Built road segment ($${totalCost})`, 'success');
                 } else {
                     this.game.showNotification(`Insufficient funds: need $${totalCost}, have $${this.game.playerCash}`, 'error');
@@ -3312,6 +3324,14 @@ class MobilityLayer {
 
         this.transitStops.set(normalizedKey, stop);
         this.game.playerCash -= stopCost;
+        
+        // Create dust cloud effect for transit stop construction
+        if (this.game.createDustCloud) {
+            const centerRow = (row1 + row2) / 2;
+            const centerCol = (col1 + col2) / 2;
+            const worldPos = this.game.toIsometric(centerCol, centerRow);
+            this.game.createDustCloud(worldPos.x, worldPos.y, 'transit');
+        }
         
         // Add illumination effect for the placed stop
         this.illuminatedSegment = normalizedKey;

@@ -126,6 +126,11 @@ class RenderingSystem {
         this.drawLayerOverlays();
         
         this.ctx.restore();
+        
+        // Draw dust clouds on top of everything (not affected by zoom/pan)
+        if (this.game.renderDustClouds) {
+            this.game.renderDustClouds();
+        }
     }
     
     /**

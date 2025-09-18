@@ -95,6 +95,12 @@ class BuildingSystem {
             // Set legacy fields for compatibility with game.js drawing system
             parcel.constructionStartDay = this.game.currentDay;
             parcel.constructionDays = building.construction.days;
+            
+            // Create dust cloud effect at construction start
+            if (this.game.createDustCloud) {
+                const worldPos = this.game.toIsometric(col, row);
+                this.game.createDustCloud(worldPos.x, worldPos.y, 'building');
+            }
         } else {
             // Instant construction
             this.completeConstruction(row, col);
