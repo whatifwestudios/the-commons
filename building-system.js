@@ -55,8 +55,10 @@ class BuildingSystem {
      * Place a building on a parcel
      */
     placeBuilding(row, col, buildingId, owner = 'player', fundingInfo = null) {
+        console.log('🏗️ placeBuilding called:', row, col, buildingId, owner);
         // Validate placement
         if (!this.canPlaceBuilding(row, col, buildingId)) {
+            console.log('❌ Cannot place building at', row, col);
             return false;
         }
         
@@ -107,6 +109,14 @@ class BuildingSystem {
             }
         } else {
             // Instant construction
+            console.log('🌪️ Instant construction - creating dust cloud immediately');
+            if (this.game.createDustCloud) {
+                const worldPos = this.game.toIsometric(col, row);
+                console.log('🌪️ Creating dust cloud for instant construction at', worldPos);
+                this.game.createDustCloud(worldPos.x, worldPos.y, 'building');
+            } else {
+                console.log('❌ createDustCloud method not found on game object (instant)');
+            }
             this.completeConstruction(row, col);
         }
         
