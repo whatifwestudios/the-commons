@@ -1012,7 +1012,7 @@ class IsometricGrid {
         this.uiManager.updateStyle('currentActions', 'color', color);
         
         // Update marketplace stats (with safety check for initialization order)
-        if (this.actionMarketplace) {
+        if (this.actionMarketplace && this.actionMarketplace.updateMarketplaceDisplay) {
             this.actionMarketplace.updateMarketplaceDisplay();
         }
     }
