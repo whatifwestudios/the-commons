@@ -1348,6 +1348,11 @@ async function recalculateAuthoritativeState() {
   
   console.log(`🚀 Optimized calculation complete: ${calculationTime}ms | ${buildingCount} buildings (${uniqueBuildingTypes} types) | ${efficiencyCount} efficiency calcs | Pop=${gameState.calculated.population} | Treasury=$${Math.round(gameState.calculated.treasury)}`);
   
+  // Debug: Log game state info
+  const parcelCount = Object.keys(gameState.core.parcels).length;
+  const playerCount = gameState.core.players.size;
+  console.log(`🔍 Debug game state: GameID=${gameState.lifecycle.gameId} | ${playerCount} players | ${parcelCount} parcels`);
+  
   // Debug: Log a sample of building efficiencies
   if (efficiencyCount > 0) {
     const sampleParcel = Object.keys(gameState.calculated.buildingEfficiencies)[0];
