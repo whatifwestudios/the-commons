@@ -859,8 +859,8 @@ class RailwayMultiplayerManager {
             amenities: constructionData.amenities,
             timestamp: Date.now()
         });
-        
-        return result.success;
+
+        return result && result.success;
     }
     
     // =====================================

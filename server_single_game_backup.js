@@ -148,131 +148,6 @@ const parcelLocks = new Set();
 const auctionLocks = new Set();
 const roadLocks = new Set();
 
-// Reset endpoint - clears all game state
-app.post('/reset', (req, res) => {
-  console.log('🔄 Server reset requested');
-
-  // Reset game state to initial state
-  gameState = {
-    core: {
-      players: new Map(),
-      parcels: {},
-      auctions: new Map(),
-      currentMonth: 'SEPT',
-      currentDay: 1,
-      gameSpeed: 1,
-      isPaused: false,
-      governance: {
-        budgetCategories: ['education', 'healthcare', 'infrastructure', 'housing', 'culture', 'recreation', 'commercial', 'civic', 'emergency', 'ubi'],
-        categoryAllocations: {
-          education: 0,
-          healthcare: 0,
-          infrastructure: 0,
-          housing: 0,
-          culture: 0,
-          recreation: 0,
-          commercial: 0,
-          civic: 0,
-          emergency: 0,
-          ubi: 0
-        },
-        publicCoffers: {
-          education: 0,
-          healthcare: 0,
-          infrastructure: 0,
-          housing: 0,
-          culture: 0,
-          recreation: 0,
-          commercial: 0,
-          civic: 0,
-          emergency: 0,
-          ubi: 0
-        },
-        unallocatedFunds: 0,
-        totalBudget: 0,
-        currentLvtRate: 0.50
-      },
-      transportation: {
-        roads: {},
-        transitStops: {},
-        transitRoutes: {}
-      }
-    },
-    calculated: {
-      treasury: 0,
-      population: 0,
-      vitality: {
-        energy: { supply: 0, demand: 0, balance: 0 },
-        food: { supply: 0, demand: 0, balance: 0 },
-        housing: { supply: 0, demand: 0, balance: 0 },
-        jobs: { supply: 0, demand: 0, balance: 0 }
-      },
-      marketMultipliers: {
-        energy: 1.0,
-        food: 1.0,
-        housing: 1.0,
-        jobs: 1.0
-      },
-      lastCalculated: Date.now()
-    },
-    version: {
-      global: 0,
-      perParcel: {},
-      perPlayer: {}
-    },
-    meta: {
-      lastUpdate: Date.now(),
-      activeConnections: new Set(),
-      actionQueue: [],
-      conflictLog: []
-    },
-    lifecycle: {
-      status: 'waiting',
-      gameId: null,
-      activePlayers: new Set(),
-      readyPlayers: new Set(),
-      gameStartTime: null,
-      lastActivityTime: Date.now()
-    }
-  };
-
-  // Disconnect all clients
-  clients.forEach((client, clientId) => {
-    client.ws.send(JSON.stringify({
-      type: 'SERVER_RESET',
-      message: 'Server has been reset. Please refresh the page.'
-    }));
-    client.ws.close();
-  });
-
-  // Clear client connections
-  clients.clear();
-
-  // Reset waiting rooms
-  waitingRooms.clear();
-
-  // Recreate default waiting room
-  const defaultWaitingRoom = {
-    id: 'default',
-    name: 'Multiplayer Lobby',
-    players: new Map(),
-    status: 'waiting',
-    maxPlayers: 4,
-    minPlayers: 2,
-    autoStart: true,
-    chatMessages: [],
-    createdAt: Date.now()
-  };
-  waitingRooms.set('default', defaultWaitingRoom);
-
-  console.log('✅ Server reset complete');
-  res.json({
-    success: true,
-    message: 'Server reset complete',
-    timestamp: Date.now()
-  });
-});
-
 // Health check endpoint
 app.get('/health', (req, res) => {
   res.json({ 
@@ -667,8 +542,6 @@ function handleRequestSync(ws, clientId, data) {
 }
 
 async function processGameAction(action, playerId) {
-  console.log(`🎯 Debug: Processing action ${action.type} from player ${playerId}`);
-  
   switch (action.type) {
     case 'PURCHASE_PARCEL':
       return await processPurchaseParcel(action, playerId);
@@ -802,7 +675,7 @@ async function processPurchaseParcel(action, playerId) {
         processedAction: action,
         stateChanges: {
           parcels: { [parcelId]: gameState.core.parcels[parcelId] },
-          players: { [playerId]: gameState.core.players.get(playerId) }
+          players: { [playerId]: Object.fromEntries([[playerId, gameState.core.players.get(playerId)]]) }
         }
       };
     } finally {
@@ -812,7 +685,6 @@ async function processPurchaseParcel(action, playerId) {
 
 async function processConstructBuilding(action, playerId) {
   const { parcelId, building, constructionStartDay, constructionDays, amenities } = action;
-  console.log(`🏗️ Debug: Constructing ${building} at ${parcelId} by ${playerId}`);
   
   // Validate player and parcel
   if (!gameState.core.players.has(playerId)) {
@@ -895,7 +767,7 @@ async function processConstructBuilding(action, playerId) {
     processedAction: action,
     stateChanges: {
       parcels: { [parcelId]: parcel },
-      players: { [playerId]: player }
+      players: { [playerId]: Object.fromEntries([[playerId, player]]) }
     }
   };
 }
@@ -972,7 +844,7 @@ async function processTreasuryFee(action, playerId) {
     success: true,
     processedAction: action,
     stateChanges: {
-      players: { [playerId]: player }
+      players: { [playerId]: Object.fromEntries([[playerId, player]]) }
     }
   };
 }
@@ -1118,7 +990,7 @@ async function processBuildRoad(action, playerId) {
         transportation: {
           roads: { [roadKey]: gameState.core.transportation.roads[roadKey] }
         },
-        players: { [playerId]: player }
+        players: { [playerId]: Object.fromEntries([[playerId, player]]) }
       }
     };
   } finally {
@@ -1185,7 +1057,7 @@ async function processBuildTransitStop(action, playerId) {
       transportation: {
         transitStops: { [stopId]: gameState.core.transportation.transitStops[stopId] }
       },
-      players: { [playerId]: player }
+      players: { [playerId]: Object.fromEntries([[playerId, player]]) }
     }
   };
 }
@@ -1248,7 +1120,7 @@ async function processCreateTransitRoute(action, playerId) {
       transportation: {
         transitRoutes: { [routeId]: gameState.core.transportation.transitRoutes[routeId] }
       },
-      players: { [playerId]: player }
+      players: { [playerId]: Object.fromEntries([[playerId, player]]) }
     }
   };
 }
@@ -1476,11 +1348,6 @@ async function recalculateAuthoritativeState() {
   
   console.log(`🚀 Optimized calculation complete: ${calculationTime}ms | ${buildingCount} buildings (${uniqueBuildingTypes} types) | ${efficiencyCount} efficiency calcs | Pop=${gameState.calculated.population} | Treasury=$${Math.round(gameState.calculated.treasury)}`);
   
-  // Debug: Log game state info
-  const parcelCount = Object.keys(gameState.core.parcels).length;
-  const playerCount = gameState.core.players.size;
-  console.log(`🔍 Debug game state: GameID=${gameState.lifecycle.gameId} | ${playerCount} players | ${parcelCount} parcels`);
-  
   // Debug: Log a sample of building efficiencies
   if (efficiencyCount > 0) {
     const sampleParcel = Object.keys(gameState.calculated.buildingEfficiencies)[0];
@@ -1567,18 +1434,6 @@ setInterval(async () => {
   // Prevent overlapping executions
   if (isProcessingDailyUpdate) {
     console.log('⚠️ Skipping daily update - previous update still processing');
-    return;
-  }
-  
-  // Skip daily updates if no active game or players
-  if (!gameState.lifecycle.gameId ||
-      gameState.lifecycle.status !== 'active' ||
-      gameState.core.players.size === 0) {
-    console.log(`⚠️ Skipping daily update - Debug info:
-      - gameId: ${gameState.lifecycle.gameId}
-      - status: ${gameState.lifecycle.status}
-      - players.size: ${gameState.core.players.size}
-      - activePlayers.size: ${gameState.lifecycle.activePlayers.size}`);
     return;
   }
   
@@ -2430,47 +2285,23 @@ function checkAutoStart(roomId) {
 function startGameFromRoom(roomId) {
   const room = waitingRooms.get(roomId);
   if (!room) return;
-
+  
   room.status = 'in-game';
-
+  
   // Move all players from waiting room to game
   const playersToStart = Array.from(room.players.values());
-
-  // CRITICAL FIX: Initialize a new active game when starting from room
-  if (gameState.lifecycle.status === 'ended' || gameState.lifecycle.status === 'archived' || !gameState.lifecycle.gameId) {
-    const gameId = initializeNewGame("Multiplayer Session");
-    console.log(`🎮 New multiplayer game initialized: ${gameId} for room ${roomId}`);
-  }
-
-  // CRITICAL FIX: Set game status to active and add players to active set
-  gameState.lifecycle.status = 'active';
-  gameState.lifecycle.startTime = Date.now();
-
-  // Add all room players to active players
-  playersToStart.forEach(player => {
-    if (player.clientId) {
-      const client = clients.get(player.clientId);
-      if (client && client.playerId) {
-        gameState.lifecycle.activePlayers.add(client.playerId);
-        console.log(`✅ Added player ${client.playerId} to active game`);
-      }
-    }
-  });
-
-  console.log(`🚀 Game ${gameState.lifecycle.gameId} now active with ${gameState.lifecycle.activePlayers.size} players`);
-
+  
   broadcastToRoom(roomId, {
     type: 'GAME_STARTED',
-    players: playersToStart,
-    gameId: gameState.lifecycle.gameId
+    players: playersToStart
   });
-
+  
   console.log(`🚀 Starting game from room ${roomId} with ${playersToStart.length} players`);
-
+  
   // Clear room players (they're now in game)
   room.players.clear();
   room.status = 'waiting';
-
+  
   // Reset room state for next game
   room.chatMessages = [];
 }

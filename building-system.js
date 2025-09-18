@@ -47,8 +47,8 @@ class BuildingSystem {
     /**
      * Build a building with funding info (called from game.js) - DEPRECATED, use constructBuilding
      */
-    buildBuilding(row, col, buildingId, fundingInfo) {
-        return this.constructBuilding(row, col, buildingId);
+    async buildBuilding(row, col, buildingId, fundingInfo) {
+        return await this.constructBuilding(row, col, buildingId);
     }
     
     /**
@@ -708,7 +708,7 @@ class BuildingSystem {
     /**
      * Construct a building on a parcel
      */
-    constructBuilding(row, col, buildingId) {
+    async constructBuilding(row, col, buildingId) {
         const coord = this.game.getParcelCoordinate(row, col);
         const buildingCost = this.game.getBuildingCost(buildingId);
         
@@ -767,33 +767,51 @@ class BuildingSystem {
             this.game.governance.publicCoffers[buildingCategory] -= publicFunding;
         }
         
-        // Deduct player cost
+        // Store original state for potential rollback
+        const originalCash = this.game.playerCash;
+        const originalBuilding = this.game.grid[row][col].building;
+        const originalAmenities = this.game.grid[row][col].amenities || [];
+        const originalConstructionStartDay = this.game.grid[row][col].constructionStartDay;
+        const originalConstructionDays = this.game.grid[row][col].constructionDays;
+
+        // Optimistically update local state
         this.game.playerCash -= playerCostRequired;
-        
         this.game.grid[row][col].building = buildingId;
-        
-        // Set construction start day and duration BEFORE broadcasting
+
+        // Set construction start day and duration
         if (building && building.economics) {
-            // Start construction from current day, but building should show as under construction initially
             this.game.grid[row][col].constructionStartDay = this.game.currentDay;
             this.game.grid[row][col].constructionDays = building.economics.constructionDays || 14;
             this.game.grid[row][col].buildingAge = 0;
-            
-            // Force the building to show as under construction initially
-            // Minimum 3 days so players can see the construction animation  
+
+            // Force minimum 3 days for construction animation
             if (this.game.grid[row][col].constructionDays < 3) {
                 this.game.grid[row][col].constructionDays = 3;
             }
         }
-        
-        // Broadcast building construction to other players WITH construction data
+
+        // Broadcast to server and await response
         if (this.game.multiplayerManager) {
-            console.log(`🏗️ Local building constructed: ${buildingId} at ${row}-${col}, broadcasting to multiplayer`);
-            this.game.multiplayerManager.onBuildingConstructed(row, col, buildingId, {
+            console.log(`🏗️ Sending building construction to server: ${buildingId} at ${row}-${col}`);
+            const success = await this.game.multiplayerManager.onBuildingConstructed(row, col, buildingId, {
                 constructionStartDay: this.game.grid[row][col].constructionStartDay,
                 constructionDays: this.game.grid[row][col].constructionDays,
                 amenities: this.game.grid[row][col].amenities || []
             });
+
+            if (!success) {
+                // Server rejected - rollback optimistic changes
+                console.log(`❌ Building construction rejected by server, rolling back`);
+                this.game.playerCash = originalCash;
+                this.game.grid[row][col].building = originalBuilding;
+                this.game.grid[row][col].amenities = originalAmenities;
+                this.game.grid[row][col].constructionStartDay = originalConstructionStartDay;
+                this.game.grid[row][col].constructionDays = originalConstructionDays;
+
+                // Refund the action since construction failed
+                this.game.actionManager.currentActions += this.game.actionCosts.constructBuilding;
+                return false;
+            }
         } else {
             console.log(`🏗️ Local building constructed: ${buildingId} at ${row}-${col}, NO MULTIPLAYER MANAGER`);
         }

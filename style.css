@@ -3876,6 +3876,22 @@ body {
     background: #2a2a2a;
 }
 
+.btn-danger {
+    background: #dc3545;
+    border: 1px solid #dc3545;
+    color: white;
+    padding: 8px 16px;
+    border-radius: 4px;
+    font-size: 14px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.btn-danger:hover {
+    background: #c82333;
+    border-color: #c82333;
+}
+
 .route-list {
     max-height: 200px;
     overflow-y: auto;

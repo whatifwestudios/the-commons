@@ -4040,7 +4040,7 @@ class IsometricGrid {
                     `;
                 }
                 
-                buildingBtn.onclick = () => this.buildingSystem.constructBuilding(row, col, building.id);
+                buildingBtn.onclick = async () => await this.buildingSystem.constructBuilding(row, col, building.id);
                 submenu.appendChild(buildingBtn);
             });
             
@@ -11993,18 +11993,78 @@ document.addEventListener('DOMContentLoaded', () => {
             // Force recalculation
             window.game.calculateCityVitality();
             window.game.updateVitalityDisplay();
-            
+
             // Visual feedback
             const btn = document.getElementById('apply-multipliers');
             const originalText = btn.textContent;
             btn.textContent = 'Applied!';
             btn.style.background = '#42B96E';
-            
+
             setTimeout(() => {
                 btn.textContent = originalText;
                 btn.style.background = '';
             }, 1000);
         });
+
+        // Server reset button
+        document.getElementById('reset-server').addEventListener('click', async () => {
+            if (confirm('⚠️ This will reset the server and disconnect all players. Are you sure?')) {
+                const btn = document.getElementById('reset-server');
+                const statusDiv = document.getElementById('server-status');
+
+                btn.textContent = 'Resetting...';
+                btn.disabled = true;
+                statusDiv.textContent = 'Sending reset request...';
+
+                try {
+                    const response = await fetch('/reset', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' }
+                    });
+                    const result = await response.json();
+
+                    if (result.success) {
+                        statusDiv.textContent = `✅ Server reset at ${new Date(result.timestamp).toLocaleTimeString()}`;
+
+                        // Show reset success message
+                        btn.textContent = '✅ Reset Complete';
+                        btn.style.background = '#28a745';
+
+                        setTimeout(() => {
+                            alert('Server has been reset. Please refresh the page to reconnect.');
+                            window.location.reload();
+                        }, 1000);
+                    } else {
+                        statusDiv.textContent = `❌ Reset failed: ${result.message || 'Unknown error'}`;
+                    }
+                } catch (error) {
+                    console.error('Reset failed:', error);
+                    statusDiv.textContent = `❌ Reset failed: ${error.message}`;
+                } finally {
+                    btn.disabled = false;
+                    setTimeout(() => {
+                        btn.textContent = '🔄 Reset Server';
+                        btn.style.background = '';
+                    }, 3000);
+                }
+            }
+        });
+
+        // Update server status periodically
+        async function updateServerStatus() {
+            const statusDiv = document.getElementById('server-status');
+            try {
+                const response = await fetch('/health');
+                const data = await response.json();
+                statusDiv.textContent = `✅ Online | Players: ${data.players} | Connections: ${data.connections} | Uptime: ${Math.floor(data.uptime)}s`;
+            } catch (error) {
+                statusDiv.textContent = `❌ Server unreachable`;
+            }
+        }
+
+        // Update status every 5 seconds
+        updateServerStatus();
+        setInterval(updateServerStatus, 5000);
     }
 
     function updateValueDisplay(slider, valueDisplay, propertyName) {
