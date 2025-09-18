@@ -2494,22 +2494,22 @@
                             <div class="feature-item">
                                 <span class="feature-icon">🏛️</span>
                                 <div class="feature-text">
-                                    <span class="feature-title">Democratic Governance</span>
-                                    <span class="feature-desc">Vote on city policies and budgets</span>
+                                    <span class="feature-title">Meaningful collective governance</span>
+                                    <span class="feature-desc">Allocate funds easily and fairly</span>
                                 </div>
                             </div>
                             <div class="feature-item">
                                 <span class="feature-icon">⚡</span>
                                 <div class="feature-text">
                                     <span class="feature-title">Real-time Multiplayer</span>
-                                    <span class="feature-desc">Build alongside other players</span>
+                                    <span class="feature-desc">Build alongside other players, compete for space, share in wealth creation or seek to dominate</span>
                                 </div>
                             </div>
                             <div class="feature-item">
                                 <span class="feature-icon">📊</span>
                                 <div class="feature-text">
                                     <span class="feature-title">Economic Simulation</span>
-                                    <span class="feature-desc">Supply, demand, and market dynamics</span>
+                                    <span class="feature-desc">Supply, demand, and market dynamics drive decisions</span>
                                 </div>
                             </div>
                             <div class="feature-item">
@@ -2570,7 +2570,7 @@
                     <div class="leaderboard-section">
                         <div class="leaderboard-content" id="leaderboard-content">
                             <div class="leaderboard-header">
-                                <h4>City Leaderboard</h4>
+                                <h4>Top Cities</h4>
                             </div>
                             <div class="leaderboard-loading">
                                 <div class="loading-spinner"></div>
@@ -2605,8 +2605,8 @@
                             <button class="mode-option solo-mode" id="start-solo-from-lobby">
                                 <div class="mode-icon">🎮</div>
                                 <div class="mode-details">
-                                    <span class="mode-title">Solo Practice</span>
-                                    <span class="mode-description">Build and experiment independently</span>
+                                    <span class="mode-title">Solo Sesh</span>
+                                    <span class="mode-description">Build, explore and control a city on your own. Save your game to return to later and share it with others for clout!</span>
                                 </div>
                                 <div class="mode-status">Available</div>
                             </button>
@@ -2615,7 +2615,7 @@
                                 <div class="mode-icon">👥</div>
                                 <div class="mode-details">
                                     <span class="mode-title">Multiplayer Session</span>
-                                    <span class="mode-description">Collaborate or compete with others</span>
+                                    <span class="mode-description">Collaborate or compete, the choice is yours.</span>
                                 </div>
                                 <div class="mode-status">Join Queue</div>
                             </button>
@@ -2669,8 +2669,8 @@
                 <div class="lobby-side-panel">
                     <div class="communication-section">
                         <div class="section-header">
-                            <h4>Player Communication</h4>
-                            <p>Coordinate with other players</p>
+                            <h4>Comms</h4>
+
                         </div>
                         <div class="chat-container" id="chat-messages">
                             <div class="system-message">Welcome to the multiplayer lobby</div>
@@ -2710,7 +2710,7 @@
                             <p>Used this month: <span id="modal-actions-used">0</span></p>
                             <p>Next refresh: <span id="modal-next-refresh">--</span></p>
                             <p class="rollover-text">
-                                <strong>✓ Purchased actions never expire and rollover monthly</strong>
+                                <strong>✓ Purchased actions never expire and rollover monthly until used</strong>
                             </p>
                         </div>
                     </div>
@@ -2718,7 +2718,7 @@
                         <h3>Sell Actions</h3>
                         <div class="sell-form">
                             <input type="number" id="sell-quantity" min="1" max="10" value="1" placeholder="Quantity">
-                            <input type="number" id="sell-reserve" min="1000" placeholder="Reserve price per action">
+                            <input type="number" id="sell-reserve" min="1000" placeholder="Starting price per Action">
                             <input type="number" id="sell-buynow" min="1000" placeholder="Buy now price (optional)">
                             <button class="btn-primary" onclick="window.game.listActionsForSale()">List for Sale</button>
                         </div>
@@ -2734,7 +2734,7 @@
                         </div>
                     </div>
                     <div style="background: #141414; padding: 10px; border-radius: 4px; margin-bottom: 15px; font-size: 12px; color: #888;">
-                        <strong style="color: #42B96E;">Note:</strong> Purchased actions are permanent assets that rollover each month. Buy now to build your action reserve!
+                        <strong style="color: #42B96E;">Note:</strong> Purchased actions are permanent assets that rollover each month until used. Buy now to build your action reserve!
                     </div>
                     <div class="listings-container" id="action-listings">
                         <!-- Listings will be populated here -->
@@ -2954,38 +2954,7 @@
         </div>
     </div>
     
-    <!-- Leaderboard Modal -->
-    <div id="leaderboard-modal" class="modal" style="display: none;">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h2>🏆 Wealth Leaderboard</h2>
-                <button class="modal-close" onclick="closeModal('leaderboard-modal')">&times;</button>
-            </div>
-            <div class="modal-body">
-                <div class="leaderboard-list" id="modal-leaderboard-list">
-                    <!-- Populated by JavaScript -->
-                </div>
-                <div class="leaderboard-info">
-                    <span class="leaderboard-note">Based on total net worth (cash + assets)</span>
-                </div>
-            </div>
-        </div>
-    </div>
-    
-    <!-- Player Stats Modal -->
-    <div id="player-stats-modal" class="modal" style="display: none;">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h2>📊 Player Statistics</h2>
-                <button class="modal-close" onclick="closeModal('player-stats-modal')">&times;</button>
-            </div>
-            <div class="modal-body">
-                <div class="stats-grid" id="player-stats-content">
-                    <!-- Populated by JavaScript -->
-                </div>
-            </div>
-        </div>
-    </div>
+
     
     <!-- Save Game Modal -->
     <div id="save-game-modal" class="modal" style="display: none;">

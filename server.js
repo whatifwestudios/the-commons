@@ -30,29 +30,29 @@ let gameState = {
     gameSpeed: 1,
     isPaused: false,
     governance: {
-      budgetCategories: ['housing', 'commercial', 'industrial', 'utilities', 'transport', 'education', 'healthcare', 'emergency', 'parks', 'ubi'],
+      budgetCategories: ['education', 'healthcare', 'infrastructure', 'housing', 'culture', 'recreation', 'commercial', 'civic', 'emergency', 'ubi'],
       categoryAllocations: {
-        housing: 0,
-        commercial: 0,
-        industrial: 0,
-        utilities: 0,
-        transport: 0,
         education: 0,
         healthcare: 0,
+        infrastructure: 0,
+        housing: 0,
+        culture: 0,
+        recreation: 0,
+        commercial: 0,
+        civic: 0,
         emergency: 0,
-        parks: 0,
         ubi: 0
       },
       publicCoffers: {
-        housing: 0,
-        commercial: 0,
-        industrial: 0,
-        utilities: 0,
-        transport: 0,
         education: 0,
         healthcare: 0,
+        infrastructure: 0,
+        housing: 0,
+        culture: 0,
+        recreation: 0,
+        commercial: 0,
+        civic: 0,
         emergency: 0,
-        parks: 0,
         ubi: 0
       },
       unallocatedFunds: 0,
@@ -1416,6 +1416,17 @@ setInterval(async () => {
 async function processAllocateVote(action, playerId) {
   const { category, change } = action;
   
+  // Validate category
+  console.log(`🔍 Checking category: ${category}, budgetCategories:`, gameState.core.governance.budgetCategories);
+  if (!category || !gameState.core.governance.budgetCategories || !gameState.core.governance.budgetCategories.includes(category)) {
+    console.log(`❌ Invalid category: ${category}`);
+    return {
+      success: false,
+      error: 'INVALID_CATEGORY',
+      message: `Invalid category: ${category}`
+    };
+  }
+  
   if (!gameState.core.players.has(playerId)) {
     return {
       success: false,
@@ -1445,8 +1456,11 @@ async function processAllocateVote(action, playerId) {
   // Calculate total points that would be used after this change
   const totalUsedPoints = getTotalAllocatedPoints(player) - currentAllocation + newAllocation;
   
+  console.log(`🔍 Validation check for ${playerId}: current=${currentAllocation}, new=${newAllocation}, totalUsed=${totalUsedPoints}, available=${player.governance.totalVotingPoints}`);
+  
   // Check if player has enough points
   if (totalUsedPoints > player.governance.totalVotingPoints) {
+    console.log(`❌ BLOCKING: ${totalUsedPoints} > ${player.governance.totalVotingPoints}`);
     return {
       success: false,
       error: 'INSUFFICIENT_POINTS',
@@ -1480,6 +1494,16 @@ async function processAllocateVote(action, playerId) {
 async function processAllocateLVTPoint(action, playerId) {
   const { change } = action;
   
+  // Validate change parameter
+  if (change === undefined || change === null || isNaN(change)) {
+    console.log(`❌ Invalid LVT change value: ${change}`);
+    return {
+      success: false,
+      error: 'INVALID_CHANGE',
+      message: `Invalid change value: ${change}`
+    };
+  }
+  
   if (!gameState.core.players.has(playerId)) {
     return {
       success: false,
@@ -1499,7 +1523,7 @@ async function processAllocateLVTPoint(action, playerId) {
   }
   
   // Initialize LVT allocation if needed
-  if (!player.governance.playerAllocations.lvtRate) {
+  if (player.governance.playerAllocations.lvtRate === undefined || isNaN(player.governance.playerAllocations.lvtRate)) {
     player.governance.playerAllocations.lvtRate = 0;
   }
   
@@ -1509,8 +1533,11 @@ async function processAllocateLVTPoint(action, playerId) {
   // Calculate total points that would be used after this change
   const totalUsedPoints = getTotalAllocatedPoints(player) - Math.abs(currentAllocation) + Math.abs(newAllocation);
   
+  console.log(`🔍 LVT Validation check for ${playerId}: current=${currentAllocation}, new=${newAllocation}, totalUsed=${totalUsedPoints}, available=${player.governance.totalVotingPoints}`);
+  
   // Check if player has enough points
   if (totalUsedPoints > player.governance.totalVotingPoints) {
+    console.log(`❌ BLOCKING LVT: ${totalUsedPoints} > ${player.governance.totalVotingPoints}`);
     return {
       success: false,
       error: 'INSUFFICIENT_POINTS',
@@ -1862,7 +1889,9 @@ function recalculateGlobalLVTRate() {
   
   // Aggregate all player LVT votes
   gameState.core.players.forEach(player => {
-    if (player.governance && player.governance.playerAllocations && player.governance.playerAllocations.lvtRate !== undefined) {
+    if (player.governance && player.governance.playerAllocations && 
+        player.governance.playerAllocations.lvtRate !== undefined && 
+        !isNaN(player.governance.playerAllocations.lvtRate)) {
       totalLVTVotes += player.governance.playerAllocations.lvtRate;
       totalVoters += 1;
     }
@@ -2416,24 +2445,34 @@ function initializeNewGame(cityName, maxPlayers = 4) {
   
   // Reset governance system
   gameState.core.governance = {
+    budgetCategories: ['education', 'healthcare', 'infrastructure', 'housing', 'culture', 'recreation', 'commercial', 'civic', 'emergency', 'ubi'],
     unallocatedFunds: 0,
+    totalBudget: 0,
     proposedLvtRate: 0.50, // 50% default
     currentLvtRate: 0.50,
     categoryAllocations: {
-      infrastructure: 0,
       education: 0,
       healthcare: 0,
+      infrastructure: 0,
+      housing: 0,
       culture: 0,
-      environment: 0,
-      economic: 0
+      recreation: 0,
+      commercial: 0,
+      civic: 0,
+      emergency: 0,
+      ubi: 0
     },
     publicCoffers: {
-      infrastructure: 0,
       education: 0,
       healthcare: 0,
+      infrastructure: 0,
+      housing: 0,
       culture: 0,
-      environment: 0,
-      economic: 0
+      recreation: 0,
+      commercial: 0,
+      civic: 0,
+      emergency: 0,
+      ubi: 0
     }
   };
   
@@ -2466,7 +2505,9 @@ function initializeNewGame(cityName, maxPlayers = 4) {
   // Reset metadata
   gameState.meta = {
     lastUpdate: Date.now(),
-    activeConnections: new Set()
+    activeConnections: new Set(),
+    actionQueue: [],
+    conflictLog: []
   };
   
   console.log(`🎮 Initialized new game: ${gameId} - "${cityName}"`);

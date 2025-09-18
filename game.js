@@ -510,6 +510,16 @@ class IsometricGrid {
             this.mobilityLayer.reset?.();
         }
         
+        // Reset zoom and pan to default clean state
+        this.zoomLevel = 0.4;
+        this.zoomScale = 1.1;
+        this.panOffset = { x: 0, y: 0 };
+        
+        // Update zoom buttons to reflect clean state
+        if (this.updateZoomButtons) {
+            this.updateZoomButtons();
+        }
+        
         console.log('✅ Game state reset complete');
     }
 
@@ -1718,64 +1728,8 @@ class IsometricGrid {
     }
     
     showNotification(message, type = 'info') {
-        // Create or get notification container
-        let container = document.getElementById('notifications');
-        if (!container) {
-            container = document.createElement('div');
-            container.id = 'notifications';
-            container.style.cssText = `
-                position: fixed;
-                top: 20px;
-                right: 20px;
-                z-index: 1000;
-                max-width: 300px;
-                pointer-events: none;
-            `;
-            document.body.appendChild(container);
-        }
-        
-        // Create notification element
-        const notification = document.createElement('div');
-        const colors = {
-            'error': '#fee2e2 #dc2626',
-            'success': '#dcfce7 #16a34a', 
-            'info': '#dbeafe #2563eb'
-        };
-        const [bgColor, textColor] = colors[type]?.split(' ') || colors.info.split(' ');
-        
-        notification.style.cssText = `
-            background-color: ${bgColor};
-            color: ${textColor};
-            padding: 12px 16px;
-            border-radius: 6px;
-            margin-bottom: 8px;
-            font-size: 14px;
-            font-weight: 500;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-            transform: translateX(100%);
-            transition: all 0.3s ease;
-            pointer-events: auto;
-            border-left: 4px solid ${textColor};
-        `;
-        notification.textContent = message;
-        
-        container.appendChild(notification);
-        
-        // Animate in
-        requestAnimationFrame(() => {
-            notification.style.transform = 'translateX(0)';
-        });
-        
-        // Auto remove after 4 seconds
-        setTimeout(() => {
-            notification.style.transform = 'translateX(100%)';
-            notification.style.opacity = '0';
-            setTimeout(() => {
-                if (notification.parentNode) {
-                    container.removeChild(notification);
-                }
-            }, 300);
-        }, 4000);
+        // Disabled - no toast notifications
+        return;
     }
     
     // Visual feedback for insufficient funds (replaces distracting toasts)
@@ -3495,6 +3449,17 @@ class IsometricGrid {
                     voteCountEl.textContent = voteCount;
                 }
                 
+                // Remove all player-allocated classes first
+                for (let i = 1; i <= 10; i++) {
+                    categoryEl.classList.remove(`player-allocated-${i}`);
+                }
+                
+                // Add appropriate class if player has allocated points
+                if (voteCount > 0) {
+                    const classNum = Math.min(voteCount, 10); // Cap at 10 for CSS classes
+                    categoryEl.classList.add(`player-allocated-${classNum}`);
+                }
+                
                 const allocationEl = categoryEl.querySelector('.category-allocation');
                 if (allocationEl) {
                     const allocation = (this.governance.categoryAllocations && this.governance.categoryAllocations[category]) || 0;
@@ -3572,10 +3537,21 @@ class IsometricGrid {
             playerVotingPointsEl.textContent = unallocatedPoints;
         }
         
-        // Update LVT display
+        // Update LVT display (show absolute value for points used)
         const lvtVotePointsEl = document.getElementById('lvt-vote-points');
         if (lvtVotePointsEl) {
-            lvtVotePointsEl.textContent = this.governance.playerAllocations.lvtRate || 0;
+            const lvtPoints = this.governance.playerAllocations.lvtRate || 0;
+            lvtVotePointsEl.textContent = Math.abs(lvtPoints);
+            
+            // Add visual indicator if player has allocated LVT points
+            const lvtAdjuster = document.querySelector('.lvt-adjuster');
+            if (lvtAdjuster) {
+                if (lvtPoints !== 0) {
+                    lvtAdjuster.classList.add('player-allocated');
+                } else {
+                    lvtAdjuster.classList.remove('player-allocated');
+                }
+            }
         }
     }
     
@@ -9614,16 +9590,13 @@ document.addEventListener('DOMContentLoaded', () => {
             // Ensure grid is fully drawn
             game.render();
             
-            // Add canvas smooth fade-in without movement
+            // Ensure canvas starts in clean state
             const canvas = document.getElementById('gameCanvas');
             if (canvas) {
-                canvas.style.opacity = '0';
-                canvas.style.transition = 'opacity 0.8s cubic-bezier(0.25, 0.46, 0.45, 0.94)';
-                
-                // Fade canvas into view smoothly
-                setTimeout(() => {
-                    canvas.style.opacity = '1';
-                }, 200);
+                // Reset any previous canvas transformations
+                canvas.style.transform = '';
+                canvas.style.opacity = '1';
+                canvas.style.transition = '';
             }
         }, 4000); // Extended timing for elegance
         
@@ -11781,8 +11754,8 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
         
-        // Budget category voting buttons
-        document.querySelectorAll('.vote-btn').forEach(btn => {
+        // Budget category voting buttons (excluding LVT buttons)
+        document.querySelectorAll('.vote-btn[data-category]').forEach(btn => {
             btn.addEventListener('click', () => {
                 const category = btn.getAttribute('data-category');
                 const action = btn.getAttribute('data-action');

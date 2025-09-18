@@ -375,6 +375,21 @@ class RailwayMultiplayerManager {
                                 this.game.updateActionDisplay();
                             }
                         }
+                        
+                        // Sync governance data from server
+                        if (playerData.governance && this.game.governance) {
+                            if (playerData.governance.playerAllocations) {
+                                this.game.governance.playerAllocations = playerData.governance.playerAllocations;
+                            }
+                            if (playerData.governance.totalVotingPoints !== undefined) {
+                                this.game.governance.totalVotingPoints = playerData.governance.totalVotingPoints;
+                            }
+                            
+                            // Update governance UI
+                            if (this.game.updateGovernanceUI) {
+                                this.game.updateGovernanceUI();
+                            }
+                        }
                     }
                 }
             });
@@ -585,36 +600,8 @@ class RailwayMultiplayerManager {
     }
     
     showNotification(message, type = 'info') {
-        const notification = document.createElement('div');
-        notification.className = `multiplayer-notification notification-${type}`;
-        notification.style.cssText = `
-            position: fixed;
-            top: 80px;
-            right: 20px;
-            background: ${type === 'warning' ? '#ff9800' : type === 'error' ? '#f44336' : '#4caf50'};
-            color: white;
-            padding: 12px 16px;
-            border-radius: 6px;
-            z-index: 1000;
-            max-width: 300px;
-            opacity: 0;
-            transform: translateX(100%);
-            transition: all 0.3s ease;
-        `;
-        notification.textContent = message;
-        
-        document.body.appendChild(notification);
-        
-        requestAnimationFrame(() => {
-            notification.style.opacity = '1';
-            notification.style.transform = 'translateX(0)';
-        });
-        
-        setTimeout(() => {
-            notification.style.opacity = '0';
-            notification.style.transform = 'translateX(100%)';
-            setTimeout(() => notification.remove(), 300);
-        }, 5000);
+        // Disabled - no toast notifications
+        return;
     }
     
     startConnectionMonitoring() {
@@ -1096,6 +1083,16 @@ class RailwayMultiplayerManager {
                     if (playerData.actionManager && this.game.actionManager) {
                         Object.assign(this.game.actionManager, playerData.actionManager);
                         this.game.updateActionDisplay?.();
+                    }
+                    // Sync governance data
+                    if (playerData.governance && this.game.governance) {
+                        if (playerData.governance.playerAllocations) {
+                            this.game.governance.playerAllocations = playerData.governance.playerAllocations;
+                        }
+                        if (playerData.governance.totalVotingPoints !== undefined) {
+                            this.game.governance.totalVotingPoints = playerData.governance.totalVotingPoints;
+                        }
+                        this.game.updateGovernanceUI?.();
                     }
                 }
                 
@@ -2049,38 +2046,8 @@ class MultiplayerManager {
     }
     
     showNotification(message, type = 'info') {
-        const notification = document.createElement('div');
-        notification.className = `multiplayer-notification notification-${type}`;
-        notification.style.cssText = `
-            position: fixed;
-            top: 80px;
-            right: 20px;
-            background: ${type === 'warning' ? '#ff9800' : type === 'error' ? '#f44336' : '#4caf50'};
-            color: white;
-            padding: 12px 16px;
-            border-radius: 6px;
-            z-index: 1000;
-            max-width: 300px;
-            opacity: 0;
-            transform: translateX(100%);
-            transition: all 0.3s ease;
-        `;
-        notification.textContent = message;
-        
-        document.body.appendChild(notification);
-        
-        // Animate in
-        requestAnimationFrame(() => {
-            notification.style.opacity = '1';
-            notification.style.transform = 'translateX(0)';
-        });
-        
-        // Auto remove after 5 seconds
-        setTimeout(() => {
-            notification.style.opacity = '0';
-            notification.style.transform = 'translateX(100%)';
-            setTimeout(() => notification.remove(), 300);
-        }, 5000);
+        // Disabled - no toast notifications
+        return;
     }
     
     async broadcastAction(action) {

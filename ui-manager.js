@@ -775,28 +775,8 @@ class UIManager {
      * Show notification
      */
     showNotification(message, type = 'info', duration = 3000) {
-        let container = document.getElementById('notifications');
-        if (!container) {
-            container = document.createElement('div');
-            container.id = 'notifications';
-            container.className = 'notifications-container';
-            document.body.appendChild(container);
-        }
-        
-        const notification = document.createElement('div');
-        notification.className = `notification notification-${type}`;
-        notification.textContent = message;
-        
-        container.appendChild(notification);
-        
-        // Auto-remove after duration
-        setTimeout(() => {
-            if (notification.parentNode) {
-                notification.parentNode.removeChild(notification);
-            }
-        }, duration);
-        
-        return notification;
+        // Disabled - no toast notifications
+        return;
     }
     
     /**
