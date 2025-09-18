@@ -143,11 +143,9 @@ function getGameInstanceForClient(clientId) {
     }
   }
 
-  // Auto-assign clients without rooms to the default room
-  if (!client.roomId) {
-    client.roomId = 'default';
-    console.log(`🏠 Auto-assigned client ${clientId} to default room`);
-  }
+  // FORCE all clients to use the same room for debugging
+  client.roomId = 'default';
+  console.log(`🏠 FORCE-assigned client ${clientId} to default room for shared state`);
 
   // Default fallback
   return getGameInstance('default');
@@ -190,12 +188,28 @@ const gameStateProxy = new Proxy({}, {
   get(target, prop) {
     // Route to the correct game instance based on current context
     const instance = currentExecutionContext.gameInstance || getGameInstance('default');
+
+    // Debug logging to track routing
+    if (currentExecutionContext.clientId) {
+      console.log(`🔀 gameState.${prop} routed to room ${currentExecutionContext.roomId} for client ${currentExecutionContext.clientId}`);
+    } else {
+      console.log(`🔀 gameState.${prop} using default room (no execution context)`);
+    }
+
     return instance[prop];
   },
 
   set(target, prop, value) {
     // Route writes to the correct game instance
     const instance = currentExecutionContext.gameInstance || getGameInstance('default');
+
+    // Debug logging to track routing
+    if (currentExecutionContext.clientId) {
+      console.log(`✏️ gameState.${prop} set in room ${currentExecutionContext.roomId} for client ${currentExecutionContext.clientId}`);
+    } else {
+      console.log(`✏️ gameState.${prop} set in default room (no execution context)`);
+    }
+
     instance[prop] = value;
     return true;
   }
@@ -1647,24 +1661,44 @@ setInterval(async () => {
     console.log('⚠️ Skipping daily update - previous update still processing');
     return;
   }
-  
-  // Skip daily updates if no active game or players
-  if (!gameState.lifecycle.gameId ||
-      gameState.lifecycle.status !== 'active' ||
-      gameState.core.players.size === 0) {
-    console.log(`⚠️ Skipping daily update - Debug info:
-      - gameId: ${gameState.lifecycle.gameId}
-      - status: ${gameState.lifecycle.status}
-      - players.size: ${gameState.core.players.size}
-      - activePlayers.size: ${gameState.lifecycle.activePlayers.size}`);
+
+  // Process daily updates for ALL active game instances
+  const activeInstances = [];
+  for (const [roomId, gameInstance] of gameInstances) {
+    if (gameInstance.lifecycle.gameId &&
+        gameInstance.lifecycle.status === 'active' &&
+        gameInstance.core.players.size > 0) {
+      activeInstances.push({ roomId, gameInstance });
+    }
+  }
+
+  if (activeInstances.length === 0) {
+    console.log('⚠️ No active game instances for daily update');
     return;
   }
-  
+
+  console.log(`📅 Processing daily update for ${activeInstances.length} active game instance(s)`);
   isProcessingDailyUpdate = true;
-  
-  try {
-    // CRITICAL: Advance the day first (server authoritative)
-    gameState.core.currentDay++;
+
+  for (const { roomId, gameInstance } of activeInstances) {
+    try {
+      // Set context for this game instance
+      currentExecutionContext = {
+        clientId: null,
+        roomId: roomId,
+        gameInstance: gameInstance
+      };
+
+      console.log(`📅 Daily update for room ${roomId} (${gameInstance.lifecycle.cityName})`);
+
+      // Skip if no players in this specific instance
+      if (gameInstance.core.players.size === 0) {
+        console.log(`⚠️ Skipping daily update for room ${roomId} - no players`);
+        continue;
+      }
+
+      // CRITICAL: Advance the day first (server authoritative) for this instance
+      gameInstance.core.currentDay++;
     
     // Advance month every 30 days
     if (gameState.core.currentDay > 30) {
@@ -1741,13 +1775,19 @@ setInterval(async () => {
     
     broadcastToAll(dailyUpdateMessage);
     
-    console.log(`📅 Advanced to Day ${gameState.core.currentDay} (${gameState.core.currentMonth}) | Buildings aged: ${buildingsAged}, Decayed: ${buildingsDecayed}, LVT collected: $${Math.round(totalLVTCollected)}`);
-    
-  } catch (error) {
-    console.error('❌ Error processing daily update:', error);
-  } finally {
-    isProcessingDailyUpdate = false;
+      console.log(`📅 Advanced to Day ${gameInstance.core.currentDay} (${gameInstance.core.currentMonth}) in room ${roomId} | Buildings aged: ${buildingsAged}, Decayed: ${buildingsDecayed}, LVT collected: $${Math.round(totalLVTCollected)}`);
+
+      // Broadcast update to this room only
+      broadcastToRoom(roomId, dailyUpdateMessage);
+
+    } catch (error) {
+      console.error(`❌ Error processing daily update for room ${roomId}:`, error);
+    }
   }
+
+  // Clear execution context and reset flag
+  clearExecutionContext();
+  isProcessingDailyUpdate = false;
 }, 9863); // Every 9.863 seconds (1 game day = 1/365th of an hour)
 
 // Governance action processors
