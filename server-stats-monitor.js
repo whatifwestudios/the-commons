@@ -253,6 +253,16 @@ class ServerStatsMonitor {
     }
     
     /**
+     * Track partial update for bandwidth monitoring
+     */
+    trackPartialUpdate(updateSize) {
+        // Track partial update statistics for bandwidth monitoring
+        if (typeof updateSize === 'number') {
+            this.wsStats.bytesIn += updateSize;
+        }
+    }
+    
+    /**
      * Update WebSocket statistics
      */
     updateWSStats(stats) {
