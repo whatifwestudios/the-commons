@@ -763,6 +763,9 @@ class IsometricGrid {
         // Initialize the UI Manager's comprehensive DOM cache
         this.uiManager.initialize();
         
+        // Setup UI event listeners via UI Manager
+        this.uiManager.setupEventListeners(this);
+        
         // Keep backward compatibility with old domCache references
         this.domCache.selectedTile = this.uiManager.get('selectedTile');
         this.domCache.gameDate = this.uiManager.get('gameDate');
@@ -1670,6 +1673,9 @@ class IsometricGrid {
         // Initialize the UI Manager's comprehensive DOM cache
         this.uiManager.initialize();
         
+        // Setup UI event listeners via UI Manager
+        this.uiManager.setupEventListeners(this);
+        
         // Keep backward compatibility with old domCache references
         this.domCache.selectedTile = this.uiManager.get('selectedTile');
         this.domCache.gameDate = this.uiManager.get('gameDate');
@@ -1825,8 +1831,8 @@ class IsometricGrid {
             `).join('');
         }
         
-        // Show modal
-        window.showModal('leaderboard-modal');
+        // Show modal via UI Manager
+        this.uiManager.showModal('leaderboard-modal');
     }
     
     // Show player stats modal
@@ -1844,8 +1850,8 @@ class IsometricGrid {
             `).join('');
         }
         
-        // Show modal
-        window.showModal('player-stats-modal');
+        // Show modal via UI Manager
+        this.uiManager.showModal('player-stats-modal');
     }
     
     // Show save game modal
@@ -1864,8 +1870,8 @@ class IsometricGrid {
             ).join('');
         }
         
-        // Show modal
-        window.showModal('save-game-modal');
+        // Show modal via UI Manager
+        this.uiManager.showModal('save-game-modal');
     }
     
     // Generate comprehensive player statistics
@@ -2003,7 +2009,7 @@ class IsometricGrid {
             
             // Show success and close modal
             alert(`Game saved as "${saveName}"`);
-            window.closeModal('save-game-modal');
+            this.uiManager.closeModal('save-game-modal');
             
         } catch (error) {
             alert('Failed to save game. Save data may be too large.');
@@ -3161,35 +3167,7 @@ class IsometricGrid {
         this.scheduleRender();
     }
     
-    showStreetEdgeContextMenu(mouseX, mouseY) {
-        // Road design functionality removed
-    }
-    
-    hideStreetEdgeContextMenu() {
-        // Road design functionality removed
-    }
-    
-    // Road design event listeners and form functions moved to TransportationSystem
-    
-    applyRoadDesign() {
-        // Road design functionality removed
-        return false;
-    }
-    
-    // applyRoadDesignOLD removed - using modular transportation system
-    
-    buildRoadOnSelectedEdges() {
-        // Legacy function - redirect to new design system
-        this.applyRoadDesign();
-    }
-    
-    removeRoadFromSelectedEdges() {
-        // Road removal functionality removed
-    }
-    
-    clearSelectedStreetEdges() {
-        // Clear selection functionality removed
-    }
+    // Legacy road design functions removed - functionality moved to TransportationSystem
     
     generateTransitStopId() {
         // Generate a simple incrementing ID
@@ -3199,8 +3177,7 @@ class IsometricGrid {
     // Legacy transit system functions removed - will be redesigned from scratch
     
     getTransitStopAt(row, col) {
-        // Placeholder - transit stops will be redesigned
-        return null;
+        return null; // Transit system redesign in progress
     }
     
     selectAllStreetEdges() {
@@ -3443,16 +3420,7 @@ class IsometricGrid {
             
             // TODO: Check if there's a road with the appropriate amenity
             // Temporarily disabled - old road system removed
-            const road = null; /* this.transportationNetwork.roads.find(r => {
-                return (r.startRow === roadCoords.startRow && 
-                        r.startCol === roadCoords.startCol &&
-                        r.endRow === roadCoords.endRow && 
-                        r.endCol === roadCoords.endCol) ||
-                       (r.startRow === roadCoords.endRow && 
-                        r.startCol === roadCoords.endCol &&
-                        r.endRow === roadCoords.startRow && 
-                        r.endCol === roadCoords.startCol);
-            }); */
+            const road = null; // Legacy road finding code removed
             
             if (road && road.amenities) {
                 if (type === 'bus' && road.amenities.includes('bus_stop')) {
@@ -4000,17 +3968,7 @@ class IsometricGrid {
         
         contentEl.appendChild(actionsSection);
         
-        // Data Insights section - HIDDEN for now
-        // const insightsSection = document.createElement('div');
-        // insightsSection.className = 'context-section';
-        // 
-        // const insightsBtn = document.createElement('button');
-        // insightsBtn.className = 'context-btn insights';
-        // insightsBtn.textContent = '📊 DATA INSIGHTS';
-        // insightsBtn.onclick = () => this.showBuildingDataInsights(row, col);
-        // insightsSection.appendChild(insightsBtn);
-        // 
-        // contentEl.appendChild(insightsSection);
+        // Data insights functionality moved to separate system
         
         // Upgrade section
         const upgradeSection = document.createElement('div');
@@ -6090,66 +6048,13 @@ class IsometricGrid {
     }
 
     setupZoomControls() {
-        document.getElementById('zoom-in').addEventListener('click', () => {
-            if (this.zoomLevel < 2.4) { // Max 2 ticks from default (0.4 + 2)
-                this.zoomLevel++;
-                this.updateZoom();
-            }
-        });
-
-        document.getElementById('zoom-out').addEventListener('click', () => {
-            if (this.zoomLevel > 0.4) { // Can't zoom out below default 1.1x
-                this.zoomLevel--;
-                this.updateZoom();
-            }
-        });
-
-        document.getElementById('zoom-reset').addEventListener('click', () => {
-            this.zoomLevel = 0.4; // Reset to default 1.1x
-            this.panOffset = { x: 0, y: 0 };
-            this.updateZoom();
-        });
-
+        // Zoom controls now handled by UI Manager
         this.updateZoomButtons();
     }
     
     setupLayerControls() {
-        // Setup city name dropdown toggle
-        const cityNameBtn = document.getElementById('city-name-btn');
-        const cityMenu = document.getElementById('city-menu');
-        
-        // Show dropdown on hover
-        cityNameBtn.addEventListener('mouseenter', () => {
-            cityMenu.classList.add('active');
-        });
-        
-        // Hide dropdown when leaving the entire dropdown area
-        const citySection = cityNameBtn.closest('.top-bar-section');
-        citySection.addEventListener('mouseleave', () => {
-            cityMenu.classList.remove('active');
-        });
-        
-        // Keep dropdown open when hovering over the menu itself
-        cityMenu.addEventListener('mouseenter', () => {
-            cityMenu.classList.add('active');
-        });
-        
-        // Setup layer switching
-        const layerOptions = document.querySelectorAll('.layer-option');
-        console.log(`🔧 Setting up layer controls, found ${layerOptions.length} layer options`);
-        
-        layerOptions.forEach(option => {
-            const layer = option.getAttribute('data-layer');
-            console.log(`🔧 Adding click listener for layer: ${layer}`);
-            
-            option.addEventListener('click', (e) => {
-                console.log(`🖱️ Layer button clicked: ${layer}`);
-                e.preventDefault();
-                e.stopPropagation();
-                this.switchToLayer(layer);
-                cityMenu.classList.remove('active'); // Close dropdown after selection
-            });
-        });
+        // Layer controls now handled by UI Manager
+        console.log('🔧 Layer controls setup delegated to UI Manager');
     }
     
     switchToLayer(layerName) {
@@ -8274,47 +8179,7 @@ class IsometricGrid {
         return this.renderingSystem.fromIsometric(x, y);
     }
     
-    // Old render method kept for reference - TODO: remove after testing
-    renderOld() {
-        // Start performance monitoring for this frame
-        if (this.perfMonitor) {
-            this.perfMonitor.startFrame();
-        }
-        
-        this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
-        // Always use normal scene drawing - blur is handled per-building
-        this.drawSceneOld();
-        
-        // End performance monitoring for this frame
-        if (this.perfMonitor) {
-            this.perfMonitor.endFrame();
-            
-            // Update game stats periodically (every 60 frames)
-            if (this.perfMonitor.frameCount % 60 === 0) {
-                // Calculate total buildings
-                let totalBuildings = 0;
-                let totalPopulation = 0;
-                for (let row = 0; row < this.gridSize; row++) {
-                    for (let col = 0; col < this.gridSize; col++) {
-                        if (this.grid[row] && this.grid[row][col]) {
-                            if (this.grid[row][col].building) {
-                                totalBuildings++;
-                            }
-                            if (this.grid[row][col].population) {
-                                totalPopulation += this.grid[row][col].population;
-                            }
-                        }
-                    }
-                }
-                
-                this.perfMonitor.updateGameStats({
-                    totalBuildings: totalBuildings,
-                    populationCount: totalPopulation,
-                    activeRoutes: this.transportationSystem ? this.transportationSystem.routes.length : 0
-                });
-            }
-        }
-    }
+    // renderOld method removed - functionality moved to rendering system
     
     // Performance optimization methods
     markRegionDirty(row, col, radius = 2) {

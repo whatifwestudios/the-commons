@@ -429,9 +429,419 @@ class UIManager {
             queuedUpdates: this.updateQueue.length
         };
     }
+    
+    /**
+     * Modal Management Functions
+     */
+    
+    showModal(modalId) {
+        const modal = document.getElementById(modalId);
+        if (modal) {
+            modal.classList.add('visible');
+        }
+    }
+    
+    closeModal(modalId) {
+        const modal = document.getElementById(modalId);
+        if (modal) {
+            modal.classList.remove('visible');
+        }
+    }
+    
+    /**
+     * Setup Event Listeners for UI Components
+     */
+    setupEventListeners(game) {
+        console.log('🎯 Setting up UI event listeners...');
+        
+        // Setup zoom controls
+        this.setupZoomControls(game);
+        
+        // Setup city menu
+        this.setupCityMenu(game);
+        
+        // Setup player menu
+        this.setupPlayerMenu(game);
+        
+        // Setup layer controls
+        this.setupLayerControls(game);
+        
+        // Setup keyboard shortcuts
+        this.setupKeyboardShortcuts(game);
+        
+        // Setup tool buttons
+        this.setupToolButtons(game);
+        
+        // Setup window resize handler
+        this.setupWindowResize(game);
+    }
+    
+    /**
+     * Setup zoom control event listeners
+     */
+    setupZoomControls(game) {
+        const zoomInBtn = document.getElementById('zoom-in');
+        const zoomOutBtn = document.getElementById('zoom-out');
+        const zoomResetBtn = document.getElementById('zoom-reset');
+        
+        if (zoomInBtn && !zoomInBtn.dataset.listenerAdded) {
+            zoomInBtn.addEventListener('click', () => {
+                if (game.zoomLevel < 2.4) {
+                    game.zoomLevel++;
+                    game.updateZoom();
+                }
+            });
+            zoomInBtn.dataset.listenerAdded = 'true';
+        }
+        
+        if (zoomOutBtn && !zoomOutBtn.dataset.listenerAdded) {
+            zoomOutBtn.addEventListener('click', () => {
+                if (game.zoomLevel > 0.4) {
+                    game.zoomLevel--;
+                    game.updateZoom();
+                }
+            });
+            zoomOutBtn.dataset.listenerAdded = 'true';
+        }
+        
+        if (zoomResetBtn && !zoomResetBtn.dataset.listenerAdded) {
+            zoomResetBtn.addEventListener('click', () => {
+                game.zoomLevel = 0.4;
+                game.panOffset = { x: 0, y: 0 };
+                game.updateZoom();
+            });
+            zoomResetBtn.dataset.listenerAdded = 'true';
+        }
+        
+        // Update zoom buttons state
+        if (game.updateZoomButtons) {
+            game.updateZoomButtons();
+        }
+    }
+    
+    /**
+     * Setup city menu event listeners
+     */
+    setupCityMenu(game) {
+        const cityNameBtn = document.getElementById('city-name-btn');
+        const cityMenu = document.getElementById('city-menu');
+        const citySection = cityNameBtn?.parentElement;
+        
+        if (cityNameBtn && cityMenu && citySection) {
+            let menuTimeout;
+            
+            cityNameBtn.addEventListener('mouseenter', () => {
+                clearTimeout(menuTimeout);
+                cityMenu.classList.add('active');
+            });
+            
+            citySection.addEventListener('mouseleave', () => {
+                menuTimeout = setTimeout(() => {
+                    cityMenu.classList.remove('active');
+                }, 300);
+            });
+            
+            cityMenu.addEventListener('mouseenter', () => {
+                clearTimeout(menuTimeout);
+            });
+        }
+    }
+    
+    /**
+     * Setup player menu event listeners
+     */
+    setupPlayerMenu(game) {
+        // Player menu toggle
+        const playerBtn = document.getElementById('player-btn');
+        const playerMenu = document.getElementById('player-menu');
+        
+        if (playerBtn && playerMenu) {
+            playerBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                playerMenu.classList.toggle('active');
+            });
+            
+            // Close menu when clicking outside
+            document.addEventListener('click', (e) => {
+                if (!playerMenu.contains(e.target) && !playerBtn.contains(e.target)) {
+                    playerMenu.classList.remove('active');
+                }
+            });
+        }
+        
+        // Player menu options
+        const showLeaderboard = document.getElementById('show-leaderboard');
+        if (showLeaderboard) {
+            showLeaderboard.addEventListener('click', () => {
+                if (game) {
+                    game.showLeaderboardModal();
+                }
+                playerMenu?.classList.remove('active');
+            });
+        }
+        
+        const showPlayerStats = document.getElementById('show-player-stats');
+        if (showPlayerStats) {
+            showPlayerStats.addEventListener('click', () => {
+                if (game) {
+                    game.showPlayerStatsModal();
+                }
+                playerMenu?.classList.remove('active');
+            });
+        }
+        
+        const saveGame = document.getElementById('save-game');
+        if (saveGame) {
+            saveGame.addEventListener('click', () => {
+                if (game) {
+                    game.showSaveGameModal();
+                }
+                playerMenu?.classList.remove('active');
+            });
+        }
+        
+        // Governance button
+        const governanceBtn = document.getElementById('governance-btn');
+        if (governanceBtn) {
+            governanceBtn.addEventListener('click', () => {
+                if (game && game.governanceSystem) {
+                    game.governanceSystem.openGovernanceModal();
+                }
+                playerMenu?.classList.remove('active');
+            });
+        }
+        
+        // Market dashboard button
+        const openMarketDashboard = document.getElementById('open-market-dashboard');
+        if (openMarketDashboard) {
+            openMarketDashboard.addEventListener('click', () => {
+                const modal = document.getElementById('market-dashboard-modal');
+                if (modal) {
+                    modal.style.display = 'block';
+                    if (game) {
+                        game.updateMarketDashboard();
+                    }
+                }
+                playerMenu?.classList.remove('active');
+            });
+        }
+        
+        // Magic link button
+        const magicLinkBtn = document.getElementById('magic-link-btn');
+        if (magicLinkBtn) {
+            magicLinkBtn.addEventListener('click', () => {
+                const emailInput = document.getElementById('player-email');
+                const email = emailInput?.value;
+                
+                if (email) {
+                    // Send magic link (placeholder for now)
+                    console.log('Sending magic link to:', email);
+                    
+                    // Update button state
+                    magicLinkBtn.textContent = 'Link Sent!';
+                    magicLinkBtn.disabled = true;
+                    
+                    setTimeout(() => {
+                        magicLinkBtn.textContent = 'Send Magic Link';
+                        magicLinkBtn.disabled = false;
+                    }, 3000);
+                }
+            });
+        }
+    }
+    
+    /**
+     * Setup layer control event listeners
+     */
+    setupLayerControls(game) {
+        const layerOptions = document.querySelectorAll('.layer-option');
+        
+        layerOptions.forEach(option => {
+            if (!option.dataset.listenerAdded) {
+                option.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    const layerName = option.dataset.layer;
+                    
+                    if (game && layerName) {
+                        game.switchToLayer(layerName);
+                        // Close dropdown after selection
+                        const cityMenu = document.getElementById('city-menu');
+                        if (cityMenu) {
+                            cityMenu.classList.remove('active');
+                        }
+                    }
+                });
+                option.dataset.listenerAdded = 'true';
+            }
+        });
+    }
+    
+    /**
+     * Setup keyboard shortcut event listeners
+     */
+    setupKeyboardShortcuts(game) {
+        document.addEventListener('keydown', (e) => {
+            // Don't trigger shortcuts when typing in inputs
+            if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') {
+                return;
+            }
+            
+            switch(e.key) {
+                case 'g':
+                case 'G':
+                    if (game && game.governanceSystem) {
+                        e.preventDefault();
+                        game.governanceSystem.openGovernanceModal();
+                    }
+                    break;
+                case 'Escape':
+                    // Close any open modals or menus
+                    const playerMenu = document.getElementById('player-menu');
+                    if (playerMenu) {
+                        playerMenu.classList.remove('active');
+                    }
+                    break;
+            }
+        });
+    }
+    
+    /**
+     * Setup tool button event listeners
+     */
+    setupToolButtons(game) {
+        document.querySelectorAll('.tool-btn').forEach(btn => {
+            if (!btn.dataset.listenerAdded) {
+                btn.addEventListener('click', (e) => {
+                    document.querySelectorAll('.tool-btn').forEach(b => b.classList.remove('active'));
+                    btn.classList.add('active');
+                    
+                    if (game) {
+                        game.currentTool = btn.dataset.tool;
+                    }
+                });
+                btn.dataset.listenerAdded = 'true';
+            }
+        });
+    }
+    
+    /**
+     * Setup window resize handler
+     */
+    setupWindowResize(game) {
+        window.addEventListener('resize', () => {
+            if (game && game.resizeCanvas) {
+                game.resizeCanvas();
+            }
+        });
+    }
+    
+    /**
+     * Make draggable element
+     */
+    makeDraggable(element) {
+        const handle = element.querySelector('.draggable-handle');
+        if (!handle) return;
+        
+        let isDragging = false;
+        let startX, startY, startLeft, startTop;
+        
+        handle.addEventListener('mousedown', (e) => {
+            isDragging = true;
+            startX = e.clientX;
+            startY = e.clientY;
+            const rect = element.getBoundingClientRect();
+            startLeft = rect.left;
+            startTop = rect.top;
+            element.style.position = 'absolute';
+            element.style.zIndex = '1000';
+        });
+        
+        document.addEventListener('mousemove', (e) => {
+            if (!isDragging) return;
+            
+            const deltaX = e.clientX - startX;
+            const deltaY = e.clientY - startY;
+            
+            element.style.left = (startLeft + deltaX) + 'px';
+            element.style.top = (startTop + deltaY) + 'px';
+        });
+        
+        document.addEventListener('mouseup', () => {
+            isDragging = false;
+        });
+    }
+    
+    /**
+     * Show notification
+     */
+    showNotification(message, type = 'info', duration = 3000) {
+        let container = document.getElementById('notifications');
+        if (!container) {
+            container = document.createElement('div');
+            container.id = 'notifications';
+            container.className = 'notifications-container';
+            document.body.appendChild(container);
+        }
+        
+        const notification = document.createElement('div');
+        notification.className = `notification notification-${type}`;
+        notification.textContent = message;
+        
+        container.appendChild(notification);
+        
+        // Auto-remove after duration
+        setTimeout(() => {
+            if (notification.parentNode) {
+                notification.parentNode.removeChild(notification);
+            }
+        }, duration);
+        
+        return notification;
+    }
+    
+    /**
+     * Show insufficient funds effect
+     */
+    showInsufficientFundsEffect() {
+        const cashDisplay = document.querySelector('#city-treasury');
+        if (cashDisplay) {
+            cashDisplay.classList.add('insufficient-funds-blink');
+            setTimeout(() => cashDisplay.classList.remove('insufficient-funds-blink'), 1500);
+        }
+        
+        const contextMenu = document.getElementById('context-menu');
+        if (contextMenu) {
+            contextMenu.classList.add('insufficient-funds-blink');
+            setTimeout(() => contextMenu.classList.remove('insufficient-funds-blink'), 1500);
+        }
+        
+        // If there's a modal open, apply to it
+        const openModal = document.querySelector('.modal[style*="block"]');
+        if (openModal) {
+            openModal.classList.add('insufficient-funds-blink');
+            setTimeout(() => openModal.classList.remove('insufficient-funds-blink'), 1500);
+        }
+    }
 }
 
 // Export for use
 if (typeof module !== 'undefined' && module.exports) {
     module.exports = UIManager;
+}
+
+// Global modal functions for backward compatibility
+if (typeof window !== 'undefined') {
+    window.showModal = function(modalId) {
+        const modal = document.getElementById(modalId);
+        if (modal) {
+            modal.classList.add('visible');
+        }
+    };
+    
+    window.closeModal = function(modalId) {
+        const modal = document.getElementById(modalId);
+        if (modal) {
+            modal.classList.remove('visible');
+        }
+    };
 }

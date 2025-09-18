@@ -499,6 +499,618 @@ class EconomicEngine {
     }
     
     /**
+     * Calculate comprehensive city vitality including JEFH supply/demand
+     */
+    calculateCityVitality() {
+        // Debug: Log vitality calculation
+        console.log('🏙️ Calculating city vitality, buildings map size:', this.game.buildingEfficiencies.size);
+        
+        // Check if we can use cached values
+        const now = performance.now();
+        const cacheAge = now - this.game.vitalityCache.lastCalculated;
+        
+        console.log('🔍 Cache status - dirty:', this.game.vitalityCache.dirty, 'age:', cacheAge);
+        
+        // Use cache if it's recent and not dirty (refresh every 100ms max)
+        if (!this.game.vitalityCache.dirty && cacheAge < 100) {
+            // Update vitality from cache
+            console.log('🔄 Using cached vitality data - RETURNING EARLY');
+            this.game.vitalitySupply = { ...this.game.vitalityCache.supply };
+            this.game.vitalityDemand = { ...this.game.vitalityCache.demand };
+            this.game.vitality = { ...this.game.vitalityCache.netVitality };
+            return;
+        }
+        
+        console.log('🔄 Cache invalid - proceeding with full calculation');
+        
+        // Initialize supply and demand tracking
+        this.game.vitalitySupply = {};
+        this.game.vitalityDemand = {};
+        
+        Object.keys(this.game.vitality).forEach(domain => {
+            this.game.vitalitySupply[domain] = 0;
+            this.game.vitalityDemand[domain] = 0;
+            this.game.vitality[domain] = 0; // Net will be supply - demand
+        });
+        
+        // First pass: count completed buildings only
+        let totalBedrooms = 0;
+        let totalJobs = 0;
+        let totalEnergySupply = 0;
+        let totalEnergyDemand = 0;
+        let totalFoodProduction = 0;
+        
+        // Calculate supply from completed buildings only
+        console.log('🏗️ First loop - counting completed buildings');
+        for (let row = 0; row < this.game.gridSize; row++) {
+            for (let col = 0; col < this.game.gridSize; col++) {
+                const parcel = this.game.grid[row][col];
+                
+                // Only count completed buildings (not under construction)
+                const isUnderConstruction = parcel.constructionStartDay !== null && 
+                    parcel.constructionDays > 0 && 
+                    (this.game.currentDay - parcel.constructionStartDay) < parcel.constructionDays;
+                
+                if (parcel.building && !isUnderConstruction) {
+                    const building = this.game.buildingManager.getBuildingById(parcel.building);
+                    console.log(`🏗️ Found completed building: ${building?.name || parcel.building} at ${row},${col}`);
+                    if (building) {
+                        // Count bedrooms and jobs
+                        const bedrooms = building.population?.bedroomsAdded || 0;
+                        const jobs = building.population?.jobsCreated || 0;
+                        totalBedrooms += bedrooms;
+                        totalJobs += jobs;
+                        
+                        // Calculate energy - negative energyDemand means supply for utilities
+                        const energyDemand = building.resources?.energyDemand || 0;
+                        if (energyDemand < 0) {
+                            // Negative demand = energy producer (solar, coal plant)
+                            totalEnergySupply += Math.abs(energyDemand);
+                            if (building.name?.includes('Coal') || building.name?.includes('Solar')) {
+                                console.log(`🔍 Energy producer found: ${building.name}, energyDemand=${energyDemand}, contributing ${Math.abs(energyDemand)} to supply`);
+                            }
+                        } else {
+                            totalEnergyDemand += energyDemand;
+                        }
+                        
+                        // Food production
+                        totalFoodProduction += building.resources?.foodProduction || 0;
+                    }
+                }
+            }
+        }
+        
+        // Use single source of truth for population
+        const population = this.game.calculatePopulation(); // Returns total population directly
+        
+        // ENERGY: Supply from power plants, demand from all buildings
+        this.game.vitalitySupply.ENERGY = totalEnergySupply;
+        this.game.vitalityDemand.ENERGY = totalEnergyDemand;
+        
+        if (totalEnergySupply > 0) {
+            console.log(`🔍 Final energy calculation: Supply=${totalEnergySupply}, Demand=${totalEnergyDemand}`);
+        }
+        
+        // FOOD: Supply from farms/markets, demand = 3 per person per day
+        this.game.vitalitySupply.FOOD = totalFoodProduction;
+        this.game.vitalityDemand.FOOD = population * 3; // 3 food per person per day
+        
+        // HOUSING: Supply = bedrooms, demand based on population (people need homes)
+        this.game.vitalitySupply.HOUSING = totalBedrooms;
+        this.game.vitalityDemand.HOUSING = population / 2; // 2 people per bedroom (population needs housing)
+        
+        // JOBS: Supply = jobs created, demand based on working-age population
+        this.game.vitalitySupply.JOBS = totalJobs;
+        this.game.vitalityDemand.JOBS = population * 0.6; // 60% of population wants employment
+        
+        // Calculate soft metrics (livability) from completed buildings
+        for (let row = 0; row < this.game.gridSize; row++) {
+            for (let col = 0; col < this.game.gridSize; col++) {
+                const parcel = this.game.grid[row][col];
+                
+                // Only count completed buildings
+                const isUnderConstruction = parcel.constructionStartDay !== null && 
+                    parcel.constructionDays > 0 && 
+                    (this.game.currentDay - parcel.constructionStartDay) < parcel.constructionDays;
+                
+                if (parcel.building && !isUnderConstruction) {
+                    const building = this.game.buildingManager.getBuildingById(parcel.building);
+                    if (building && building.domainImpacts) {
+                        // Process soft metrics only (not ENERGY, FOOD, HOUSING, JOBS)
+                        const softMetrics = ['HEALTH', 'EDUCATION', 'SAFETY', 'CULTURE', 'MOBILITY', 
+                                           'ENVIRONMENT', 'AFFORDABILITY', 'NOISE', 'RESILIENCE'];
+                        
+                        softMetrics.forEach(domain => {
+                            if (building.domainImpacts[domain] !== undefined) {
+                                const impact = building.domainImpacts[domain];
+                                if (impact > 0) {
+                                    this.game.vitalitySupply[domain] += impact;
+                                } else if (impact < 0) {
+                                    this.game.vitalityDemand[domain] += Math.abs(impact);
+                                }
+                            }
+                        });
+                    } else {
+                        // Fallback to old system for buildings without domainImpacts
+                        const buildingImpacts = this.game.getBuildingImpacts(parcel.building);
+                        Object.keys(buildingImpacts).forEach(domain => {
+                            const impact = buildingImpacts[domain];
+                            if (impact > 0) {
+                                this.game.vitalitySupply[domain] += impact;
+                            } else if (impact < 0) {
+                                this.game.vitalityDemand[domain] += Math.abs(impact);
+                            }
+                        });
+                    }
+                    
+                    // Add amenity impacts
+                    if (parcel.amenities) {
+                        parcel.amenities.forEach(amenity => {
+                        const amenityImpacts = this.game.getAmenityImpacts(amenity);
+                        Object.keys(amenityImpacts).forEach(domain => {
+                            const impact = amenityImpacts[domain];
+                            if (impact > 0) {
+                                this.game.vitalitySupply[domain] += impact;
+                            } else if (impact < 0) {
+                                this.game.vitalityDemand[domain] += Math.abs(impact);
+                            }
+                        });
+                        });
+                    }
+                }
+            }
+        }
+        
+        // Calculate net vitality (supply - demand)
+        Object.keys(this.game.vitality).forEach(domain => {
+            this.game.vitality[domain] = this.game.vitalitySupply[domain] - this.game.vitalityDemand[domain];
+        });
+        
+        // Update cache with calculated values
+        this.game.vitalityCache.supply = { ...this.game.vitalitySupply };
+        this.game.vitalityCache.demand = { ...this.game.vitalityDemand };
+        this.game.vitalityCache.netVitality = { ...this.game.vitality };
+        this.game.vitalityCache.lastCalculated = now;
+        this.game.vitalityCache.dirty = false;
+        this.game.vitalityCache.dirtyBuildings.clear();
+        
+        // Building efficiency tracking and JEFH satisfaction calculation
+        this.game.buildingEfficiencies.clear();
+        console.log('🔍 Starting building efficiency tracking and JEFH calculation');
+        
+        // Build transport network for JEFH calculations
+        const transportNetwork = this.game.buildTransportNetwork();
+        
+        // Step 1: Initialize building efficiency tracking
+        const buildingDemands = [];
+        for (let row = 0; row < this.game.gridSize; row++) {
+            for (let col = 0; col < this.game.gridSize; col++) {
+                const parcel = this.game.grid[row][col];
+                if (!parcel.building) continue;
+                
+                const building = this.game.buildingManager.getBuildingById(parcel.building);
+                if (!building) continue;
+                
+                const key = `${row},${col}`;
+                this.game.buildingEfficiencies.set(key, {
+                    row, col,
+                    building: building.name,
+                    category: building.category,
+                    needs: {}
+                });
+                
+                // Create demand points for JEFH resources
+                if (this.game.buildingCategories.normalize(building.category) === 'housing') {
+                    const residents = building.population?.bedroomsAdded || building.population?.residents || building.residents || 0;
+                    console.log(`🏠 Housing building ${building.name} at ${row},${col}: residents=${residents}, population:`, building.population);
+                    if (residents > 0) {
+                        // Housing demands jobs and food
+                        buildingDemands.push({
+                            row, col, building: building.name,
+                            resource: 'jobs', amount: residents * 0.6
+                        });
+                        buildingDemands.push({
+                            row, col, building: building.name,
+                            resource: 'food', amount: residents * 3
+                        });
+                        // Housing demands energy (use actual building energy demand)
+                        const energyDemand = building.resources?.energyDemand || 0;
+                        if (energyDemand > 0) { // Only positive values are actual demand
+                            buildingDemands.push({
+                                row, col, building: building.name,
+                                resource: 'energy', amount: energyDemand
+                            });
+                        }
+                    }
+                } else if (this.game.buildingCategories.normalize(building.category) === 'commercial') {
+                    const jobs = building.population?.jobsCreated || building.jobs || 0;
+                    console.log(`🏪 Commercial building ${building.name} at ${row},${col}: jobs=${jobs}, population:`, building.population);
+                    if (jobs > 0) {
+                        // Commercial buildings need workers (housing provides workers)
+                        buildingDemands.push({
+                            row, col, building: building.name,
+                            resource: 'housing', amount: jobs // 1 worker per job
+                        });
+                        // Commercial buildings demand energy (use actual building energy demand)
+                        const energyDemand = building.resources?.energyDemand || 0;
+                        if (energyDemand > 0) { // Only positive values are actual demand
+                            buildingDemands.push({
+                                row, col, building: building.name,
+                                resource: 'energy', amount: energyDemand
+                            });
+                        }
+                    }
+                } else if (this.game.buildingCategories.normalize(building.category) === 'education') {
+                    const jobs = building.population?.jobsCreated || 0;
+                    if (jobs > 0) {
+                        // Education buildings need workers too
+                        buildingDemands.push({
+                            row, col, building: building.name,
+                            resource: 'housing', amount: jobs
+                        });
+                        // Education buildings demand energy - use actual energyDemand from building data
+                        const energyDemand = building.resources?.energyDemand || 0;
+                        if (energyDemand > 0) {
+                            buildingDemands.push({
+                                row, col, building: building.name,
+                                resource: 'energy', amount: energyDemand
+                            });
+                        }
+                    }
+                }
+                
+                console.log(`🔧 Building efficiency tracking added for ${building.name} at ${key}`);
+            }
+        }
+        
+        // Step 2: Calculate satisfaction using proper supply allocation
+        // Group demands by resource type for allocation
+        const demandsByResource = {};
+        buildingDemands.forEach(demand => {
+            if (!demandsByResource[demand.resource]) {
+                demandsByResource[demand.resource] = [];
+            }
+            demandsByResource[demand.resource].push(demand);
+        });
+        
+        // Process each resource type
+        Object.keys(demandsByResource).forEach(resourceType => {
+            const demands = demandsByResource[resourceType];
+            
+            // Find all supply sources for this resource
+            const supplySources = [];
+            for (let sRow = 0; sRow < this.game.gridSize; sRow++) {
+                for (let sCol = 0; sCol < this.game.gridSize; sCol++) {
+                    const supplyParcel = this.game.grid[sRow][sCol];
+                    if (!supplyParcel.building) continue;
+                    
+                    // Skip buildings under construction
+                    const isUnderConstruction = supplyParcel.constructionStartDay !== null && 
+                        supplyParcel.constructionDays > 0 && 
+                        (this.game.currentDay - supplyParcel.constructionStartDay) < supplyParcel.constructionDays;
+                    if (isUnderConstruction) continue;
+                    
+                    const supplyBuilding = this.game.buildingManager.getBuildingById(supplyParcel.building);
+                    if (!supplyBuilding) continue;
+                    
+                    let supply = 0;
+                    if (resourceType === 'jobs' && supplyBuilding.population?.jobsCreated) {
+                        supply = supplyBuilding.population.jobsCreated;
+                    } else if (resourceType === 'food' && supplyBuilding.resources?.foodProduction) {
+                        supply = supplyBuilding.resources.foodProduction;
+                    } else if (resourceType === 'housing' && supplyBuilding.population?.bedroomsAdded) {
+                        // Housing supplies workers (0.6 workers per bedroom)
+                        supply = supplyBuilding.population.bedroomsAdded * 0.6;
+                    } else if (resourceType === 'energy') {
+                        // Add energy supply check for power plants/utilities
+                        // Negative energyDemand means energy production
+                        const energyDemand = supplyBuilding.resources?.energyDemand || 0;
+                        supply = energyDemand < 0 ? Math.abs(energyDemand) : 0;
+                    }
+                    
+                    if (supply > 0) {
+                        supplySources.push({
+                            row: sRow, col: sCol,
+                            building: supplyBuilding.name,
+                            supply: supply,
+                            remainingSupply: supply // Track remaining supply for allocation
+                        });
+                    }
+                }
+            }
+            
+            // Allocate supply to demands based on distance and priority
+            demands.forEach(demand => {
+                let fulfilledDemand = 0;
+                
+                // Calculate accessibility to each supply source
+                const accessibleSources = supplySources.map(source => {
+                    const effectiveDistance = this.game.calculateEffectiveDistance(
+                        demand.row, demand.col,
+                        source.row, source.col,
+                        transportNetwork
+                    );
+                    
+                    return {
+                        ...source,
+                        distance: effectiveDistance,
+                        accessible: effectiveDistance <= 3
+                    };
+                }).filter(source => source.accessible)
+                  .sort((a, b) => a.distance - b.distance); // Prefer closer sources
+                
+                // Allocate from closest sources first
+                for (const source of accessibleSources) {
+                    if (fulfilledDemand >= demand.amount) break;
+                    
+                    const neededAmount = demand.amount - fulfilledDemand;
+                    const allocatedAmount = Math.min(neededAmount, source.remainingSupply);
+                    
+                    if (allocatedAmount > 0) {
+                        fulfilledDemand += allocatedAmount;
+                        source.remainingSupply -= allocatedAmount;
+                        
+                        console.log(`🚶 ${demand.building} gets ${allocatedAmount} ${resourceType} from ${source.building} (distance: ${source.distance})`);
+                    }
+                }
+                
+                // Calculate satisfaction ratio
+                const satisfaction = Math.min(1.0, fulfilledDemand / demand.amount);
+                
+                // Store in building efficiency data
+                const key = `${demand.row},${demand.col}`;
+                const efficiencyData = this.game.buildingEfficiencies.get(key);
+                if (efficiencyData) {
+                    efficiencyData.needs[resourceType] = {
+                        satisfaction: satisfaction,
+                        demand: demand.amount,
+                        fulfilled: fulfilledDemand
+                    };
+                    
+                    console.log(`📊 ${demand.building} ${resourceType}: ${Math.round(satisfaction * 100)}% satisfied (${fulfilledDemand}/${demand.amount})`);
+                }
+            });
+            
+            // Log remaining unused supply
+            const totalRemainingSupply = supplySources.reduce((sum, source) => sum + source.remainingSupply, 0);
+            if (totalRemainingSupply > 0) {
+                console.log(`⚡ ${totalRemainingSupply} units of ${resourceType} remain unused`);
+            }
+        });
+        
+        // Calculate city satisfaction based on met needs
+        this.calculateCitySatisfaction();
+    }
+    
+    /**
+     * Calculate city satisfaction metrics
+     */
+    calculateCitySatisfaction() {
+        const demographics = this.game.demographics || {};
+        
+        // Calculate satisfaction scores for each domain (0-1 scale)
+        const satisfaction = {};
+        
+        // Employment: Target 60%+ employment rate
+        satisfaction.employment = Math.min(1, (demographics.employmentRate || 0) / 0.6);
+        
+        // Education: Target 90%+ school enrollment
+        satisfaction.education = Math.min(1, (demographics.schoolEnrollmentRate || 0) / 0.9);
+        
+        // Housing: Based on vitality balance
+        satisfaction.housing = this.game.vitality.HOUSING >= 0 ? 1.0 : Math.max(0, 1 + (this.game.vitality.HOUSING / 50));
+        
+        // Healthcare: Based on vitality balance
+        satisfaction.healthcare = this.game.vitality.HEALTH >= 0 ? 1.0 : Math.max(0, 1 + (this.game.vitality.HEALTH / 30));
+        
+        // Culture & Recreation: Based on vitality balance
+        satisfaction.culture = this.game.vitality.CULTURE >= 0 ? 1.0 : Math.max(0, 1 + (this.game.vitality.CULTURE / 20));
+        
+        // Overall satisfaction (weighted average)
+        const weights = {
+            employment: 0.3,
+            education: 0.25,
+            housing: 0.2,
+            healthcare: 0.15,
+            culture: 0.1
+        };
+        
+        let overallSatisfaction = 0;
+        let totalWeight = 0;
+        Object.keys(satisfaction).forEach(key => {
+            if (weights[key]) {
+                overallSatisfaction += satisfaction[key] * weights[key];
+                totalWeight += weights[key];
+            }
+        });
+        
+        this.game.citySatisfaction = {
+            ...satisfaction,
+            overall: totalWeight > 0 ? overallSatisfaction / totalWeight : 0
+        };
+        
+        // Apply satisfaction effects to revenue (in processDailyCashflow)
+        return this.game.citySatisfaction;
+    }
+    
+    /**
+     * Calculate land value for a specific parcel
+     */
+    calculateLandValue(row, col) {
+        // Check cache first
+        const cacheKey = `${row}-${col}`;
+        if (this.game.landValueCache.has(cacheKey)) {
+            return this.game.landValueCache.get(cacheKey);
+        }
+        
+        const basePrice = this.game.getParcelPrice(row, col);
+        const parcel = this.game.grid[row][col];
+        
+        // Get residential capacity of this parcel (how many people it can house)
+        let residentialCapacity = 0;
+        if (parcel.building) {
+            const building = this.game.buildingManager.getBuildingById(parcel.building);
+            if (building && this.game.buildingCategories.normalize(building.category) === 'housing') {
+                residentialCapacity = building.bedrooms || 0;
+            }
+        }
+        
+        // Calculate accessibility scores for each domain
+        const accessScores = this.game.calculateAccessibilityScores(row, col);
+        
+        // Base demand multiplier from accessibility (0.5 to 2.0)
+        let accessibilityMultiplier = 0.5;
+        const domains = ['food', 'energy', 'jobs', 'healthcare', 'education', 'transport', 'culture', 'safety'];
+        domains.forEach(domain => {
+            if (accessScores[domain]) {
+                // Each domain can add up to 0.1875 to multiplier (8 domains * 0.1875 = 1.5 max boost)
+                accessibilityMultiplier += Math.min(accessScores[domain], 1.0) * 0.1875;
+            }
+        });
+        
+        // Population-weighted demand multiplier
+        // High-density housing in high-accessibility areas = maximum land value
+        let demandMultiplier = 1.0;
+        if (residentialCapacity > 0) {
+            // Residential parcels gain value based on capacity * accessibility
+            demandMultiplier = 1.0 + (residentialCapacity / 10) * (accessibilityMultiplier - 0.5);
+        } else if (parcel.building) {
+            // Non-residential buildings gain value from serving nearby population
+            const nearbyPopulation = this.game.getNearbyPopulation(row, col, 3);
+            demandMultiplier = 1.0 + (nearbyPopulation / 50) * 0.5;
+        }
+        
+        // Network effects - developed neighbors still matter but less
+        const developedNeighbors = this.game.getAdjacentDevelopedParcels(row, col);
+        const networkMultiplier = 1.0 + (developedNeighbors * 0.05); // Only 5% per neighbor now
+        
+        // Overall city prosperity still affects all land values
+        const totalVitality = Object.values(this.game.vitality).reduce((sum, val) => sum + Math.max(0, val), 0);
+        const prosperityBonus = Math.min(totalVitality / 500, 0.3); // Reduced to 30% max
+        
+        // Combine all multipliers
+        const totalMultiplier = accessibilityMultiplier * demandMultiplier * networkMultiplier * (1 + prosperityBonus);
+        
+        // Ensure reasonable bounds (0.25x to 5x base price)
+        const finalMultiplier = Math.max(0.25, Math.min(5.0, totalMultiplier));
+        
+        const landValue = Math.round(basePrice * finalMultiplier);
+        
+        // Cache the result
+        this.game.landValueCache.set(cacheKey, landValue);
+        
+        return landValue;
+    }
+    
+    /**
+     * Calculate building efficiency percentage based on JEFH needs satisfaction
+     */
+    calculateBuildingEfficiencyPercentage(row, col) {
+        const parcel = this.game.grid[row]?.[col];
+        if (!parcel?.building) return null;
+        
+        const building = this.game.buildingManager.getBuildingById(parcel.building);
+        if (!building) return null;
+        
+        // Get building needs from definition
+        const needs = [];
+        const needsMap = new Map();
+        
+        // Check for workers need
+        if (building.population?.populationRequired > 0) {
+            const need = { 
+                type: 'workers', 
+                required: building.population.populationRequired,
+                name: 'Workers'
+            };
+            needs.push(need);
+            needsMap.set('workers', need);
+        }
+        
+        // Check for energy need
+        if (building.consumption?.energy > 0) {
+            const need = {
+                type: 'energy',
+                required: building.consumption.energy,
+                name: 'Energy'
+            };
+            needs.push(need);
+            needsMap.set('energy', need);
+        }
+        
+        // Check for food need
+        if (building.consumption?.food > 0) {
+            const need = {
+                type: 'food',
+                required: building.consumption.food,
+                name: 'Food'
+            };
+            needs.push(need);
+            needsMap.set('food', need);
+        }
+        
+        // If no needs, building is 100% efficient
+        if (needs.length === 0) return null;
+        
+        // Get efficiency data from JEFH system
+        const key = `${row},${col}`;
+        const efficiencyData = this.game.buildingEfficiencies?.get(key);
+        
+        // Calculate weighted efficiency percentage
+        let totalEfficiency = 0;
+        const unsatisfiedNeeds = [];
+        
+        // Equal weight for each type of need
+        const weightPerNeed = 100 / needs.length;
+        
+        needs.forEach(need => {
+            let satisfaction = 0;
+            
+            // Map JEFH categories to our needs
+            let jefhCategory = need.type;
+            if (need.type === 'workers') {
+                // Workers are tracked as 'housing' in JEFH for commercial/education buildings
+                const isWorkplace = this.game.buildingCategories.normalize(building.category) === 'commercial' || 
+                                  building.category === 'education';
+                jefhCategory = isWorkplace ? 'housing' : 'jobs';
+            }
+            
+            // Get satisfaction from JEFH data
+            if (efficiencyData?.needs?.[jefhCategory]) {
+                const jefhNeed = efficiencyData.needs[jefhCategory];
+                satisfaction = jefhNeed.satisfaction || 0;
+                
+                // For partial satisfaction, scale by how much is fulfilled
+                if (jefhNeed.demand && jefhNeed.fulfilled !== undefined) {
+                    const partialSatisfaction = jefhNeed.fulfilled / jefhNeed.demand;
+                    satisfaction = Math.min(1, partialSatisfaction);
+                }
+            }
+            
+            // Add weighted contribution to total efficiency
+            totalEfficiency += satisfaction * weightPerNeed;
+            
+            // Track unsatisfied needs
+            if (satisfaction < 1) {
+                unsatisfiedNeeds.push({
+                    name: need.name,
+                    satisfaction: satisfaction,
+                    deficit: need.required * (1 - satisfaction)
+                });
+            }
+        });
+        
+        return {
+            percentage: Math.max(0, Math.min(100, totalEfficiency)),
+            unsatisfiedNeeds: unsatisfiedNeeds.sort((a, b) => a.satisfaction - b.satisfaction),
+            allNeeds: needs.map(need => ({
+                name: need.name,
+                satisfaction: this.game.calculateJEFHSatisfaction(need.type, row, col)
+            }))
+        };
+    }
+    
+    /**
      * Reset economic state
      */
     reset() {
