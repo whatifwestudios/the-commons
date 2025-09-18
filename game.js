@@ -2104,7 +2104,7 @@ class IsometricGrid {
             if (cloudOpacity <= 0) return;
             
             // Convert world coordinates to screen coordinates
-            const screenPos = this.worldToScreen(cloud.x, cloud.y);
+            const screenPos = this.worldToScreenCoords(cloud.x, cloud.y);
             
             this.ctx.save();
             this.ctx.globalAlpha = cloudOpacity;
