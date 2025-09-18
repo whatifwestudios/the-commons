@@ -6,11 +6,10 @@ class MultiplayerManager {
         this.game = game;
         this.playerId = null;
         this.players = new Map();
-        this.eventSource = null;
+        this.connection = null; // WebSocket connection
         this.isConnected = false;
         this.reconnectAttempts = 0;
         this.maxReconnectAttempts = 10;
-        this.baseUrl = window.location.origin; // Use same origin for Vercel
         
         // Enhanced state management
         this.localStateVersion = 0;
@@ -22,7 +21,6 @@ class MultiplayerManager {
         this.heartbeatInterval = null;
         this.heartbeatFrequency = 30000; // 30 seconds
         this.lastHeartbeat = null;
-        this.connectionTimeout = null;
         
         // Reconnection strategy
         this.reconnectDelay = 1000; // Start with 1 second
@@ -34,7 +32,7 @@ class MultiplayerManager {
         this.actionCount = 0;
         this.syncCount = 0;
         
-        console.log('🎮 Enhanced MultiplayerManager initialized');
+        console.log('🎮 WebSocket MultiplayerManager initialized for Railway');
         this.startConnectionMonitoring();
     }
     
@@ -51,6 +49,12 @@ class MultiplayerManager {
             }
             this.cleanupPendingActions();
         }, 10000);
+    }
+    
+    startHeartbeat() {
+        if (this.heartbeatInterval) {
+            clearInterval(this.heartbeatInterval);
+        }
         
         // Send periodic heartbeats
         this.heartbeatInterval = setInterval(() => {
@@ -59,25 +63,16 @@ class MultiplayerManager {
     }
     
     async sendHeartbeat() {
-        if (!this.isConnected || !this.playerId) return;
+        if (!this.isConnected || !this.connection) return;
         
         try {
-            const startTime = Date.now();
-            const response = await fetch(`${this.baseUrl}/api/websocket?action=heartbeat&playerId=${this.playerId}&version=${this.localStateVersion}`);
-            const result = await response.json();
+            const message = {
+                type: 'HEARTBEAT',
+                timestamp: Date.now(),
+                version: this.localStateVersion
+            };
             
-            if (result.success) {
-                const latency = Date.now() - startTime;
-                this.recordLatency(latency);
-                this.lastHeartbeat = Date.now();
-                this.serverStateVersion = result.version;
-                
-                // Check for version mismatch
-                if (result.version > this.localStateVersion + 5) {
-                    console.log('📦 State version mismatch detected, requesting full sync...');
-                    this.requestFullSync();
-                }
-            }
+            this.connection.send(JSON.stringify(message));
         } catch (error) {
             console.error('💔 Heartbeat failed:', error);
             this.handleConnectionLoss();
@@ -97,26 +92,32 @@ class MultiplayerManager {
     }
     
     async requestFullSync() {
+        if (!this.connection || !this.isConnected) return;
+        
         try {
-            const response = await fetch(`${this.baseUrl}/api/websocket?action=sync&playerId=${this.playerId}&version=${this.localStateVersion}`);
-            const result = await response.json();
+            const message = {
+                type: 'REQUEST_SYNC',
+                playerId: this.playerId,
+                version: this.localStateVersion
+            };
             
-            if (result.success && result.type === 'FULL_SYNC') {
-                console.log('🔄 Performing full state sync...');
-                this.syncGameState(result.gameState);
-                this.localStateVersion = result.version;
-                this.syncCount++;
-            }
+            this.connection.send(JSON.stringify(message));
+            console.log('📦 Requested full sync from server');
         } catch (error) {
-            console.error('❌ Full sync failed:', error);
+            console.error('❌ Full sync request failed:', error);
         }
     }
     
     handleConnectionLoss() {
         this.isConnected = false;
-        if (this.eventSource) {
-            this.eventSource.close();
-            this.eventSource = null;
+        if (this.connection) {
+            this.connection.close();
+            this.connection = null;
+        }
+        
+        if (this.heartbeatInterval) {
+            clearInterval(this.heartbeatInterval);
+            this.heartbeatInterval = null;
         }
         
         console.log('📱 Connection lost, attempting to reconnect...');
@@ -161,44 +162,36 @@ class MultiplayerManager {
     
     async connect() {
         try {
-            console.log('🔌 Connecting to multiplayer server...');
+            console.log('🔌 Connecting to WebSocket server...');
             
-            // First, join the game to get a player ID, sending player settings
-            const playerSettings = this.game.playerSettings || {};
-            const joinParams = new URLSearchParams({
-                action: 'join',
-                playerId: this.getStoredPlayerId() || '',
-                playerName: playerSettings.name || 'Player',
-                playerColor: playerSettings.color || '#2196F3',
-                playerEmoji: playerSettings.emoji || '🏠'
-            });
+            const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const wsUrl = `${wsProtocol}//${window.location.host}`;
             
-            const joinResponse = await fetch(`${this.baseUrl}/api/websocket?${joinParams}`);
-            const joinData = await joinResponse.json();
+            this.connection = new WebSocket(wsUrl);
             
-            this.playerId = joinData.playerId;
-            localStorage.setItem('multiplayer_player_id', this.playerId);
+            this.connection.onopen = () => {
+                console.log('📡 WebSocket connection established');
+                this.sendJoinGame();
+            };
             
-            console.log(`✅ Connected as player: ${this.playerId}`);
+            this.connection.onmessage = (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    this.handleServerMessage(data);
+                } catch (error) {
+                    console.error('❌ Error parsing WebSocket message:', error);
+                }
+            };
             
-            // Update local state with any existing game state
-            if (joinData.gameState) {
-                this.syncGameState(joinData.gameState);
-            }
+            this.connection.onclose = (event) => {
+                console.log('📱 WebSocket connection closed:', event.code);
+                this.handleConnectionLoss();
+            };
             
-            // Update players list
-            if (joinData.players) {
-                joinData.players.forEach(player => {
-                    this.players.set(player.id, player);
-                });
-                this.updatePlayersDisplay();
-            }
-            
-            // Start listening for real-time updates
-            this.startEventStream();
-            
-            this.isConnected = true;
-            this.reconnectAttempts = 0;
+            this.connection.onerror = (error) => {
+                console.error('❌ WebSocket error:', error);
+                this.handleConnectionLoss();
+            };
             
         } catch (error) {
             console.error('❌ Failed to connect to multiplayer server:', error);
@@ -206,38 +199,31 @@ class MultiplayerManager {
         }
     }
     
-    startEventStream() {
-        if (this.eventSource) {
-            this.eventSource.close();
-        }
-        
-        this.eventSource = new EventSource(`${this.baseUrl}/api/websocket?action=stream&playerId=${this.playerId}`);
-        
-        this.eventSource.onmessage = (event) => {
-            try {
-                const data = JSON.parse(event.data);
-                this.handleServerMessage(data);
-            } catch (error) {
-                console.error('❌ Error parsing server message:', error);
-            }
+    sendJoinGame() {
+        const playerSettings = this.game.playerSettings || {};
+        const message = {
+            type: 'JOIN_GAME',
+            playerId: this.getStoredPlayerId(),
+            playerName: playerSettings.name || 'Player',
+            playerColor: playerSettings.color || '#2196F3',
+            playerEmoji: playerSettings.emoji || '🏠'
         };
         
-        this.eventSource.onerror = (error) => {
-            console.error('❌ EventSource error:', error);
-            this.isConnected = false;
-            this.scheduleReconnect();
-        };
-        
-        this.eventSource.onopen = () => {
-            console.log('📡 Real-time connection established');
-        };
+        this.connection.send(JSON.stringify(message));
     }
     
     handleServerMessage(data) {
+        this.lastHeartbeat = Date.now();
+        
         switch (data.type) {
-            case 'STREAM_CONNECTED':
-                console.log('🔗 Stream connection established');
+            case 'JOIN_SUCCESS':
+                console.log('✅ Successfully joined game as:', data.player.name);
+                this.playerId = data.playerId;
+                localStorage.setItem('multiplayer_player_id', this.playerId);
                 this.localStateVersion = data.version;
+                this.isConnected = true;
+                this.reconnectAttempts = 0;
+                
                 this.syncGameState(data.gameState);
                 if (data.players) {
                     data.players.forEach(player => {
@@ -245,6 +231,9 @@ class MultiplayerManager {
                     });
                     this.updatePlayersDisplay();
                 }
+                
+                // Start heartbeat after successful connection
+                this.startHeartbeat();
                 break;
                 
             case 'STATE_UPDATE':
@@ -262,9 +251,14 @@ class MultiplayerManager {
                 this.applyStateDiff(data.diff);
                 break;
                 
-            case 'ACTION_PROCESSED':
-                console.log('✅ Action processed:', data.action.type);
-                this.handleActionProcessed(data);
+            case 'ACTION_SUCCESS':
+                console.log('✅ Action processed:', data.actionId);
+                this.handleActionSuccess(data);
+                break;
+                
+            case 'ACTION_ERROR':
+                console.error('❌ Action failed:', data.error, data.message);
+                this.handleActionError(data);
                 break;
                 
             case 'PLAYER_JOINED':
@@ -281,8 +275,11 @@ class MultiplayerManager {
                 break;
                 
             case 'HEARTBEAT':
+            case 'HEARTBEAT_ACK':
                 this.lastHeartbeat = Date.now();
-                this.serverStateVersion = data.version;
+                if (data.version) {
+                    this.serverStateVersion = data.version;
+                }
                 break;
                 
             case 'GAME_RESET':
@@ -415,22 +412,64 @@ class MultiplayerManager {
         }
     }
     
-    handleActionProcessed(data) {
-        const actionId = data.action.id;
+    handleActionSuccess(data) {
+        const actionId = data.actionId;
         if (this.pendingActions.has(actionId)) {
             this.pendingActions.delete(actionId);
         }
         
-        // Apply state changes
+        // Apply state changes from server
         if (data.stateChanges) {
-            this.applyStateDiff({ 
-                version: data.version,
-                changes: data.stateChanges,
-                timestamp: data.timestamp
-            });
+            this.applyServerStateChanges(data.stateChanges);
         }
         
         this.actionCount++;
+        console.log(`✅ Action confirmed by server: ${actionId}`);
+    }
+    
+    handleActionError(data) {
+        const actionId = data.actionId;
+        if (this.pendingActions.has(actionId)) {
+            this.pendingActions.delete(actionId);
+        }
+        
+        // Handle specific error types
+        if (data.error === 'PARCEL_ALREADY_OWNED') {
+            this.showNotification('This parcel was purchased by another player', 'warning');
+        } else if (data.error === 'BID_SUPERSEDED') {
+            this.showNotification(`Another player bid higher. Try again.`, 'warning');
+        } else {
+            this.showNotification(data.message || 'Action failed', 'error');
+        }
+    }
+    
+    applyServerStateChanges(stateChanges) {
+        console.log('📥 Applying server state changes:', stateChanges);
+        
+        // Apply parcel changes
+        if (stateChanges.parcels) {
+            Object.entries(stateChanges.parcels).forEach(([parcelId, serverParcel]) => {
+                const [row, col] = parcelId.split('-').map(Number);
+                if (this.game.grid[row] && this.game.grid[row][col]) {
+                    const localParcel = this.game.grid[row][col];
+                    Object.assign(localParcel, serverParcel);
+                }
+            });
+            
+            // Trigger re-render
+            if (this.game.scheduleRender) {
+                this.game.scheduleRender();
+            }
+        }
+        
+        // Apply other state changes
+        if (stateChanges.treasury !== undefined) {
+            this.game.cityTreasury = stateChanges.treasury;
+        }
+        
+        if (stateChanges.population !== undefined) {
+            this.game.totalPopulation = stateChanges.population;
+        }
     }
     
     handleConflict(conflict) {
@@ -479,7 +518,7 @@ class MultiplayerManager {
     }
     
     async broadcastAction(action) {
-        if (!this.isConnected || !this.playerId) {
+        if (!this.isConnected || !this.playerId || !this.connection) {
             console.warn('⚠️ Not connected to multiplayer server');
             return { success: false, error: 'NOT_CONNECTED' };
         }
@@ -501,61 +540,23 @@ class MultiplayerManager {
         });
         
         try {
-            const startTime = Date.now();
-            const response = await fetch(`${this.baseUrl}/api/websocket?action=action&playerId=${this.playerId}&version=${this.localStateVersion}`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-Client-Version': this.localStateVersion.toString()
-                },
-                body: JSON.stringify(enhancedAction)
-            });
+            const message = {
+                type: 'ACTION',
+                action: enhancedAction,
+                id: enhancedAction.id,
+                clientVersion: this.localStateVersion
+            };
             
-            const result = await response.json();
-            const latency = Date.now() - startTime;
-            this.recordLatency(latency);
+            this.connection.send(JSON.stringify(message));
+            console.log(`📤 Action ${enhancedAction.type} sent via WebSocket`);
+            this.actionCount++;
             
-            if (result.success) {
-                console.log(`✅ Action ${enhancedAction.type} sent successfully (${latency}ms)`);
-                this.actionCount++;
-                
-                // Handle immediate server version update
-                if (result.serverVersion) {
-                    this.serverStateVersion = result.serverVersion;
-                }
-                
-                // Check for version mismatch requiring sync
-                if (result.requiresSync) {
-                    this.requestFullSync();
-                }
-            } else {
-                console.error('❌ Failed to broadcast action:', result);
-                this.pendingActions.delete(enhancedAction.id);
-                
-                // Handle specific error types
-                if (result.error === 'VERSION_TOO_OLD' || result.error === 'VERSION_MISMATCH') {
-                    this.requestFullSync();
-                } else if (result.error === 'PARCEL_ALREADY_OWNED') {
-                    this.showNotification(result.message, 'warning');
-                }
-            }
+            // WebSocket actions are handled via the message response
+            return { success: true, pending: true };
             
-            return result;
         } catch (error) {
             console.error('❌ Error broadcasting action:', error);
             this.pendingActions.delete(enhancedAction.id);
-            
-            // Handle network errors with retry logic
-            const pendingAction = this.pendingActions.get(enhancedAction.id);
-            if (pendingAction && pendingAction.retries < 3) {
-                pendingAction.retries++;
-                console.log(`🔄 Retrying action ${enhancedAction.type} (attempt ${pendingAction.retries})`);
-                
-                setTimeout(() => {
-                    this.retryAction(enhancedAction);
-                }, 1000 * pendingAction.retries);
-            }
-            
             return { success: false, error: 'NETWORK_ERROR', message: error.message };
         }
     }
@@ -718,10 +719,16 @@ class MultiplayerManager {
     }
     
     disconnect() {
-        if (this.eventSource) {
-            this.eventSource.close();
-            this.eventSource = null;
+        if (this.connection) {
+            this.connection.close();
+            this.connection = null;
         }
+        
+        if (this.heartbeatInterval) {
+            clearInterval(this.heartbeatInterval);
+            this.heartbeatInterval = null;
+        }
+        
         this.isConnected = false;
         console.log('🔌 Disconnected from multiplayer server');
     }
@@ -1877,8 +1884,11 @@ class IsometricGrid {
         }
         
         try {
-            const response = await fetch('/api/websocket?action=reset', {
-                method: 'GET'
+            const response = await fetch('/api/reset', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                }
             });
             
             const result = await response.json();

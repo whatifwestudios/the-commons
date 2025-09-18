@@ -194,6 +194,27 @@ app.post('/api/permanent-departure', (req, res) => {
   });
 });
 
+// API endpoint for resetting server state
+app.post('/api/reset', (req, res) => {
+  try {
+    // Reset the game state
+    resetGameState();
+    
+    res.json({
+      success: true,
+      message: 'Server state reset successfully',
+      timestamp: Date.now()
+    });
+  } catch (error) {
+    console.error('Failed to reset server state:', error);
+    res.status(500).json({
+      success: false,
+      error: 'RESET_FAILED',
+      message: 'Failed to reset server state'
+    });
+  }
+});
+
 // Serve main game
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'index.html'));

@@ -1,9 +1,9 @@
 /**
- * Universal Multiplayer Client
- * Supports both WebSocket (Railway) and SSE (Vercel) backends
+ * WebSocket Multiplayer Client
+ * Railway-focused implementation
  */
 
-class UniversalMultiplayerManager {
+class RailwayMultiplayerManager {
     constructor(game) {
         this.game = game;
         this.playerId = null;
@@ -12,8 +12,7 @@ class UniversalMultiplayerManager {
         this.reconnectAttempts = 0;
         this.maxReconnectAttempts = 10;
         
-        // Connection type detection
-        this.connectionType = null; // 'websocket' or 'sse'
+        // WebSocket connection only
         this.connection = null;
         
         // Enhanced state management
@@ -60,41 +59,15 @@ class UniversalMultiplayerManager {
             maxSamples: 10
         };
         
-        // Auto-detect environment
-        this.baseUrl = this.detectEnvironment();
-        
-        console.log('🎮 Universal MultiplayerManager initialized for:', this.baseUrl);
+        console.log('🚂 Railway MultiplayerManager initialized for WebSocket');
         this.startConnectionMonitoring();
-    }
-    
-    detectEnvironment() {
-        const host = window.location.host;
-        
-        if (host.includes('railway.app') || host.includes('localhost:3000')) {
-            console.log('🚂 Railway environment detected - using WebSocket');
-            this.connectionType = 'websocket';
-            return window.location.origin;
-        } else if (host.includes('vercel.app')) {
-            console.log('▲ Vercel environment detected - using SSE');
-            this.connectionType = 'sse';
-            return window.location.origin;
-        } else {
-            // Default to SSE for unknown environments
-            console.log('🌐 Unknown environment - defaulting to SSE');
-            this.connectionType = 'sse';
-            return window.location.origin;
-        }
     }
     
     async connect() {
         try {
-            console.log(`🔌 Connecting to ${this.connectionType} server...`);
+            console.log('🔌 Connecting to WebSocket server...');
             
-            if (this.connectionType === 'websocket') {
-                await this.connectWebSocket();
-            } else {
-                await this.connectSSE();
-            }
+            await this.connectWebSocket();
             
             this.isConnected = true;
             this.reconnectAttempts = 0;
@@ -137,55 +110,6 @@ class UniversalMultiplayerManager {
         };
     }
     
-    async connectSSE() {
-        // First join the game using REST API
-        const playerSettings = this.game.playerSettings || {};
-        const joinParams = new URLSearchParams({
-            action: 'join',
-            playerId: this.getStoredPlayerId() || '',
-            playerName: playerSettings.name || 'Player',
-            playerColor: playerSettings.color || '#2196F3',
-            playerEmoji: playerSettings.emoji || '🏠'
-        });
-        
-        const joinResponse = await fetch(`${this.baseUrl}/api/websocket?${joinParams}`);
-        const joinData = await joinResponse.json();
-        
-        this.playerId = joinData.playerId;
-        localStorage.setItem('multiplayer_player_id', this.playerId);
-        
-        // Update local state
-        if (joinData.gameState) {
-            this.syncGameState(joinData.gameState);
-        }
-        if (joinData.players) {
-            joinData.players.forEach(player => {
-                this.players.set(player.id, player);
-            });
-            this.updatePlayersDisplay();
-        }
-        
-        // Start SSE stream
-        this.connection = new EventSource(`${this.baseUrl}/api/websocket?action=stream&playerId=${this.playerId}`);
-        
-        this.connection.onmessage = (event) => {
-            try {
-                const data = JSON.parse(event.data);
-                this.handleServerMessage(data);
-            } catch (error) {
-                console.error('❌ Error parsing SSE message:', error);
-            }
-        };
-        
-        this.connection.onerror = (error) => {
-            console.error('❌ SSE error:', error);
-            this.handleConnectionLoss();
-        };
-        
-        this.connection.onopen = () => {
-            console.log('📡 SSE connection established');
-        };
-    }
     
     sendJoinGame() {
         const playerSettings = this.game.playerSettings || {};
@@ -197,9 +121,7 @@ class UniversalMultiplayerManager {
             playerEmoji: playerSettings.emoji || '🏠'
         };
         
-        if (this.connectionType === 'websocket') {
-            this.connection.send(JSON.stringify(message));
-        }
+        this.connection.send(JSON.stringify(message));
     }
     
     handleServerMessage(data) {
@@ -361,11 +283,7 @@ class UniversalMultiplayerManager {
         }
         
         try {
-            if (this.connectionType === 'websocket') {
-                return await this.sendWebSocketAction(enhancedAction);
-            } else {
-                return await this.sendSSEAction(enhancedAction);
-            }
+            return await this.sendWebSocketAction(enhancedAction);
         } catch (error) {
             console.error('❌ Error broadcasting action:', error);
             this.pendingActions.delete(enhancedAction.id);
@@ -387,31 +305,6 @@ class UniversalMultiplayerManager {
         return { success: true, pending: true };
     }
     
-    async sendSSEAction(action) {
-        const startTime = Date.now();
-        const response = await fetch(`${this.baseUrl}/api/websocket?action=action&playerId=${this.playerId}&version=${this.localStateVersion}`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-Client-Version': this.localStateVersion.toString()
-            },
-            body: JSON.stringify(action)
-        });
-        
-        const result = await response.json();
-        const latency = Date.now() - startTime;
-        this.recordLatency(latency);
-        
-        if (result.success) {
-            console.log(`✅ Action ${action.type} sent successfully (${latency}ms)`);
-            this.actionCount++;
-        } else {
-            console.error('❌ Failed to broadcast action:', result);
-            this.pendingActions.delete(action.id);
-        }
-        
-        return result;
-    }
     
     startHeartbeat() {
         this.heartbeatInterval = setInterval(() => {
@@ -423,22 +316,11 @@ class UniversalMultiplayerManager {
         if (!this.isConnected) return;
         
         try {
-            if (this.connectionType === 'websocket') {
-                this.connection.send(JSON.stringify({
-                    type: 'HEARTBEAT',
-                    timestamp: Date.now(),
-                    version: this.localStateVersion
-                }));
-            } else {
-                // SSE heartbeat via HTTP
-                const response = await fetch(`${this.baseUrl}/api/websocket?action=heartbeat&playerId=${this.playerId}&version=${this.localStateVersion}`);
-                const result = await response.json();
-                
-                if (result.success) {
-                    this.lastHeartbeat = Date.now();
-                    this.serverStateVersion = result.version;
-                }
-            }
+            this.connection.send(JSON.stringify({
+                type: 'HEARTBEAT',
+                timestamp: Date.now(),
+                version: this.localStateVersion
+            }));
         } catch (error) {
             console.error('💔 Heartbeat failed:', error);
             this.handleConnectionLoss();
@@ -654,11 +536,7 @@ class UniversalMultiplayerManager {
     handleConnectionLoss() {
         this.isConnected = false;
         if (this.connection) {
-            if (this.connectionType === 'websocket') {
-                this.connection.close();
-            } else {
-                this.connection.close();
-            }
+            this.connection.close();
             this.connection = null;
         }
         
@@ -914,7 +792,7 @@ class UniversalMultiplayerManager {
     getConnectionStatus() {
         return {
             connected: this.isConnected,
-            type: this.connectionType,
+            type: 'websocket',
             playerId: this.playerId,
             players: this.players.size,
             latency: this.latencyHistory.length > 0 
@@ -1320,14 +1198,7 @@ class UniversalMultiplayerManager {
         console.log(`🚀 Sending action batch with ${batch.length} actions`);
         
         try {
-            if (this.connectionType === 'websocket') {
-                await this.sendWebSocketBatch(batch);
-            } else {
-                // For SSE, send actions individually (no batch support)
-                for (const action of batch) {
-                    await this.sendSSEAction(action);
-                }
-            }
+            await this.sendWebSocketBatch(batch);
         } catch (error) {
             console.error('❌ Error sending batch:', error);
             // Re-add failed actions to pending (they'll be retried individually)
@@ -1674,5 +1545,5 @@ class UniversalMultiplayerManager {
 
 // Export for use
 if (typeof module !== 'undefined' && module.exports) {
-    module.exports = UniversalMultiplayerManager;
+    module.exports = RailwayMultiplayerManager;
 }

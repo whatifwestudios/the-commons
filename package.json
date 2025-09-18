@@ -8,19 +8,18 @@
     "start": "node server.js",
     "dev": "node server.js", 
     "build": "echo 'No build step required'",
-    "deploy": "vercel --prod",
     "lint": "node lint-multiplayer.js",
     "lint:check": "node lint-multiplayer.js",
-    "lint:full": "eslint *.js",
-    "railway": "node server.js"
+    "lint:full": "eslint *.js"
   },
   "keywords": [
     "game",
-    "city-building",
+    "city-building", 
     "economics",
     "land-value-tax",
     "multiplayer",
-    "websocket"
+    "websocket",
+    "railway"
   ],
   "author": "",
   "license": "MIT",
@@ -30,7 +29,6 @@
     "cors": "^2.8.5"
   },
   "devDependencies": {
-    "vercel": "^32.0.0",
     "eslint": "^9.0.0",
     "@eslint/js": "^9.0.0"
   },
