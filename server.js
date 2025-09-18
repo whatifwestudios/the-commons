@@ -143,6 +143,12 @@ function getGameInstanceForClient(clientId) {
     }
   }
 
+  // Auto-assign clients without rooms to the default room
+  if (!client.roomId) {
+    client.roomId = 'default';
+    console.log(`🏠 Auto-assigned client ${clientId} to default room`);
+  }
+
   // Default fallback
   return getGameInstance('default');
 }
@@ -458,24 +464,29 @@ async function handleWebSocketMessage(ws, clientId, data) {
 
 async function handleJoinGame(ws, clientId, data) {
   const { playerName = 'Player', playerColor = '#2196F3', playerEmoji = '🏠', cityName } = data;
-  
+
+  // Get the correct game instance for this client
+  const gameState = getGameInstanceForClient(clientId);
+
   // Generate or use existing player ID
   let playerId = data.playerId;
   if (!playerId || !gameState.core.players.has(playerId)) {
     playerId = 'player_' + Math.random().toString(36).substr(2, 9);
   }
-  
+
   // Initialize new game if this is the first player or no game exists
   if (!gameState.lifecycle.gameId || gameState.lifecycle.status === 'ended' || gameState.lifecycle.status === 'archived') {
-    const gameId = initializeNewGame(cityName || playerName + "'s City");
-    console.log(`🎮 New game initialized: ${gameId}`);
+    const client = clients.get(clientId);
+    const roomId = client?.roomId || 'default';
+    const gameId = initializeNewGameForRoom(roomId, cityName || playerName + "'s City");
+    console.log(`🎮 New game initialized: ${gameId} for room ${roomId}`);
   } else {
     // Game already exists - use existing city name (don't allow override)
     console.log(`🔗 Player ${playerName} joining existing game: ${gameState.lifecycle.cityName}`);
   }
-  
+
   // Check if player can join this game
-  const joinResult = handlePlayerJoinGame(playerId);
+  const joinResult = handlePlayerJoinGameForInstance(playerId, gameState);
   if (!joinResult.success) {
     ws.send(JSON.stringify({
       type: 'JOIN_REJECTED',
@@ -486,7 +497,7 @@ async function handleJoinGame(ws, clientId, data) {
     }));
     return;
   }
-  
+
   // Create or update player
   const player = {
     id: playerId,
@@ -506,7 +517,7 @@ async function handleJoinGame(ws, clientId, data) {
     lastSeen: Date.now(),
     connected: true
   };
-  
+
   gameState.core.players.set(playerId, player);
   gameState.version.perPlayer[playerId] = 0;
   gameState.meta.activeConnections.add(playerId);
@@ -2814,6 +2825,10 @@ function handlePlayerDeparture(playerId, reason = 'disconnect') {
 
 // Handle player joining game
 function handlePlayerJoinGame(playerId) {
+  return handlePlayerJoinGameForInstance(playerId, gameState);
+}
+
+function handlePlayerJoinGameForInstance(playerId, gameState) {
   // Prevent rejoining if player already departed
   if (gameState.lifecycle.departedPlayers.has(playerId)) {
     console.log(`🚫 Player ${playerId} attempted to rejoin after departure`);
@@ -2824,7 +2839,7 @@ function handlePlayerJoinGame(playerId) {
       shouldRedirect: true
     };
   }
-  
+
   // Check if game is full
   if (gameState.lifecycle.activePlayers.size >= gameState.lifecycle.maxPlayers) {
     return {
@@ -2834,7 +2849,7 @@ function handlePlayerJoinGame(playerId) {
       shouldRedirect: true
     };
   }
-  
+
   // Check if game has ended
   if (gameState.lifecycle.status === 'ended' || gameState.lifecycle.status === 'archived') {
     return {
