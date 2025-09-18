@@ -1542,11 +1542,14 @@ class RailwayMultiplayerManager {
         if (this.playerId && this.game.grid) {
             const playerData = this.game.multiplayerManager?.players?.get(this.playerId);
             if (playerData && playerData.governance) {
+                console.log('🗳️ Syncing player governance data:', playerData.governance);
                 if (playerData.governance.playerAllocations) {
                     this.game.governance.playerAllocations = { ...playerData.governance.playerAllocations };
+                    console.log('🗳️ Player allocations synced:', this.game.governance.playerAllocations);
                 }
                 if (playerData.governance.totalVotingPoints !== undefined) {
                     this.game.governance.totalVotingPoints = playerData.governance.totalVotingPoints;
+                    console.log('🗳️ Total voting points synced:', this.game.governance.totalVotingPoints);
                 }
             }
         }

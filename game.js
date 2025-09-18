@@ -3567,7 +3567,9 @@ class IsometricGrid {
         
         const playerVotingPointsEl = document.getElementById('player-voting-points');
         if (playerVotingPointsEl) {
-            playerVotingPointsEl.textContent = this.getUnallocatedPoints();
+            const unallocatedPoints = this.getUnallocatedPoints();
+            console.log(`🗳️ Updating UI: Total=${this.governance.totalVotingPoints}, Used=${this.getTotalAllocatedPoints()}, Available=${unallocatedPoints}`);
+            playerVotingPointsEl.textContent = unallocatedPoints;
         }
         
         // Update LVT display
