@@ -542,6 +542,8 @@ function handleRequestSync(ws, clientId, data) {
 }
 
 async function processGameAction(action, playerId) {
+  console.log(`🎯 Debug: Processing action ${action.type} from player ${playerId}`);
+  
   switch (action.type) {
     case 'PURCHASE_PARCEL':
       return await processPurchaseParcel(action, playerId);
@@ -685,6 +687,7 @@ async function processPurchaseParcel(action, playerId) {
 
 async function processConstructBuilding(action, playerId) {
   const { parcelId, building, constructionStartDay, constructionDays, amenities } = action;
+  console.log(`🏗️ Debug: Constructing ${building} at ${parcelId} by ${playerId}`);
   
   // Validate player and parcel
   if (!gameState.core.players.has(playerId)) {
