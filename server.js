@@ -525,29 +525,30 @@ async function handleJoinGame(ws, clientId, data) {
   // Update client record
   const client = clients.get(clientId);
   client.playerId = playerId;
-  
+
   // Increment global version and recalculate state
   gameState.version.global++;
-  await recalculateAuthoritativeState();
-  
-  // Send join confirmation
+  await recalculateAuthoritativeStateForInstance(gameState);
+
+  // Send join confirmation with room-specific state
   ws.send(JSON.stringify({
     type: 'JOIN_SUCCESS',
     playerId: playerId,
     player: player,
-    gameState: getClientSafeState(),
+    gameState: getClientSafeStateForInstance(gameState),
     players: Array.from(gameState.core.players.values()),
     version: gameState.version.global,
     timestamp: Date.now()
   }));
-  
-  // Broadcast player join to all other clients
-  broadcastToOthers(clientId, {
+
+  // Broadcast player join to all other clients in the same room
+  const roomId = client.roomId || 'default';
+  broadcastToRoom(roomId, {
     type: 'PLAYER_JOINED',
     player: player,
     version: gameState.version.global,
     timestamp: Date.now()
-  });
+  }, clientId);
   
   // console.log(`✅ Player ${playerName} (${playerId}) joined the game`);
 }
@@ -967,6 +968,10 @@ async function processTreasuryFee(action, playerId) {
 
 // Utility functions
 function getClientSafeState() {
+  return getClientSafeStateForInstance(gameState);
+}
+
+function getClientSafeStateForInstance(gameState) {
   return {
     core: {
       players: Object.fromEntries(gameState.core.players),
@@ -980,7 +985,12 @@ function getClientSafeState() {
     },
     calculated: gameState.calculated,
     version: gameState.version.global,
-    timestamp: gameState.meta.lastUpdate
+    timestamp: gameState.meta.lastUpdate,
+    lifecycle: {
+      gameId: gameState.lifecycle.gameId,
+      cityName: gameState.lifecycle.cityName,
+      status: gameState.lifecycle.status
+    }
   };
 }
 
@@ -1307,10 +1317,14 @@ let calculationCache = {
 
 // Import the authoritative state calculator - Phase 4: Optimized
 async function recalculateAuthoritativeState() {
+  return recalculateAuthoritativeStateForInstance(gameState);
+}
+
+async function recalculateAuthoritativeStateForInstance(gameState) {
   const startTime = Date.now();
-  
+
   // Phase 4: Early exit if no changes since last calculation
-  if (calculationCache.lastCalculatedVersion === gameState.version.global && 
+  if (calculationCache.lastCalculatedVersion === gameState.version.global &&
       calculationCache.dirtyParcels.size === 0) {
     console.log('🚀 Calculation cache hit - skipping recalculation');
     return;
