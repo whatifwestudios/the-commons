@@ -257,6 +257,17 @@ class UniversalMultiplayerManager {
                 this.applyStateDiff(data.diff);
                 break;
                 
+            case 'PARTIAL_UPDATE':
+                const updateSize = JSON.stringify(data).length;
+                console.log(`⚡ Applying partial update: ${data.actionType} (${updateSize} bytes)`);
+                this.applyPartialUpdate(data.changes);
+                
+                // Track bandwidth savings
+                if (window.game?.serverStatsMonitor) {
+                    window.game.serverStatsMonitor.trackPartialUpdate(updateSize);
+                }
+                break;
+                
             case 'ACTION_SUCCESS':
                 console.log('✅ Action processed:', data.actionId);
                 this.handleActionSuccess(data);
@@ -882,6 +893,12 @@ class UniversalMultiplayerManager {
             this.game.auctionSystem.onAuctionStateUpdate(auctionsObject);
             console.log(`🔨 Synced ${Object.keys(auctionsObject).length} active auctions`);
         }
+        
+        // CRITICAL FIX: Clear tooltip cache after state sync to prevent stale "Empty Land" tooltips
+        if (this.game.tooltipManager && this.game.tooltipManager.clearCache) {
+            this.game.tooltipManager.clearCache();
+            console.log('🔄 Cleared tooltip cache after state sync');
+        }
     }
     
     updatePlayersDisplay() {
@@ -1165,6 +1182,79 @@ class UniversalMultiplayerManager {
         }
     }
     
+    /**
+     * Apply partial state updates (performance optimization)
+     */
+    applyPartialUpdate(changes) {
+        // Apply parcel changes
+        if (changes.parcels && this.game.grid) {
+            Object.entries(changes.parcels).forEach(([parcelId, parcelData]) => {
+                const [row, col] = parcelId.split('-').map(Number);
+                
+                if (this.game.grid[row] && this.game.grid[row][col]) {
+                    const localParcel = this.game.grid[row][col];
+                    
+                    // Merge parcel data (building, owner, construction state)
+                    Object.assign(localParcel, parcelData);
+                    
+                    console.log(`⚡ Updated parcel ${parcelId}:`, parcelData);
+                }
+            });
+        }
+        
+        // Apply player changes
+        if (changes.players) {
+            Object.entries(changes.players).forEach(([playerId, playerData]) => {
+                if (playerId === this.playerId && this.game) {
+                    // Update local player data
+                    if (playerData.cash !== undefined) {
+                        this.game.playerCash = playerData.cash;
+                    }
+                    if (playerData.actionManager && this.game.actionManager) {
+                        Object.assign(this.game.actionManager, playerData.actionManager);
+                        this.game.updateActionDisplay?.();
+                    }
+                }
+                
+                // Update player registry
+                this.players.set(playerId, playerData);
+            });
+        }
+        
+        // Apply transportation changes
+        if (changes.transportation && this.game.transportation) {
+            if (changes.transportation.roads) {
+                Object.assign(this.game.transportation.roads, changes.transportation.roads);
+            }
+            if (changes.transportation.transitStops) {
+                Object.assign(this.game.transportation.transitStops, changes.transportation.transitStops);
+            }
+            if (changes.transportation.transitRoutes) {
+                Object.assign(this.game.transportation.transitRoutes, changes.transportation.transitRoutes);
+            }
+        }
+        
+        // Apply governance changes
+        if (changes.governance && this.game.governanceSystem) {
+            Object.assign(this.game.governanceSystem.governance, changes.governance);
+            this.game.updateGovernanceUI?.();
+        }
+        
+        // Trigger visual updates
+        if (this.game.scheduleRender) {
+            this.game.scheduleRender();
+        }
+        
+        // Clear tooltip cache for updated parcels
+        if (this.game.tooltipManager && this.game.tooltipManager.clearCache) {
+            this.game.tooltipManager.clearCache();
+        }
+        
+        // Update related displays
+        this.game.updateVitalityDisplay?.();
+        this.updatePlayersDisplay();
+    }
+    
     // =====================================
     // Phase 4: Performance Optimizations
     // =====================================
@@ -1413,6 +1503,12 @@ class UniversalMultiplayerManager {
         // Trigger a re-render to show construction progress
         if (this.game.scheduleRender) {
             this.game.scheduleRender();
+        }
+        
+        // Clear tooltip cache since construction state changed
+        if (this.game.tooltipManager && this.game.tooltipManager.clearCache) {
+            this.game.tooltipManager.clearCache();
+            console.log('🔄 Cleared tooltip cache after construction update');
         }
     }
     

@@ -222,19 +222,21 @@ class RenderingSystem {
      * Get color for a tile based on its state
      */
     getTileColor(parcel, row, col) {
-        if (!parcel) return '#2a2a2a'; // Unowned - charcoal gray
-        
-        // Under construction
-        if (parcel._isUnderConstruction) {
-            return '#8B4513'; // Brown for construction
-        }
-        
-        // Based on owner
-        if (!parcel.owner) {
-            return '#2a2a2a'; // Unowned - charcoal gray
-        } else {
-            // Players layer filtering
-            if (this.game.currentLayer === 'players') {
+        // Handle layer-specific coloring first
+        switch(this.game.currentLayer) {
+            case 'landvalue':
+                // New land value heatmap implementation
+                return this.game.getTileColor(row, col);
+            case 'cashflow':
+                // New cashflow heatmap implementation  
+                return this.game.getTileColor(row, col);
+            case 'mobility':
+                return this.game.getMobilityLayerColor(row, col);
+            case 'players':
+                // Players layer filtering
+                if (!parcel || !parcel.owner) {
+                    return '#2a2a2a'; // Unowned - charcoal gray
+                }
                 if (this.game.filteredPlayerId) {
                     // Show filtered player in full color, others dimmed
                     if (parcel.owner === this.game.filteredPlayerId) {
@@ -246,10 +248,26 @@ class RenderingSystem {
                     // No filter - show all players normally
                     return this.getPlayerColor(parcel.owner);
                 }
-            } else {
-                // Other layers - show all players normally
-                return this.getPlayerColor(parcel.owner);
-            }
+                break;
+            case 'normal':
+            default:
+                // Fall through to normal logic
+                break;
+        }
+        
+        // Normal layer logic
+        if (!parcel) return '#2a2a2a'; // Unowned - charcoal gray
+        
+        // Under construction
+        if (parcel._isUnderConstruction) {
+            return '#8B4513'; // Brown for construction
+        }
+        
+        // Based on owner
+        if (!parcel.owner) {
+            return '#2a2a2a'; // Unowned - charcoal gray
+        } else {
+            return this.getPlayerColor(parcel.owner);
         }
     }
     

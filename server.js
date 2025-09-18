@@ -520,21 +520,21 @@ function handleRequestSync(ws, clientId, data) {
 async function processGameAction(action, playerId) {
   switch (action.type) {
     case 'PURCHASE_PARCEL':
-      return await processPurchaseParcel(action);
+      return await processPurchaseParcel(action, playerId);
     case 'CONSTRUCT_BUILDING':
-      return await processConstructBuilding(action);
+      return await processConstructBuilding(action, playerId);
     case 'ADVANCE_TIME':
-      return await processAdvanceTime(action);
+      return await processAdvanceTime(action, playerId);
     case 'TREASURY_FEE':
-      return await processTreasuryFee(action);
+      return await processTreasuryFee(action, playerId);
     case 'REQUEST_LAND_PRICE':
-      return await processLandPriceRequest(action);
+      return await processLandPriceRequest(action, playerId);
     case 'BUILD_ROAD':
-      return await processBuildRoad(action);
+      return await processBuildRoad(action, playerId);
     case 'BUILD_TRANSIT_STOP':
-      return await processBuildTransitStop(action);
+      return await processBuildTransitStop(action, playerId);
     case 'CREATE_TRANSIT_ROUTE':
-      return await processCreateTransitRoute(action);
+      return await processCreateTransitRoute(action, playerId);
     case 'ALLOCATE_VOTE':
       return await processAllocateVote(action, playerId);
     case 'ALLOCATE_LVT_POINT':
@@ -554,8 +554,8 @@ async function processGameAction(action, playerId) {
   }
 }
 
-async function processPurchaseParcel(action) {
-  const { parcelId, building, purchasePrice, playerId } = action;
+async function processPurchaseParcel(action, playerId) {
+  const { parcelId, building, purchasePrice } = action;
 
   if (parcelLocks.has(parcelId)) {
     return {
@@ -656,8 +656,8 @@ async function processPurchaseParcel(action) {
     }
 }
 
-async function processConstructBuilding(action) {
-  const { parcelId, playerId } = action;
+async function processConstructBuilding(action, playerId) {
+  const { parcelId, building, constructionStartDay, constructionDays, amenities } = action;
   
   // Validate player and parcel
   if (!gameState.core.players.has(playerId)) {
@@ -711,9 +711,17 @@ async function processConstructBuilding(action) {
     };
   }
   
-  // Start construction (building already set from parcel purchase)
-  parcel.constructionStartDay = gameState.core.currentDay;
-  parcel.constructionDays = 3; // Default construction time
+  // Set building and start construction
+  parcel.building = building;
+  parcel.constructionStartDay = constructionStartDay || gameState.core.currentDay;
+  parcel.constructionDays = constructionDays || 3; // Use provided or default construction time
+  
+  // Set amenities if provided
+  if (amenities) {
+    parcel.amenities = amenities;
+  }
+  
+  console.log(`🏗️ Server setting building: ${building} at ${parcelId} by ${playerId}`);
   
   // Deduct action cost
   player.actionManager.currentActions -= actionCost;
@@ -737,7 +745,7 @@ async function processConstructBuilding(action) {
   };
 }
 
-async function processAdvanceTime(action) {
+async function processAdvanceTime(action, playerId) {
   const { day, month } = action;
   
   gameState.core.currentDay = day;
@@ -761,8 +769,8 @@ async function processAdvanceTime(action) {
   };
 }
 
-async function processTreasuryFee(action) {
-  const { playerId, amount, reason } = action;
+async function processTreasuryFee(action, playerId) {
+  const { amount, reason } = action;
   
   // Validate inputs
   if (!playerId || !gameState.core.players.has(playerId)) {
@@ -848,8 +856,8 @@ function broadcastToAll(message) {
   });
 }
 
-async function processLandPriceRequest(action) {
-  const { parcelId, playerId } = action;
+async function processLandPriceRequest(action, playerId) {
+  const { parcelId } = action;
   
   if (!parcelId) {
     return {
@@ -882,8 +890,8 @@ async function processLandPriceRequest(action) {
   };
 }
 
-async function processBuildRoad(action) {
-  const { roadKey, roadType, hasSidewalks, hasBikeLanes, cost, isUpgrade, existingRoad, playerId } = action;
+async function processBuildRoad(action, playerId) {
+  const { roadKey, roadType, hasSidewalks, hasBikeLanes, cost, isUpgrade, existingRoad } = action;
   
   // CRITICAL: Lock road to prevent concurrent building
   if (roadLocks.has(roadKey)) {
@@ -964,8 +972,8 @@ async function processBuildRoad(action) {
   }
 }
 
-async function processBuildTransitStop(action) {
-  const { stopId, stopData, playerId } = action;
+async function processBuildTransitStop(action, playerId) {
+  const { stopId, stopData } = action;
   
   // Validate player and actions
   if (!gameState.core.players.has(playerId)) {
@@ -1027,8 +1035,8 @@ async function processBuildTransitStop(action) {
   };
 }
 
-async function processCreateTransitRoute(action) {
-  const { routeId, routeData, playerId } = action;
+async function processCreateTransitRoute(action, playerId) {
+  const { routeId, routeData } = action;
   
   // Validate player and actions
   if (!gameState.core.players.has(playerId)) {
@@ -2273,6 +2281,18 @@ async function handleActionBatch(ws, clientId, data) {
           result: result,
           version: gameState.version.global
         }));
+        
+        // CRITICAL FIX: Broadcast state changes to ALL players in the game
+        if (result.stateChanges) {
+          console.log(`🔄 Broadcasting selective state changes to all players: ${action.type}`);
+          broadcastToAll({
+            type: 'PARTIAL_UPDATE',
+            actionType: action.type,
+            changes: result.stateChanges, // Only send what actually changed
+            version: gameState.version.global,
+            timestamp: Date.now()
+          });
+        }
       } else {
         ws.send(JSON.stringify({
           type: 'ACTION_ERROR',
@@ -2342,6 +2362,29 @@ function initializeNewGame(cityName, maxPlayers = 4) {
     transitRoutes: {}
   };
   
+  // Reset governance system
+  gameState.core.governance = {
+    unallocatedFunds: 0,
+    proposedLvtRate: 0.50, // 50% default
+    currentLvtRate: 0.50,
+    categoryAllocations: {
+      infrastructure: 0,
+      education: 0,
+      healthcare: 0,
+      culture: 0,
+      environment: 0,
+      economic: 0
+    },
+    publicCoffers: {
+      infrastructure: 0,
+      education: 0,
+      healthcare: 0,
+      culture: 0,
+      environment: 0,
+      economic: 0
+    }
+  };
+  
   // Reset calculated state
   gameState.calculated = {
     treasury: 0,
@@ -2361,14 +2404,18 @@ function initializeNewGame(cityName, maxPlayers = 4) {
     lastCalculated: Date.now()
   };
   
-  // Reset versions
+  // Reset version tracking
   gameState.version = {
-    global: 0,
+    global: 1,
     perParcel: {},
     perPlayer: {}
   };
   
-  gameState.meta.lastUpdate = Date.now();
+  // Reset metadata
+  gameState.meta = {
+    lastUpdate: Date.now(),
+    activeConnections: new Set()
+  };
   
   console.log(`🎮 Initialized new game: ${gameId} - "${cityName}"`);
   return gameId;
