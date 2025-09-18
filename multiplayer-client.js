@@ -1543,7 +1543,816 @@ class RailwayMultiplayerManager {
     }
 }
 
+/**
+ * Multiplayer Manager for real-time state synchronization
+ * (Legacy implementation from game.js)
+ */
+class MultiplayerManager {
+    constructor(game) {
+        this.game = game;
+        this.playerId = null;
+        this.players = new Map();
+        this.connection = null; // WebSocket connection
+        this.isConnected = false;
+        this.reconnectAttempts = 0;
+        this.maxReconnectAttempts = 10;
+        
+        // Enhanced state management
+        this.localStateVersion = 0;
+        this.serverStateVersion = 0;
+        this.pendingActions = new Map();
+        this.stateCache = null;
+        
+        // Heartbeat and connection management
+        this.heartbeatInterval = null;
+        this.heartbeatFrequency = 30000; // 30 seconds
+        this.lastHeartbeat = null;
+        
+        // Reconnection strategy
+        this.reconnectDelay = 1000; // Start with 1 second
+        this.maxReconnectDelay = 30000; // Max 30 seconds
+        this.backoffMultiplier = 1.5;
+        
+        // Performance metrics
+        this.latencyHistory = [];
+        this.actionCount = 0;
+        this.syncCount = 0;
+        
+        console.log('🎮 WebSocket MultiplayerManager initialized for Railway');
+        this.startConnectionMonitoring();
+    }
+    
+    // Connection monitoring and heartbeat system
+    startConnectionMonitoring() {
+        // Monitor connection health every 10 seconds
+        setInterval(() => {
+            if (this.isConnected && this.lastHeartbeat) {
+                const timeSinceLastHeartbeat = Date.now() - this.lastHeartbeat;
+                if (timeSinceLastHeartbeat > this.heartbeatFrequency * 2) {
+                    console.warn('⚠️ Heartbeat timeout, reconnecting...');
+                    this.handleConnectionLoss();
+                }
+            }
+            this.cleanupPendingActions();
+        }, 10000);
+    }
+    
+    startHeartbeat() {
+        if (this.heartbeatInterval) {
+            clearInterval(this.heartbeatInterval);
+        }
+        
+        // Send periodic heartbeats
+        this.heartbeatInterval = setInterval(() => {
+            this.sendHeartbeat();
+        }, this.heartbeatFrequency);
+    }
+    
+    async sendHeartbeat() {
+        if (!this.isConnected || !this.connection) return;
+        
+        try {
+            const message = {
+                type: 'HEARTBEAT',
+                timestamp: Date.now(),
+                version: this.localStateVersion
+            };
+            
+            this.connection.send(JSON.stringify(message));
+        } catch (error) {
+            console.error('💔 Heartbeat failed:', error);
+            this.handleConnectionLoss();
+        }
+    }
+    
+    recordLatency(latency) {
+        this.latencyHistory.push(latency);
+        if (this.latencyHistory.length > 10) {
+            this.latencyHistory.shift();
+        }
+        
+        const avgLatency = this.latencyHistory.reduce((a, b) => a + b, 0) / this.latencyHistory.length;
+        if (avgLatency > 1000) {
+            console.warn(`⚠️ High latency detected: ${avgLatency.toFixed(0)}ms`);
+        }
+    }
+    
+    async requestFullSync() {
+        if (!this.connection || !this.isConnected) return;
+        
+        try {
+            const message = {
+                type: 'REQUEST_SYNC',
+                playerId: this.playerId,
+                version: this.localStateVersion
+            };
+            
+            this.connection.send(JSON.stringify(message));
+            console.log('📦 Requested full sync from server');
+        } catch (error) {
+            console.error('❌ Full sync request failed:', error);
+        }
+    }
+    
+    handleConnectionLoss() {
+        this.isConnected = false;
+        if (this.connection) {
+            this.connection.close();
+            this.connection = null;
+        }
+        
+        if (this.heartbeatInterval) {
+            clearInterval(this.heartbeatInterval);
+            this.heartbeatInterval = null;
+        }
+        
+        console.log('📱 Connection lost, attempting to reconnect...');
+        this.scheduleReconnect();
+    }
+    
+    scheduleReconnect() {
+        if (this.reconnectAttempts >= this.maxReconnectAttempts) {
+            console.error('❌ Max reconnection attempts reached');
+            this.showConnectionError();
+            return;
+        }
+        
+        const delay = Math.min(
+            this.reconnectDelay * Math.pow(this.backoffMultiplier, this.reconnectAttempts),
+            this.maxReconnectDelay
+        );
+        
+        console.log(`⏳ Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts + 1}/${this.maxReconnectAttempts})`);
+        
+        setTimeout(() => {
+            this.reconnectAttempts++;
+            this.connect();
+        }, delay);
+    }
+    
+    showConnectionError() {
+        // Show user-friendly connection error
+        const errorDiv = document.createElement('div');
+        errorDiv.className = 'multiplayer-error';
+        errorDiv.innerHTML = `
+            <div style="position: fixed; top: 20px; right: 20px; background: #ff4444; color: white; padding: 15px; border-radius: 8px; z-index: 1000; max-width: 300px;">
+                <h4>🔌 Connection Lost</h4>
+                <p>Unable to connect to multiplayer server. Playing in offline mode.</p>
+                <button onclick="this.parentElement.parentElement.remove(); window.location.reload();" style="background: white; color: #ff4444; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer;">
+                    Retry Connection
+                </button>
+            </div>
+        `;
+        document.body.appendChild(errorDiv);
+    }
+    
+    async connect() {
+        try {
+            console.log('🔌 Connecting to WebSocket server...');
+            
+            const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const wsUrl = `${wsProtocol}//${window.location.host}`;
+            
+            this.connection = new WebSocket(wsUrl);
+            
+            this.connection.onopen = () => {
+                console.log('📡 WebSocket connection established');
+                this.sendJoinGame();
+            };
+            
+            this.connection.onmessage = (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    this.handleServerMessage(data);
+                } catch (error) {
+                    console.error('❌ Error parsing WebSocket message:', error);
+                }
+            };
+            
+            this.connection.onclose = (event) => {
+                console.log('📱 WebSocket connection closed:', event.code);
+                this.handleConnectionLoss();
+            };
+            
+            this.connection.onerror = (error) => {
+                console.error('❌ WebSocket error:', error);
+                this.handleConnectionLoss();
+            };
+            
+        } catch (error) {
+            console.error('❌ Failed to connect to multiplayer server:', error);
+            this.scheduleReconnect();
+        }
+    }
+    
+    sendJoinGame() {
+        const playerSettings = this.game.playerSettings || {};
+        const message = {
+            type: 'JOIN_GAME',
+            playerId: this.getStoredPlayerId(),
+            playerName: playerSettings.name || 'Player',
+            playerColor: playerSettings.color || '#2196F3',
+            playerEmoji: playerSettings.emoji || '🏠'
+        };
+        
+        this.connection.send(JSON.stringify(message));
+    }
+    
+    handleServerMessage(data) {
+        this.lastHeartbeat = Date.now();
+        
+        switch (data.type) {
+            case 'JOIN_SUCCESS':
+                console.log('✅ Successfully joined game as:', data.player.name);
+                this.playerId = data.playerId;
+                localStorage.setItem('multiplayer_player_id', this.playerId);
+                this.localStateVersion = data.version;
+                this.isConnected = true;
+                this.reconnectAttempts = 0;
+                
+                this.syncGameState(data.gameState);
+                if (data.players) {
+                    data.players.forEach(player => {
+                        this.players.set(player.id, player);
+                    });
+                    this.updatePlayersDisplay();
+                }
+                
+                // Start heartbeat after successful connection
+                this.startHeartbeat();
+                break;
+                
+            case 'STATE_UPDATE':
+                this.syncGameState(data.gameState);
+                if (data.players) {
+                    data.players.forEach(player => {
+                        this.players.set(player.id, player);
+                    });
+                    this.updatePlayersDisplay();
+                }
+                break;
+                
+            case 'STATE_DIFF':
+                console.log('📦 Applying state diff...');
+                this.applyStateDiff(data.diff);
+                break;
+                
+            case 'ACTION_SUCCESS':
+                console.log('✅ Action processed:', data.actionId);
+                this.handleActionSuccess(data);
+                break;
+                
+            case 'ACTION_ERROR':
+                console.error('❌ Action failed:', data.error, data.message);
+                this.handleActionError(data);
+                break;
+                
+            case 'PLAYER_JOINED':
+                console.log(`👥 Player joined: ${data.player.name}`);
+                this.players.set(data.player.id, data.player);
+                this.updatePlayersDisplay();
+                this.showNotification(`${data.player.name} joined the game`, 'info');
+                break;
+                
+            case 'PLAYER_LEFT':
+                console.log(`👋 Player left: ${data.playerId}`);
+                this.players.delete(data.playerId);
+                this.updatePlayersDisplay();
+                break;
+                
+            case 'HEARTBEAT':
+            case 'HEARTBEAT_ACK':
+                this.lastHeartbeat = Date.now();
+                if (data.version) {
+                    this.serverStateVersion = data.version;
+                }
+                break;
+                
+            case 'GAME_RESET':
+                console.log('🔄 Game reset by server');
+                this.localStateVersion = 0;
+                location.reload(); // Force page refresh for clean slate
+                break;
+                
+            case 'CONFLICT_DETECTED':
+                console.warn('⚠️ Action conflict detected:', data.conflict);
+                this.handleConflict(data.conflict);
+                break;
+            case 'AUCTION_CREATED':
+                console.log('옥션 생성', data.listing);
+                this.game.actionManager.marketplace.listings.push(data.listing);
+                this.game.updateActionDisplay();
+                this.game.updateMarketplaceModal();
+                this.game.switchMarketplaceTab('marketplace');
+                break;
+            case 'AUCTION_ENDED':
+                console.log('Auction ended', data.listing);
+                const listing = this.game.actionManager.marketplace.listings.find(l => l.id === data.listingId);
+                if (listing) {
+                    Object.assign(listing, data.listing);
+                }
+                this.game.updatePlayerStats();
+                this.game.updateActionDisplay();
+                this.game.updateMarketplaceModal();
+                this.game.refreshMarketplaceListings();
+                break;
+            case 'AUCTION_UPDATED':
+                console.log('Auction updated', data.listing);
+                const updatedListing = this.game.actionManager.marketplace.listings.find(l => l.id === data.listingId);
+                if (updatedListing) {
+                    Object.assign(updatedListing, data.listing);
+                }
+                this.game.updatePlayerStats();
+                this.game.updateMarketplaceModal();
+                this.game.refreshMarketplaceListings();
+                break;
+                
+            default:
+                console.log('📨 Received server message:', data);
+        }
+    }
+    
+    applyStateDiff(diff) {
+        if (diff.version <= this.localStateVersion) {
+            console.log('⏸️ Ignoring old diff version');
+            return;
+        }
+        
+        console.log(`📦 Applying diff v${this.localStateVersion} → v${diff.version}`);
+        
+        // Apply parcel changes
+        if (diff.changes.parcels) {
+            Object.entries(diff.changes.parcels).forEach(([parcelId, parcelData]) => {
+                const [row, col] = parcelId.split('-').map(Number);
+                if (this.game.grid[row] && this.game.grid[row][col]) {
+                    if (parcelData === null) {
+                        // Parcel was reset/removed
+                        this.game.grid[row][col].owner = null;
+                        this.game.grid[row][col].building = null;
+                    } else {
+                        // Update parcel data
+                        Object.assign(this.game.grid[row][col], parcelData);
+                    }
+                }
+            });
+        }
+        
+        // Apply player changes
+        if (diff.changes.players) {
+            Object.entries(diff.changes.players).forEach(([playerId, playerData]) => {
+                if (playerData === null) {
+                    this.players.delete(playerId);
+                } else {
+                    this.players.set(playerId, playerData);
+                    
+                    // Update local player data if it's current player
+                    if (playerId === this.playerId) {
+                        this.game.playerCash = playerData.cash || this.game.playerCash;
+                        this.game.playerActions = playerData.actions || this.game.playerActions;
+                    }
+                }
+            });
+            this.updatePlayersDisplay();
+        }
+        
+        // Apply calculated state changes
+        if (diff.changes.calculated) {
+            this.updateCalculatedState(diff.changes.calculated);
+        }
+        
+        // Apply world state changes
+        if (diff.changes.world) {
+            if (diff.changes.world.currentDay !== undefined) {
+                this.game.currentDay = diff.changes.world.currentDay;
+            }
+            if (diff.changes.world.currentMonth !== undefined) {
+                this.game.currentMonth = diff.changes.world.currentMonth;
+            }
+        }
+        
+        this.localStateVersion = diff.version;
+        this.game.updateDisplay();
+    }
+    
+    updateCalculatedState(calculated) {
+        // Update treasury display
+        if (calculated.treasury !== undefined) {
+            this.game.cityTreasury = calculated.treasury;
+            this.updateTreasuryDisplay();
+        }
+        
+        // Update population display
+        if (calculated.population !== undefined) {
+            this.game.totalPopulation = calculated.population;
+            this.updatePopulationDisplay();
+        }
+        
+        // Update vitality metrics
+        if (calculated.vitality) {
+            Object.entries(calculated.vitality).forEach(([metric, data]) => {
+                if (this.game.vitalityMetrics && this.game.vitalityMetrics[metric]) {
+                    Object.assign(this.game.vitalityMetrics[metric], data);
+                }
+            });
+            this.game.updateVitalityDisplay();
+        }
+    }
+    
+    handleActionSuccess(data) {
+        const actionId = data.actionId;
+        if (this.pendingActions.has(actionId)) {
+            this.pendingActions.delete(actionId);
+        }
+        
+        // Apply state changes from server
+        if (data.stateChanges) {
+            this.applyServerStateChanges(data.stateChanges);
+        }
+        
+        this.actionCount++;
+        console.log(`✅ Action confirmed by server: ${actionId}`);
+    }
+    
+    handleActionError(data) {
+        const actionId = data.actionId;
+        if (this.pendingActions.has(actionId)) {
+            this.pendingActions.delete(actionId);
+        }
+        
+        // Handle specific error types
+        if (data.error === 'PARCEL_ALREADY_OWNED') {
+            this.showNotification('This parcel was purchased by another player', 'warning');
+        } else if (data.error === 'BID_SUPERSEDED') {
+            this.showNotification(`Another player bid higher. Try again.`, 'warning');
+        } else {
+            this.showNotification(data.message || 'Action failed', 'error');
+        }
+    }
+    
+    applyServerStateChanges(stateChanges) {
+        console.log('📥 Applying server state changes:', stateChanges);
+        
+        // Apply parcel changes
+        if (stateChanges.parcels) {
+            Object.entries(stateChanges.parcels).forEach(([parcelId, serverParcel]) => {
+                const [row, col] = parcelId.split('-').map(Number);
+                if (this.game.grid[row] && this.game.grid[row][col]) {
+                    const localParcel = this.game.grid[row][col];
+                    Object.assign(localParcel, serverParcel);
+                }
+            });
+            
+            // Trigger re-render
+            if (this.game.scheduleRender) {
+                this.game.scheduleRender();
+            }
+        }
+        
+        // Apply other state changes
+        if (stateChanges.treasury !== undefined) {
+            this.game.cityTreasury = stateChanges.treasury;
+        }
+        
+        if (stateChanges.population !== undefined) {
+            this.game.totalPopulation = stateChanges.population;
+        }
+    }
+    
+    handleConflict(conflict) {
+        console.warn('⚠️ Handling conflict:', conflict);
+        
+        // Show user notification
+        this.showNotification(`Action conflict: ${conflict.message}`, 'warning');
+        
+        // Request fresh state sync
+        this.requestFullSync();
+    }
+    
+    showNotification(message, type = 'info') {
+        const notification = document.createElement('div');
+        notification.className = `multiplayer-notification notification-${type}`;
+        notification.style.cssText = `
+            position: fixed;
+            top: 80px;
+            right: 20px;
+            background: ${type === 'warning' ? '#ff9800' : type === 'error' ? '#f44336' : '#4caf50'};
+            color: white;
+            padding: 12px 16px;
+            border-radius: 6px;
+            z-index: 1000;
+            max-width: 300px;
+            opacity: 0;
+            transform: translateX(100%);
+            transition: all 0.3s ease;
+        `;
+        notification.textContent = message;
+        
+        document.body.appendChild(notification);
+        
+        // Animate in
+        requestAnimationFrame(() => {
+            notification.style.opacity = '1';
+            notification.style.transform = 'translateX(0)';
+        });
+        
+        // Auto remove after 5 seconds
+        setTimeout(() => {
+            notification.style.opacity = '0';
+            notification.style.transform = 'translateX(100%)';
+            setTimeout(() => notification.remove(), 300);
+        }, 5000);
+    }
+    
+    async broadcastAction(action) {
+        if (!this.isConnected || !this.playerId || !this.connection) {
+            console.warn('⚠️ Not connected to multiplayer server');
+            return { success: false, error: 'NOT_CONNECTED' };
+        }
+        
+        // Add action metadata
+        const enhancedAction = {
+            ...action,
+            id: crypto.randomUUID(),
+            timestamp: Date.now(),
+            clientVersion: this.localStateVersion,
+            playerId: this.playerId
+        };
+        
+        // Track pending action
+        this.pendingActions.set(enhancedAction.id, {
+            action: enhancedAction,
+            timestamp: Date.now(),
+            retries: 0
+        });
+        
+        try {
+            const message = {
+                type: 'ACTION',
+                action: enhancedAction,
+                id: enhancedAction.id,
+                clientVersion: this.localStateVersion
+            };
+            
+            this.connection.send(JSON.stringify(message));
+            console.log(`📤 Action ${enhancedAction.type} sent via WebSocket`);
+            this.actionCount++;
+            
+            // WebSocket actions are handled via the message response
+            return { success: true, pending: true };
+            
+        } catch (error) {
+            console.error('❌ Error broadcasting action:', error);
+            this.pendingActions.delete(enhancedAction.id);
+            return { success: false, error: 'NETWORK_ERROR', message: error.message };
+        }
+    }
+    
+    async retryAction(action) {
+        console.log(`🔄 Retrying action: ${action.type}`);
+        
+        // Update timestamp for retry
+        action.timestamp = Date.now();
+        action.clientVersion = this.localStateVersion;
+        
+        return this.broadcastAction(action);
+    }
+    
+    // Cleanup old pending actions
+    cleanupPendingActions() {
+        const now = Date.now();
+        const timeout = 30000; // 30 seconds
+        
+        for (const [actionId, pendingAction] of this.pendingActions) {
+            if (now - pendingAction.timestamp > timeout) {
+                console.warn(`⏰ Removing stale pending action: ${pendingAction.action.type}`);
+                this.pendingActions.delete(actionId);
+            }
+        }
+    }
+    
+    // Get connection status for UI
+    getConnectionStatus() {
+        return {
+            connected: this.isConnected,
+            playerId: this.playerId,
+            players: this.players.size,
+            latency: this.latencyHistory.length > 0 
+                ? Math.round(this.latencyHistory.reduce((a, b) => a + b, 0) / this.latencyHistory.length)
+                : 0,
+            actions: this.actionCount,
+            syncs: this.syncCount,
+            version: this.localStateVersion,
+            serverVersion: this.serverStateVersion,
+            pendingActions: this.pendingActions.size
+        };
+    }
+    
+    syncGameState(serverState) {
+        if (!serverState) return;
+        
+        // Sync parcel ownership
+        if (serverState.parcels) {
+            Object.entries(serverState.parcels).forEach(([parcelId, parcelData]) => {
+                const [row, col] = parcelId.split('-').map(Number);
+                if (this.game.grid[row] && this.game.grid[row][col]) {
+                    const tile = this.game.grid[row][col];
+                    
+                    // Always sync all parcel data to prevent desync
+                    let hasChanged = false;
+                    
+                    if (tile.owner !== parcelData.owner) {
+                        console.log(`🔄 Syncing owner change: ${parcelId} ${tile.owner} → ${parcelData.owner}`);
+                        tile.owner = parcelData.owner;
+                        hasChanged = true;
+                    }
+                    
+                    if (tile.building !== parcelData.building) {
+                        console.log(`🔄 Syncing building change: ${parcelId} ${tile.building} → ${parcelData.building}`);
+                        tile.building = parcelData.building;
+                        hasChanged = true;
+                    }
+                    
+                    // Always sync construction data (can change without building ID changing)
+                    if (parcelData.constructionStartDay !== undefined && 
+                        tile.constructionStartDay !== parcelData.constructionStartDay) {
+                        tile.constructionStartDay = parcelData.constructionStartDay;
+                        hasChanged = true;
+                    }
+                    if (parcelData.constructionDays !== undefined &&
+                        tile.constructionDays !== parcelData.constructionDays) {
+                        tile.constructionDays = parcelData.constructionDays;
+                        hasChanged = true;
+                    }
+                    
+                    // Update client-side construction progress when syncing from server
+                    if (tile.constructionStartDay !== null && tile.constructionDays > 0) {
+                        // Calculate construction progress based on server's currentDay
+                        const serverCurrentDay = this.gameState?.core?.currentDay || 0;
+                        const daysPassed = serverCurrentDay - tile.constructionStartDay;
+                        const progress = Math.max(0, Math.min(1.0, daysPassed / tile.constructionDays));
+                        
+                        tile._constructionProgress = progress;
+                        tile._isUnderConstruction = progress < 1.0;
+                        
+                        // Start client-side animation if still under construction
+                        if (tile._isUnderConstruction) {
+                            console.log(`🏗️ Starting client-side construction animation for ${parcelId}, progress: ${Math.round(progress * 100)}%`);
+                        }
+                    } else {
+                        // Building is complete or doesn't have construction data
+                        tile._constructionProgress = 1.0;
+                        tile._isUnderConstruction = false;
+                    }
+                    
+                    if (hasChanged) {
+                        // Mark for visual update and force cache invalidation
+                        this.game.dirtyRegions.add(`${row}-${col}`);
+                        this.game.markVitalityDirty();
+                        this.game.markBuildingEconomicsDirty(row, col);
+                    }
+                }
+            });
+        }
+        
+        // Sync marketplace listings
+        if (serverState.marketplace && serverState.marketplace.listings) {
+            this.game.actionManager.marketplace.listings = serverState.marketplace.listings;
+            // Update marketplace display if modal is open
+            if (document.getElementById('action-marketplace-modal').classList.contains('visible')) {
+                this.game.updateMarketplaceModal();
+            }
+            this.game.updateMarketplaceDisplay();
+        }
+        
+        // Schedule render if we have updates
+        if (this.game.dirtyRegions.size > 0) {
+            this.game.scheduleRender();
+        }
+    }
+    
+    updatePlayersDisplay() {
+        // Add visual indicator of other players
+        const playerCount = this.players.size;
+        const playersOnline = Array.from(this.players.values()).filter(p => p.id !== this.playerId);
+        
+        // Update player menu or add status indicator
+        const playerBtn = document.getElementById('player-btn');
+        if (playerBtn && playersOnline.length > 0) {
+            playerBtn.textContent = `PLAYER (${playerCount} online)`;
+        }
+        
+        console.log(`👥 ${playerCount} players online:`, Array.from(this.players.keys()));
+    }
+    
+    getStoredPlayerId() {
+        return localStorage.getItem('multiplayer_player_id');
+    }
+    
+    disconnect() {
+        if (this.connection) {
+            this.connection.close();
+            this.connection = null;
+        }
+        
+        if (this.heartbeatInterval) {
+            clearInterval(this.heartbeatInterval);
+            this.heartbeatInterval = null;
+        }
+        
+        this.isConnected = false;
+        console.log('🔌 Disconnected from multiplayer server');
+    }
+    
+    updateTreasuryDisplay() {
+        const treasuryElement = document.getElementById('city-treasury');
+        if (treasuryElement && this.game.cityTreasury !== undefined) {
+            treasuryElement.textContent = `$${Math.round(this.game.cityTreasury).toLocaleString()}`;
+        }
+    }
+    
+    updatePopulationDisplay() {
+        const populationElement = document.getElementById('total-residents');
+        if (populationElement && this.game.totalPopulation !== undefined) {
+            populationElement.textContent = this.game.totalPopulation.toLocaleString();
+        }
+    }
+    
+    // Hook into existing game actions to broadcast them
+    async onParcelPurchased(row, col, building, purchasePrice, playerCash) {
+        const result = await this.broadcastAction({
+            type: 'PURCHASE_PARCEL',
+            parcelId: `${row}-${col}`,
+            building: building,
+            purchasePrice: purchasePrice,
+            timestamp: Date.now()
+        });
+        
+        // Handle purchase collision
+        if (!result.success && result.error === 'PARCEL_ALREADY_OWNED') {
+            // Rollback the optimistic purchase
+            this.rollbackParcelPurchase(row, col, purchasePrice, playerCash);
+            
+            // Show conflict notification
+            this.showPurchaseConflict(result.currentOwner, row, col);
+            
+            return false; // Purchase failed
+        }
+        
+        return result.success;
+    }
+    
+    rollbackParcelPurchase(row, col, purchasePrice, originalCash) {
+        // Revert the local state
+        this.game.grid[row][col].owner = null;
+        this.game.grid[row][col].landValue.paidPrice = 0;
+        this.game.playerCash = originalCash; // Restore original cash
+        
+        // Force re-render to show the rollback
+        this.game.scheduleRender();
+        this.game.updateVitalityDisplay();
+        this.game.updateDemographicsDisplay();
+        this.game.calculateCurrentCashflow();
+        this.game.updatePlayerStats();
+        
+        console.log(`🔄 Rolled back parcel purchase at ${row}-${col}`);
+    }
+    
+    showPurchaseConflict(currentOwner, row, col) {
+        // Get the current owner's display name and color
+        let ownerName = 'Another player';
+        let ownerColor = '#999';
+        
+        if (this.players.has(currentOwner)) {
+            const owner = this.players.get(currentOwner);
+            ownerName = currentOwner === this.playerId ? 'You' : `Player ${currentOwner.slice(-4)}`;
+            ownerColor = owner.color || '#999';
+        }
+        
+        // Show visual notification
+        if (this.game.showNotification) {
+            this.game.showNotification(
+                `Parcel ${row}-${col} was already purchased by ${ownerName}`, 
+                'conflict',
+                4000
+            );
+        }
+        
+        console.log(`⚠️ Purchase conflict: Parcel ${row}-${col} owned by ${ownerName}`);
+    }
+    
+    onBuildingConstructed(row, col, building, constructionData = {}) {
+        this.broadcastAction({
+            type: 'CONSTRUCT_BUILDING', 
+            parcelId: `${row}-${col}`,
+            building: building,
+            constructionStartDay: constructionData.constructionStartDay,
+            constructionDays: constructionData.constructionDays,
+            timestamp: Date.now()
+        });
+    }
+}
+
 // Export for use
 if (typeof module !== 'undefined' && module.exports) {
-    module.exports = RailwayMultiplayerManager;
+    module.exports = { RailwayMultiplayerManager, MultiplayerManager };
 }

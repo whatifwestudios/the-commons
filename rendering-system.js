@@ -158,6 +158,9 @@ class RenderingSystem {
             case 'land_values':
                 this.drawLandValueOverlay();
                 break;
+            case 'cashflow':
+                this.drawCashflowNumbers();
+                break;
             default:
                 // Normal building layer
                 break;
@@ -408,6 +411,9 @@ class RenderingSystem {
         
         // Try to load and draw building image
         this.drawBuildingImage(building, x, y, row, col);
+        
+        // Add JEFH warning indicators
+        this.drawJEFHWarningIndicators(buildingId, offsetX, offsetY, row, col);
     }
     
     /**
@@ -733,7 +739,7 @@ class RenderingSystem {
         }
         
         // Draw parcel reach if active
-        if (this.game.parcelReach) {
+        if (this.game.selectedParcel) {
             this.drawParcelReach();
         }
         
@@ -1082,6 +1088,394 @@ class RenderingSystem {
         
         this.ctx.fillStyle = '#FFD700';
         this.ctx.fillText('⚠️', x, hazardY);
+        
+        this.ctx.restore();
+    }
+    
+    /**
+     * Draw parcel reach visualization with animations
+     */
+    drawParcelReach() {
+        if (!this.game.parcelReach || !this.game.selectedParcel) return;
+        
+        // Create a set of all reachable parcels including the selected one
+        const allReachable = new Set(this.game.parcelReach);
+        allReachable.add(`${this.game.selectedParcel.row},${this.game.selectedParcel.col}`);
+        
+        this.ctx.save();
+        
+        // Calculate animation values using time
+        const time = Date.now() / 1000; // Convert to seconds
+        const pulseAmount = Math.sin(time * 2) * 0.5 + 0.5; // Oscillates between 0 and 1
+        const glowAmount = Math.sin(time * 3) * 0.3 + 0.7; // Faster, smaller oscillation for glow
+        
+        // Animated fill for reachable area with pulsing opacity
+        const baseOpacity = 0.04;
+        const maxOpacity = 0.08;
+        const fillOpacity = baseOpacity + (maxOpacity - baseOpacity) * pulseAmount;
+        this.ctx.fillStyle = `rgba(255, 215, 0, ${fillOpacity})`; // Pulsing yellow fill
+        
+        allReachable.forEach(key => {
+            const [r, c] = key.split(',').map(Number);
+            const iso = this.toIsometric(c, r);
+            const tile = this.game.grid[r][c];
+            const elevation = tile ? tile.elevation * 8 : 0;
+            
+            this.ctx.beginPath();
+            this.ctx.moveTo(iso.x, iso.y - elevation - this.tileHeight / 2);
+            this.ctx.lineTo(iso.x + this.tileWidth / 2, iso.y - elevation);
+            this.ctx.lineTo(iso.x, iso.y - elevation + this.tileHeight / 2);
+            this.ctx.lineTo(iso.x - this.tileWidth / 2, iso.y - elevation);
+            this.ctx.closePath();
+            this.ctx.fill();
+        });
+        
+        // Animated border with glow effect
+        this.ctx.shadowColor = 'rgba(255, 215, 0, 0.8)';
+        this.ctx.shadowBlur = 3 + (2 * glowAmount); // Animated glow
+        
+        // Draw only the outer border of the reachable area
+        const borderOpacity = 0.25 + (0.15 * glowAmount); // Oscillating border opacity
+        this.ctx.strokeStyle = `rgba(255, 215, 0, ${borderOpacity})`;
+        this.ctx.lineWidth = 1 + (0.5 * pulseAmount); // Subtle width animation
+        
+        // Animated dash pattern
+        const dashOffset = (time * 10) % 5; // Animate dash movement
+        this.ctx.lineDashOffset = dashOffset;
+        this.ctx.setLineDash([3, 2]); // Subtle dashed line
+        
+        // Find and draw only the perimeter of the reachable area
+        this.drawReachPerimeter(allReachable);
+        
+        // Reset shadow for selected parcel
+        this.ctx.shadowBlur = 0;
+        
+        // Highlight the selected parcel itself with animated glow
+        const iso = this.toIsometric(this.game.selectedParcel.col, this.game.selectedParcel.row);
+        const tile = this.game.grid[this.game.selectedParcel.row][this.game.selectedParcel.col];
+        const elevation = tile ? tile.elevation * 8 : 0;
+        
+        // Strong glow for selected parcel to make it stand out
+        this.ctx.shadowColor = 'rgba(255, 215, 0, 1)';
+        this.ctx.shadowBlur = 5 + (3 * pulseAmount); // Stronger glow for selected
+        
+        this.ctx.strokeStyle = `rgba(255, 215, 0, ${0.6 + 0.2 * glowAmount})`; // Brighter yellow for selected
+        this.ctx.lineWidth = 2 + (0.5 * pulseAmount); // Thicker, animated line
+        this.ctx.setLineDash([]);
+        this.ctx.beginPath();
+        this.ctx.moveTo(iso.x, iso.y - elevation - this.tileHeight / 2);
+        this.ctx.lineTo(iso.x + this.tileWidth / 2, iso.y - elevation);
+        this.ctx.lineTo(iso.x, iso.y - elevation + this.tileHeight / 2);
+        this.ctx.lineTo(iso.x - this.tileWidth / 2, iso.y - elevation);
+        this.ctx.closePath();
+        this.ctx.stroke();
+        
+        this.ctx.restore();
+        
+        // Request animation frame to keep the animation running
+        if (this.game.parcelReach) {
+            requestAnimationFrame(() => {
+                if (this.game.parcelReach) {
+                    this.game.scheduleRender();
+                }
+            });
+        }
+    }
+    
+    /**
+     * Draw perimeter of reachable parcels
+     */
+    drawReachPerimeter(reachableParcels) {
+        // Find parcels that are on the edge of the reachable area
+        const edgeParcels = new Set();
+        
+        reachableParcels.forEach(key => {
+            const [r, c] = key.split(',').map(Number);
+            
+            // Check if this parcel has at least one non-reachable neighbor
+            const neighbors = [
+                [r-1, c], [r+1, c], [r, c-1], [r, c+1],
+                [r-1, c-1], [r-1, c+1], [r+1, c-1], [r+1, c+1]
+            ];
+            
+            const hasUnreachableNeighbor = neighbors.some(([nr, nc]) => {
+                if (nr < 0 || nr >= this.game.gridSize || nc < 0 || nc >= this.game.gridSize) {
+                    return true; // Out of bounds counts as unreachable
+                }
+                return !reachableParcels.has(`${nr},${nc}`);
+            });
+            
+            if (hasUnreachableNeighbor) {
+                edgeParcels.add(key);
+            }
+        });
+        
+        // Draw only the edge parcels
+        edgeParcels.forEach(key => {
+            const [r, c] = key.split(',').map(Number);
+            const iso = this.toIsometric(c, r);
+            const tile = this.game.grid[r][c];
+            const elevation = tile ? tile.elevation * 8 : 0;
+            
+            this.ctx.beginPath();
+            this.ctx.moveTo(iso.x, iso.y - elevation - this.tileHeight / 2);
+            this.ctx.lineTo(iso.x + this.tileWidth / 2, iso.y - elevation);
+            this.ctx.lineTo(iso.x, iso.y - elevation + this.tileHeight / 2);
+            this.ctx.lineTo(iso.x - this.tileWidth / 2, iso.y - elevation);
+            this.ctx.closePath();
+            this.ctx.stroke();
+        });
+    }
+    
+    /**
+     * Draw cashflow numbers on parcels
+     */
+    drawCashflowNumbers() {
+        // Draw cashflow numbers on each parcel
+        for (let row = 0; row < this.game.gridSize; row++) {
+            for (let col = 0; col < this.game.gridSize; col++) {
+                const cashflow = this.game.getParcelCashflow ? this.game.getParcelCashflow(row, col) : 0;
+                
+                if (Math.abs(cashflow) >= 0.1) {
+                    const iso = this.toIsometric(col, row);
+                    this.drawCashflowNumber(iso.x, iso.y, cashflow);
+                }
+            }
+        }
+    }
+    
+    /**
+     * Draw a single cashflow number
+     */
+    drawCashflowNumber(x, y, cashflow) {
+        this.ctx.save();
+        this.ctx.translate(x, y);
+        
+        // Format the cashflow number
+        const formatted = cashflow >= 0 ? `+$${cashflow.toFixed(1)}` : `-$${Math.abs(cashflow).toFixed(1)}`;
+        const color = cashflow >= 0 ? '#4caf50' : '#f44336';
+        
+        // Draw text with outline for visibility
+        this.ctx.font = '8px SF Mono, Monaco, monospace';
+        this.ctx.textAlign = 'center';
+        this.ctx.fillStyle = '#000';
+        this.ctx.lineWidth = 2;
+        this.ctx.strokeText(formatted, 0, 3);
+        this.ctx.fillStyle = color;
+        this.ctx.fillText(formatted, 0, 3);
+        
+        this.ctx.restore();
+    }
+    
+    /**
+     * Draw roadway infrastructure
+     */
+    drawRoadway(type, orientation) {
+        const widths = { local: 6, arterial: 8, highway: 12 };
+        const colors = { local: '#444444', arterial: '#555555', highway: '#666666' };
+        
+        this.ctx.fillStyle = colors[type];
+        const width = widths[type];
+        this.ctx.fillRect(-this.tileWidth * 0.45, -width/2, this.tileWidth * 0.9, width);
+        
+        // Add center lines for arterial and highway
+        if (type !== 'local') {
+            this.ctx.strokeStyle = '#ffff00';
+            this.ctx.lineWidth = 1;
+            this.ctx.setLineDash([4, 4]);
+            this.ctx.beginPath();
+            this.ctx.moveTo(-this.tileWidth * 0.45, 0);
+            this.ctx.lineTo(this.tileWidth * 0.45, 0);
+            this.ctx.stroke();
+            this.ctx.setLineDash([]);
+        }
+    }
+    
+    /**
+     * Draw bus stop
+     */
+    drawBusStop(busStop, orientation) {
+        // Draw as a blue square with 'B' icon
+        this.ctx.fillStyle = '#0066cc';
+        this.ctx.fillRect(-6, -6, 12, 12);
+        this.ctx.fillStyle = '#ffffff';
+        this.ctx.font = '8px Arial';
+        this.ctx.textAlign = 'center';
+        this.ctx.textBaseline = 'middle';
+        this.ctx.fillText('B', 0, 0);
+    }
+    
+    /**
+     * Draw subway entrance
+     */
+    drawSubwayEntrance(entrance, orientation) {
+        // Draw as a red circle with 'S' icon
+        this.ctx.beginPath();
+        this.ctx.arc(0, 0, 6, 0, Math.PI * 2);
+        this.ctx.fillStyle = '#cc0000';
+        this.ctx.fill();
+        this.ctx.fillStyle = '#ffffff';
+        this.ctx.font = '8px Arial';
+        this.ctx.textAlign = 'center';
+        this.ctx.textBaseline = 'middle';
+        this.ctx.fillText('S', 0, 0);
+    }
+    
+    /**
+     * Draw crosswalk
+     */
+    drawCrosswalk(direction) {
+        // Draw zebra crosswalk in specified direction
+        this.ctx.save();
+        this.ctx.strokeStyle = '#ffffff';
+        this.ctx.lineWidth = 1;
+        
+        let angle = 0;
+        if (direction === 'east') angle = 0;
+        else if (direction === 'south') angle = Math.PI / 2;
+        else if (direction === 'west') angle = Math.PI;
+        else if (direction === 'north') angle = -Math.PI / 2;
+        
+        this.ctx.rotate(angle);
+        
+        // Draw zebra stripes
+        for (let i = -8; i <= 8; i += 2) {
+            this.ctx.beginPath();
+            this.ctx.moveTo(-12, i);
+            this.ctx.lineTo(12, i);
+            this.ctx.stroke();
+        }
+        
+        this.ctx.restore();
+    }
+    
+    /**
+     * Draw traffic control
+     */
+    drawTrafficControl(type) {
+        if (type === 'stop_sign') {
+            // Draw red octagon
+            this.ctx.fillStyle = '#cc0000';
+            this.ctx.beginPath();
+            this.ctx.arc(0, 0, 4, 0, Math.PI * 2);
+            this.ctx.fill();
+            this.ctx.strokeStyle = '#ffffff';
+            this.ctx.lineWidth = 1;
+            this.ctx.stroke();
+        } else if (type === 'traffic_light') {
+            // Draw traffic light pole
+            this.ctx.fillStyle = '#333333';
+            this.ctx.fillRect(-1, -8, 2, 16);
+            this.ctx.fillRect(-3, -6, 6, 4);
+        }
+    }
+    
+    /**
+     * Draw JEFH warning indicators for buildings with efficiency issues
+     */
+    drawJEFHWarningIndicators(buildingId, offsetX, offsetY, row, col) {
+        // Don't show indicators for buildings under construction
+        const parcel = this.game.grid[row][col];
+        if (parcel?.constructionStartDay !== null && parcel?.constructionDays > 0) {
+            const isUnderConstruction = (this.game.currentDay - parcel.constructionStartDay) < parcel.constructionDays;
+            if (isUnderConstruction) {
+                return; // Hide indicators during construction
+            }
+        }
+        
+        // Get building efficiency data
+        const key = `${row},${col}`;
+        const efficiencyData = this.game.buildingEfficiencies?.get(key);
+        
+        if (!efficiencyData || !efficiencyData.needs) {
+            return; // No efficiency data available
+        }
+        
+        // Check satisfaction levels for JEFH categories
+        const jefhCategories = ['jobs', 'education', 'food', 'housing'];
+        const warningThreshold = 0.6; // Show warnings when satisfaction < 60%
+        const criticalThreshold = 0.3; // Critical level < 30%
+        
+        const warnings = [];
+        jefhCategories.forEach(category => {
+            const need = efficiencyData.needs[category];
+            if (need && need.satisfaction < warningThreshold) {
+                warnings.push({
+                    category,
+                    satisfaction: need.satisfaction,
+                    critical: need.satisfaction < criticalThreshold
+                });
+            }
+        });
+        
+        
+        if (warnings.length === 0) {
+            return; // No warnings to display
+        }
+        
+        // Show only the MOST critical indicator - find worst satisfaction level
+        let mostCritical = warnings[0];
+        for (let i = 1; i < warnings.length; i++) {
+            if (warnings[i].satisfaction < mostCritical.satisfaction) {
+                mostCritical = warnings[i];
+            }
+        }
+        
+        // Check if this is a workplace building for worker indicator display
+        const building = this.game.buildingManager?.getBuildingById(buildingId);
+        const isWorkplace = building && (this.game.buildingCategories?.normalize(building.category) === 'commercial' || building.category === 'education');
+        
+        // Draw single warning indicator (most critical)
+        this.ctx.save();
+        
+        const indicatorSize = 8;
+        const x = offsetX - indicatorSize / 2; // Center horizontally
+        
+        // Static Y position based on severity
+        const severityOffset = mostCritical.critical ? -8 : 0; // Critical issues higher up
+        const y = offsetY - 25 + severityOffset;
+        
+        // Choose color based on severity
+        const color = mostCritical.critical ? '#ff4444' : '#ffaa00';
+        this.ctx.fillStyle = color;
+        this.ctx.strokeStyle = '#ffffff';
+        this.ctx.lineWidth = 1;
+        
+        if (mostCritical.critical) {
+            // Draw triangle for critical warnings
+            this.ctx.beginPath();
+            this.ctx.moveTo(x + indicatorSize / 2, y);
+            this.ctx.lineTo(x, y + indicatorSize);
+            this.ctx.lineTo(x + indicatorSize, y + indicatorSize);
+            this.ctx.closePath();
+            this.ctx.fill();
+            this.ctx.stroke();
+            
+            // Add exclamation mark
+            this.ctx.fillStyle = '#ffffff';
+            this.ctx.font = '6px Arial';
+            this.ctx.textAlign = 'center';
+            this.ctx.fillText('!', x + indicatorSize / 2, y + indicatorSize - 2);
+        } else {
+            // Draw circle for regular warnings
+            this.ctx.beginPath();
+            this.ctx.arc(x + indicatorSize / 2, y + indicatorSize / 2, indicatorSize / 2, 0, Math.PI * 2);
+            this.ctx.fill();
+            this.ctx.stroke();
+            
+            // Add letter based on category
+            this.ctx.fillStyle = '#ffffff';
+            this.ctx.font = '5px Arial';
+            this.ctx.textAlign = 'center';
+            
+            // Show 'W' for workers when housing represents worker need
+            let displayLetter = mostCritical.category[0].toUpperCase();
+            if (mostCritical.category === 'housing' && isWorkplace) {
+                displayLetter = 'W'; // Workers
+            }
+            
+            this.ctx.fillText(displayLetter, x + indicatorSize / 2, y + indicatorSize / 2 + 2);
+        }
         
         this.ctx.restore();
     }
