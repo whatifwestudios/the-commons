@@ -39,6 +39,10 @@ class IsometricGrid {
         // Initialize unified tooltip manager
         this.tooltipManager = new TooltipManager();
         
+        // Initialize new clean tooltip system
+        this.tooltipDataCollector = new TooltipDataCollector(this);
+        this.tooltipRenderer = new TooltipRenderer();
+        
         // Mobility tooltip timer
         this.mobilityTooltipTimer = null;
         
@@ -2606,27 +2610,18 @@ class IsometricGrid {
         const coord = this.getParcelCoordinate(row, col);
         
         if (parcel.building) {
-            const building = this.buildingManager.getBuildingById(parcel.building);
-            if (building) {
-                let content = `<strong>${building.name}</strong><br>`;
-                
-                // Ownership - use player's chosen name
-                if (this.isCurrentPlayer(parcel.owner)) {
-                    const playerName = this.playerSettings?.name || 'You';
-                    content += `<strong>Owned by:</strong> ${playerName}<br>`;
-                } else if (parcel.owner && parcel.owner !== 'unclaimed') {
-                    // Get multiplayer player name if available
-                    let ownerName = parcel.owner;
-                    if (this.multiplayerManager && this.multiplayerManager.players.has(parcel.owner)) {
-                        const player = this.multiplayerManager.players.get(parcel.owner);
-                        ownerName = player.name || ownerName;
-                    } else if (this.competitorNames && this.competitorNames[parcel.owner]) {
-                        ownerName = this.competitorNames[parcel.owner];
-                    }
-                    content += `<strong>Owned by:</strong> ${ownerName}<br>`;
+            // Use new clean tooltip system for buildings
+            try {
+                const tooltipData = this.tooltipDataCollector.getBuildingTooltipData(row, col);
+                if (tooltipData) {
+                    return this.tooltipRenderer.renderBuildingTooltip(tooltipData);
                 } else {
-                    content += '<strong>Owned by:</strong> City<br>';
+                    return `<strong>Building Error</strong><br>Could not load building data`;
                 }
+            } catch (error) {
+                console.error('❌ Tooltip error:', error);
+                return this.tooltipRenderer.renderErrorTooltip(`Failed to load building data: ${error.message}`);
+            }
                 
                 // Show construction progress if building is under construction
                 const isUnderConstruction = parcel._isUnderConstruction || 
