@@ -2622,13 +2622,20 @@ class IsometricGrid {
                 console.error('❌ Tooltip error:', error);
                 return this.tooltipRenderer.renderErrorTooltip(`Failed to load building data: ${error.message}`);
             }
-                
-                // Show construction progress if building is under construction
-                const isUnderConstruction = parcel._isUnderConstruction || 
-                    (parcel.constructionStartDay !== null && parcel.constructionDays > 0 &&
-                     (this.gameDate.day - parcel.constructionStartDay) < parcel.constructionDays);
-                
-                if (isUnderConstruction) {
+        } else {
+            // Building ID exists but building not found in manager - this is the bug!
+            console.warn(`🚨 TOOLTIP BUG: Building ID "${parcel.building}" exists but not found in buildingManager!`);
+            console.log(`🔍 BuildingManager state:`, {
+                hasManager: !!this.buildingManager,
+                categoriesCount: this.buildingManager?.getCategories?.()?.length,
+                sampleBuildings: this.buildingManager?.buildings ? Object.keys(this.buildingManager.buildings).slice(0, 5) : 'no buildings'
+            });
+            
+            // Show a temporary debug tooltip instead of falling through to empty land
+            return `<strong>🚨 DEBUG: Missing Building</strong> (${coord})<br>Building ID: ${parcel.building}<br>Owner: ${parcel.owner}<br><em>Building definition not found</em>`;
+        }
+        } else {
+            // Empty parcel - check ownership
                     let progressPercent = 0;
                     
                     // Use cached progress if available, otherwise calculate
