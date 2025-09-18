@@ -153,8 +153,56 @@ function getGameInstanceForClient(clientId) {
   return getGameInstance('default');
 }
 
-// Legacy compatibility - default to 'default' room for now
-let gameState = getGameInstance('default');
+// ============ COMPATIBILITY LAYER FOR MULTIPLAYER ISOLATION ============
+// This layer routes gameState access to the correct room instance automatically
+// TODO: Replace with proper function parameter threading in future refactor
+
+// Track current execution context for gameState routing
+let currentExecutionContext = {
+  clientId: null,
+  roomId: 'default',
+  gameInstance: null
+};
+
+// Context management functions
+function setExecutionContext(clientId, roomId = null) {
+  if (clientId) {
+    const client = clients.get(clientId);
+    const resolvedRoomId = roomId || client?.roomId || 'default';
+    currentExecutionContext = {
+      clientId,
+      roomId: resolvedRoomId,
+      gameInstance: getGameInstance(resolvedRoomId)
+    };
+  }
+}
+
+function clearExecutionContext() {
+  currentExecutionContext = {
+    clientId: null,
+    roomId: 'default',
+    gameInstance: getGameInstance('default')
+  };
+}
+
+// Smart gameState proxy that routes to correct instance
+const gameStateProxy = new Proxy({}, {
+  get(target, prop) {
+    // Route to the correct game instance based on current context
+    const instance = currentExecutionContext.gameInstance || getGameInstance('default');
+    return instance[prop];
+  },
+
+  set(target, prop, value) {
+    // Route writes to the correct game instance
+    const instance = currentExecutionContext.gameInstance || getGameInstance('default');
+    instance[prop] = value;
+    return true;
+  }
+});
+
+// Legacy compatibility - now routes through proxy
+let gameState = gameStateProxy;
 
 // Waiting room management
 const waitingRooms = new Map();
@@ -463,10 +511,14 @@ async function handleWebSocketMessage(ws, clientId, data) {
 }
 
 async function handleJoinGame(ws, clientId, data) {
-  const { playerName = 'Player', playerColor = '#2196F3', playerEmoji = '🏠', cityName } = data;
+  // Set execution context for this handler
+  setExecutionContext(clientId);
 
-  // Get the correct game instance for this client
-  const gameState = getGameInstanceForClient(clientId);
+  try {
+    const { playerName = 'Player', playerColor = '#2196F3', playerEmoji = '🏠', cityName } = data;
+
+    // Get the correct game instance for this client
+    const gameState = getGameInstanceForClient(clientId);
 
   // Generate or use existing player ID
   let playerId = data.playerId;
@@ -549,16 +601,23 @@ async function handleJoinGame(ws, clientId, data) {
     version: gameState.version.global,
     timestamp: Date.now()
   }, clientId);
-  
+
   // console.log(`✅ Player ${playerName} (${playerId}) joined the game`);
+  } finally {
+    clearExecutionContext();
+  }
 }
 
 async function handleGameAction(ws, clientId, data) {
-  const client = clients.get(clientId);
-  if (!client || !client.playerId) {
-    ws.send(JSON.stringify({
-      type: 'ERROR',
-      error: 'NOT_AUTHENTICATED',
+  // Set execution context for this handler
+  setExecutionContext(clientId);
+
+  try {
+    const client = clients.get(clientId);
+    if (!client || !client.playerId) {
+      ws.send(JSON.stringify({
+        type: 'ERROR',
+        error: 'NOT_AUTHENTICATED',
       message: 'Must join game first'
     }));
     return;
@@ -625,6 +684,9 @@ async function handleGameAction(ws, clientId, data) {
       timestamp: Date.now()
     }));
   }
+  } finally {
+    clearExecutionContext();
+  }
 }
 
 function handleHeartbeat(ws, clientId, data) {
@@ -646,13 +708,20 @@ function handleHeartbeat(ws, clientId, data) {
 }
 
 function handleRequestSync(ws, clientId, data) {
-  ws.send(JSON.stringify({
-    type: 'FULL_SYNC',
-    gameState: getClientSafeState(),
-    players: Array.from(gameState.core.players.values()),
-    version: gameState.version.global,
-    timestamp: Date.now()
-  }));
+  // Set execution context for this handler
+  setExecutionContext(clientId);
+
+  try {
+    ws.send(JSON.stringify({
+      type: 'FULL_SYNC',
+      gameState: getClientSafeState(),
+      players: Array.from(gameState.core.players.values()),
+      version: gameState.version.global,
+      timestamp: Date.now()
+    }));
+  } finally {
+    clearExecutionContext();
+  }
 }
 
 async function processGameAction(action, playerId) {
@@ -995,6 +1064,13 @@ function getClientSafeStateForInstance(gameState) {
 }
 
 function broadcastToAll(message) {
+  // If we have execution context, broadcast only to that room
+  if (currentExecutionContext.roomId && currentExecutionContext.roomId !== 'default') {
+    broadcastToRoom(currentExecutionContext.roomId, message);
+    return;
+  }
+
+  // Otherwise, broadcast to all (legacy behavior)
   const messageStr = JSON.stringify(message);
   clients.forEach((client, clientId) => {
     if (client.ws.readyState === client.ws.OPEN) {
