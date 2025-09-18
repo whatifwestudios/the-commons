@@ -424,7 +424,10 @@ class IsometricGrid {
         // Update countdown every second
         setInterval(() => {
             this.updateMonthCountdown();
-            this.updateAuctionCountdowns(); // Update auction timers
+            // Update auction timers (with safety check for initialization order)
+            if (this.actionMarketplace && this.actionMarketplace.updateAuctionCountdowns) {
+                this.actionMarketplace.updateAuctionCountdowns();
+            }
         }, 1000);
         
         // Periodic sync check to catch any state drift (every 10 seconds)
