@@ -2447,13 +2447,11 @@ function startGameFromRoom(roomId) {
   gameState.lifecycle.startTime = Date.now();
 
   // Add all room players to active players
-  playersToStart.forEach(player => {
-    if (player.clientId) {
-      const client = clients.get(player.clientId);
-      if (client && client.playerId) {
-        gameState.lifecycle.activePlayers.add(client.playerId);
-        console.log(`✅ Added player ${client.playerId} to active game`);
-      }
+  room.players.forEach((player, clientId) => {
+    const client = clients.get(clientId);
+    if (client && client.playerId) {
+      gameState.lifecycle.activePlayers.add(client.playerId);
+      console.log(`✅ Added player ${client.playerId} to active game`);
     }
   });
 
