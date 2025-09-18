@@ -2612,7 +2612,7 @@ class IsometricGrid {
                 }
                 
                 // Calculate and show efficiency percentage for buildings with needs (only for completed buildings)
-                const efficiencyInfo = !isUnderConstruction ? this.calculateBuildingEfficiencyPercentage(row, col) : null;
+                const efficiencyInfo = !isUnderConstruction ? this.economicEngine.calculateBuildingEfficiencyPercentage(row, col) : null;
                 if (efficiencyInfo) {
                     const effColor = efficiencyInfo.percentage >= 80 ? '#4CAF50' : 
                                     efficiencyInfo.percentage >= 60 ? '#FFC107' :
@@ -3085,7 +3085,7 @@ class IsometricGrid {
             const buyBtn = document.createElement('button');
             buyBtn.className = 'context-btn primary';
             buyBtn.textContent = `BUY PARCEL - $${price}`;
-            buyBtn.onclick = () => this.buyParcel(row, col);
+            buyBtn.onclick = () => this.buildingSystem.purchaseParcel(row, col);
             contentEl.appendChild(buyBtn);
             
         } else if (this.isCurrentPlayer(parcel.owner)) {
@@ -3950,7 +3950,7 @@ class IsometricGrid {
                     `;
                 }
                 
-                buildingBtn.onclick = () => this.buildBuilding(row, col, building.id);
+                buildingBtn.onclick = () => this.buildingSystem.constructBuilding(row, col, building.id);
                 submenu.appendChild(buildingBtn);
             });
             
@@ -3988,7 +3988,7 @@ class IsometricGrid {
         const demolitionFee = Math.round(currentValue * 0.1);
         
         destroyBtn.textContent = `DESTROY BUILDING - $${demolitionFee}`;
-        destroyBtn.onclick = () => this.destroyBuilding(row, col);
+        destroyBtn.onclick = () => this.buildingSystem.demolishBuilding(row, col);
         
         // Disable if player can't afford demolition fee
         if (this.playerCash < demolitionFee) {
@@ -4036,7 +4036,7 @@ class IsometricGrid {
                 const publicFunding = fundingInfo.publicFunding;
                 
                 upgradeBtn.textContent = `→ ${upgrade.name} - $${playerCost.toLocaleString()}`;
-                upgradeBtn.onclick = () => this.upgradeBuilding(row, col, upgrade.id);
+                upgradeBtn.onclick = () => this.buildingSystem.upgradeBuilding(row, col, upgrade.id);
                 upgradeSection.appendChild(upgradeBtn);
             });
         } else {
@@ -4063,7 +4063,7 @@ class IsometricGrid {
         
         if (repairCost > 0) {
             repairBtn.textContent = `Repair Building - $${repairCost}`;
-            repairBtn.onclick = () => this.repairBuilding(row, col);
+            repairBtn.onclick = () => this.buildingSystem.repairBuilding(row, col);
             
             // Disable if player can't afford
             if (this.playerCash < repairCost) {
@@ -4116,113 +4116,9 @@ class IsometricGrid {
         return Math.round(baseCost * decayFactor);
     }
     
-    repairBuilding(row, col) {
-        const parcel = this.grid[row][col];
-        if (!parcel || !parcel.building) return;
-        
-        const building = this.buildingManager.getBuildingById(parcel.building);
-        const repairCost = this.calculateRepairCost(parcel, building);
-        
-        if (this.playerCash < repairCost) {
-            console.log('❌ Insufficient funds to repair building');
-            return;
-        }
-        
-        // Deduct repair cost
-        this.playerCash -= repairCost;
-        
-        // Reset decay to 0 (fully repaired) but keep building age for history
-        const oldDecay = parcel.decay;
-        const oldMaintenance = building.economics.maintenanceCost * (1 + (oldDecay * 2));
-        const newMaintenance = building.economics.maintenanceCost;
-        
-        parcel.decay = 0;
-        
-        // Mark building for economic recalculation
-        this.markBuildingEconomicsDirty(row, col);
-        
-        // Update cashflow preview immediately
-        this.calculateCurrentCashflow();
-        this.updatePlayerStats();
-        
-        console.log(`🔧 Repaired ${building.name} at ${this.getParcelCoordinate(row, col)}: maintenance $${oldMaintenance.toFixed(2)}/day → $${newMaintenance}/day (Cost: $${repairCost})`);
-        
-        // Hide context menu after repair
-        this.hideContextMenu();
-        
-        // Re-render to show repaired state
-        this.scheduleRender();
-    }
+    // Moved to BuildingSystem.repairBuilding()
     
-    async buyParcel(row, col) {
-        const coord = this.getParcelCoordinate(row, col);
-        // Use static distance-based pricing for initial purchases
-        const price = this.getParcelPrice(row, col);
-        
-        // NEW: Check if player has enough actions
-        if (!this.useAction('purchaseParcel', this.actionCosts.purchaseParcel)) {
-            this.hideContextMenu();
-            return;
-        }
-        
-        // Check if player has enough cash
-        if (this.playerCash < price) {
-            // Refund the action since purchase failed
-            this.actionManager.currentActions += this.actionCosts.purchaseParcel;
-            this.actionManager.usedThisMonth -= this.actionCosts.purchaseParcel;
-            this.updateActionDisplay();
-            this.showInsufficientFundsFeedback();
-            return;
-        }
-
-        // Check if parcel is already owned
-        if (this.grid[row][col].owner && this.grid[row][col].owner !== 'unclaimed') {
-            // Refund the action since purchase failed
-            this.actionManager.currentActions += this.actionCosts.purchaseParcel;
-            this.actionManager.usedThisMonth -= this.actionCosts.purchaseParcel;
-            this.updateActionDisplay();
-            return;
-        }
-        
-        
-        // Store original state for potential rollback
-        const originalCash = this.playerCash;
-        
-        // Process purchase optimistically (immediately)
-        this.playerCash -= price;
-        // Use actual player ID if multiplayer is active, otherwise 'player'
-        this.grid[row][col].owner = (this.multiplayerManager && this.multiplayerManager.playerId) 
-            ? this.multiplayerManager.playerId 
-            : 'player';
-        this.grid[row][col].landValue.paidPrice = price;
-        this.grid[row][col].landValue.lastAuctionDay = this.currentDay;
-        
-        // Broadcast parcel purchase to other players and handle conflicts
-        if (this.multiplayerManager) {
-            const success = await this.multiplayerManager.onParcelPurchased(row, col, null, price, originalCash);
-            
-            if (!success) {
-                // Purchase was rejected - rollback already handled by MultiplayerManager
-                // Refund the action since purchase failed
-                this.actionManager.currentActions += this.actionCosts.purchaseParcel;
-                this.actionManager.usedThisMonth -= this.actionCosts.purchaseParcel;
-                this.updateActionDisplay();
-                this.hideContextMenu();
-                return;
-            }
-        }
-        
-        // Update calculated land values for all parcels
-        this.updateAllLandValues();
-        
-        this.updateVitalityDisplay();
-        this.updateDemographicsDisplay();
-        this.calculateCurrentCashflow();
-        this.updatePlayerStats();
-        this.scheduleRender();
-        
-        this.hideContextMenu();
-    }
+    // Moved to BuildingSystem.purchaseParcel()
     
     startAuction(row, col) {
         const coord = this.getParcelCoordinate(row, col);
@@ -4236,7 +4132,7 @@ class IsometricGrid {
         }
         
         // Calculate starting bid based on calculated land value
-        const calculatedValue = this.calculateLandValue(row, col);
+        const calculatedValue = this.economicEngine.calculateLandValue(row, col);
         const initialLandValue = this.getParcelPrice(row, col);
         
         // Get building value if present (building value - decay)
@@ -4292,116 +4188,7 @@ class IsometricGrid {
         }
     }
 
-    buildBuilding(row, col, buildingId) {
-        const coord = this.getParcelCoordinate(row, col);
-        const buildingCost = this.getBuildingCost(buildingId);
-        
-        // Check if player has enough actions
-        if (!this.useAction('constructBuilding', this.actionCosts.constructBuilding)) {
-            this.hideContextMenu();
-            return;
-        }
-        
-        // Get building info for public funding calculation
-        const building = this.buildingManager.getBuildingById(buildingId);
-        
-        // Use centralized cost calculation with public funding
-        const fundingInfo = this.calculateBuildingCostWithFunding(building, buildingCost);
-        const publicFunding = fundingInfo.publicFunding;
-        const playerCostRequired = fundingInfo.playerCost;
-        const buildingCategory = fundingInfo.category;
-        
-        // Check population requirement using single source of truth
-        const currentPopulation = this.calculatePopulation(); // Always use the main function
-        const requiredPopulation = building?.population?.populationRequired || 0;
-        if (currentPopulation < requiredPopulation) {
-            // Refund the action since construction failed
-            this.actionManager.currentActions += this.actionCosts.constructBuilding;
-            this.actionManager.usedThisMonth -= this.actionCosts.constructBuilding;
-            this.updateActionDisplay();
-            this.showNotification(`Need ${requiredPopulation} population to build ${building.name} (current: ${Math.floor(currentPopulation)})`, 'error');
-            return;
-        }
-
-        // Check if player has enough cash for their portion
-        if (this.playerCash < playerCostRequired) {
-            // Refund the action since construction failed
-            this.actionManager.currentActions += this.actionCosts.constructBuilding;
-            this.actionManager.usedThisMonth -= this.actionCosts.constructBuilding;
-            this.updateActionDisplay();
-            this.showInsufficientFundsFeedback();
-            return;
-        }
-
-        // Check if parcel already has a building
-        if (this.grid[row][col].building) {
-            return;
-        }
-
-        // Check if player owns this parcel
-        if (!this.isCurrentPlayer(this.grid[row][col].owner)) {
-            return;
-        }
-        
-        // Process building locally
-        if (true) { // Always use local processing
-            const oldCash = this.playerCash;
-            
-            // Deduct public funds (already calculated above)
-            if (publicFunding > 0) {
-                this.governance.publicCoffers[buildingCategory] -= publicFunding;
-            }
-            
-            // Deduct player cost
-            this.playerCash -= playerCostRequired;
-            
-            this.grid[row][col].building = buildingId;
-            
-            // Set construction start day and duration BEFORE broadcasting
-            if (building && building.economics) {
-                // Start construction from current day, but building should show as under construction initially
-                this.grid[row][col].constructionStartDay = this.currentDay;
-                this.grid[row][col].constructionDays = building.economics.constructionDays || 14;
-                this.grid[row][col].buildingAge = 0;
-                
-                // Force the building to show as under construction initially
-                // Minimum 3 days so players can see the construction animation  
-                if (this.grid[row][col].constructionDays < 3) {
-                    this.grid[row][col].constructionDays = 3;
-                }
-            }
-            
-            // Broadcast building construction to other players WITH construction data
-            if (this.multiplayerManager) {
-                console.log(`🏗️ Local building constructed: ${buildingId} at ${row}-${col}, broadcasting to multiplayer`);
-                this.multiplayerManager.onBuildingConstructed(row, col, buildingId, {
-                    constructionStartDay: this.grid[row][col].constructionStartDay,
-                    constructionDays: this.grid[row][col].constructionDays,
-                    amenities: this.grid[row][col].amenities || []
-                });
-            } else {
-                console.log(`🏗️ Local building constructed: ${buildingId} at ${row}-${col}, NO MULTIPLAYER MANAGER`);
-            }
-            
-            // Mark caches for updates
-            this.markBuildingEconomicsDirty(row, col);
-            this.markVitalityDirty(row, col);
-            this.markPrereqDirty();
-            
-            // Mark region as dirty for cache invalidation (performance optimization)
-            this.markRegionDirty(row, col, 3);
-            
-            // Update land values, vitality, cashflow and re-render
-            this.updateAllLandValues();
-            this.updateVitalityDisplay();
-            this.updateDemographicsDisplay();
-            this.calculateCurrentCashflow();
-            this.updatePlayerStats();
-            this.scheduleRender();
-        }
-        
-        this.hideContextMenu();
-    }
+    // Moved to BuildingSystem.constructBuilding()
 
     getBuildingCost(buildingId) {
         return this.buildingManager.getBuildingCost(buildingId);
@@ -4466,62 +4253,7 @@ class IsometricGrid {
         };
     }
 
-    destroyBuilding(row, col) {
-        const coord = this.getParcelCoordinate(row, col);
-        const parcel = this.grid[row][col];
-        const buildingId = parcel.building;
-        
-        if (!buildingId) return;
-        
-        // Calculate demolition fee (10% of current building value)
-        const building = this.buildingManager.getBuildingById(buildingId);
-        const currentValue = this.calculateCurrentBuildingValue(parcel, building);
-        const demolitionFee = Math.round(currentValue * 0.1);
-        
-        // Check if player can afford demolition fee
-        if (this.playerCash < demolitionFee) {
-            console.log(`❌ Insufficient funds for demolition fee: $${demolitionFee}`);
-            this.showInsufficientFundsFeedback();
-            this.hideContextMenu();
-            return;
-        }
-        
-        // Deduct demolition fee from player
-        this.playerCash -= demolitionFee;
-        
-        // Add demolition fee to city treasury
-        if (this.governance && this.governance.unallocatedFunds !== undefined) {
-            this.governance.unallocatedFunds += demolitionFee;
-        }
-        
-        console.log(`🏗️ Demolished ${building.name} at ${coord}: Fee $${demolitionFee} → City Treasury`);
-        
-        // Remove building and amenities
-        parcel.building = null;
-        parcel.amenities = [];
-        
-        // Broadcast demolition to other players
-        if (this.multiplayerManager) {
-            this.multiplayerManager.onBuildingConstructed(row, col, null);
-        }
-        
-        // Reset building-specific properties
-        parcel.buildingAge = 0;
-        parcel.decay = 0;
-        
-        // Mark building for economic recalculation removal
-        this.markBuildingEconomicsDirty(row, col);
-        
-        // Mark region as dirty for cache invalidation (performance optimization)
-        this.markRegionDirty(row, col, 3);
-        
-        // Update vitality, cashflow and re-render
-        this.updateVitalityDisplay();
-        this.calculateCurrentCashflow();
-        this.updatePlayerStats();
-        this.scheduleRender();
-        this.hideContextMenu();
-    }
+    // Moved to BuildingSystem.demolishBuilding()
 
     getPotentialUpgrades(currentBuildingId) {
         // Simple upgrade logic - return some example upgrades
@@ -4543,31 +4275,7 @@ class IsometricGrid {
         return upgradeMap[currentBuildingId] || [];
     }
 
-    upgradeBuilding(row, col, upgradeId) {
-        const coord = this.getParcelCoordinate(row, col);
-        
-        // Replace the building
-        this.grid[row][col].building = upgradeId;
-        
-        // Broadcast building upgrade to other players
-        if (this.multiplayerManager) {
-            this.multiplayerManager.onBuildingConstructed(row, col, upgradeId, {
-                constructionStartDay: this.grid[row][col].constructionStartDay,
-                constructionDays: this.grid[row][col].constructionDays,
-                amenities: this.grid[row][col].amenities || []
-            });
-        }
-        
-        // Mark building for economic recalculation
-        this.markBuildingEconomicsDirty(row, col);
-        
-        // Update vitality and re-render
-        this.updateVitalityDisplay();
-        this.scheduleRender();
-        this.hideContextMenu();
-        
-        // Building upgraded silently
-    }
+    // Moved to BuildingSystem.upgradeBuilding()
 
     getAvailableAmenities(parcel) {
         // Get default amenities plus custom ones
@@ -4592,31 +4300,7 @@ class IsometricGrid {
         );
     }
 
-    addAmenity(row, col, amenityId) {
-        const coord = this.getParcelCoordinate(row, col);
-        
-        // Add amenity to parcel
-        if (!this.grid[row][col].amenities.includes(amenityId)) {
-            this.grid[row][col].amenities.push(amenityId);
-        }
-        
-        // Broadcast amenity addition to other players
-        if (this.multiplayerManager) {
-            console.log(`🏗️ Broadcasting amenity addition: ${amenityId} at ${row}-${col}`);
-            this.multiplayerManager.onBuildingConstructed(row, col, this.grid[row][col].building, {
-                constructionStartDay: this.grid[row][col].constructionStartDay,
-                constructionDays: this.grid[row][col].constructionDays,
-                amenities: this.grid[row][col].amenities
-            });
-        }
-        
-        // Update vitality and re-render
-        this.updateVitalityDisplay();
-        this.scheduleRender();
-        this.hideContextMenu();
-        
-        // Amenity installed silently
-    }
+    // Moved to BuildingSystem.addAmenityToBuilding()
 
     addBuildingHoverHandlers(submenu) {
         const buildingButtons = submenu.querySelectorAll('.building-btn');
@@ -5254,7 +4938,7 @@ class IsometricGrid {
         for (const regionKey of this.dirtyRegions) {
             const [row, col] = regionKey.split('-').map(Number);
             if (row >= 0 && row < this.gridSize && col >= 0 && col < this.gridSize) {
-                this.grid[row][col].landValue.calculatedValue = this.calculateLandValue(row, col);
+                this.grid[row][col].landValue.calculatedValue = this.economicEngine.calculateLandValue(row, col);
             }
         }
         
@@ -5263,71 +4947,6 @@ class IsometricGrid {
         
     }
 
-    calculateLandValue(row, col) {
-        // Check cache first
-        const cacheKey = `${row}-${col}`;
-        if (this.landValueCache.has(cacheKey)) {
-            return this.landValueCache.get(cacheKey);
-        }
-        
-        const basePrice = this.getParcelPrice(row, col);
-        const parcel = this.grid[row][col];
-        
-        // Get residential capacity of this parcel (how many people it can house)
-        let residentialCapacity = 0;
-        if (parcel.building) {
-            const building = this.buildingManager.getBuildingById(parcel.building);
-            if (building && this.buildingCategories.normalize(building.category) === 'housing') {
-                residentialCapacity = building.bedrooms || 0;
-            }
-        }
-        
-        // Calculate accessibility scores for each domain
-        const accessScores = this.calculateAccessibilityScores(row, col);
-        
-        // Base demand multiplier from accessibility (0.5 to 2.0)
-        let accessibilityMultiplier = 0.5;
-        const domains = ['food', 'energy', 'jobs', 'healthcare', 'education', 'transport', 'culture', 'safety'];
-        domains.forEach(domain => {
-            if (accessScores[domain]) {
-                // Each domain can add up to 0.1875 to multiplier (8 domains * 0.1875 = 1.5 max boost)
-                accessibilityMultiplier += Math.min(accessScores[domain], 1.0) * 0.1875;
-            }
-        });
-        
-        // Population-weighted demand multiplier
-        // High-density housing in high-accessibility areas = maximum land value
-        let demandMultiplier = 1.0;
-        if (residentialCapacity > 0) {
-            // Residential parcels gain value based on capacity * accessibility
-            demandMultiplier = 1.0 + (residentialCapacity / 10) * (accessibilityMultiplier - 0.5);
-        } else if (parcel.building) {
-            // Non-residential buildings gain value from serving nearby population
-            const nearbyPopulation = this.getNearbyPopulation(row, col, 3);
-            demandMultiplier = 1.0 + (nearbyPopulation / 50) * 0.5;
-        }
-        
-        // Network effects - developed neighbors still matter but less
-        const developedNeighbors = this.getAdjacentDevelopedParcels(row, col);
-        const networkMultiplier = 1.0 + (developedNeighbors * 0.05); // Only 5% per neighbor now
-        
-        // Overall city prosperity still affects all land values
-        const totalVitality = Object.values(this.vitality).reduce((sum, val) => sum + Math.max(0, val), 0);
-        const prosperityBonus = Math.min(totalVitality / 500, 0.3); // Reduced to 30% max
-        
-        // Combine all multipliers
-        const totalMultiplier = accessibilityMultiplier * demandMultiplier * networkMultiplier * (1 + prosperityBonus);
-        
-        // Ensure reasonable bounds (0.25x to 5x base price)
-        const finalMultiplier = Math.max(0.25, Math.min(5.0, totalMultiplier));
-        
-        const landValue = Math.round(basePrice * finalMultiplier);
-        
-        // Cache the result
-        this.landValueCache.set(cacheKey, landValue);
-        
-        return landValue;
-    }
     
     calculateAccessibilityScores(row, col) {
         // Check cache first
@@ -5489,110 +5108,6 @@ class IsometricGrid {
         return this.buildingManager.getBuildingCategory(buildingId);
     }
     
-    calculateBuildingEfficiencyPercentage(row, col) {
-        const parcel = this.grid[row]?.[col];
-        if (!parcel?.building) return null;
-        
-        const building = this.buildingManager.getBuildingById(parcel.building);
-        if (!building) return null;
-        
-        // Get building needs from definition
-        const needs = [];
-        const needsMap = new Map();
-        
-        // Check for workers need
-        if (building.population?.populationRequired > 0) {
-            const need = { 
-                type: 'workers', 
-                required: building.population.populationRequired,
-                name: 'Workers'
-            };
-            needs.push(need);
-            needsMap.set('workers', need);
-        }
-        
-        // Check for energy need
-        if (building.consumption?.energy > 0) {
-            const need = {
-                type: 'energy',
-                required: building.consumption.energy,
-                name: 'Energy'
-            };
-            needs.push(need);
-            needsMap.set('energy', need);
-        }
-        
-        // Check for food need
-        if (building.consumption?.food > 0) {
-            const need = {
-                type: 'food',
-                required: building.consumption.food,
-                name: 'Food'
-            };
-            needs.push(need);
-            needsMap.set('food', need);
-        }
-        
-        // If no needs, building is 100% efficient
-        if (needs.length === 0) return null;
-        
-        // Get efficiency data from JEFH system
-        const key = `${row},${col}`;
-        const efficiencyData = this.buildingEfficiencies?.get(key);
-        
-        // Calculate weighted efficiency percentage
-        let totalEfficiency = 0;
-        const unsatisfiedNeeds = [];
-        
-        // Equal weight for each type of need
-        const weightPerNeed = 100 / needs.length;
-        
-        needs.forEach(need => {
-            let satisfaction = 0;
-            
-            // Map JEFH categories to our needs
-            let jefhCategory = need.type;
-            if (need.type === 'workers') {
-                // Workers are tracked as 'housing' in JEFH for commercial/education buildings
-                const isWorkplace = this.buildingCategories.normalize(building.category) === 'commercial' || 
-                                  building.category === 'education';
-                jefhCategory = isWorkplace ? 'housing' : 'jobs';
-            }
-            
-            // Get satisfaction from JEFH data
-            if (efficiencyData?.needs?.[jefhCategory]) {
-                const jefhNeed = efficiencyData.needs[jefhCategory];
-                satisfaction = jefhNeed.satisfaction || 0;
-                
-                // For partial satisfaction, scale by how much is fulfilled
-                if (jefhNeed.demand && jefhNeed.fulfilled !== undefined) {
-                    const partialSatisfaction = jefhNeed.fulfilled / jefhNeed.demand;
-                    satisfaction = Math.min(1, partialSatisfaction);
-                }
-            }
-            
-            // Add weighted contribution to total efficiency
-            totalEfficiency += satisfaction * weightPerNeed;
-            
-            // Track unsatisfied needs
-            if (satisfaction < 1) {
-                unsatisfiedNeeds.push({
-                    name: need.name,
-                    satisfaction: satisfaction,
-                    deficit: need.required * (1 - satisfaction)
-                });
-            }
-        });
-        
-        return {
-            percentage: Math.max(0, Math.min(100, totalEfficiency)),
-            unsatisfiedNeeds: unsatisfiedNeeds.sort((a, b) => a.satisfaction - b.satisfaction),
-            allNeeds: needs.map(need => ({
-                name: need.name,
-                satisfaction: this.calculateJEFHSatisfaction(need.type, row, col)
-            }))
-        };
-    }
     
     getBuildingEfficiencyInfo(row, col) {
         const key = `${row},${col}`;
@@ -6506,7 +6021,7 @@ class IsometricGrid {
 
     // Update building revenues based on supply/demand satisfaction
     applySupplyDemandEffects() {
-        this.calculateCityVitality(); // Ensure we have current supply/demand data
+        this.economicEngine.calculateCityVitality(); // Ensure we have current supply/demand data
         
         // Calculate supply/demand ratios for JEFH
         const energyRatio = this.vitalitySupply.ENERGY / Math.max(1, this.vitalityDemand.ENERGY);
@@ -6951,439 +6466,11 @@ class IsometricGrid {
         return impacts[amenityType] || {};
     }
     
-    calculateCityVitality() {
-        // Debug: Log vitality calculation
-        console.log('🏙️ Calculating city vitality, buildings map size:', this.buildingEfficiencies.size);
-        
-        // Check if we can use cached values
-        const now = performance.now();
-        const cacheAge = now - this.vitalityCache.lastCalculated;
-        
-        console.log('🔍 Cache status - dirty:', this.vitalityCache.dirty, 'age:', cacheAge);
-        
-        // Use cache if it's recent and not dirty (refresh every 100ms max)
-        if (!this.vitalityCache.dirty && cacheAge < 100) {
-            // Update vitality from cache
-            console.log('🔄 Using cached vitality data - RETURNING EARLY');
-            this.vitalitySupply = { ...this.vitalityCache.supply };
-            this.vitalityDemand = { ...this.vitalityCache.demand };
-            this.vitality = { ...this.vitalityCache.netVitality };
-            return;
-        }
-        
-        console.log('🔄 Cache invalid - proceeding with full calculation');
-        
-        // Initialize supply and demand tracking
-        this.vitalitySupply = {};
-        this.vitalityDemand = {};
-        
-        Object.keys(this.vitality).forEach(domain => {
-            this.vitalitySupply[domain] = 0;
-            this.vitalityDemand[domain] = 0;
-            this.vitality[domain] = 0; // Net will be supply - demand
-        });
-        
-        // First pass: count completed buildings only
-        let totalBedrooms = 0;
-        let totalJobs = 0;
-        let totalEnergySupply = 0;
-        let totalEnergyDemand = 0;
-        let totalFoodProduction = 0;
-        
-        // Calculate supply from completed buildings only
-        console.log('🏗️ First loop - counting completed buildings');
-        for (let row = 0; row < this.gridSize; row++) {
-            for (let col = 0; col < this.gridSize; col++) {
-                const parcel = this.grid[row][col];
-                
-                // Only count completed buildings (not under construction)
-                const isUnderConstruction = parcel.constructionStartDay !== null && 
-                    parcel.constructionDays > 0 && 
-                    (this.currentDay - parcel.constructionStartDay) < parcel.constructionDays;
-                
-                if (parcel.building && !isUnderConstruction) {
-                    const building = this.buildingManager.getBuildingById(parcel.building);
-                    console.log(`🏗️ Found completed building: ${building?.name || parcel.building} at ${row},${col}`);
-                    if (building) {
-                        // Count bedrooms and jobs
-                        const bedrooms = building.population?.bedroomsAdded || 0;
-                        const jobs = building.population?.jobsCreated || 0;
-                        totalBedrooms += bedrooms;
-                        totalJobs += jobs;
-                        
-                        // Calculate energy - negative energyDemand means supply for utilities
-                        const energyDemand = building.resources?.energyDemand || 0;
-                        if (energyDemand < 0) {
-                            // Negative demand = energy producer (solar, coal plant)
-                            totalEnergySupply += Math.abs(energyDemand);
-                            if (building.name?.includes('Coal') || building.name?.includes('Solar')) {
-                                console.log(`🔍 Energy producer found: ${building.name}, energyDemand=${energyDemand}, contributing ${Math.abs(energyDemand)} to supply`);
-                            }
-                        } else {
-                            totalEnergyDemand += energyDemand;
-                        }
-                        
-                        // Food production
-                        totalFoodProduction += building.resources?.foodProduction || 0;
-                    }
-                }
-            }
-        }
-        
-        // Use single source of truth for population
-        const population = this.calculatePopulation(); // Returns total population directly
-        
-        // ENERGY: Supply from power plants, demand from all buildings
-        this.vitalitySupply.ENERGY = totalEnergySupply;
-        this.vitalityDemand.ENERGY = totalEnergyDemand;
-        
-        if (totalEnergySupply > 0) {
-            console.log(`🔍 Final energy calculation: Supply=${totalEnergySupply}, Demand=${totalEnergyDemand}`);
-        }
-        
-        // FOOD: Supply from farms/markets, demand = 3 per person per day
-        this.vitalitySupply.FOOD = totalFoodProduction;
-        this.vitalityDemand.FOOD = population * 3; // 3 food per person per day
-        
-        // HOUSING: Supply = bedrooms, demand based on population (people need homes)
-        this.vitalitySupply.HOUSING = totalBedrooms;
-        this.vitalityDemand.HOUSING = population / 2; // 2 people per bedroom (population needs housing)
-        
-        // JOBS: Supply = jobs created, demand based on working-age population
-        this.vitalitySupply.JOBS = totalJobs;
-        this.vitalityDemand.JOBS = population * 0.6; // 60% of population wants employment
-        
-        // Calculate soft metrics (livability) from completed buildings
-        for (let row = 0; row < this.gridSize; row++) {
-            for (let col = 0; col < this.gridSize; col++) {
-                const parcel = this.grid[row][col];
-                
-                // Only count completed buildings
-                const isUnderConstruction = parcel.constructionStartDay !== null && 
-                    parcel.constructionDays > 0 && 
-                    (this.currentDay - parcel.constructionStartDay) < parcel.constructionDays;
-                
-                if (parcel.building && !isUnderConstruction) {
-                    const building = this.buildingManager.getBuildingById(parcel.building);
-                    if (building && building.domainImpacts) {
-                        // Process soft metrics only (not ENERGY, FOOD, HOUSING, JOBS)
-                        const softMetrics = ['HEALTH', 'EDUCATION', 'SAFETY', 'CULTURE', 'MOBILITY', 
-                                           'ENVIRONMENT', 'AFFORDABILITY', 'NOISE', 'RESILIENCE'];
-                        
-                        softMetrics.forEach(domain => {
-                            if (building.domainImpacts[domain] !== undefined) {
-                                const impact = building.domainImpacts[domain];
-                                if (impact > 0) {
-                                    this.vitalitySupply[domain] += impact;
-                                } else if (impact < 0) {
-                                    this.vitalityDemand[domain] += Math.abs(impact);
-                                }
-                            }
-                        });
-                    } else {
-                        // Fallback to old system for buildings without domainImpacts
-                        const buildingImpacts = this.getBuildingImpacts(parcel.building);
-                        Object.keys(buildingImpacts).forEach(domain => {
-                            const impact = buildingImpacts[domain];
-                            if (impact > 0) {
-                                this.vitalitySupply[domain] += impact;
-                            } else if (impact < 0) {
-                                this.vitalityDemand[domain] += Math.abs(impact);
-                            }
-                        });
-                    }
-                    
-                    // Add amenity impacts
-                    if (parcel.amenities) {
-                        parcel.amenities.forEach(amenity => {
-                        const amenityImpacts = this.getAmenityImpacts(amenity);
-                        Object.keys(amenityImpacts).forEach(domain => {
-                            const impact = amenityImpacts[domain];
-                            if (impact > 0) {
-                                this.vitalitySupply[domain] += impact;
-                            } else if (impact < 0) {
-                                this.vitalityDemand[domain] += Math.abs(impact);
-                            }
-                        });
-                        });
-                    }
-                }
-            }
-        }
-        
-        // Calculate net vitality (supply - demand)
-        Object.keys(this.vitality).forEach(domain => {
-            this.vitality[domain] = this.vitalitySupply[domain] - this.vitalityDemand[domain];
-        });
-        
-        // Update cache with calculated values
-        this.vitalityCache.supply = { ...this.vitalitySupply };
-        this.vitalityCache.demand = { ...this.vitalityDemand };
-        this.vitalityCache.netVitality = { ...this.vitality };
-        this.vitalityCache.lastCalculated = now;
-        this.vitalityCache.dirty = false;
-        this.vitalityCache.dirtyBuildings.clear();
-        
-        // Building efficiency tracking and JEFH satisfaction calculation
-        this.buildingEfficiencies.clear();
-        console.log('🔍 Starting building efficiency tracking and JEFH calculation');
-        
-        // Build transport network for JEFH calculations
-        const transportNetwork = this.buildTransportNetwork();
-        
-        // Step 1: Initialize building efficiency tracking
-        const buildingDemands = [];
-        for (let row = 0; row < this.gridSize; row++) {
-            for (let col = 0; col < this.gridSize; col++) {
-                const parcel = this.grid[row][col];
-                if (!parcel.building) continue;
-                
-                const building = this.buildingManager.getBuildingById(parcel.building);
-                if (!building) continue;
-                
-                const key = `${row},${col}`;
-                this.buildingEfficiencies.set(key, {
-                    row, col,
-                    building: building.name,
-                    category: building.category,
-                    needs: {}
-                });
-                
-                // Create demand points for JEFH resources
-                if (this.buildingCategories.normalize(building.category) === 'housing') {
-                    const residents = building.population?.bedroomsAdded || building.population?.residents || building.residents || 0;
-                    console.log(`🏠 Housing building ${building.name} at ${row},${col}: residents=${residents}, population:`, building.population);
-                    if (residents > 0) {
-                        // Housing demands jobs and food
-                        buildingDemands.push({
-                            row, col, building: building.name,
-                            resource: 'jobs', amount: residents * 0.6
-                        });
-                        buildingDemands.push({
-                            row, col, building: building.name,
-                            resource: 'food', amount: residents * 3
-                        });
-                        // Housing demands energy (use actual building energy demand)
-                        const energyDemand = building.resources?.energyDemand || 0;
-                        if (energyDemand > 0) { // Only positive values are actual demand
-                            buildingDemands.push({
-                                row, col, building: building.name,
-                                resource: 'energy', amount: energyDemand
-                            });
-                        }
-                    }
-                } else if (this.buildingCategories.normalize(building.category) === 'commercial') {
-                    const jobs = building.population?.jobsCreated || building.jobs || 0;
-                    console.log(`🏪 Commercial building ${building.name} at ${row},${col}: jobs=${jobs}, population:`, building.population);
-                    if (jobs > 0) {
-                        // Commercial buildings need workers (housing provides workers)
-                        buildingDemands.push({
-                            row, col, building: building.name,
-                            resource: 'housing', amount: jobs // 1 worker per job
-                        });
-                        // Commercial buildings demand energy (use actual building energy demand)
-                        const energyDemand = building.resources?.energyDemand || 0;
-                        if (energyDemand > 0) { // Only positive values are actual demand
-                            buildingDemands.push({
-                                row, col, building: building.name,
-                                resource: 'energy', amount: energyDemand
-                            });
-                        }
-                    }
-                } else if (this.buildingCategories.normalize(building.category) === 'education') {
-                    const jobs = building.population?.jobsCreated || 0;
-                    if (jobs > 0) {
-                        // Education buildings need workers too
-                        buildingDemands.push({
-                            row, col, building: building.name,
-                            resource: 'housing', amount: jobs
-                        });
-                        // Education buildings demand energy - use actual energyDemand from building data
-                        const energyDemand = building.resources?.energyDemand || 0;
-                        if (energyDemand > 0) {
-                            buildingDemands.push({
-                                row, col, building: building.name,
-                                resource: 'energy', amount: energyDemand
-                            });
-                        }
-                    }
-                }
-                
-                console.log(`🔧 Building efficiency tracking added for ${building.name} at ${key}`);
-            }
-        }
-        
-        // Step 2: Calculate satisfaction using proper supply allocation
-        // Group demands by resource type for allocation
-        const demandsByResource = {};
-        buildingDemands.forEach(demand => {
-            if (!demandsByResource[demand.resource]) {
-                demandsByResource[demand.resource] = [];
-            }
-            demandsByResource[demand.resource].push(demand);
-        });
-        
-        // Process each resource type
-        Object.keys(demandsByResource).forEach(resourceType => {
-            const demands = demandsByResource[resourceType];
-            
-            // Find all supply sources for this resource
-            const supplySources = [];
-            for (let sRow = 0; sRow < this.gridSize; sRow++) {
-                for (let sCol = 0; sCol < this.gridSize; sCol++) {
-                    const supplyParcel = this.grid[sRow][sCol];
-                    if (!supplyParcel.building) continue;
-                    
-                    // Skip buildings under construction
-                    const isUnderConstruction = supplyParcel.constructionStartDay !== null && 
-                        supplyParcel.constructionDays > 0 && 
-                        (this.currentDay - supplyParcel.constructionStartDay) < supplyParcel.constructionDays;
-                    if (isUnderConstruction) continue;
-                    
-                    const supplyBuilding = this.buildingManager.getBuildingById(supplyParcel.building);
-                    if (!supplyBuilding) continue;
-                    
-                    let supply = 0;
-                    if (resourceType === 'jobs' && supplyBuilding.population?.jobsCreated) {
-                        supply = supplyBuilding.population.jobsCreated;
-                    } else if (resourceType === 'food' && supplyBuilding.resources?.foodProduction) {
-                        supply = supplyBuilding.resources.foodProduction;
-                    } else if (resourceType === 'housing' && supplyBuilding.population?.bedroomsAdded) {
-                        // Housing supplies workers (0.6 workers per bedroom)
-                        supply = supplyBuilding.population.bedroomsAdded * 0.6;
-                    } else if (resourceType === 'energy') {
-                        // Add energy supply check for power plants/utilities
-                        // Negative energyDemand means energy production
-                        const energyDemand = supplyBuilding.resources?.energyDemand || 0;
-                        supply = energyDemand < 0 ? Math.abs(energyDemand) : 0;
-                    }
-                    
-                    if (supply > 0) {
-                        supplySources.push({
-                            row: sRow, col: sCol,
-                            building: supplyBuilding.name,
-                            supply: supply,
-                            remainingSupply: supply // Track remaining supply for allocation
-                        });
-                    }
-                }
-            }
-            
-            // Allocate supply to demands based on distance and priority
-            demands.forEach(demand => {
-                let fulfilledDemand = 0;
-                
-                // Calculate accessibility to each supply source
-                const accessibleSources = supplySources.map(source => {
-                    const effectiveDistance = this.calculateEffectiveDistance(
-                        demand.row, demand.col,
-                        source.row, source.col,
-                        transportNetwork
-                    );
-                    
-                    return {
-                        ...source,
-                        distance: effectiveDistance,
-                        accessible: effectiveDistance <= 3
-                    };
-                }).filter(source => source.accessible)
-                  .sort((a, b) => a.distance - b.distance); // Prefer closer sources
-                
-                // Allocate from closest sources first
-                for (const source of accessibleSources) {
-                    if (fulfilledDemand >= demand.amount) break;
-                    
-                    const neededAmount = demand.amount - fulfilledDemand;
-                    const allocatedAmount = Math.min(neededAmount, source.remainingSupply);
-                    
-                    if (allocatedAmount > 0) {
-                        fulfilledDemand += allocatedAmount;
-                        source.remainingSupply -= allocatedAmount;
-                        
-                        console.log(`🚶 ${demand.building} gets ${allocatedAmount} ${resourceType} from ${source.building} (distance: ${source.distance})`);
-                    }
-                }
-                
-                // Calculate satisfaction ratio
-                const satisfaction = Math.min(1.0, fulfilledDemand / demand.amount);
-                
-                // Store in building efficiency data
-                const key = `${demand.row},${demand.col}`;
-                const efficiencyData = this.buildingEfficiencies.get(key);
-                if (efficiencyData) {
-                    efficiencyData.needs[resourceType] = {
-                        satisfaction: satisfaction,
-                        demand: demand.amount,
-                        fulfilled: fulfilledDemand
-                    };
-                    
-                    console.log(`📊 ${demand.building} ${resourceType}: ${Math.round(satisfaction * 100)}% satisfied (${fulfilledDemand}/${demand.amount})`);
-                }
-            });
-            
-            // Log remaining unused supply
-            const totalRemainingSupply = supplySources.reduce((sum, source) => sum + source.remainingSupply, 0);
-            if (totalRemainingSupply > 0) {
-                console.log(`⚡ ${totalRemainingSupply} units of ${resourceType} remain unused`);
-            }
-        });
-        
-        // Calculate city satisfaction based on met needs
-        this.calculateCitySatisfaction();
-    }
-    
-    calculateCitySatisfaction() {
-        const demographics = this.demographics || {};
-        
-        // Calculate satisfaction scores for each domain (0-1 scale)
-        const satisfaction = {};
-        
-        // Employment: Target 60%+ employment rate
-        satisfaction.employment = Math.min(1, (demographics.employmentRate || 0) / 0.6);
-        
-        // Education: Target 90%+ school enrollment
-        satisfaction.education = Math.min(1, (demographics.schoolEnrollmentRate || 0) / 0.9);
-        
-        // Housing: Based on vitality balance
-        satisfaction.housing = this.vitality.HOUSING >= 0 ? 1.0 : Math.max(0, 1 + (this.vitality.HOUSING / 50));
-        
-        // Healthcare: Based on vitality balance
-        satisfaction.healthcare = this.vitality.HEALTH >= 0 ? 1.0 : Math.max(0, 1 + (this.vitality.HEALTH / 30));
-        
-        // Culture & Recreation: Based on vitality balance
-        satisfaction.culture = this.vitality.CULTURE >= 0 ? 1.0 : Math.max(0, 1 + (this.vitality.CULTURE / 20));
-        
-        // Overall satisfaction (weighted average)
-        const weights = {
-            employment: 0.3,
-            education: 0.25,
-            housing: 0.2,
-            healthcare: 0.15,
-            culture: 0.1
-        };
-        
-        let overallSatisfaction = 0;
-        let totalWeight = 0;
-        Object.keys(satisfaction).forEach(key => {
-            if (weights[key]) {
-                overallSatisfaction += satisfaction[key] * weights[key];
-                totalWeight += weights[key];
-            }
-        });
-        
-        this.citySatisfaction = {
-            ...satisfaction,
-            overall: totalWeight > 0 ? overallSatisfaction / totalWeight : 0
-        };
-        
-        // Apply satisfaction effects to revenue (in processDailyCashflow)
-        return this.citySatisfaction;
-    }
     
     updateVitalityDisplay() {
         // Only calculate vitality locally if not using server-side calculations
         if (!this.multiplayerManager || !this.multiplayerManager.isConnected) {
-            this.calculateCityVitality();
+            this.economicEngine.calculateCityVitality();
         }
         
         // Supply & Demand bars (Energy, Food, Housing, Jobs)
@@ -8360,7 +7447,7 @@ class IsometricGrid {
                 this.pixelRowTimestamps.delete(`${row},${col}`);
                 
                 // Update economic balance after construction completion
-                this.calculateCityVitality();
+                this.economicEngine.calculateCityVitality();
                 this.updateVitalityDisplay();
                 
                 constructionProgress = 1.0;
@@ -10224,7 +9311,7 @@ class IsometricGrid {
         }
         
         // Get current supply/demand data
-        this.calculateCityVitality();
+        this.economicEngine.calculateCityVitality();
         
         // Update market stats
         const markets = ['energy', 'food', 'housing', 'jobs'];

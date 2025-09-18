@@ -45,10 +45,10 @@ class BuildingSystem {
     }
     
     /**
-     * Build a building with funding info (called from game.js)
+     * Build a building with funding info (called from game.js) - DEPRECATED, use constructBuilding
      */
     buildBuilding(row, col, buildingId, fundingInfo) {
-        return this.placeBuilding(row, col, buildingId, 'player', fundingInfo);
+        return this.constructBuilding(row, col, buildingId);
     }
     
     /**
@@ -610,6 +610,365 @@ class BuildingSystem {
             }
         }
         return buildings;
+    }
+
+    /**
+     * Purchase a parcel at market price
+     */
+    async purchaseParcel(row, col) {
+        const coord = this.game.getParcelCoordinate(row, col);
+        // Use static distance-based pricing for initial purchases
+        const price = this.game.getParcelPrice(row, col);
+        
+        // Check if player has enough actions
+        if (!this.game.useAction('purchaseParcel', this.game.actionCosts.purchaseParcel)) {
+            this.game.hideContextMenu();
+            return false;
+        }
+        
+        // Check if player has enough cash
+        if (this.game.playerCash < price) {
+            // Refund the action since purchase failed
+            this.game.actionManager.currentActions += this.game.actionCosts.purchaseParcel;
+            this.game.actionManager.usedThisMonth -= this.game.actionCosts.purchaseParcel;
+            this.game.updateActionDisplay();
+            this.game.showInsufficientFundsFeedback();
+            return false;
+        }
+
+        // Check if parcel is already owned
+        if (this.game.grid[row][col].owner && this.game.grid[row][col].owner !== 'unclaimed') {
+            // Refund the action since purchase failed
+            this.game.actionManager.currentActions += this.game.actionCosts.purchaseParcel;
+            this.game.actionManager.usedThisMonth -= this.game.actionCosts.purchaseParcel;
+            this.game.updateActionDisplay();
+            return false;
+        }
+        
+        // Store original state for potential rollback
+        const originalCash = this.game.playerCash;
+        
+        // Process purchase optimistically (immediately)
+        this.game.playerCash -= price;
+        // Use actual player ID if multiplayer is active, otherwise 'player'
+        this.game.grid[row][col].owner = (this.game.multiplayerManager && this.game.multiplayerManager.playerId) 
+            ? this.game.multiplayerManager.playerId 
+            : 'player';
+        this.game.grid[row][col].landValue.paidPrice = price;
+        this.game.grid[row][col].landValue.lastAuctionDay = this.game.currentDay;
+        
+        // Broadcast parcel purchase to other players and handle conflicts
+        if (this.game.multiplayerManager) {
+            const success = await this.game.multiplayerManager.onParcelPurchased(row, col, null, price, originalCash);
+            
+            if (!success) {
+                // Purchase was rejected - rollback already handled by MultiplayerManager
+                // Refund the action since purchase failed
+                this.game.actionManager.currentActions += this.game.actionCosts.purchaseParcel;
+                this.game.actionManager.usedThisMonth -= this.game.actionCosts.purchaseParcel;
+                this.game.updateActionDisplay();
+                this.game.hideContextMenu();
+                return false;
+            }
+        }
+        
+        // Update calculated land values for all parcels
+        this.game.updateAllLandValues();
+        
+        this.game.updateVitalityDisplay();
+        this.game.updateDemographicsDisplay();
+        this.game.calculateCurrentCashflow();
+        this.game.updatePlayerStats();
+        this.game.scheduleRender();
+        
+        this.game.hideContextMenu();
+        return true;
+    }
+
+    /**
+     * Construct a building on a parcel
+     */
+    constructBuilding(row, col, buildingId) {
+        const coord = this.game.getParcelCoordinate(row, col);
+        const buildingCost = this.game.getBuildingCost(buildingId);
+        
+        // Check if player has enough actions
+        if (!this.game.useAction('constructBuilding', this.game.actionCosts.constructBuilding)) {
+            this.game.hideContextMenu();
+            return false;
+        }
+        
+        // Get building info for public funding calculation
+        const building = this.buildingManager.getBuildingById(buildingId);
+        
+        // Use centralized cost calculation with public funding
+        const fundingInfo = this.game.calculateBuildingCostWithFunding(building, buildingCost);
+        const publicFunding = fundingInfo.publicFunding;
+        const playerCostRequired = fundingInfo.playerCost;
+        const buildingCategory = fundingInfo.category;
+        
+        // Check population requirement using single source of truth
+        const currentPopulation = this.game.calculatePopulation(); // Always use the main function
+        const requiredPopulation = building?.population?.populationRequired || 0;
+        if (currentPopulation < requiredPopulation) {
+            // Refund the action since construction failed
+            this.game.actionManager.currentActions += this.game.actionCosts.constructBuilding;
+            this.game.actionManager.usedThisMonth -= this.game.actionCosts.constructBuilding;
+            this.game.updateActionDisplay();
+            this.game.showNotification(`Need ${requiredPopulation} population to build ${building.name} (current: ${Math.floor(currentPopulation)})`, 'error');
+            return false;
+        }
+
+        // Check if player has enough cash for their portion
+        if (this.game.playerCash < playerCostRequired) {
+            // Refund the action since construction failed
+            this.game.actionManager.currentActions += this.game.actionCosts.constructBuilding;
+            this.game.actionManager.usedThisMonth -= this.game.actionCosts.constructBuilding;
+            this.game.updateActionDisplay();
+            this.game.showInsufficientFundsFeedback();
+            return false;
+        }
+
+        // Check if parcel already has a building
+        if (this.game.grid[row][col].building) {
+            return false;
+        }
+
+        // Check if player owns this parcel
+        if (!this.game.isCurrentPlayer(this.game.grid[row][col].owner)) {
+            return false;
+        }
+        
+        // Process building locally
+        const oldCash = this.game.playerCash;
+        
+        // Deduct public funds (already calculated above)
+        if (publicFunding > 0) {
+            this.game.governance.publicCoffers[buildingCategory] -= publicFunding;
+        }
+        
+        // Deduct player cost
+        this.game.playerCash -= playerCostRequired;
+        
+        this.game.grid[row][col].building = buildingId;
+        
+        // Set construction start day and duration BEFORE broadcasting
+        if (building && building.economics) {
+            // Start construction from current day, but building should show as under construction initially
+            this.game.grid[row][col].constructionStartDay = this.game.currentDay;
+            this.game.grid[row][col].constructionDays = building.economics.constructionDays || 14;
+            this.game.grid[row][col].buildingAge = 0;
+            
+            // Force the building to show as under construction initially
+            // Minimum 3 days so players can see the construction animation  
+            if (this.game.grid[row][col].constructionDays < 3) {
+                this.game.grid[row][col].constructionDays = 3;
+            }
+        }
+        
+        // Broadcast building construction to other players WITH construction data
+        if (this.game.multiplayerManager) {
+            console.log(`🏗️ Local building constructed: ${buildingId} at ${row}-${col}, broadcasting to multiplayer`);
+            this.game.multiplayerManager.onBuildingConstructed(row, col, buildingId, {
+                constructionStartDay: this.game.grid[row][col].constructionStartDay,
+                constructionDays: this.game.grid[row][col].constructionDays,
+                amenities: this.game.grid[row][col].amenities || []
+            });
+        } else {
+            console.log(`🏗️ Local building constructed: ${buildingId} at ${row}-${col}, NO MULTIPLAYER MANAGER`);
+        }
+        
+        // Mark caches for updates
+        this.markBuildingEconomicsDirty(row, col);
+        this.game.markVitalityDirty(row, col);
+        this.markPrereqDirty();
+        
+        // Mark region as dirty for cache invalidation (performance optimization)
+        this.game.markRegionDirty(row, col, 3);
+        
+        // Update land values, vitality, cashflow and re-render
+        this.game.updateAllLandValues();
+        this.game.updateVitalityDisplay();
+        this.game.updateDemographicsDisplay();
+        this.game.calculateCurrentCashflow();
+        this.game.updatePlayerStats();
+        this.game.scheduleRender();
+        
+        this.game.hideContextMenu();
+        return true;
+    }
+
+    /**
+     * Demolish/destroy a building and handle demolition fees
+     */
+    demolishBuilding(row, col) {
+        const coord = this.game.getParcelCoordinate(row, col);
+        const parcel = this.game.grid[row][col];
+        const buildingId = parcel.building;
+        
+        if (!buildingId) return false;
+        
+        // Calculate demolition fee (10% of current building value)
+        const building = this.buildingManager.getBuildingById(buildingId);
+        const currentValue = this.game.calculateCurrentBuildingValue(parcel, building);
+        const demolitionFee = Math.round(currentValue * 0.1);
+        
+        // Check if player can afford demolition fee
+        if (this.game.playerCash < demolitionFee) {
+            console.log(`❌ Insufficient funds for demolition fee: $${demolitionFee}`);
+            this.game.showInsufficientFundsFeedback();
+            this.game.hideContextMenu();
+            return false;
+        }
+        
+        // Deduct demolition fee from player
+        this.game.playerCash -= demolitionFee;
+        
+        // Add demolition fee to city treasury
+        if (this.game.governance && this.game.governance.unallocatedFunds !== undefined) {
+            this.game.governance.unallocatedFunds += demolitionFee;
+        }
+        
+        console.log(`🏗️ Demolished ${building.name} at ${coord}: Fee $${demolitionFee} → City Treasury`);
+        
+        // Remove building and amenities
+        parcel.building = null;
+        parcel.amenities = [];
+        
+        // Broadcast demolition to other players
+        if (this.game.multiplayerManager) {
+            this.game.multiplayerManager.onBuildingConstructed(row, col, null);
+        }
+        
+        // Reset building-specific properties
+        parcel.buildingAge = 0;
+        parcel.decay = 0;
+        
+        // Remove from tracking
+        if (this.game.isCurrentPlayer(parcel.owner)) {
+            this.playerBuildings.delete(`${row},${col}`);
+            
+            const count = this.buildingsByType.get(buildingId) || 0;
+            if (count > 0) {
+                this.buildingsByType.set(buildingId, count - 1);
+            }
+        }
+        
+        // Mark building for economic recalculation removal
+        this.markBuildingEconomicsDirty(row, col);
+        
+        // Mark region as dirty for cache invalidation (performance optimization)
+        this.game.markRegionDirty(row, col, 3);
+        
+        // Update vitality, cashflow and re-render
+        this.game.updateVitalityDisplay();
+        this.game.calculateCurrentCashflow();
+        this.game.updatePlayerStats();
+        this.game.scheduleRender();
+        this.game.hideContextMenu();
+        
+        return true;
+    }
+
+    /**
+     * Upgrade a building to a different type
+     */
+    upgradeBuilding(row, col, upgradeId) {
+        const coord = this.game.getParcelCoordinate(row, col);
+        
+        // Replace the building
+        this.game.grid[row][col].building = upgradeId;
+        
+        // Broadcast building upgrade to other players
+        if (this.game.multiplayerManager) {
+            this.game.multiplayerManager.onBuildingConstructed(row, col, upgradeId, {
+                constructionStartDay: this.game.grid[row][col].constructionStartDay,
+                constructionDays: this.game.grid[row][col].constructionDays,
+                amenities: this.game.grid[row][col].amenities || []
+            });
+        }
+        
+        // Mark building for economic recalculation
+        this.markBuildingEconomicsDirty(row, col);
+        
+        // Update vitality and re-render
+        this.game.updateVitalityDisplay();
+        this.game.scheduleRender();
+        this.game.hideContextMenu();
+        
+        return true;
+    }
+
+    /**
+     * Add an amenity to a building
+     */
+    addAmenityToBuilding(row, col, amenityId) {
+        const coord = this.game.getParcelCoordinate(row, col);
+        
+        // Add amenity to parcel
+        if (!this.game.grid[row][col].amenities.includes(amenityId)) {
+            this.game.grid[row][col].amenities.push(amenityId);
+        }
+        
+        // Broadcast amenity addition to other players
+        if (this.game.multiplayerManager) {
+            console.log(`🏗️ Broadcasting amenity addition: ${amenityId} at ${row}-${col}`);
+            this.game.multiplayerManager.onBuildingConstructed(row, col, this.game.grid[row][col].building, {
+                constructionStartDay: this.game.grid[row][col].constructionStartDay,
+                constructionDays: this.game.grid[row][col].constructionDays,
+                amenities: this.game.grid[row][col].amenities
+            });
+        }
+        
+        // Update vitality and re-render
+        this.game.updateVitalityDisplay();
+        this.game.scheduleRender();
+        this.game.hideContextMenu();
+        
+        return true;
+    }
+
+    /**
+     * Repair a building to reset decay
+     */
+    repairBuilding(row, col) {
+        const parcel = this.game.grid[row][col];
+        if (!parcel || !parcel.building) return false;
+        
+        const building = this.buildingManager.getBuildingById(parcel.building);
+        const repairCost = this.game.calculateRepairCost(parcel, building);
+        
+        if (this.game.playerCash < repairCost) {
+            console.log('❌ Insufficient funds to repair building');
+            return false;
+        }
+        
+        // Deduct repair cost
+        this.game.playerCash -= repairCost;
+        
+        // Reset decay to 0 (fully repaired) but keep building age for history
+        const oldDecay = parcel.decay;
+        const oldMaintenance = building.economics.maintenanceCost * (1 + (oldDecay * 2));
+        const newMaintenance = building.economics.maintenanceCost;
+        
+        parcel.decay = 0;
+        
+        // Mark building for economic recalculation
+        this.markBuildingEconomicsDirty(row, col);
+        
+        // Update cashflow preview immediately
+        this.game.calculateCurrentCashflow();
+        this.game.updatePlayerStats();
+        
+        console.log(`🔧 Repaired ${building.name} at ${this.game.getParcelCoordinate(row, col)}: maintenance $${oldMaintenance.toFixed(2)}/day → $${newMaintenance}/day (Cost: $${repairCost})`);
+        
+        // Hide context menu after repair
+        this.game.hideContextMenu();
+        
+        // Re-render to show repaired state
+        this.game.scheduleRender();
+        
+        return true;
     }
 
     /**
