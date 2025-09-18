@@ -1442,6 +1442,14 @@ setInterval(async () => {
     return;
   }
   
+  // Skip daily updates if no active game or players
+  if (!gameState.lifecycle.gameId || 
+      gameState.lifecycle.status !== 'active' || 
+      gameState.core.players.size === 0) {
+    console.log('⚠️ Skipping daily update - no active game or players');
+    return;
+  }
+  
   isProcessingDailyUpdate = true;
   
   try {
