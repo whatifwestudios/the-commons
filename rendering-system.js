@@ -29,6 +29,21 @@ class RenderingSystem {
         // Cache for frequently used graphics
         this.buildingImageCache = new Map();
         this.imageLoadPromises = new Map();
+        
+        // Phase 5: Enhanced graphics features using freed computational resources
+        this.enhancedEffects = {
+            particles: [], // Active particle effects
+            shadows: new Map(), // Building shadow cache
+            lighting: { enabled: false, angle: 45, intensity: 0.7 }, // Dynamic lighting
+            animations: new Map(), // Building animations (pulsing, breathing, etc.)
+            weather: { type: 'clear', intensity: 0, particles: [] } // Weather effects
+        };
+        
+        // Phase 5: High-performance animation system
+        this.animationFrame = null;
+        this.deltaTime = 0;
+        this.lastFrameTime = 0;
+        this.performanceMode = 'high'; // 'low', 'medium', 'high'
     }
     
     /**
@@ -427,15 +442,7 @@ class RenderingSystem {
     drawBuildingImageWithProgress(building, x, y, row, col, constructionProgress = 1.0) {
         const imagePath = building.graphicsFile || building.graphics?.path || building.images?.built || `assets/buildings/default.svg`;
         
-        // Debug logging for image paths
-        if (Math.random() < 0.1) { // Log 10% of the time
-            console.log(`Building ${building.name}: Trying to load image from ${imagePath}`);
-            console.log('Building object:', {
-                graphicsFile: building.graphicsFile,
-                graphics: building.graphics,
-                images: building.images
-            });
-        }
+        // Image loading (debug logs removed to reduce console noise)
         
         // Check cache first
         if (this.buildingImageCache.has(imagePath)) {
@@ -536,21 +543,34 @@ class RenderingSystem {
         // Apply elevation effect
         const elevationOffset = this.currentElevation;
         
-        // Draw shadow first (if elevated)
-        if (elevationOffset > 0) {
-            this.ctx.save();
-            this.ctx.globalAlpha = 0.3;
-            this.ctx.fillStyle = '#000';
-            this.ctx.fillRect(x - baseDrawWidth/2 + 2, imageY + elevationOffset + 2, baseDrawWidth, baseDrawHeight/2);
-            this.ctx.restore();
+        // Phase 5: Enhanced shadow rendering using freed computational resources
+        const parcelId = `${row}-${col}`;
+        this.renderEnhancedShadow(x, imageY, baseDrawWidth, baseDrawHeight, elevationOffset, parcelId);
+        
+        // Phase 5: Building efficiency animations (pulsing for low efficiency)
+        let additionalEffects = '';
+        if (this.performanceMode === 'high') {
+            const efficiency = this.game.buildingEfficiencies?.[parcelId]?.efficiency || 100;
+            if (efficiency < 70) {
+                // Low efficiency buildings pulse with warning color
+                const pulseStrength = Math.sin(Date.now() / 800) * 0.3 + 0.7; // 0.4 to 1.0
+                additionalEffects += ` brightness(${pulseStrength}) hue-rotate(${efficiency < 50 ? '15deg' : '0deg'})`;
+            }
         }
         
         // Apply desaturation and dimming for buildings under construction
         if (constructionProgress < 1.0) {
             this.ctx.save();
-            // Apply sepia/desaturated filter for under construction
-            this.ctx.filter = 'sepia(0.8) saturate(0.3) brightness(0.6) contrast(0.7)';
-            this.ctx.globalAlpha = 0.7;
+            // Apply sepia/desaturated filter for under construction (no opacity to save for later use)
+            this.ctx.filter = 'sepia(0.8) saturate(0.3) brightness(0.6) contrast(0.7)' + additionalEffects;
+        } else if (additionalEffects) {
+            this.ctx.save();
+            this.ctx.filter = additionalEffects.trim();
+        }
+        
+        // Phase 5: Dynamic lighting effects (if enabled)
+        if (this.enhancedEffects.lighting.enabled && this.performanceMode === 'high') {
+            this.applyDynamicLighting(x, imageY, baseDrawWidth, baseDrawHeight);
         }
         
         // Always draw the complete building (no pixel-by-pixel reveal)
@@ -562,12 +582,15 @@ class RenderingSystem {
             baseDrawHeight
         );
         
-        // Restore context if construction effects were applied
-        if (constructionProgress < 1.0) {
+        // Restore context if effects were applied
+        if (constructionProgress < 1.0 || additionalEffects) {
             this.ctx.restore();
         }
         
-        // Construction overlay removed - buildings show desaturated/sepia instead
+        // Phase 5: Add building activity indicators for operational buildings
+        if (constructionProgress >= 1.0 && this.performanceMode !== 'low') {
+            this.renderBuildingActivityIndicators(buildingName, x, imageY, baseDrawWidth, baseDrawHeight, parcelId);
+        }
     }
     
     /**
@@ -1486,6 +1509,209 @@ class RenderingSystem {
     }
     
     /**
+     * Phase 5: Enhanced shadow rendering with caching
+     */
+    renderEnhancedShadow(x, y, width, height, elevationOffset, parcelId) {
+        if (elevationOffset <= 0 && this.performanceMode === 'low') return;
+        
+        // Use cached shadow if available in high performance mode
+        const shadowKey = `${parcelId}-${Math.round(elevationOffset)}`;
+        if (this.performanceMode === 'high' && this.enhancedEffects.shadows.has(shadowKey)) {
+            const cachedShadow = this.enhancedEffects.shadows.get(shadowKey);
+            this.ctx.save();
+            this.ctx.globalAlpha = cachedShadow.alpha;
+            this.ctx.fillStyle = cachedShadow.gradient;
+            this.ctx.fillRect(cachedShadow.x, cachedShadow.y, cachedShadow.width, cachedShadow.height);
+            this.ctx.restore();
+            return;
+        }
+        
+        this.ctx.save();
+        
+        // Enhanced shadow with gradient and perspective
+        const shadowOffset = Math.max(2, elevationOffset * 0.3);
+        const shadowAlpha = Math.min(0.4, 0.1 + elevationOffset * 0.02);
+        
+        if (this.performanceMode === 'high') {
+            // High-quality gradient shadow
+            const gradient = this.ctx.createRadialGradient(
+                x, y + elevationOffset + shadowOffset, 0,
+                x, y + elevationOffset + shadowOffset, width * 0.7
+            );
+            gradient.addColorStop(0, `rgba(0, 0, 0, ${shadowAlpha})`);
+            gradient.addColorStop(1, 'rgba(0, 0, 0, 0)');
+            this.ctx.fillStyle = gradient;
+            
+            // Cache for reuse
+            this.enhancedEffects.shadows.set(shadowKey, {
+                x: x - width/2,
+                y: y + elevationOffset + shadowOffset,
+                width: width,
+                height: height/3,
+                alpha: shadowAlpha,
+                gradient: gradient
+            });
+        } else {
+            // Simple shadow
+            this.ctx.globalAlpha = shadowAlpha;
+            this.ctx.fillStyle = '#000';
+        }
+        
+        this.ctx.fillRect(x - width/2 + shadowOffset, y + elevationOffset + shadowOffset, width, height/3);
+        this.ctx.restore();
+    }
+    
+    /**
+     * Phase 5: Dynamic lighting effects
+     */
+    applyDynamicLighting(x, y, width, height) {
+        const lighting = this.enhancedEffects.lighting;
+        if (!lighting.enabled) return;
+        
+        this.ctx.save();
+        
+        // Create lighting gradient based on angle and intensity
+        const lightX = x + Math.cos(lighting.angle * Math.PI / 180) * width * 0.3;
+        const lightY = y + Math.sin(lighting.angle * Math.PI / 180) * height * 0.3;
+        
+        const lightGradient = this.ctx.createRadialGradient(
+            lightX, lightY, 0,
+            lightX, lightY, Math.max(width, height)
+        );
+        
+        lightGradient.addColorStop(0, `rgba(255, 255, 200, ${lighting.intensity * 0.1})`);
+        lightGradient.addColorStop(1, 'rgba(0, 0, 0, 0)');
+        
+        this.ctx.globalCompositeOperation = 'overlay';
+        this.ctx.fillStyle = lightGradient;
+        this.ctx.fillRect(x - width/2, y, width, height);
+        
+        this.ctx.restore();
+    }
+    
+    /**
+     * Phase 5: Building activity indicators (smoke, particles, etc.)
+     */
+    renderBuildingActivityIndicators(buildingName, x, y, width, height, parcelId) {
+        const now = Date.now();
+        
+        // Add activity particles for productive buildings
+        if (buildingName.includes('farm') || buildingName.includes('market')) {
+            this.addActivityParticles(x, y - height + 10, 'productive', parcelId);
+        } else if (buildingName.includes('solar')) {
+            this.addEnergyShimmer(x, y, width, height, parcelId);
+        }
+        
+        // Render existing particles
+        this.updateAndRenderParticles();
+    }
+    
+    /**
+     * Phase 5: Add activity particles 
+     */
+    addActivityParticles(x, y, type, parcelId) {
+        const now = Date.now();
+        const particleKey = `${parcelId}-${type}`;
+        
+        // Throttle particle creation
+        if (this.lastParticleTime?.[particleKey] && now - this.lastParticleTime[particleKey] < 2000) {
+            return;
+        }
+        
+        if (!this.lastParticleTime) this.lastParticleTime = {};
+        this.lastParticleTime[particleKey] = now;
+        
+        // Add new particle
+        this.enhancedEffects.particles.push({
+            x: x + (Math.random() - 0.5) * 10,
+            y: y,
+            vx: (Math.random() - 0.5) * 0.5,
+            vy: -0.5 - Math.random() * 0.5,
+            life: 1.0,
+            decay: 0.01,
+            type: type,
+            size: 2 + Math.random() * 2
+        });
+    }
+    
+    /**
+     * Phase 5: Add energy shimmer effect
+     */
+    addEnergyShimmer(x, y, width, height, parcelId) {
+        if (Math.random() < 0.7) return; // Occasional shimmer
+        
+        this.enhancedEffects.particles.push({
+            x: x + (Math.random() - 0.5) * width,
+            y: y + Math.random() * height,
+            vx: 0,
+            vy: 0,
+            life: 1.0,
+            decay: 0.05,
+            type: 'energy',
+            size: 1 + Math.random() * 1
+        });
+    }
+    
+    /**
+     * Phase 5: Update and render all particles
+     */
+    updateAndRenderParticles() {
+        if (this.performanceMode === 'low') return;
+        
+        this.ctx.save();
+        
+        // Update and render particles
+        this.enhancedEffects.particles = this.enhancedEffects.particles.filter(particle => {
+            particle.x += particle.vx;
+            particle.y += particle.vy;
+            particle.life -= particle.decay;
+            
+            if (particle.life <= 0) return false;
+            
+            // Render particle based on type
+            this.ctx.globalAlpha = particle.life;
+            
+            switch (particle.type) {
+                case 'productive':
+                    this.ctx.fillStyle = '#8FBC8F';
+                    break;
+                case 'energy':
+                    this.ctx.fillStyle = '#FFD700';
+                    break;
+                default:
+                    this.ctx.fillStyle = '#888';
+            }
+            
+            this.ctx.beginPath();
+            this.ctx.arc(particle.x, particle.y, particle.size, 0, Math.PI * 2);
+            this.ctx.fill();
+            
+            return true;
+        });
+        
+        this.ctx.restore();
+        
+        // Schedule re-render if particles are active
+        if (this.enhancedEffects.particles.length > 0) {
+            this.scheduleRender();
+        }
+    }
+    
+    /**
+     * Phase 5: Toggle enhanced graphics features
+     */
+    setPerformanceMode(mode) {
+        this.performanceMode = mode;
+        if (mode === 'low') {
+            this.enhancedEffects.particles = [];
+            this.enhancedEffects.shadows.clear();
+            this.enhancedEffects.lighting.enabled = false;
+        } else if (mode === 'high') {
+            this.enhancedEffects.lighting.enabled = true;
+        }
+    }
+    
+    /**
      * Get rendering statistics
      */
     getStats() {
@@ -1493,7 +1719,12 @@ class RenderingSystem {
             cachedImages: this.buildingImageCache.size,
             loadingImages: this.imageLoadPromises.size,
             currentElevation: this.currentElevation,
-            bounceActive: !!this.bounceAnimation
+            bounceActive: !!this.bounceAnimation,
+            // Phase 5: Enhanced graphics stats
+            particles: this.enhancedEffects.particles.length,
+            shadowsCache: this.enhancedEffects.shadows.size,
+            performanceMode: this.performanceMode,
+            lightingEnabled: this.enhancedEffects.lighting.enabled
         };
     }
 }

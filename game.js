@@ -1210,8 +1210,9 @@ class IsometricGrid {
         const netCashflow = dailyRevenue - dailyMaintenance - dailyLVT;
         this.playerCash += netCashflow;
         
-        // Add daily LVT to unallocated funds (city treasury)
-        if (dailyLVT > 0) {
+        // Add daily LVT to unallocated funds (city treasury) - ONLY in solo mode
+        // In multiplayer, server handles treasury calculations
+        if (dailyLVT > 0 && (!this.multiplayerManager || !this.multiplayerManager.isConnected)) {
             this.governance.unallocatedFunds += dailyLVT;
         }
         
@@ -2108,7 +2109,7 @@ class IsometricGrid {
             if (cloudOpacity <= 0) return;
             
             // Convert world coordinates to screen coordinates
-            const screenPos = this.worldToScreen(cloud.x, cloud.y);
+            const screenPos = this.worldToScreenCoords(cloud.x, cloud.y);
             
             this.ctx.save();
             this.ctx.globalAlpha = cloudOpacity;
@@ -6098,6 +6099,11 @@ class IsometricGrid {
         }
     }
 
+    // Delegation method for economic engine vitality calculation
+    calculateCityVitality() {
+        return this.economicEngine.calculateCityVitality();
+    }
+
     // Update building revenues based on supply/demand satisfaction
     applySupplyDemandEffects() {
         this.economicEngine.calculateCityVitality(); // Ensure we have current supply/demand data
@@ -6494,10 +6500,16 @@ class IsometricGrid {
     
     
     updateVitalityDisplay() {
-        // Only calculate vitality locally if not using server-side calculations
+        // Use server-calculated vitality in multiplayer, local calculation in solo mode
         if (!this.multiplayerManager || !this.multiplayerManager.isConnected) {
             this.economicEngine.calculateCityVitality();
         }
+        // In multiplayer mode, vitality data comes from server via state sync
+        
+        // Original logic (commented out for debugging):
+        // if (!this.multiplayerManager || !this.multiplayerManager.isConnected) {
+        //     this.economicEngine.calculateCityVitality();
+        // }
         
         // Supply & Demand bars (Energy, Food, Housing, Jobs)
         const supplyDemandMetrics = ['ENERGY', 'FOOD', 'HOUSING', 'JOBS'];

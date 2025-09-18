@@ -236,7 +236,6 @@ class RailwayMultiplayerManager {
                 break;
                 
             case 'CONSTRUCTION_UPDATE':
-                console.log('🏗️ Construction progress update');
                 this.handleConstructionUpdate(data);
                 break;
                 
@@ -247,7 +246,6 @@ class RailwayMultiplayerManager {
                 break;
                 
             case 'DAILY_UPDATE':
-                console.log(`📅 Server time update: Day ${data.timeState.currentDay} (${data.timeState.currentMonth})`);
                 this.handleDailyUpdate(data);
                 break;
                 
@@ -1377,7 +1375,7 @@ class RailwayMultiplayerManager {
                     parcel.constructionStartDay = constructionData.constructionStartDay;
                     parcel.constructionDays = constructionData.constructionDays;
                     
-                    console.log(`🏗️ Construction progress at ${parcelId}: ${Math.round(constructionData.progress * 100)}%`);
+                    // Construction progress (logging removed to reduce console noise)
                 }
                 
                 // Mark this region for re-rendering
@@ -1395,7 +1393,6 @@ class RailwayMultiplayerManager {
         // Clear tooltip cache since construction state changed
         if (this.game.tooltipManager && this.game.tooltipManager.clearCache) {
             this.game.tooltipManager.clearCache();
-            console.log('🔄 Cleared tooltip cache after construction update');
         }
     }
     
@@ -1418,7 +1415,10 @@ class RailwayMultiplayerManager {
             // CRITICAL: Sync day start time for accurate countdown timers
             this.game.lastDayStartTime = performance.now();
             
-            console.log(`🕐 Time synchronized: Day ${data.timeState.currentDay} (${data.timeState.currentMonth})`);
+            // Time synchronized (logging removed to reduce console noise)
+            
+            // Note: Server handles treasury/LVT calculations for shared multiplayer state
+            // Client-side cashflow is for display only (player revenue/costs)
             
             // Update the game date display
             if (this.game.updateGameDate) {
@@ -1433,7 +1433,6 @@ class RailwayMultiplayerManager {
             // Clear tooltip cache since day changes can affect tooltips
             if (this.game.tooltipManager && this.game.tooltipManager.clearCache) {
                 this.game.tooltipManager.clearCache();
-                console.log('🔄 Cleared tooltip cache after time update');
             }
             
             // Trigger re-render to update any time-dependent visuals
@@ -1983,6 +1982,12 @@ class MultiplayerManager {
                 }
             });
             this.game.updateVitalityDisplay();
+        }
+        
+        // Update building efficiency data for tooltips
+        if (calculated.buildingEfficiencies) {
+            this.game.buildingEfficiencies = calculated.buildingEfficiencies;
+            console.log(`🏢 Synced efficiency data for ${Object.keys(calculated.buildingEfficiencies).length} buildings`);
         }
     }
     

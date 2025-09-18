@@ -647,6 +647,9 @@ async function processPurchaseParcel(action, playerId) {
         amenities: []
       };
       
+      // Phase 4: Mark parcel as dirty for cache invalidation
+      calculationCache.dirtyParcels.add(parcelId);
+      
       // Update player data
       player.ownedParcels.push(parcelId);
       player.cash -= authoritativePrice;
@@ -1164,64 +1167,139 @@ function calculateParcelPrice(row, col) {
   return Math.round(finalPrice);
 }
 
-// Import the authoritative state calculator
+// Phase 4: Optimized building type cache (moved outside function for reuse)
+const BUILDING_TYPES_CACHE = {
+  'cottage': { bedroomsAdded: 2, populationRequired: 0, energyDemand: 5, foodProduction: 0, jobsCreated: 0 },
+  'apartments': { bedroomsAdded: 12, populationRequired: 0, energyDemand: 25, foodProduction: 0, jobsCreated: 0 },
+  'farmers_market': { bedroomsAdded: 0, populationRequired: 0, energyDemand: 0, foodProduction: 40, jobsCreated: 10 },
+  'solar_farm': { bedroomsAdded: 0, populationRequired: 0, energyDemand: -20, foodProduction: 0, jobsCreated: 2 }, // Negative = energy production
+  'high_school': { bedroomsAdded: 0, populationRequired: 100, energyDemand: 50, foodProduction: 0, jobsCreated: 20 },
+  'schoolhouse': { bedroomsAdded: 0, populationRequired: 25, energyDemand: 20, foodProduction: 0, jobsCreated: 12 },
+  'corner_store': { bedroomsAdded: 0, populationRequired: 15, energyDemand: 15, foodProduction: 35, jobsCreated: 6 },
+  'library': { bedroomsAdded: 0, populationRequired: 50, energyDemand: 12, foodProduction: 0, jobsCreated: 12 },
+  'bakery': { bedroomsAdded: 0, populationRequired: 30, energyDemand: 15, foodProduction: 25, jobsCreated: 6 },
+  'barbershop': { bedroomsAdded: 0, populationRequired: 25, energyDemand: 11, foodProduction: 0, jobsCreated: 4 },
+  'brewery': { bedroomsAdded: 0, populationRequired: 75, energyDemand: 35, foodProduction: 5, jobsCreated: 15 }
+};
+
+// Phase 4: Performance optimization state
+let calculationCache = {
+  lastCalculatedVersion: -1,
+  cachedVitality: null,
+  dirtyParcels: new Set() // Track which parcels need recalculation
+};
+
+// Import the authoritative state calculator - Phase 4: Optimized
 async function recalculateAuthoritativeState() {
   const startTime = Date.now();
   
-  // Reset calculated values
-  gameState.calculated.treasury = 0;
-  gameState.calculated.population = 0;
+  // Phase 4: Early exit if no changes since last calculation
+  if (calculationCache.lastCalculatedVersion === gameState.version.global && 
+      calculationCache.dirtyParcels.size === 0) {
+    console.log('🚀 Calculation cache hit - skipping recalculation');
+    return;
+  }
   
-  // Reset vitality
+  // Sync calculated values from authoritative sources
+  gameState.calculated.treasury = gameState.core.governance?.unallocatedFunds || 0;
+  gameState.calculated.population = 0; // Will be calculated below
+  
+  // Reset vitality for full recalculation
   Object.keys(gameState.calculated.vitality).forEach(key => {
     gameState.calculated.vitality[key] = { supply: 0, demand: 0, balance: 0 };
   });
   
-  // Building type definitions (server-side copy of building data)
-  const buildingTypes = {
-    'house': { population: 4, housing: 1, energyDemand: 2, maintenanceCost: 50, lvtRate: 0.01 },
-    'apartment': { population: 12, housing: 3, energyDemand: 6, maintenanceCost: 120, lvtRate: 0.015 },
-    'shop': { jobs: 2, energyDemand: 3, revenue: 100, maintenanceCost: 75, lvtRate: 0.02 },
-    'office': { jobs: 8, energyDemand: 5, revenue: 300, maintenanceCost: 150, lvtRate: 0.025 },
-    'solar': { energySupply: 10, maintenanceCost: 25, lvtRate: 0.005 },
-    'wind': { energySupply: 15, maintenanceCost: 40, lvtRate: 0.008 },
-    'farm': { foodProduction: 8, jobs: 1, maintenanceCost: 30, lvtRate: 0.005 },
-    'market': { foodSupply: 20, jobs: 3, energyDemand: 4, revenue: 150, maintenanceCost: 90, lvtRate: 0.015 }
-  };
-  
   let totalRevenue = 0;
   let totalMaintenance = 0;
   
-  // Calculate from all parcels
-  Object.entries(gameState.core.parcels).forEach(([parcelId, parcel]) => {
-    if (parcel.building) {
-      const buildingType = buildingTypes[parcel.building];
-      if (!buildingType) return;
-      
-      // Apply all building effects
-      if (buildingType.population) gameState.calculated.population += buildingType.population;
-      if (buildingType.housing) gameState.calculated.vitality.housing.supply += buildingType.housing;
-      if (buildingType.jobs) gameState.calculated.vitality.jobs.supply += buildingType.jobs;
-      if (buildingType.energySupply) gameState.calculated.vitality.energy.supply += buildingType.energySupply;
-      if (buildingType.energyDemand) gameState.calculated.vitality.energy.demand += buildingType.energyDemand;
-      if (buildingType.foodProduction) gameState.calculated.vitality.food.supply += buildingType.foodProduction;
-      if (buildingType.foodSupply) gameState.calculated.vitality.food.supply += buildingType.foodSupply;
-      if (buildingType.revenue) totalRevenue += buildingType.revenue;
-      if (buildingType.maintenanceCost) totalMaintenance += buildingType.maintenanceCost;
-      
-      // LVT calculation
-      const parcelValue = parcel.purchasePrice || 1000;
-      gameState.calculated.treasury += parcelValue * (buildingType.lvtRate || 0.01);
+  // Phase 4: Batch process parcels with buildings for better performance
+  const buildingParcels = Object.entries(gameState.core.parcels).filter(([_, parcel]) => parcel.building);
+  
+  // Phase 4: Pre-aggregate building counts for optimization
+  const buildingCounts = {};
+  buildingParcels.forEach(([parcelId, parcel]) => {
+    const buildingType = parcel.building;
+    buildingCounts[buildingType] = (buildingCounts[buildingType] || 0) + 1;
+  });
+  
+  // Phase 4: Optimized JEFH calculation using batch processing
+  Object.entries(buildingCounts).forEach(([buildingType, count]) => {
+    const typeData = BUILDING_TYPES_CACHE[buildingType];
+    if (!typeData) {
+      console.warn(`⚠️ Unknown building type: ${buildingType}`);
+      return;
+    }
+    
+    // Batch calculate vitality contributions
+    gameState.calculated.vitality.housing.supply += typeData.bedroomsAdded * count;
+    gameState.calculated.population += typeData.bedroomsAdded * 2 * count; // 2 people per bedroom
+    gameState.calculated.vitality.jobs.supply += typeData.jobsCreated * count;
+    gameState.calculated.vitality.food.supply += typeData.foodProduction * count;
+    gameState.calculated.vitality.jobs.demand += typeData.populationRequired * count;
+    
+    // Energy calculation (positive = demand, negative = production)
+    if (typeData.energyDemand > 0) {
+      gameState.calculated.vitality.energy.demand += typeData.energyDemand * count;
+    } else if (typeData.energyDemand < 0) {
+      gameState.calculated.vitality.energy.supply += Math.abs(typeData.energyDemand) * count;
     }
   });
   
-  // Calculate population-based demands
+  // Add population-based demands to building-specific demands
   if (gameState.calculated.population > 0) {
-    gameState.calculated.vitality.food.demand = gameState.calculated.population * 0.5;
-    gameState.calculated.vitality.jobs.demand = gameState.calculated.population * 0.6;
-    gameState.calculated.vitality.energy.demand += gameState.calculated.population * 0.3;
+    // Residents need food (in addition to building energy demands already calculated)
+    gameState.calculated.vitality.food.demand += gameState.calculated.population * 0.5;
+    
+    // Residents need jobs (this is demand for employment)
+    gameState.calculated.vitality.housing.demand += gameState.calculated.vitality.jobs.supply; // Workers need housing
+    
+    // Additional residential energy consumption
+    gameState.calculated.vitality.energy.demand += gameState.calculated.population * 0.2; // Base residential energy
   }
   
+  // Phase 4: Optimized building efficiency calculation
+  gameState.calculated.buildingEfficiencies = {};
+  
+  // Pre-calculate ratios once for all buildings (major optimization)
+  const energyRatio = gameState.calculated.vitality.energy.supply / Math.max(1, gameState.calculated.vitality.energy.demand);
+  const energySatisfaction = Math.min(1, energyRatio);
+  const workerRatio = gameState.calculated.vitality.housing.supply / Math.max(1, gameState.calculated.vitality.jobs.demand);
+  const workerSatisfaction = Math.min(1, workerRatio);
+  
+  // Process only building parcels with optimized loop
+  buildingParcels.forEach(([parcelId, parcel]) => {
+    const buildingType = BUILDING_TYPES_CACHE[parcel.building];
+    if (buildingType) {
+      let efficiency = 100; // Start at 100%
+      const unsatisfiedNeeds = [];
+      
+      // Check energy needs (using pre-calculated satisfaction)
+      if (buildingType.energyDemand > 0 && energySatisfaction < 1) {
+        efficiency *= energySatisfaction;
+        unsatisfiedNeeds.push({
+          type: 'Energy',
+          satisfaction: energySatisfaction,
+          deficit: buildingType.energyDemand * (1 - energySatisfaction)
+        });
+      }
+      
+      // Check worker needs (using pre-calculated satisfaction)
+      if (buildingType.populationRequired > 0 && workerSatisfaction < 1) {
+        efficiency *= workerSatisfaction;
+        unsatisfiedNeeds.push({
+          type: 'Workers',
+          satisfaction: workerSatisfaction,
+          deficit: buildingType.populationRequired * (1 - workerSatisfaction)
+        });
+      }
+      
+      gameState.calculated.buildingEfficiencies[parcelId] = {
+        efficiency: Math.round(efficiency),
+        unsatisfiedNeeds: unsatisfiedNeeds
+      };
+    }
+  });
+
   // Calculate balances and multipliers
   Object.keys(gameState.calculated.vitality).forEach(key => {
     const vitality = gameState.calculated.vitality[key];
@@ -1256,7 +1334,16 @@ async function recalculateAuthoritativeState() {
   gameState.calculated.treasury = totalTreasury + gameState.calculated.treasury;
   gameState.calculated.lastCalculated = Date.now();
   
-  // console.log(`✅ State recalculated in ${Date.now() - startTime}ms: Pop=${gameState.calculated.population}, Treasury=$${Math.round(gameState.calculated.treasury)} (Unallocated: $${Math.round(gameState.core.governance.unallocatedFunds)})`);
+  // Phase 4: Update cache state and performance tracking
+  calculationCache.lastCalculatedVersion = gameState.version.global;
+  calculationCache.dirtyParcels.clear();
+  calculationCache.cachedVitality = JSON.parse(JSON.stringify(gameState.calculated.vitality)); // Deep copy
+  
+  const calculationTime = Date.now() - startTime;
+  const buildingCount = buildingParcels.length;
+  const uniqueBuildingTypes = Object.keys(buildingCounts).length;
+  
+  console.log(`🚀 Optimized calculation complete: ${calculationTime}ms | ${buildingCount} buildings (${uniqueBuildingTypes} types) | Pop=${gameState.calculated.population} | Treasury=$${Math.round(gameState.calculated.treasury)}`);
 }
 
 // Cleanup disconnected clients every 5 minutes
@@ -1302,6 +1389,9 @@ setInterval(async () => {
       if (progress >= 1.0) {
         delete parcel.constructionStartDay;
         delete parcel.constructionDays;
+        
+        // Phase 4: Mark parcel as dirty for cache invalidation when construction completes
+        calculationCache.dirtyParcels.add(parcelId);
         gameState.version.global++;
         gameState.version.perParcel[parcelId] = gameState.version.global;
       }
@@ -1355,9 +1445,24 @@ setInterval(async () => {
     
     let buildingsAged = 0;
     let buildingsDecayed = 0;
+    let totalLVTCollected = 0;
     
-    // Age all buildings
+    // Process daily economics: LVT collection and building aging
     Object.entries(gameState.core.parcels).forEach(([parcelId, parcel]) => {
+      if (parcel.owner && parcel.owner !== 'unclaimed') {
+        // Calculate LVT for this parcel
+        const [row, col] = parcelId.split('-').map(Number);
+        const landValue = calculateParcelPrice(row, col);
+        const lvtRate = gameState.core.governance?.currentLvtRate || 0.01; // Default 1%
+        const dailyLVT = landValue * lvtRate;
+        
+        // Add to treasury (shared city fund)
+        gameState.core.governance.unallocatedFunds = (gameState.core.governance.unallocatedFunds || 0) + dailyLVT;
+        totalLVTCollected += dailyLVT;
+        
+        console.log(`💰 LVT collected from ${parcelId}: $${Math.round(dailyLVT)} (land value: $${landValue})`);
+      }
+      
       if (parcel.building && parcel.owner) {
         // Age the building
         parcel.buildingAge = (parcel.buildingAge || 0) + 1;
@@ -1403,7 +1508,7 @@ setInterval(async () => {
     
     broadcastToAll(dailyUpdateMessage);
     
-    console.log(`📅 Advanced to Day ${gameState.core.currentDay} (${gameState.core.currentMonth}) | Buildings aged: ${buildingsAged}, Decayed: ${buildingsDecayed}`);
+    console.log(`📅 Advanced to Day ${gameState.core.currentDay} (${gameState.core.currentMonth}) | Buildings aged: ${buildingsAged}, Decayed: ${buildingsDecayed}, LVT collected: $${Math.round(totalLVTCollected)}`);
     
   } catch (error) {
     console.error('❌ Error processing daily update:', error);

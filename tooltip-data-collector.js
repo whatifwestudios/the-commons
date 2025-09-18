@@ -43,8 +43,8 @@ class TooltipDataCollector {
             // Production data ("Adds up to")
             production: this.getProductionData(building),
             
-            // Needs data
-            needs: this.getNeedsData(building),
+            // Needs data (only unsatisfied needs)
+            needs: this.getNeedsData(building, row, col),
             
             // Construction status
             construction: this.getConstructionData(parcel)
@@ -87,7 +87,7 @@ class TooltipDataCollector {
     }
 
     /**
-     * Get performance data as percentage
+     * Get performance data as percentage - uses server data in multiplayer
      */
     getPerformanceData(row, col, parcel, building) {
         // Check if under construction
@@ -100,8 +100,19 @@ class TooltipDataCollector {
             if (parcel._constructionProgress !== undefined) {
                 progressPercent = Math.round(parcel._constructionProgress * 100);
             } else if (parcel.constructionStartDay !== null && parcel.constructionDays > 0) {
+                // Calculate real-time progress within the current day
                 const daysPassed = this.game.gameDate.day - parcel.constructionStartDay;
-                const progress = Math.max(0, Math.min(1.0, daysPassed / parcel.constructionDays));
+                
+                // Add real-time progress within current day (simulating time passing)
+                // User requested: divide by 3600/365 for real-time feel
+                // This makes real seconds count as game time progression
+                const currentTime = Date.now();
+                const sessionStart = this.game.sessionStartTime || currentTime;
+                const secondsSinceStart = (currentTime - sessionStart) / 1000;
+                const simulatedDaysFromTime = secondsSinceStart / (3600 / 365); // Convert real seconds to game days
+                const realTimeDays = daysPassed + simulatedDaysFromTime;
+                
+                const progress = Math.max(0, Math.min(1.0, realTimeDays / parcel.constructionDays));
                 progressPercent = Math.round(progress * 100);
             }
             
@@ -111,9 +122,21 @@ class TooltipDataCollector {
             };
         }
 
-        // Get efficiency percentage for completed buildings
-        const efficiencyInfo = this.game.economicEngine.calculateBuildingEfficiencyPercentage(row, col);
-        const performancePercent = efficiencyInfo ? Math.round(efficiencyInfo.percentage) : 100;
+        // Use server-calculated efficiency in multiplayer, local calculation in solo mode
+        let performancePercent = 100;
+        
+        if (this.game.multiplayerManager && this.game.multiplayerManager.isConnected) {
+            // Use server-calculated building efficiency
+            const parcelId = `${row}-${col}`;
+            const serverEfficiency = this.game.buildingEfficiencies?.[parcelId];
+            if (serverEfficiency) {
+                performancePercent = serverEfficiency.efficiency;
+            }
+        } else {
+            // Solo mode: calculate locally
+            const efficiencyInfo = this.game.economicEngine.calculateBuildingEfficiencyPercentage(row, col);
+            performancePercent = efficiencyInfo ? Math.round(efficiencyInfo.percentage) : 100;
+        }
         
         return {
             isUnderConstruction: false,
@@ -127,14 +150,16 @@ class TooltipDataCollector {
     getProductionData(building) {
         const production = [];
         
-        if (building.population?.residentsHoused > 0) {
+        // Housing production (bedrooms/housing capacity)
+        if (building.population?.bedroomsAdded > 0) {
             production.push({
                 emoji: '🏠',
-                amount: building.population.residentsHoused,
-                type: 'Residents'
+                amount: building.population.bedroomsAdded,
+                type: 'Housing'
             });
         }
         
+        // Food production  
         if (building.resources?.foodProduction > 0) {
             production.push({
                 emoji: '🌾',
@@ -143,14 +168,16 @@ class TooltipDataCollector {
             });
         }
         
-        if (building.resources?.energyProduction > 0) {
+        // Energy production (negative energyDemand means energy producer)
+        if (building.resources?.energyDemand < 0) {
             production.push({
                 emoji: '⚡',
-                amount: building.resources.energyProduction,
+                amount: Math.abs(building.resources.energyDemand),
                 type: 'Energy'
             });
         }
         
+        // Job production
         if (building.population?.jobsCreated > 0) {
             production.push({
                 emoji: '💼',
@@ -163,33 +190,54 @@ class TooltipDataCollector {
     }
 
     /**
-     * Get needs data
+     * Get needs data - only show UNSATISFIED needs, uses server data in multiplayer
      */
-    getNeedsData(building) {
+    getNeedsData(building, row, col) {
         const needs = [];
         
-        if (building.population?.workersNeeded > 0) {
-            needs.push({
-                emoji: '👷',
-                amount: building.population.workersNeeded,
-                type: 'Workers'
-            });
-        }
-        
-        if (building.resources?.foodDemand > 0) {
-            needs.push({
-                emoji: '🌾',
-                amount: building.resources.foodDemand,
-                type: 'Food'
-            });
-        }
-        
-        if (building.resources?.energyDemand > 0) {
-            needs.push({
-                emoji: '⚡',
-                amount: building.resources.energyDemand,
-                type: 'Energy'
-            });
+        if (this.game.multiplayerManager && this.game.multiplayerManager.isConnected) {
+            // Use server-calculated building efficiency data
+            const parcelId = `${row}-${col}`;
+            const serverEfficiency = this.game.buildingEfficiencies?.[parcelId];
+            
+            if (serverEfficiency && serverEfficiency.unsatisfiedNeeds) {
+                serverEfficiency.unsatisfiedNeeds.forEach(need => {
+                    let emoji = '❓';
+                    switch(need.type) {
+                        case 'Workers': emoji = '👷'; break;
+                        case 'Energy': emoji = '⚡'; break;
+                        case 'Food': emoji = '🌾'; break;
+                    }
+                    
+                    needs.push({
+                        emoji: emoji,
+                        amount: Math.ceil(need.deficit), // Show how much is missing
+                        type: need.type,
+                        satisfaction: Math.round(need.satisfaction * 100) // For debugging
+                    });
+                });
+            }
+        } else {
+            // Solo mode: calculate locally
+            const efficiencyInfo = this.game.economicEngine.calculateBuildingEfficiencyPercentage(row, col);
+            
+            if (efficiencyInfo && efficiencyInfo.unsatisfiedNeeds) {
+                efficiencyInfo.unsatisfiedNeeds.forEach(need => {
+                    let emoji = '❓';
+                    switch(need.name) {
+                        case 'Workers': emoji = '👷'; break;
+                        case 'Energy': emoji = '⚡'; break;
+                        case 'Food': emoji = '🌾'; break;
+                    }
+                    
+                    needs.push({
+                        emoji: emoji,
+                        amount: Math.ceil(need.deficit), // Show how much is missing
+                        type: need.name,
+                        satisfaction: Math.round(need.satisfaction * 100) // For debugging
+                    });
+                });
+            }
         }
         
         return needs;

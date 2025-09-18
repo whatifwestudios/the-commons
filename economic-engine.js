@@ -683,13 +683,22 @@ class EconomicEngine {
         
         // Step 1: Initialize building efficiency tracking
         const buildingDemands = [];
+        let buildingsFound = 0;
+        let parcelsWithBuildings = 0;
         for (let row = 0; row < this.game.gridSize; row++) {
             for (let col = 0; col < this.game.gridSize; col++) {
                 const parcel = this.game.grid[row][col];
                 if (!parcel.building) continue;
                 
+                parcelsWithBuildings++;
                 const building = this.game.buildingManager.getBuildingById(parcel.building);
-                if (!building) continue;
+                if (!building) {
+                    console.warn(`⚠️ Parcel at ${row},${col} has building ID '${parcel.building}' but building not found in manager`);
+                    continue;
+                }
+                
+                buildingsFound++;
+                console.log(`🏢 Processing building: ${building.name} at ${row},${col}`);
                 
                 const key = `${row},${col}`;
                 this.game.buildingEfficiencies.set(key, {
@@ -878,6 +887,9 @@ class EconomicEngine {
             }
         });
         
+        console.log(`🏙️ JEFH Calculation Complete - Found ${buildingsFound} buildings (${parcelsWithBuildings} parcels with building IDs)`);
+        console.log(`📊 Building Efficiencies Map Size: ${this.game.buildingEfficiencies.size}`);
+        
         // Calculate city satisfaction based on met needs
         this.calculateCitySatisfaction();
     }
@@ -1028,26 +1040,18 @@ class EconomicEngine {
         }
         
         // Check for energy need
-        if (building.consumption?.energy > 0) {
+        if (building.resources?.energyDemand > 0) {
             const need = {
                 type: 'energy',
-                required: building.consumption.energy,
+                required: building.resources.energyDemand,
                 name: 'Energy'
             };
             needs.push(need);
             needsMap.set('energy', need);
         }
         
-        // Check for food need
-        if (building.consumption?.food > 0) {
-            const need = {
-                type: 'food',
-                required: building.consumption.food,
-                name: 'Food'
-            };
-            needs.push(need);
-            needsMap.set('food', need);
-        }
+        // Check for food need (buildings don't have food demand, only energy demand and food production)
+        // Note: Current building system doesn't include food demand, only energy demand
         
         // If no needs, building is 100% efficient
         if (needs.length === 0) return null;
@@ -1059,6 +1063,7 @@ class EconomicEngine {
         // Calculate weighted efficiency percentage
         let totalEfficiency = 0;
         const unsatisfiedNeeds = [];
+        const allNeeds = []; // Track all needs with satisfaction
         
         // Equal weight for each type of need
         const weightPerNeed = 100 / needs.length;
@@ -1090,6 +1095,12 @@ class EconomicEngine {
             // Add weighted contribution to total efficiency
             totalEfficiency += satisfaction * weightPerNeed;
             
+            // Track all needs with satisfaction
+            allNeeds.push({
+                name: need.name,
+                satisfaction: satisfaction
+            });
+            
             // Track unsatisfied needs
             if (satisfaction < 1) {
                 unsatisfiedNeeds.push({
@@ -1103,10 +1114,7 @@ class EconomicEngine {
         return {
             percentage: Math.max(0, Math.min(100, totalEfficiency)),
             unsatisfiedNeeds: unsatisfiedNeeds.sort((a, b) => a.satisfaction - b.satisfaction),
-            allNeeds: needs.map(need => ({
-                name: need.name,
-                satisfaction: this.game.calculateJEFHSatisfaction(need.type, row, col)
-            }))
+            allNeeds: allNeeds
         };
     }
     

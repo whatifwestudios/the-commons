@@ -279,8 +279,8 @@ class GovernanceSystem {
      * Process monthly governance activities
      */
     processMonthlyGovernance() {
-        // Award voting points
-        this.awardVotingPoints(10);
+        // Award voting points (2 points per month, accumulating)
+        this.game.awardMonthlyVotingPoints();
         
         // Recalculate budget for new month
         this.calculateTotalBudget();
