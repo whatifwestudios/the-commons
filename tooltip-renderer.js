@@ -7,22 +7,29 @@ class TooltipRenderer {
     
     /**
      * Render building tooltip with new clean format
-     * Format: Name -> Owned by -> Performance -> Adds up to -> Needs
+     * Format: Name, owned by [Player Name] -> Building/Land Values -> Performance -> Adds up to -> Needs
      */
     renderBuildingTooltip(data) {
         let html = '';
         
-        // Building name
-        html += `<strong>${data.name}</strong><br>`;
+        // Building name and owner on same line
+        html += `<strong>${data.name}</strong>, owned by ${data.owner.name}<br><br>`;
         
-        // Owned by: [Player Name]
-        html += `<strong>Owned by:</strong> ${data.owner.name}<br>`;
+        // Building value and land value
+        if (data.buildingValue !== undefined || data.landValue !== undefined) {
+            if (data.buildingValue !== undefined) {
+                html += `Building Value: $${data.buildingValue.toLocaleString()}<br>`;
+            }
+            if (data.landValue !== undefined) {
+                html += `Land Value: $${data.landValue.toLocaleString()}<br><br>`;
+            }
+        }
         
         // Performance: XX%
         if (data.performance.isUnderConstruction) {
-            html += `<strong>Performance:</strong> Under Construction (${data.performance.progressPercent}%)<br>`;
+            html += `<strong>Performance:</strong> Under Construction (${data.performance.progressPercent}%)<br><br>`;
         } else {
-            html += `<strong>Performance:</strong> ${data.performance.performancePercent}%<br>`;
+            html += `<strong>Performance:</strong> ${data.performance.performancePercent}%<br><br>`;
         }
         
         // Adds up to: (only show if has production)
@@ -31,6 +38,7 @@ class TooltipRenderer {
             data.production.forEach(item => {
                 html += `• ${item.emoji} ${item.amount} ${item.type}<br>`;
             });
+            html += `<br>`;
         }
         
         // Needs: (only show if has needs)

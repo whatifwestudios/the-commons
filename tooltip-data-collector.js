@@ -33,6 +33,10 @@ class TooltipDataCollector {
             // Owner info
             owner: this.getOwnerInfo(parcel),
             
+            // Value info
+            buildingValue: this.getBuildingValue(row, col, parcel, building),
+            landValue: this.getLandValue(row, col, parcel),
+            
             // Performance data
             performance: this.getPerformanceData(row, col, parcel, building),
             
@@ -204,6 +208,55 @@ class TooltipDataCollector {
             constructionDays: parcel.constructionDays,
             constructionProgress: parcel._constructionProgress
         };
+    }
+
+    /**
+     * Get building value
+     */
+    getBuildingValue(row, col, parcel, building) {
+        try {
+            // Try to get building value from economics or building data
+            if (building.economics?.baseValue) {
+                return building.economics.baseValue;
+            }
+            
+            // Try to get from game's building value calculation
+            if (this.game.getBuildingValue) {
+                return this.game.getBuildingValue(row, col);
+            }
+            
+            // Fallback: estimate from building cost
+            if (building.cost) {
+                return building.cost;
+            }
+            
+            return undefined;
+        } catch (error) {
+            console.warn('Could not get building value:', error);
+            return undefined;
+        }
+    }
+
+    /**
+     * Get land value
+     */
+    getLandValue(row, col, parcel) {
+        try {
+            // Try to get from parcel land value data
+            if (parcel.landValue?.calculatedValue) {
+                return parcel.landValue.calculatedValue;
+            }
+            
+            // Try to get from game's land value calculation
+            if (this.game.getParcelPrice) {
+                return this.game.getParcelPrice(row, col);
+            }
+            
+            return undefined;
+        } catch (error) {
+            console.warn('Could not get land value:', error);
+            return undefined;
+        }
     }
 
     /**
