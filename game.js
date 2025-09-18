@@ -3455,6 +3455,20 @@ class IsometricGrid {
         this.governanceSystem.closeGovernanceModal();
     }
     
+    showActionMarketplace() {
+        // Delegate to action marketplace
+        if (this.actionMarketplace) {
+            this.actionMarketplace.openMarketplace();
+        }
+    }
+    
+    closeActionMarketplace() {
+        // Delegate to action marketplace
+        if (this.actionMarketplace) {
+            this.actionMarketplace.closeMarketplace();
+        }
+    }
+    
     updateGovernanceUI() {
         // Update voting points (using new unified system)
         const playerAllocations = this.governance.playerAllocations || {};

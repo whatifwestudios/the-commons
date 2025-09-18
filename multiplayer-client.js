@@ -1407,6 +1407,9 @@ class RailwayMultiplayerManager {
             this.game.gameDate.day = data.timeState.currentDay;
             this.game.gameDate.month = data.timeState.currentMonth;
             
+            // CRITICAL: Sync day start time for accurate countdown timers
+            this.game.lastDayStartTime = performance.now();
+            
             console.log(`🕐 Time synchronized: Day ${data.timeState.currentDay} (${data.timeState.currentMonth})`);
             
             // Update the game date display
