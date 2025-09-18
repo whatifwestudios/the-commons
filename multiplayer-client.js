@@ -1120,6 +1120,9 @@ class RailwayMultiplayerManager {
         // Apply governance changes
         if (changes.governance && this.game.governanceSystem) {
             Object.assign(this.game.governanceSystem.governance, changes.governance);
+            // CRITICAL: Also update game.governance for UI functions
+            if (!this.game.governance) this.game.governance = {};
+            Object.assign(this.game.governance, changes.governance);
             this.game.updateGovernanceUI?.();
         }
         
@@ -1393,12 +1396,23 @@ class RailwayMultiplayerManager {
         
         // Update the game's time state to match server authority
         if (this.game.currentDay !== data.timeState.currentDay || 
-            this.game.currentMonth !== data.timeState.currentMonth) {
+            this.game.currentMonth !== data.timeState.currentMonth || 
+            this.game.gameDate.day !== data.timeState.currentDay ||
+            this.game.gameDate.month !== data.timeState.currentMonth) {
             
             this.game.currentDay = data.timeState.currentDay;
             this.game.currentMonth = data.timeState.currentMonth;
             
+            // CRITICAL: Also update gameDate object that UI uses
+            this.game.gameDate.day = data.timeState.currentDay;
+            this.game.gameDate.month = data.timeState.currentMonth;
+            
             console.log(`🕐 Time synchronized: Day ${data.timeState.currentDay} (${data.timeState.currentMonth})`);
+            
+            // Update the game date display
+            if (this.game.updateGameDate) {
+                this.game.updateGameDate();
+            }
             
             // Update UI displays that show time
             if (this.game.updateTimeDisplay) {
@@ -1842,7 +1856,7 @@ class MultiplayerManager {
                 console.log('옥션 생성', data.listing);
                 this.game.actionManager.marketplace.listings.push(data.listing);
                 this.game.updateActionDisplay();
-                this.game.updateMarketplaceModal();
+                this.game.actionMarketplace.updateMarketplaceDisplay();
                 this.game.switchMarketplaceTab('marketplace');
                 break;
             case 'AUCTION_ENDED':
@@ -1853,7 +1867,7 @@ class MultiplayerManager {
                 }
                 this.game.updatePlayerStats();
                 this.game.updateActionDisplay();
-                this.game.updateMarketplaceModal();
+                this.game.actionMarketplace.updateMarketplaceDisplay();
                 this.game.refreshMarketplaceListings();
                 break;
             case 'AUCTION_UPDATED':
@@ -1863,7 +1877,7 @@ class MultiplayerManager {
                     Object.assign(updatedListing, data.listing);
                 }
                 this.game.updatePlayerStats();
-                this.game.updateMarketplaceModal();
+                this.game.actionMarketplace.updateMarketplaceDisplay();
                 this.game.refreshMarketplaceListings();
                 break;
                 
@@ -2219,7 +2233,7 @@ class MultiplayerManager {
             this.game.actionManager.marketplace.listings = serverState.marketplace.listings;
             // Update marketplace display if modal is open
             if (document.getElementById('action-marketplace-modal').classList.contains('visible')) {
-                this.game.updateMarketplaceModal();
+                this.game.actionMarketplace.updateMarketplaceDisplay();
             }
             this.game.updateMarketplaceDisplay();
         }

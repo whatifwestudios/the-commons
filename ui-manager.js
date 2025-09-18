@@ -100,10 +100,10 @@ class UIManager {
             buyNow: 'buy-now',
             
             // Vitality bars
-            vitalityEnergy: 'vitality-energy',
-            vitalityFood: 'vitality-food',
-            vitalityHousing: 'vitality-housing',
-            vitalityJobs: 'vitality-jobs',
+            vitalityEnergy: 'energy-bar',
+            vitalityFood: 'food-bar',
+            vitalityHousing: 'housing-bar',
+            vitalityJobs: 'jobs-bar',
             vitalityMobility: 'vitality-mobility',
             vitalityEducation: 'vitality-education',
             vitalityHealth: 'vitality-health',

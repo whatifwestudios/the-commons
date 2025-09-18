@@ -1410,7 +1410,7 @@ setInterval(async () => {
   } finally {
     isProcessingDailyUpdate = false;
   }
-}, 60000); // Every 60 seconds (1 game day)
+}, 9863); // Every 9.863 seconds (1 game day = 1/365th of an hour)
 
 // Governance action processors
 async function processAllocateVote(action, playerId) {

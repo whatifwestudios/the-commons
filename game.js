@@ -2580,7 +2580,7 @@ class IsometricGrid {
                 // Show construction progress if building is under construction
                 const isUnderConstruction = parcel._isUnderConstruction || 
                     (parcel.constructionStartDay !== null && parcel.constructionDays > 0 &&
-                     (this.currentDay - parcel.constructionStartDay) < parcel.constructionDays);
+                     (this.gameDate.day - parcel.constructionStartDay) < parcel.constructionDays);
                 
                 if (isUnderConstruction) {
                     let progressPercent = 0;
@@ -2589,7 +2589,7 @@ class IsometricGrid {
                     if (parcel._constructionProgress !== undefined) {
                         progressPercent = Math.round(parcel._constructionProgress * 100);
                     } else if (parcel.constructionStartDay !== null && parcel.constructionDays > 0) {
-                        const daysPassed = this.currentDay - parcel.constructionStartDay;
+                        const daysPassed = this.gameDate.day - parcel.constructionStartDay;
                         const progress = Math.max(0, Math.min(1.0, daysPassed / parcel.constructionDays));
                         progressPercent = Math.round(progress * 100);
                     }
@@ -2601,7 +2601,7 @@ class IsometricGrid {
                     // Calculate estimated completion time
                     let timeRemaining = '';
                     if (parcel.constructionDays > 0) {
-                        const daysRemaining = Math.max(0, parcel.constructionDays - (this.currentDay - parcel.constructionStartDay));
+                        const daysRemaining = Math.max(0, parcel.constructionDays - (this.gameDate.day - parcel.constructionStartDay));
                         if (daysRemaining > 0) {
                             timeRemaining = ` (${Math.ceil(daysRemaining)} day${daysRemaining === 1 ? '' : 's'} remaining)`;
                         } else {
