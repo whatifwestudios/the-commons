@@ -830,6 +830,17 @@ class RailwayMultiplayerManager {
     
     async onBuildingConstructed(row, col, building, constructionData = {}) {
         console.log(`🏗️ Broadcasting building construction: ${building} at ${row}-${col}`, constructionData);
+        
+        // Create dust cloud effect at construction start
+        console.log('🌪️ Creating dust cloud for multiplayer building construction');
+        if (this.game.createDustCloud) {
+            const worldPos = this.game.toIsometric(col, row);
+            console.log('🌪️ Creating dust cloud at', worldPos);
+            this.game.createDustCloud(worldPos.x, worldPos.y, 'building');
+        } else {
+            console.log('❌ createDustCloud method not found on game object (multiplayer)');
+        }
+        
         const result = await this.broadcastAction({
             type: 'CONSTRUCT_BUILDING',
             parcelId: `${row}-${col}`,
