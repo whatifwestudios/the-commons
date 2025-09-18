@@ -1240,7 +1240,7 @@ class IsometricGrid {
         this.setupActionMarketplace();
         
         // Initialize multiplayer system
-        this.multiplayerManager = new UniversalMultiplayerManager(this);
+        this.multiplayerManager = new MultiplayerManager(this);
         this.multiplayerManager.connect();
         
         // Start action marketplace timer for auction expiration
@@ -2275,6 +2275,14 @@ class IsometricGrid {
     }
 
     startGameTime() {
+        // CRITICAL: Only start client-side timer in solo mode
+        // In multiplayer, time is server-authoritative via DAILY_UPDATE messages
+        if (this.multiplayerManager && this.multiplayerManager.isConnected) {
+            console.log('🔗 Multiplayer detected - server will control time advancement');
+            return;
+        }
+        
+        console.log('🕐 Starting solo game timer');
         setInterval(() => {
             this.currentDay++;
             this.lastDayStartTime = performance.now(); // Track when this day started
@@ -3071,6 +3079,14 @@ class IsometricGrid {
     }
 
     startGameTime() {
+        // CRITICAL: Only start client-side timer in solo mode
+        // In multiplayer, time is server-authoritative via DAILY_UPDATE messages
+        if (this.multiplayerManager && this.multiplayerManager.isConnected) {
+            console.log('🔗 Multiplayer detected - server will control time advancement');
+            return;
+        }
+        
+        console.log('🕐 Starting solo game timer');
         setInterval(() => {
             this.currentDay++;
             this.lastDayStartTime = performance.now(); // Track when this day started
@@ -4321,6 +4337,7 @@ class IsometricGrid {
         
         // Use unified tooltip manager with proper positioning
         this.tooltipManager.show(content, mouseX, mouseY, {
+            html: true,
             delay: 0, // No delay since this is triggered by timer
             priority: 10 // High priority for mobility mode
         });

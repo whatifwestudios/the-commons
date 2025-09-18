@@ -346,6 +346,9 @@ async function handleJoinGame(ws, clientId, data) {
   if (!gameState.lifecycle.gameId || gameState.lifecycle.status === 'ended' || gameState.lifecycle.status === 'archived') {
     const gameId = initializeNewGame(cityName || playerName + "'s City");
     console.log(`🎮 New game initialized: ${gameId}`);
+  } else {
+    // Game already exists - use existing city name (don't allow override)
+    console.log(`🔗 Player ${playerName} joining existing game: ${gameState.lifecycle.cityName}`);
   }
   
   // Check if player can join this game
@@ -1304,59 +1307,87 @@ setInterval(async () => {
   }
 }, 5000); // Every 5 seconds
 
-// Daily building aging system (every 60 seconds = 1 game day)
+// Server-authoritative daily timer (every 60 seconds = 1 game day)
+let isProcessingDailyUpdate = false;
 setInterval(async () => {
-  console.log('🕐 Processing daily building aging...');
+  // Prevent overlapping executions
+  if (isProcessingDailyUpdate) {
+    console.log('⚠️ Skipping daily update - previous update still processing');
+    return;
+  }
   
-  let buildingsAged = 0;
-  let buildingsDecayed = 0;
+  isProcessingDailyUpdate = true;
   
-  // Age all buildings
-  Object.entries(gameState.core.parcels).forEach(([parcelId, parcel]) => {
-    if (parcel.building && parcel.owner) {
-      // Age the building
-      parcel.buildingAge = (parcel.buildingAge || 0) + 1;
-      buildingsAged++;
-      
-      // Calculate decay based on age (buildings start decaying after 30 days)
-      if (parcel.buildingAge > 30) {
-        const ageOverThreshold = parcel.buildingAge - 30;
-        const decayRate = 0.002; // 0.2% per day after threshold
-        const newDecay = Math.min(0.8, ageOverThreshold * decayRate); // Max 80% decay
-        
-        if (newDecay > (parcel.decay || 0)) {
-          parcel.decay = newDecay;
-          buildingsDecayed++;
-        }
-      }
-      
-      // Mark parcel as updated
-      gameState.version.perParcel[parcelId] = gameState.version.global + 1;
+  try {
+    // CRITICAL: Advance the day first (server authoritative)
+    gameState.core.currentDay++;
+    
+    // Advance month every 30 days
+    if (gameState.core.currentDay > 30) {
+      gameState.core.currentDay = 1;
+      const months = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEPT', 'OCT', 'NOV', 'DEC'];
+      const currentIndex = months.indexOf(gameState.core.currentMonth);
+      gameState.core.currentMonth = months[(currentIndex + 1) % 12];
     }
-  });
-  
-  if (buildingsAged > 0) {
-    // Increment global version and recalculate
+    
+    console.log(`🕐 Day ${gameState.core.currentDay} (${gameState.core.currentMonth}) - Processing daily updates...`);
+    
+    let buildingsAged = 0;
+    let buildingsDecayed = 0;
+    
+    // Age all buildings
+    Object.entries(gameState.core.parcels).forEach(([parcelId, parcel]) => {
+      if (parcel.building && parcel.owner) {
+        // Age the building
+        parcel.buildingAge = (parcel.buildingAge || 0) + 1;
+        buildingsAged++;
+        
+        // Calculate decay based on age (buildings start decaying after 30 days)
+        if (parcel.buildingAge > 30) {
+          const ageOverThreshold = parcel.buildingAge - 30;
+          const decayRate = 0.002; // 0.2% per day after threshold
+          const newDecay = Math.min(0.8, ageOverThreshold * decayRate); // Max 80% decay
+          
+          if (newDecay > (parcel.decay || 0)) {
+            parcel.decay = newDecay;
+            buildingsDecayed++;
+          }
+        }
+        
+        // Mark parcel as updated
+        gameState.version.perParcel[parcelId] = gameState.version.global + 1;
+      }
+    });
+    
+    // Always increment global version and recalculate for time advancement
     gameState.version.global++;
     gameState.meta.lastUpdate = Date.now();
     
     await recalculateAuthoritativeState();
     
-    // Broadcast aging updates to all clients
-    const agingMessage = {
-      type: 'BUILDING_AGING_UPDATE',
-      summary: {
+    // Broadcast time advancement to all clients
+    const dailyUpdateMessage = {
+      type: 'DAILY_UPDATE',
+      timeState: {
+        currentDay: gameState.core.currentDay,
+        currentMonth: gameState.core.currentMonth
+      },
+      buildingSummary: {
         buildingsAged,
-        buildingsDecayed,
-        gameDay: gameState.core.currentDay
+        buildingsDecayed
       },
       timestamp: Date.now(),
       version: gameState.version.global
     };
     
-    broadcastToAll(agingMessage);
+    broadcastToAll(dailyUpdateMessage);
     
-    console.log(`📈 Buildings aged: ${buildingsAged}, Decayed: ${buildingsDecayed}`);
+    console.log(`📅 Advanced to Day ${gameState.core.currentDay} (${gameState.core.currentMonth}) | Buildings aged: ${buildingsAged}, Decayed: ${buildingsDecayed}`);
+    
+  } catch (error) {
+    console.error('❌ Error processing daily update:', error);
+  } finally {
+    isProcessingDailyUpdate = false;
   }
 }, 60000); // Every 60 seconds (1 game day)
 

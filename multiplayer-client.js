@@ -324,6 +324,11 @@ class UniversalMultiplayerManager {
                 // This message is just informational for logging
                 break;
                 
+            case 'DAILY_UPDATE':
+                console.log(`📅 Server time update: Day ${data.timeState.currentDay} (${data.timeState.currentMonth})`);
+                this.handleDailyUpdate(data);
+                break;
+                
             default:
                 console.log('📨 Received server message:', data);
         }
@@ -1509,6 +1514,36 @@ class UniversalMultiplayerManager {
         if (this.game.tooltipManager && this.game.tooltipManager.clearCache) {
             this.game.tooltipManager.clearCache();
             console.log('🔄 Cleared tooltip cache after construction update');
+        }
+    }
+    
+    handleDailyUpdate(data) {
+        if (!data.timeState || !this.game) return;
+        
+        // Update the game's time state to match server authority
+        if (this.game.currentDay !== data.timeState.currentDay || 
+            this.game.currentMonth !== data.timeState.currentMonth) {
+            
+            this.game.currentDay = data.timeState.currentDay;
+            this.game.currentMonth = data.timeState.currentMonth;
+            
+            console.log(`🕐 Time synchronized: Day ${data.timeState.currentDay} (${data.timeState.currentMonth})`);
+            
+            // Update UI displays that show time
+            if (this.game.updateTimeDisplay) {
+                this.game.updateTimeDisplay();
+            }
+            
+            // Clear tooltip cache since day changes can affect tooltips
+            if (this.game.tooltipManager && this.game.tooltipManager.clearCache) {
+                this.game.tooltipManager.clearCache();
+                console.log('🔄 Cleared tooltip cache after time update');
+            }
+            
+            // Trigger re-render to update any time-dependent visuals
+            if (this.game.scheduleRender) {
+                this.game.scheduleRender();
+            }
         }
     }
     
