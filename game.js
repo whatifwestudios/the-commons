@@ -52,6 +52,7 @@ class IsometricGrid {
         this.landValueCache = new Map(); // Cache calculated land values
         this.accessibilityCache = new Map(); // Cache accessibility scores
         this.dirtyRegions = new Set(); // Track regions that need recalculation
+        this.selectedStreetEdges = new Set(); // Track selected street edges for mobility layer
         this.lastCacheUpdate = 0; // Track when caches were last cleared
         
         // Event throttling
@@ -3132,6 +3133,13 @@ class IsometricGrid {
         const streetEdgeMenu = document.getElementById('street-edge-context-menu');
         if (streetEdgeMenu) {
             streetEdgeMenu.classList.remove('visible');
+        }
+    }
+    
+    clearSelectedStreetEdges() {
+        // Clear selected street edges when switching layers
+        if (this.selectedStreetEdges) {
+            this.selectedStreetEdges.clear();
         }
     }
     
