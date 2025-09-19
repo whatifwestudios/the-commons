@@ -536,16 +536,19 @@ async function handleJoinGame(ws, clientId, gameState, data) {
 
   // Generate or use existing player ID
   let playerId = data.playerId;
-  if (!playerId || !gameState.core.players.has(playerId)) {
+  if (!playerId || !gameState || !gameState.core.players.has(playerId)) {
     playerId = 'player_' + Math.random().toString(36).substr(2, 9);
   }
 
   // Initialize new game if this is the first player or no game exists
-  if (!gameState.lifecycle.gameId || gameState.lifecycle.status === 'ended' || gameState.lifecycle.status === 'archived') {
+  if (!gameState || !gameState.lifecycle.gameId || gameState.lifecycle.status === 'ended' || gameState.lifecycle.status === 'archived') {
     const client = clients.get(clientId);
     const roomId = client?.roomId || 'default';
     const gameId = initializeNewGameForRoom(roomId, cityName || playerName + "'s City");
     console.log(`🎮 New game initialized: ${gameId} for room ${roomId}`);
+
+    // Get the newly created game instance
+    gameState = getGameInstanceForClient(clientId);
   } else {
     // Game already exists - use existing city name (don't allow override)
     console.log(`🔗 Player ${playerName} joining existing game: ${gameState.lifecycle.cityName}`);
