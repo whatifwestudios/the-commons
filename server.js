@@ -1036,9 +1036,7 @@ async function processTreasuryFee(gameState, action, playerId, roomId) {
 }
 
 // Utility functions
-function getClientSafeState() {
-  return getClientSafeStateForInstance(gameState);
-}
+// Note: getClientSafeState() removed - use getClientSafeStateForInstance(gameState) directly
 
 function getClientSafeStateForInstance(gameState) {
   return {
@@ -1806,7 +1804,7 @@ async function processAllocateVote(gameState, action, playerId, roomId) {
   player.governance.playerAllocations[category] = newAllocation;
   
   // Recalculate global budget allocations based on all players
-  recalculateGlobalBudgetAllocations();
+  recalculateGlobalBudgetAllocations(gameState);
   
   // Update versions
   gameState.version.global++;
@@ -1883,7 +1881,7 @@ async function processAllocateLVTPoint(gameState, action, playerId, roomId) {
   player.governance.playerAllocations.lvtRate = newAllocation;
   
   // Recalculate global LVT rate based on all players
-  recalculateGlobalLVTRate();
+  recalculateGlobalLVTRate(gameState);
   
   // Update versions
   gameState.version.global++;
@@ -2189,10 +2187,10 @@ function getTotalAllocatedPoints(player) {
 }
 
 // Recalculate global budget allocations based on all player votes
-function recalculateGlobalBudgetAllocations() {
+function recalculateGlobalBudgetAllocations(gameState) {
   const totalVotes = {};
   let totalVotingPower = 0;
-  
+
   // Aggregate all player votes
   gameState.core.players.forEach(player => {
     if (player.governance && player.governance.playerAllocations) {
@@ -2204,7 +2202,7 @@ function recalculateGlobalBudgetAllocations() {
       });
     }
   });
-  
+
   // Calculate proportional allocations
   if (totalVotingPower > 0) {
     Object.keys(gameState.core.governance.categoryAllocations).forEach(category => {
@@ -2212,33 +2210,33 @@ function recalculateGlobalBudgetAllocations() {
       gameState.core.governance.categoryAllocations[category] = votes / totalVotingPower;
     });
   }
-  
+
   console.log('🗳️ Recalculated budget allocations:', gameState.core.governance.categoryAllocations);
 }
 
 // Recalculate global LVT rate based on all player votes
-function recalculateGlobalLVTRate() {
+function recalculateGlobalLVTRate(gameState) {
   let totalLVTVotes = 0;
   let totalVoters = 0;
-  
+
   // Aggregate all player LVT votes
   gameState.core.players.forEach(player => {
-    if (player.governance && player.governance.playerAllocations && 
-        player.governance.playerAllocations.lvtRate !== undefined && 
+    if (player.governance && player.governance.playerAllocations &&
+        player.governance.playerAllocations.lvtRate !== undefined &&
         !isNaN(player.governance.playerAllocations.lvtRate)) {
       totalLVTVotes += player.governance.playerAllocations.lvtRate;
       totalVoters += 1;
     }
   });
-  
+
   // Calculate average and apply to base rate
   const baseLvtRate = 0.50; // 50% base rate (matching initial game state)
   const averageVoteChange = totalVoters > 0 ? totalLVTVotes / totalVoters : 0;
   const newRate = Math.max(0, Math.min(1, baseLvtRate + (averageVoteChange * 0.01))); // Each point = 1%
-  
+
   gameState.core.governance.currentLvtRate = newRate;
   gameState.core.governance.proposedLvtRate = newRate;
-  
+
   console.log(`💰 Recalculated LVT rate: ${(newRate * 100).toFixed(2)}% (base: ${(baseLvtRate * 100).toFixed(2)}%, votes: ${totalLVTVotes})`);
 }
 
@@ -2636,7 +2634,10 @@ function handleViewGameHistory(ws, clientId, data) {
 
 async function handleStartNewGame(ws, clientId, data) {
   const { playerName = 'Player', playerColor = '#2196F3', playerEmoji = '🏠', cityName, maxPlayers = 4 } = data;
-  
+
+  // Get the current game instance for this client
+  const gameState = getGameInstanceForClient(clientId);
+
   // Force end the current game if it exists
   if (gameState.lifecycle.gameId && gameState.lifecycle.status === 'active') {
     console.log(`🔄 Force ending current game ${gameState.lifecycle.gameId} to start new game`);
@@ -2650,7 +2651,9 @@ async function handleStartNewGame(ws, clientId, data) {
   const playerId = 'player_' + Math.random().toString(36).substr(2, 9);
   
   // Join the new game
-  const joinResult = handlePlayerJoinGame(playerId);
+  // Get the updated game instance after initialization
+  const updatedGameState = getGameInstanceForClient(clientId);
+  const joinResult = handlePlayerJoinGameForInstance(playerId, updatedGameState);
   if (!joinResult.success) {
     ws.send(JSON.stringify({
       type: 'NEW_GAME_FAILED',
@@ -2948,10 +2951,7 @@ function handlePlayerDeparture(gameState, playerId, reason = 'disconnect') {
   }
 }
 
-// Handle player joining game
-function handlePlayerJoinGame(playerId) {
-  return handlePlayerJoinGameForInstance(playerId, gameState);
-}
+// Note: handlePlayerJoinGame() removed - use handlePlayerJoinGameForInstance(playerId, gameState) directly
 
 function handlePlayerJoinGameForInstance(playerId, gameState) {
   // Prevent rejoining if player already departed
@@ -3075,10 +3075,10 @@ function createGameSnapshot(gameState) {
         {
           ...player,
           // Add strategic metrics per player
-          totalLandValue: calculatePlayerLandValue(id),
-          buildingDistribution: calculatePlayerBuildingDistribution(id),
-          economicStrategy: analyzePlayerStrategy(id),
-          governanceInfluence: calculateGovernanceInfluence(id)
+          totalLandValue: calculatePlayerLandValue(gameState, id),
+          buildingDistribution: calculatePlayerBuildingDistribution(gameState, id),
+          economicStrategy: analyzePlayerStrategy(gameState, id),
+          governanceInfluence: calculateGovernanceInfluence(gameState, id)
         }
       ])
     ),
@@ -3088,9 +3088,9 @@ function createGameSnapshot(gameState) {
       parcels: gameState.core.parcels,
       transportation: gameState.core.transportation,
       governance: gameState.core.governance,
-      buildingCounts: calculateBuildingCounts(),
-      landUsePattern: analyzeLandUsePattern(),
-      connectionNetwork: analyzeTransportationNetwork()
+      buildingCounts: calculateBuildingCounts(gameState),
+      landUsePattern: analyzeLandUsePattern(gameState),
+      connectionNetwork: analyzeTransportationNetwork(gameState)
     },
     
     // Enhanced metrics
@@ -3099,20 +3099,20 @@ function createGameSnapshot(gameState) {
       treasury: gameState.calculated.treasury,
       vitality: gameState.calculated.vitality,
       marketMultipliers: gameState.calculated.marketMultipliers,
-      avgParcelValue: calculateAverageParcelValue(),
-      economicConcentration: calculateEconomicConcentration(),
-      spatialDistribution: analyzeSpatialDistribution()
+      avgParcelValue: calculateAverageParcelValue(gameState),
+      economicConcentration: calculateEconomicConcentration(gameState),
+      spatialDistribution: analyzeSpatialDistribution(gameState)
     },
     
     // Strategic analysis
     performance: {
-      totalRevenue: calculateTotalRevenue(),
-      totalExpenses: calculateTotalExpenses(),
-      efficiency: calculateEfficiency(),
-      sustainability: calculateSustainability(),
-      collaboration: calculateCollaborationIndex(),
-      competition: calculateCompetitionIndex(),
-      innovation: calculateInnovationScore()
+      totalRevenue: calculateTotalRevenue(gameState),
+      totalExpenses: calculateTotalExpenses(gameState),
+      efficiency: calculateEfficiency(gameState),
+      sustainability: calculateSustainability(gameState),
+      collaboration: calculateCollaborationIndex(gameState),
+      competition: calculateCompetitionIndex(gameState),
+      innovation: calculateInnovationScore(gameState)
     },
     
     // Timeline of key events for replay analysis
@@ -3120,10 +3120,10 @@ function createGameSnapshot(gameState) {
     
     // Potential exploits/strategies identified
     strategicInsights: {
-      dominantStrategies: identifyDominantStrategies(),
-      unusualPatterns: detectUnusualPatterns(),
-      efficiencyOpportunities: findEfficiencyOpportunities(),
-      governanceExploits: detectGovernanceExploits()
+      dominantStrategies: identifyDominantStrategies(gameState),
+      unusualPatterns: detectUnusualPatterns(gameState),
+      efficiencyOpportunities: findEfficiencyOpportunities(gameState),
+      governanceExploits: detectGovernanceExploits(gameState)
     }
   };
   
@@ -3155,7 +3155,7 @@ function calculateGameScore(snapshot) {
 }
 
 // Strategic Analysis Helper Functions
-function calculatePlayerLandValue(playerId) {
+function calculatePlayerLandValue(gameState, playerId) {
   let totalValue = 0;
   Object.entries(gameState.core.parcels).forEach(([parcelId, parcel]) => {
     if (parcel.owner === playerId && parcel.purchasePrice) {
@@ -3165,7 +3165,7 @@ function calculatePlayerLandValue(playerId) {
   return totalValue;
 }
 
-function calculatePlayerBuildingDistribution(playerId) {
+function calculatePlayerBuildingDistribution(gameState, playerId) {
   const distribution = {};
   Object.entries(gameState.core.parcels).forEach(([parcelId, parcel]) => {
     if (parcel.owner === playerId && parcel.building) {
@@ -3175,8 +3175,8 @@ function calculatePlayerBuildingDistribution(playerId) {
   return distribution;
 }
 
-function analyzePlayerStrategy(playerId) {
-  const distribution = calculatePlayerBuildingDistribution(playerId);
+function analyzePlayerStrategy(gameState, playerId) {
+  const distribution = calculatePlayerBuildingDistribution(gameState, playerId);
   const totalBuildings = Object.values(distribution).reduce((a, b) => a + b, 0);
   
   if (totalBuildings === 0) return 'none';
@@ -3201,7 +3201,7 @@ function analyzePlayerStrategy(playerId) {
   return 'mixed';
 }
 
-function calculateGovernanceInfluence(playerId) {
+function calculateGovernanceInfluence(gameState, playerId) {
   const player = gameState.core.players.get(playerId);
   if (!player || !player.governance) return 0;
   
@@ -3215,7 +3215,7 @@ function calculateGovernanceInfluence(playerId) {
   return influence;
 }
 
-function calculateBuildingCounts() {
+function calculateBuildingCounts(gameState) {
   const counts = {};
   Object.values(gameState.core.parcels).forEach(parcel => {
     if (parcel.building) {
@@ -3225,7 +3225,7 @@ function calculateBuildingCounts() {
   return counts;
 }
 
-function analyzeLandUsePattern() {
+function analyzeLandUsePattern(gameState) {
   const pattern = {
     totalParcels: Object.keys(gameState.core.parcels).length,
     ownedParcels: 0,
@@ -3251,16 +3251,16 @@ function analyzeLandUsePattern() {
   return pattern;
 }
 
-function analyzeTransportationNetwork() {
+function analyzeTransportationNetwork(gameState) {
   return {
     roads: Object.keys(gameState.core.transportation.roads).length,
     transitStops: Object.keys(gameState.core.transportation.transitStops).length,
     transitRoutes: Object.keys(gameState.core.transportation.transitRoutes).length,
-    connectivity: calculateNetworkConnectivity()
+    connectivity: calculateNetworkConnectivity(gameState)
   };
 }
 
-function calculateNetworkConnectivity() {
+function calculateNetworkConnectivity(gameState) {
   // Simplified connectivity measure
   const roads = Object.keys(gameState.core.transportation.roads).length;
   const stops = Object.keys(gameState.core.transportation.transitStops).length;
@@ -3269,7 +3269,7 @@ function calculateNetworkConnectivity() {
   return roads + (stops * 2) + (routes * 3); // Weighted connectivity score
 }
 
-function calculateAverageParcelValue() {
+function calculateAverageParcelValue(gameState) {
   const parcelsWithPrice = Object.values(gameState.core.parcels).filter(p => p.purchasePrice);
   if (parcelsWithPrice.length === 0) return 0;
   
@@ -3277,7 +3277,7 @@ function calculateAverageParcelValue() {
   return totalValue / parcelsWithPrice.length;
 }
 
-function calculateEconomicConcentration() {
+function calculateEconomicConcentration(gameState) {
   const playerWealth = Array.from(gameState.core.players.values()).map(p => p.cash + p.wealth);
   if (playerWealth.length <= 1) return 0;
   
@@ -3296,9 +3296,9 @@ function calculateEconomicConcentration() {
   return giniSum / (n * totalWealth);
 }
 
-function analyzeSpatialDistribution() {
+function analyzeSpatialDistribution(gameState) {
   const quadrants = { nw: 0, ne: 0, sw: 0, se: 0 };
-  
+
   Object.entries(gameState.core.parcels).forEach(([parcelId, parcel]) => {
     if (parcel.building) {
       const [row, col] = parcelId.split('-').map(Number);
@@ -3313,16 +3313,16 @@ function analyzeSpatialDistribution() {
   return quadrants;
 }
 
-function calculateCollaborationIndex() {
+function calculateCollaborationIndex(gameState) {
   // Measure how much players work together vs compete
   let collaborationScore = 0;
-  
+
   // Check for complementary building patterns
   const players = Array.from(gameState.core.players.keys());
   for (let i = 0; i < players.length; i++) {
     for (let j = i + 1; j < players.length; j++) {
-      const dist1 = calculatePlayerBuildingDistribution(players[i]);
-      const dist2 = calculatePlayerBuildingDistribution(players[j]);
+      const dist1 = calculatePlayerBuildingDistribution(gameState, players[i]);
+      const dist2 = calculatePlayerBuildingDistribution(gameState, players[j]);
       
       // Award points for complementary strategies
       const overlap = Object.keys(dist1).filter(building => dist2[building]).length;
@@ -3335,15 +3335,15 @@ function calculateCollaborationIndex() {
   return Math.min(100, collaborationScore * 10); // Scale to 0-100
 }
 
-function calculateCompetitionIndex() {
+function calculateCompetitionIndex(gameState) {
   // Measure direct competition between players
   let competitionScore = 0;
   const players = Array.from(gameState.core.players.keys());
   
   for (let i = 0; i < players.length; i++) {
     for (let j = i + 1; j < players.length; j++) {
-      const dist1 = calculatePlayerBuildingDistribution(players[i]);
-      const dist2 = calculatePlayerBuildingDistribution(players[j]);
+      const dist1 = calculatePlayerBuildingDistribution(gameState, players[i]);
+      const dist2 = calculatePlayerBuildingDistribution(gameState, players[j]);
       
       // Award points for similar strategies (competition)
       const overlap = Object.keys(dist1).filter(building => dist2[building]).length;
@@ -3354,12 +3354,12 @@ function calculateCompetitionIndex() {
   return Math.min(100, competitionScore * 15); // Scale to 0-100
 }
 
-function calculateInnovationScore() {
+function calculateInnovationScore(gameState) {
   // Measure unusual or innovative building/strategy patterns
   let innovationScore = 0;
-  
+
   // Check for unusual building ratios
-  const counts = calculateBuildingCounts();
+  const counts = calculateBuildingCounts(gameState);
   const totalBuildings = Object.values(counts).reduce((a, b) => a + b, 0);
   
   if (totalBuildings > 0) {
@@ -3381,9 +3381,9 @@ function calculateInnovationScore() {
   return Math.min(100, innovationScore);
 }
 
-function identifyDominantStrategies() {
-  const strategies = Array.from(gameState.core.players.values()).map(player => 
-    analyzePlayerStrategy(player.id)
+function identifyDominantStrategies(gameState) {
+  const strategies = Array.from(gameState.core.players.values()).map(player =>
+    analyzePlayerStrategy(gameState, player.id)
   );
   
   const strategyCounts = {};
@@ -3396,9 +3396,9 @@ function identifyDominantStrategies() {
     .map(([strategy, count]) => ({ strategy, count }));
 }
 
-function detectUnusualPatterns() {
+function detectUnusualPatterns(gameState) {
   const patterns = [];
-  
+
   // Check for extremely rapid expansion
   const avgParcelsPerPlayer = Object.keys(gameState.core.parcels).length / Math.max(1, gameState.core.players.size);
   if (avgParcelsPerPlayer > 20) {
@@ -3408,7 +3408,7 @@ function detectUnusualPatterns() {
   // Check for governance concentration
   let maxGovernanceInfluence = 0;
   gameState.core.players.forEach(player => {
-    const influence = calculateGovernanceInfluence(player.id);
+    const influence = calculateGovernanceInfluence(gameState, player.id);
     if (influence > maxGovernanceInfluence) {
       maxGovernanceInfluence = influence;
     }
@@ -3421,9 +3421,9 @@ function detectUnusualPatterns() {
   return patterns;
 }
 
-function findEfficiencyOpportunities() {
+function findEfficiencyOpportunities(gameState) {
   const opportunities = [];
-  
+
   // Check energy balance
   const energyBalance = gameState.calculated.vitality.energy.balance;
   if (energyBalance < -10) {
@@ -3433,8 +3433,8 @@ function findEfficiencyOpportunities() {
   }
   
   // Check transportation efficiency
-  const connectivity = calculateNetworkConnectivity();
-  const buildings = Object.values(calculateBuildingCounts()).reduce((a, b) => a + b, 0);
+  const connectivity = calculateNetworkConnectivity(gameState);
+  const buildings = Object.values(calculateBuildingCounts(gameState)).reduce((a, b) => a + b, 0);
   
   if (buildings > 15 && connectivity < buildings * 0.5) {
     opportunities.push({ type: 'poor_connectivity', impact: 'high' });
@@ -3443,9 +3443,9 @@ function findEfficiencyOpportunities() {
   return opportunities;
 }
 
-function detectGovernanceExploits() {
+function detectGovernanceExploits(gameState) {
   const exploits = [];
-  
+
   // Check for potential vote manipulation
   const totalBudget = gameState.core.governance.totalBudget;
   const unallocated = gameState.core.governance.unallocatedFunds;
@@ -3464,7 +3464,7 @@ function detectGovernanceExploits() {
 }
 
 // Helper functions for performance metrics
-function calculateTotalRevenue() {
+function calculateTotalRevenue(gameState) {
   // This would sum up all revenue from buildings, auctions, etc.
   // Simplified implementation
   return Object.values(gameState.core.parcels).reduce((total, parcel) => {
@@ -3476,7 +3476,7 @@ function calculateTotalRevenue() {
   }, 0);
 }
 
-function calculateTotalExpenses() {
+function calculateTotalExpenses(gameState) {
   // Sum up maintenance costs, construction costs, etc.
   return Object.values(gameState.core.parcels).reduce((total, parcel) => {
     if (parcel.building) {
@@ -3496,7 +3496,7 @@ function calculateEfficiency() {
   return efficiencyScores.reduce((sum, score) => sum + score, 0) / efficiencyScores.length;
 }
 
-function calculateSustainability() {
+function calculateSustainability(gameState) {
   // Calculate environmental/economic sustainability (0-100)
   const energyBalance = gameState.calculated.vitality.energy.balance;
   const foodBalance = gameState.calculated.vitality.food.balance;
