@@ -3556,7 +3556,7 @@ monitorPlayerConnections();
 // Start server
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
-  console.log(`🚀 The Commons WebSocket server running on port ${PORT}`);
+  console.log(`🚀 The Commons WebSocket server running on port ${PORT} - v2 with multiplayer isolation`);
   console.log(`🌐 Health check: http://localhost:${PORT}/health`);
 });
 
