@@ -773,6 +773,15 @@ class RailwayMultiplayerManager {
             console.log(`🔨 Synced ${Object.keys(auctionsObject).length} active auctions`);
         }
         
+        // Sync city name from server lifecycle state
+        if (serverState.lifecycle && serverState.lifecycle.cityName) {
+            const cityNameEl = document.getElementById('city-name');
+            if (cityNameEl) {
+                cityNameEl.textContent = serverState.lifecycle.cityName;
+                console.log(`🏙️ Synced city name: ${serverState.lifecycle.cityName}`);
+            }
+        }
+
         // CRITICAL FIX: Clear tooltip cache after state sync to prevent stale "Empty Land" tooltips
         if (this.game.tooltipManager && this.game.tooltipManager.clearCache) {
             this.game.tooltipManager.clearCache();
