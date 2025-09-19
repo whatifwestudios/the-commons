@@ -623,7 +623,7 @@ async function handleGameAction(ws, clientId, gameState, data) {
       
       // Broadcast state changes to all clients
       if (result.stateChanges && Object.keys(result.stateChanges).length > 0) {
-        broadcastToAll({
+        broadcastToRoom(client.roomId, {
           type: 'STATE_DIFF',
           diff: {
             version: gameState.version.global,
