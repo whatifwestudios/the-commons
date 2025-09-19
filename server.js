@@ -438,8 +438,16 @@ wss.on('connection', (ws, req) => {
       });
     }
     
+    // Remove from game instance if client was in one
+    const client = clients.get(clientId);
+    if (client && client.gameInstanceId) {
+      const gameInstance = getGameInstance(client.gameInstanceId);
+      if (gameInstance) {
+        gameInstance.meta.activeConnections.delete(playerId);
+      }
+    }
+
     clients.delete(clientId);
-    gameState.meta.activeConnections.delete(playerId);
   });
   
   ws.on('error', (error) => {
