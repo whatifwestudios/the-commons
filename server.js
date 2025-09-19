@@ -2313,7 +2313,7 @@ async function handleJoinWaitingRoom(ws, clientId, data) {
   // Broadcast player joined to other players in room
   broadcastToRoom(roomId, {
     type: 'PLAYER_JOINED_ROOM',
-    player: playerData,
+    player: player,
     playerCount: room.players.size
   }, clientId);
   
