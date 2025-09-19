@@ -143,80 +143,18 @@ function getGameInstanceForClient(clientId) {
     }
   }
 
-  // FORCE all clients to use the same room for debugging
-  client.roomId = 'default';
-  console.log(`🏠 FORCE-assigned client ${clientId} to default room for shared state`);
+  // Auto-assign clients without rooms to the default room
+  if (!client.roomId) {
+    client.roomId = 'default';
+    console.log(`🏠 Auto-assigned client ${clientId} to default room`);
+  }
 
   // Default fallback
   return getGameInstance('default');
 }
 
-// ============ COMPATIBILITY LAYER FOR MULTIPLAYER ISOLATION ============
-// This layer routes gameState access to the correct room instance automatically
-// TODO: Replace with proper function parameter threading in future refactor
-
-// Track current execution context for gameState routing
-let currentExecutionContext = {
-  clientId: null,
-  roomId: 'default',
-  gameInstance: null
-};
-
-// Context management functions
-function setExecutionContext(clientId, roomId = null) {
-  if (clientId) {
-    const client = clients.get(clientId);
-    const resolvedRoomId = roomId || client?.roomId || 'default';
-    currentExecutionContext = {
-      clientId,
-      roomId: resolvedRoomId,
-      gameInstance: getGameInstance(resolvedRoomId)
-    };
-  }
-}
-
-function clearExecutionContext() {
-  currentExecutionContext = {
-    clientId: null,
-    roomId: 'default',
-    gameInstance: getGameInstance('default')
-  };
-}
-
-// Smart gameState proxy that routes to correct instance
-const gameStateProxy = new Proxy({}, {
-  get(target, prop) {
-    // Route to the correct game instance based on current context
-    const instance = currentExecutionContext.gameInstance || getGameInstance('default');
-
-    // Debug logging to track routing
-    if (currentExecutionContext.clientId) {
-      console.log(`🔀 gameState.${prop} routed to room ${currentExecutionContext.roomId} for client ${currentExecutionContext.clientId}`);
-    } else {
-      console.log(`🔀 gameState.${prop} using default room (no execution context)`);
-    }
-
-    return instance[prop];
-  },
-
-  set(target, prop, value) {
-    // Route writes to the correct game instance
-    const instance = currentExecutionContext.gameInstance || getGameInstance('default');
-
-    // Debug logging to track routing
-    if (currentExecutionContext.clientId) {
-      console.log(`✏️ gameState.${prop} set in room ${currentExecutionContext.roomId} for client ${currentExecutionContext.clientId}`);
-    } else {
-      console.log(`✏️ gameState.${prop} set in default room (no execution context)`);
-    }
-
-    instance[prop] = value;
-    return true;
-  }
-});
-
-// Legacy compatibility - now routes through proxy
-let gameState = gameStateProxy;
+// Default game state - will be replaced with proper parameter threading
+let gameState = getGameInstance('default');
 
 // Waiting room management
 const waitingRooms = new Map();
@@ -465,22 +403,25 @@ wss.on('connection', (ws, req) => {
 async function handleWebSocketMessage(ws, clientId, data) {
   const client = clients.get(clientId);
   if (!client) return;
-  
+
+  // Determine the correct game instance for this client
+  const gameState = getGameInstanceForClient(clientId);
+
   switch (data.type) {
     case 'JOIN_GAME':
-      await handleJoinGame(ws, clientId, data);
+      await handleJoinGame(ws, clientId, gameState, data);
       break;
-      
+
     case 'ACTION':
-      await handleGameAction(ws, clientId, data);
+      await handleGameAction(ws, clientId, gameState, data);
       break;
-      
+
     case 'HEARTBEAT':
-      handleHeartbeat(ws, clientId, data);
+      handleHeartbeat(ws, clientId, gameState, data);
       break;
-      
+
     case 'REQUEST_SYNC':
-      handleRequestSync(ws, clientId, data);
+      handleRequestSync(ws, clientId, gameState, data);
       break;
       
     case 'JOIN_WAITING_ROOM':
@@ -524,15 +465,8 @@ async function handleWebSocketMessage(ws, clientId, data) {
   }
 }
 
-async function handleJoinGame(ws, clientId, data) {
-  // Set execution context for this handler
-  setExecutionContext(clientId);
-
-  try {
-    const { playerName = 'Player', playerColor = '#2196F3', playerEmoji = '🏠', cityName } = data;
-
-    // Get the correct game instance for this client
-    const gameState = getGameInstanceForClient(clientId);
+async function handleJoinGame(ws, clientId, gameState, data) {
+  const { playerName = 'Player', playerColor = '#2196F3', playerEmoji = '🏠', cityName } = data;
 
   // Generate or use existing player ID
   let playerId = data.playerId;
@@ -616,18 +550,11 @@ async function handleJoinGame(ws, clientId, data) {
     timestamp: Date.now()
   }, clientId);
 
-  // console.log(`✅ Player ${playerName} (${playerId}) joined the game`);
-  } finally {
-    clearExecutionContext();
-  }
+  console.log(`✅ Player ${playerName} (${playerId}) joined the game`);
 }
 
-async function handleGameAction(ws, clientId, data) {
-  // Set execution context for this handler
-  setExecutionContext(clientId);
-
-  try {
-    const client = clients.get(clientId);
+async function handleGameAction(ws, clientId, gameState, data) {
+  const client = clients.get(clientId);
     if (!client || !client.playerId) {
       ws.send(JSON.stringify({
         type: 'ERROR',
@@ -655,7 +582,7 @@ async function handleGameAction(ws, clientId, data) {
   };
   
   try {
-    const result = await processGameAction(action, client.playerId);
+    const result = await processGameAction(gameState, action, client.playerId, client.roomId);
     
     if (result.success) {
       // Send success response to sender
@@ -698,12 +625,9 @@ async function handleGameAction(ws, clientId, data) {
       timestamp: Date.now()
     }));
   }
-  } finally {
-    clearExecutionContext();
-  }
 }
 
-function handleHeartbeat(ws, clientId, data) {
+function handleHeartbeat(ws, clientId, gameState, data) {
   const client = clients.get(clientId);
   if (client) {
     client.lastSeen = Date.now();
@@ -721,63 +645,56 @@ function handleHeartbeat(ws, clientId, data) {
   }));
 }
 
-function handleRequestSync(ws, clientId, data) {
-  // Set execution context for this handler
-  setExecutionContext(clientId);
-
-  try {
-    ws.send(JSON.stringify({
-      type: 'FULL_SYNC',
-      gameState: getClientSafeState(),
-      players: Array.from(gameState.core.players.values()),
-      version: gameState.version.global,
-      timestamp: Date.now()
-    }));
-  } finally {
-    clearExecutionContext();
-  }
+function handleRequestSync(ws, clientId, gameState, data) {
+  ws.send(JSON.stringify({
+    type: 'FULL_SYNC',
+    gameState: getClientSafeStateForInstance(gameState),
+    players: Array.from(gameState.core.players.values()),
+    version: gameState.version.global,
+    timestamp: Date.now()
+  }));
 }
 
-async function processGameAction(action, playerId) {
+async function processGameAction(gameState, action, playerId, roomId) {
   console.log(`🎯 Debug: Processing action ${action.type} from player ${playerId}`);
   
   switch (action.type) {
     case 'PURCHASE_PARCEL':
-      return await processPurchaseParcel(action, playerId);
+      return await processPurchaseParcel(gameState, action, playerId, roomId);
     case 'CONSTRUCT_BUILDING':
-      return await processConstructBuilding(action, playerId);
+      return await processConstructBuilding(gameState, action, playerId, roomId);
     case 'ADVANCE_TIME':
-      return await processAdvanceTime(action, playerId);
+      return await processAdvanceTime(gameState, action, playerId, roomId);
     case 'TREASURY_FEE':
-      return await processTreasuryFee(action, playerId);
+      return await processTreasuryFee(gameState, action, playerId, roomId);
     case 'REQUEST_LAND_PRICE':
-      return await processLandPriceRequest(action, playerId);
+      return await processLandPriceRequest(gameState, action, playerId, roomId);
     case 'BUILD_ROAD':
-      return await processBuildRoad(action, playerId);
+      return await processBuildRoad(gameState, action, playerId, roomId);
     case 'BUILD_TRANSIT_STOP':
-      return await processBuildTransitStop(action, playerId);
+      return await processBuildTransitStop(gameState, action, playerId, roomId);
     case 'CREATE_TRANSIT_ROUTE':
-      return await processCreateTransitRoute(action, playerId);
+      return await processCreateTransitRoute(gameState, action, playerId, roomId);
     case 'ALLOCATE_VOTE':
-      return await processAllocateVote(action, playerId);
+      return await processAllocateVote(gameState, action, playerId, roomId);
     case 'ALLOCATE_LVT_POINT':
-      return await processAllocateLVTPoint(action, playerId);
+      return await processAllocateLVTPoint(gameState, action, playerId, roomId);
     case 'END_AUCTION_NOW':
-        return await processEndAuctionNow(action, playerId);
+        return await processEndAuctionNow(gameState, action, playerId, roomId);
     case 'CREATE_AUCTION_LISTING':
-        return await processCreateAuctionListing(action, playerId);
+        return await processCreateAuctionListing(gameState, action, playerId, roomId);
     case 'BUY_NOW_LISTING':
-        return await processBuyNowListing(action, playerId);
+        return await processBuyNowListing(gameState, action, playerId, roomId);
     case 'CANCEL_LISTING':
-        return await processCancelListing(action, playerId);
+        return await processCancelListing(gameState, action, playerId, roomId);
     case 'BID_ON_LISTING':
-        return await processBidOnListing(action, playerId);
+        return await processBidOnListing(gameState, action, playerId, roomId);
     default:
       throw new Error(`Unknown action type: ${action.type}`);
   }
 }
 
-async function processPurchaseParcel(action, playerId) {
+async function processPurchaseParcel(gameState, action, playerId, roomId) {
   const { parcelId, building, purchasePrice } = action;
 
   if (parcelLocks.has(parcelId)) {
@@ -882,7 +799,7 @@ async function processPurchaseParcel(action, playerId) {
     }
 }
 
-async function processConstructBuilding(action, playerId) {
+async function processConstructBuilding(gameState, action, playerId, roomId) {
   const { parcelId, building, constructionStartDay, constructionDays, amenities } = action;
   console.log(`🏗️ Debug: Constructing ${building} at ${parcelId} by ${playerId}`);
   
@@ -972,7 +889,7 @@ async function processConstructBuilding(action, playerId) {
   };
 }
 
-async function processAdvanceTime(action, playerId) {
+async function processAdvanceTime(gameState, action, playerId, roomId) {
   const { day, month } = action;
   
   gameState.core.currentDay = day;
@@ -996,7 +913,7 @@ async function processAdvanceTime(action, playerId) {
   };
 }
 
-async function processTreasuryFee(action, playerId) {
+async function processTreasuryFee(gameState, action, playerId, roomId) {
   const { amount, reason } = action;
   
   // Validate inputs
@@ -1078,13 +995,6 @@ function getClientSafeStateForInstance(gameState) {
 }
 
 function broadcastToAll(message) {
-  // If we have execution context, broadcast only to that room
-  if (currentExecutionContext.roomId && currentExecutionContext.roomId !== 'default') {
-    broadcastToRoom(currentExecutionContext.roomId, message);
-    return;
-  }
-
-  // Otherwise, broadcast to all (legacy behavior)
   const messageStr = JSON.stringify(message);
   clients.forEach((client, clientId) => {
     if (client.ws.readyState === client.ws.OPEN) {
@@ -1099,7 +1009,7 @@ function broadcastToAll(message) {
   });
 }
 
-async function processLandPriceRequest(action, playerId) {
+async function processLandPriceRequest(gameState, action, playerId, roomId) {
   const { parcelId } = action;
   
   if (!parcelId) {
@@ -1133,7 +1043,7 @@ async function processLandPriceRequest(action, playerId) {
   };
 }
 
-async function processBuildRoad(action, playerId) {
+async function processBuildRoad(gameState, action, playerId, roomId) {
   const { roadKey, roadType, hasSidewalks, hasBikeLanes, cost, isUpgrade, existingRoad } = action;
   
   // CRITICAL: Lock road to prevent concurrent building
@@ -1215,7 +1125,7 @@ async function processBuildRoad(action, playerId) {
   }
 }
 
-async function processBuildTransitStop(action, playerId) {
+async function processBuildTransitStop(gameState, action, playerId, roomId) {
   const { stopId, stopData } = action;
   
   // Validate player and actions
@@ -1278,7 +1188,7 @@ async function processBuildTransitStop(action, playerId) {
   };
 }
 
-async function processCreateTransitRoute(action, playerId) {
+async function processCreateTransitRoute(gameState, action, playerId, roomId) {
   const { routeId, routeData } = action;
   
   // Validate player and actions
@@ -1662,43 +1572,23 @@ setInterval(async () => {
     return;
   }
 
-  // Process daily updates for ALL active game instances
-  const activeInstances = [];
-  for (const [roomId, gameInstance] of gameInstances) {
-    if (gameInstance.lifecycle.gameId &&
-        gameInstance.lifecycle.status === 'active' &&
-        gameInstance.core.players.size > 0) {
-      activeInstances.push({ roomId, gameInstance });
-    }
-  }
-
-  if (activeInstances.length === 0) {
-    console.log('⚠️ No active game instances for daily update');
+  // Skip daily updates if no active game or players
+  if (!gameState.lifecycle.gameId ||
+      gameState.lifecycle.status !== 'active' ||
+      gameState.core.players.size === 0) {
+    console.log(`⚠️ Skipping daily update - Debug info:
+      - gameId: ${gameState.lifecycle.gameId}
+      - status: ${gameState.lifecycle.status}
+      - players.size: ${gameState.core.players.size}
+      - activePlayers.size: ${gameState.lifecycle.activePlayers.size}`);
     return;
   }
 
-  console.log(`📅 Processing daily update for ${activeInstances.length} active game instance(s)`);
   isProcessingDailyUpdate = true;
 
-  for (const { roomId, gameInstance } of activeInstances) {
-    try {
-      // Set context for this game instance
-      currentExecutionContext = {
-        clientId: null,
-        roomId: roomId,
-        gameInstance: gameInstance
-      };
-
-      console.log(`📅 Daily update for room ${roomId} (${gameInstance.lifecycle.cityName})`);
-
-      // Skip if no players in this specific instance
-      if (gameInstance.core.players.size === 0) {
-        console.log(`⚠️ Skipping daily update for room ${roomId} - no players`);
-        continue;
-      }
-
-      // CRITICAL: Advance the day first (server authoritative) for this instance
-      gameInstance.core.currentDay++;
+  try {
+    // CRITICAL: Advance the day first (server authoritative)
+    gameState.core.currentDay++;
     
     // Advance month every 30 days
     if (gameState.core.currentDay > 30) {
@@ -1772,26 +1662,20 @@ setInterval(async () => {
       timestamp: Date.now(),
       version: gameState.version.global
     };
-    
+
+    console.log(`📅 Advanced to Day ${gameState.core.currentDay} (${gameState.core.currentMonth}) | Buildings aged: ${buildingsAged}, Decayed: ${buildingsDecayed}, LVT collected: $${Math.round(totalLVTCollected)}`);
+
     broadcastToAll(dailyUpdateMessage);
-    
-      console.log(`📅 Advanced to Day ${gameInstance.core.currentDay} (${gameInstance.core.currentMonth}) in room ${roomId} | Buildings aged: ${buildingsAged}, Decayed: ${buildingsDecayed}, LVT collected: $${Math.round(totalLVTCollected)}`);
 
-      // Broadcast update to this room only
-      broadcastToRoom(roomId, dailyUpdateMessage);
-
-    } catch (error) {
-      console.error(`❌ Error processing daily update for room ${roomId}:`, error);
-    }
+  } catch (error) {
+    console.error('❌ Error processing daily update:', error);
+  } finally {
+    isProcessingDailyUpdate = false;
   }
-
-  // Clear execution context and reset flag
-  clearExecutionContext();
-  isProcessingDailyUpdate = false;
 }, 9863); // Every 9.863 seconds (1 game day = 1/365th of an hour)
 
 // Governance action processors
-async function processAllocateVote(action, playerId) {
+async function processAllocateVote(gameState, action, playerId, roomId) {
   const { category, change } = action;
   
   // Validate category
@@ -1869,7 +1753,7 @@ async function processAllocateVote(action, playerId) {
   };
 }
 
-async function processAllocateLVTPoint(action, playerId) {
+async function processAllocateLVTPoint(gameState, action, playerId, roomId) {
   const { change } = action;
   
   // Validate change parameter
@@ -1946,7 +1830,7 @@ async function processAllocateLVTPoint(action, playerId) {
   };
 }
 
-async function processEndAuctionNow(action, playerId) {
+async function processEndAuctionNow(gameState, action, playerId, roomId) {
     const { listingId, fee } = action;
 
     const listing = gameState.core.auctions.get(listingId);
@@ -1993,7 +1877,7 @@ async function processEndAuctionNow(action, playerId) {
     return { success: true };
 }
 
-async function processCreateAuctionListing(action, playerId) {
+async function processCreateAuctionListing(gameState, action, playerId, roomId) {
     const { listing } = action;
 
     if (!listing) {
@@ -2023,7 +1907,7 @@ async function processCreateAuctionListing(action, playerId) {
     return { success: true };
 }
 
-async function processBuyNowListing(action, playerId) {
+async function processBuyNowListing(gameState, action, playerId, roomId) {
     const { listingId } = action;
 
     const listing = gameState.core.auctions.get(listingId);
@@ -2068,7 +1952,7 @@ async function processBuyNowListing(action, playerId) {
     return { success: true };
 }
 
-async function processCancelListing(action, playerId) {
+async function processCancelListing(gameState, action, playerId, roomId) {
     const { listingId } = action;
 
     const listing = gameState.core.auctions.get(listingId);
@@ -2108,7 +1992,7 @@ async function processCancelListing(action, playerId) {
     return { success: true };
 }
 
-async function processBidOnListing(action, playerId) {
+async function processBidOnListing(gameState, action, playerId, roomId) {
     const { listingId, bidAmount } = action;
 
     // CRITICAL: Lock auction to prevent concurrent bids
@@ -2748,7 +2632,7 @@ async function handleActionBatch(ws, clientId, data) {
     try {
       // Add player ID to action
       const actionWithPlayer = { ...action, playerId };
-      const result = await processGameAction(actionWithPlayer, playerId);
+      const result = await processGameAction(gameState, actionWithPlayer, playerId, client.roomId);
       results.push({
         actionId: action.id,
         success: result.success,
