@@ -1509,56 +1509,61 @@ setInterval(() => {
 
 // Broadcast construction progress updates every 5 seconds
 setInterval(async () => {
-  let hasConstructionUpdates = false;
-  let constructionUpdates = {};
-  
-  // Check all parcels for ongoing construction
-  Object.entries(gameState.core.parcels).forEach(([parcelId, parcel]) => {
-    if (parcel.constructionStartDay !== undefined && parcel.constructionDays > 0) {
-      // Calculate construction progress (simplified - assumes 1 day = real time)
-      const daysPassed = gameState.core.currentDay - parcel.constructionStartDay;
-      const progress = Math.min(1.0, Math.max(0.0, daysPassed / parcel.constructionDays));
-      
-      // Store construction progress
-      constructionUpdates[parcelId] = {
-        building: parcel.building,
-        constructionStartDay: parcel.constructionStartDay,
-        constructionDays: parcel.constructionDays,
-        progress: progress,
-        isComplete: progress >= 1.0
-      };
-      
-      hasConstructionUpdates = true;
-      
-      // If construction is complete, clean up construction fields
-      if (progress >= 1.0) {
-        delete parcel.constructionStartDay;
-        delete parcel.constructionDays;
-        
-        // Phase 4: Mark parcel as dirty for cache invalidation when construction completes
-        calculationCache.dirtyParcels.add(parcelId);
-        gameState.version.global++;
-        gameState.version.perParcel[parcelId] = gameState.version.global;
+  // Process construction updates for all active game instances
+  for (const [roomId, gameState] of gameInstances.entries()) {
+    if (gameState.lifecycle.status !== 'active') continue;
+
+    let hasConstructionUpdates = false;
+    let constructionUpdates = {};
+
+    // Check all parcels for ongoing construction
+    Object.entries(gameState.core.parcels).forEach(([parcelId, parcel]) => {
+      if (parcel.constructionStartDay !== undefined && parcel.constructionDays > 0) {
+        // Calculate construction progress (simplified - assumes 1 day = real time)
+        const daysPassed = gameState.core.currentDay - parcel.constructionStartDay;
+        const progress = Math.min(1.0, Math.max(0.0, daysPassed / parcel.constructionDays));
+
+        // Store construction progress
+        constructionUpdates[parcelId] = {
+          building: parcel.building,
+          constructionStartDay: parcel.constructionStartDay,
+          constructionDays: parcel.constructionDays,
+          progress: progress,
+          isComplete: progress >= 1.0
+        };
+
+        hasConstructionUpdates = true;
+
+        // If construction is complete, clean up construction fields
+        if (progress >= 1.0) {
+          delete parcel.constructionStartDay;
+          delete parcel.constructionDays;
+
+          // Phase 4: Mark parcel as dirty for cache invalidation when construction completes
+          calculationCache.dirtyParcels.add(parcelId);
+          gameState.version.global++;
+          gameState.version.perParcel[parcelId] = gameState.version.global;
+        }
       }
-    }
-  });
-  
-  // Broadcast construction updates if any exist
-  if (hasConstructionUpdates) {
-    const constructionMessage = {
-      type: 'CONSTRUCTION_UPDATE',
-      construction: constructionUpdates,
-      timestamp: Date.now(),
-      version: gameState.version.global
-    };
-    
-    broadcastToAll(constructionMessage);
-    
-    // Recalculate state if any construction completed
-    const completedCount = Object.values(constructionUpdates).filter(c => c.isComplete).length;
-    if (completedCount > 0) {
-      await recalculateAuthoritativeState(gameState);
-      console.log(`🏗️ ${completedCount} buildings completed construction`);
+    });
+
+    // Broadcast construction updates if any exist for this game instance
+    if (hasConstructionUpdates) {
+      const constructionMessage = {
+        type: 'CONSTRUCTION_UPDATE',
+        construction: constructionUpdates,
+        timestamp: Date.now(),
+        version: gameState.version.global
+      };
+
+      broadcastToRoom(roomId, constructionMessage);
+
+      // Recalculate state if any construction completed
+      const completedCount = Object.values(constructionUpdates).filter(c => c.isComplete).length;
+      if (completedCount > 0) {
+        await recalculateAuthoritativeState(gameState);
+        console.log(`🏗️ ${completedCount} buildings completed construction in room ${roomId}`);
+      }
     }
   }
 }, 5000); // Every 5 seconds
@@ -1572,100 +1577,98 @@ setInterval(async () => {
     return;
   }
 
-  // Skip daily updates if no active game or players
-  if (!gameState.lifecycle.gameId ||
-      gameState.lifecycle.status !== 'active' ||
-      gameState.core.players.size === 0) {
-    console.log(`⚠️ Skipping daily update - Debug info:
-      - gameId: ${gameState.lifecycle.gameId}
-      - status: ${gameState.lifecycle.status}
-      - players.size: ${gameState.core.players.size}
-      - activePlayers.size: ${gameState.lifecycle.activePlayers.size}`);
-    return;
-  }
-
   isProcessingDailyUpdate = true;
 
   try {
-    // CRITICAL: Advance the day first (server authoritative)
-    gameState.core.currentDay++;
-    
-    // Advance month every 30 days
-    if (gameState.core.currentDay > 30) {
-      gameState.core.currentDay = 1;
-      const months = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEPT', 'OCT', 'NOV', 'DEC'];
-      const currentIndex = months.indexOf(gameState.core.currentMonth);
-      gameState.core.currentMonth = months[(currentIndex + 1) % 12];
-    }
-    
-    console.log(`🕐 Day ${gameState.core.currentDay} (${gameState.core.currentMonth}) - Processing daily updates...`);
-    
-    let buildingsAged = 0;
-    let buildingsDecayed = 0;
-    let totalLVTCollected = 0;
-    
-    // Process daily economics: LVT collection and building aging
-    Object.entries(gameState.core.parcels).forEach(([parcelId, parcel]) => {
-      if (parcel.owner && parcel.owner !== 'unclaimed') {
-        // Calculate LVT for this parcel
-        const [row, col] = parcelId.split('-').map(Number);
-        const landValue = calculateParcelPrice(row, col);
-        const lvtRate = gameState.core.governance?.currentLvtRate || 0.01; // Default 1%
-        const dailyLVT = landValue * lvtRate;
-        
-        // Add to treasury (shared city fund)
-        gameState.core.governance.unallocatedFunds = (gameState.core.governance.unallocatedFunds || 0) + dailyLVT;
-        totalLVTCollected += dailyLVT;
-        
-        console.log(`💰 LVT collected from ${parcelId}: $${Math.round(dailyLVT)} (land value: $${landValue})`);
+    // Process daily updates for all active game instances
+    for (const [roomId, gameState] of gameInstances.entries()) {
+      // Skip daily updates if no active game or players
+      if (!gameState.lifecycle.gameId ||
+          gameState.lifecycle.status !== 'active' ||
+          gameState.core.players.size === 0) {
+        continue;
       }
-      
-      if (parcel.building && parcel.owner) {
-        // Age the building
-        parcel.buildingAge = (parcel.buildingAge || 0) + 1;
-        buildingsAged++;
-        
-        // Calculate decay based on age (buildings start decaying after 30 days)
-        if (parcel.buildingAge > 30) {
-          const ageOverThreshold = parcel.buildingAge - 30;
-          const decayRate = 0.002; // 0.2% per day after threshold
-          const newDecay = Math.min(0.8, ageOverThreshold * decayRate); // Max 80% decay
-          
-          if (newDecay > (parcel.decay || 0)) {
-            parcel.decay = newDecay;
-            buildingsDecayed++;
-          }
+
+      // CRITICAL: Advance the day first (server authoritative)
+      gameState.core.currentDay++;
+
+      // Advance month every 30 days
+      if (gameState.core.currentDay > 30) {
+        gameState.core.currentDay = 1;
+        const months = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEPT', 'OCT', 'NOV', 'DEC'];
+        const currentIndex = months.indexOf(gameState.core.currentMonth);
+        gameState.core.currentMonth = months[(currentIndex + 1) % 12];
+      }
+
+      console.log(`🕐 Room ${roomId}: Day ${gameState.core.currentDay} (${gameState.core.currentMonth}) - Processing daily updates...`);
+
+      let buildingsAged = 0;
+      let buildingsDecayed = 0;
+      let totalLVTCollected = 0;
+
+      // Process daily economics: LVT collection and building aging
+      Object.entries(gameState.core.parcels).forEach(([parcelId, parcel]) => {
+        if (parcel.owner && parcel.owner !== 'unclaimed') {
+          // Calculate LVT for this parcel
+          const [row, col] = parcelId.split('-').map(Number);
+          const landValue = calculateParcelPrice(row, col);
+          const lvtRate = gameState.core.governance?.currentLvtRate || 0.01; // Default 1%
+          const dailyLVT = landValue * lvtRate;
+
+          // Add to treasury (shared city fund)
+          gameState.core.governance.unallocatedFunds = (gameState.core.governance.unallocatedFunds || 0) + dailyLVT;
+          totalLVTCollected += dailyLVT;
+
+          console.log(`💰 Room ${roomId}: LVT collected from ${parcelId}: $${Math.round(dailyLVT)} (land value: $${landValue})`);
         }
-        
-        // Mark parcel as updated
-        gameState.version.perParcel[parcelId] = gameState.version.global + 1;
-      }
-    });
-    
-    // Always increment global version and recalculate for time advancement
-    gameState.version.global++;
-    gameState.meta.lastUpdate = Date.now();
-    
-    await recalculateAuthoritativeState(gameState);
-    
-    // Broadcast time advancement to all clients
-    const dailyUpdateMessage = {
-      type: 'DAILY_UPDATE',
-      timeState: {
-        currentDay: gameState.core.currentDay,
-        currentMonth: gameState.core.currentMonth
-      },
-      buildingSummary: {
-        buildingsAged,
-        buildingsDecayed
-      },
-      timestamp: Date.now(),
-      version: gameState.version.global
-    };
 
-    console.log(`📅 Advanced to Day ${gameState.core.currentDay} (${gameState.core.currentMonth}) | Buildings aged: ${buildingsAged}, Decayed: ${buildingsDecayed}, LVT collected: $${Math.round(totalLVTCollected)}`);
+        if (parcel.building && parcel.owner) {
+          // Age the building
+          parcel.buildingAge = (parcel.buildingAge || 0) + 1;
+          buildingsAged++;
 
-    broadcastToAll(dailyUpdateMessage);
+          // Calculate decay based on age (buildings start decaying after 30 days)
+          if (parcel.buildingAge > 30) {
+            const ageOverThreshold = parcel.buildingAge - 30;
+            const decayRate = 0.002; // 0.2% per day after threshold
+            const newDecay = Math.min(0.8, ageOverThreshold * decayRate); // Max 80% decay
+
+            if (newDecay > (parcel.decay || 0)) {
+              parcel.decay = newDecay;
+              buildingsDecayed++;
+            }
+          }
+
+          // Mark parcel as updated
+          gameState.version.perParcel[parcelId] = gameState.version.global + 1;
+        }
+      });
+
+      // Always increment global version and recalculate for time advancement
+      gameState.version.global++;
+      gameState.meta.lastUpdate = Date.now();
+
+      await recalculateAuthoritativeState(gameState);
+
+      // Broadcast time advancement to clients in this room
+      const dailyUpdateMessage = {
+        type: 'DAILY_UPDATE',
+        timeState: {
+          currentDay: gameState.core.currentDay,
+          currentMonth: gameState.core.currentMonth
+        },
+        buildingSummary: {
+          buildingsAged,
+          buildingsDecayed
+        },
+        timestamp: Date.now(),
+        version: gameState.version.global
+      };
+
+      console.log(`📅 Room ${roomId}: Advanced to Day ${gameState.core.currentDay} (${gameState.core.currentMonth}) | Buildings aged: ${buildingsAged}, Decayed: ${buildingsDecayed}, LVT collected: $${Math.round(totalLVTCollected)}`);
+
+      broadcastToRoom(roomId, dailyUpdateMessage);
+    }
 
   } catch (error) {
     console.error('❌ Error processing daily update:', error);
