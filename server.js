@@ -237,22 +237,39 @@ app.post('/reset', (req, res) => {
 
 // Health check endpoint
 app.get('/health', (req, res) => {
-  // Calculate total players across all game instances
-  let totalPlayers = 0;
-  let totalVersion = 0;
-  for (const [roomId, gameState] of gameInstances.entries()) {
-    totalPlayers += gameState.core.players.size;
-    totalVersion = Math.max(totalVersion, gameState.version.global);
-  }
+  try {
+    // Calculate total players across all game instances
+    let totalPlayers = 0;
+    let totalVersion = 0;
+    for (const [roomId, gameState] of gameInstances.entries()) {
+      if (gameState && gameState.core && gameState.core.players) {
+        totalPlayers += gameState.core.players.size;
+      }
+      if (gameState && gameState.version && gameState.version.global) {
+        totalVersion = Math.max(totalVersion, gameState.version.global);
+      }
+    }
 
-  res.json({
-    status: 'healthy',
-    uptime: process.uptime(),
-    players: totalPlayers,
-    connections: clients.size,
-    version: totalVersion,
-    gameInstances: gameInstances.size
-  });
+    res.json({
+      status: 'healthy',
+      uptime: process.uptime(),
+      players: totalPlayers,
+      connections: clients.size,
+      version: totalVersion,
+      gameInstances: gameInstances.size
+    });
+  } catch (error) {
+    console.error('Health check error:', error);
+    res.status(500).json({
+      status: 'error',
+      error: error.message
+    });
+  }
+});
+
+// Simple test endpoint
+app.get('/ping', (req, res) => {
+  res.json({ message: 'pong', timestamp: Date.now() });
 });
 
 // API endpoint for leaderboard
