@@ -2529,7 +2529,7 @@ async function handleStartNewGame(ws, clientId, data) {
   // Force end the current game if it exists
   if (gameState.lifecycle.gameId && gameState.lifecycle.status === 'active') {
     console.log(`🔄 Force ending current game ${gameState.lifecycle.gameId} to start new game`);
-    endGame('manual_restart');
+    endGame(gameState, 'manual_restart');
   }
   
   // Initialize new game
@@ -2809,7 +2809,7 @@ function initializeNewGameForRoom(roomId, cityName, maxPlayers = 4) {
 }
 
 // Handle player permanent departure
-function handlePlayerDeparture(playerId, reason = 'disconnect') {
+function handlePlayerDeparture(gameState, playerId, reason = 'disconnect') {
   if (!gameState.lifecycle.activePlayers.has(playerId)) {
     console.log(`⚠️ Player ${playerId} not in active players, ignoring departure`);
     return;
@@ -2833,7 +2833,7 @@ function handlePlayerDeparture(playerId, reason = 'disconnect') {
   // Check if all players have left
   if (gameState.lifecycle.activePlayers.size === 0) {
     console.log(`🏁 All players have left game ${gameState.lifecycle.gameId}`);
-    endGame('all_players_left');
+    endGame(gameState, 'all_players_left');
   }
 }
 
@@ -2888,7 +2888,7 @@ function handlePlayerJoinGameForInstance(playerId, gameState) {
 }
 
 // End game and create snapshot
-function endGame(reason = 'manual') {
+function endGame(gameState, reason = 'manual') {
   if (gameState.lifecycle.status === 'ended' || gameState.lifecycle.status === 'archived') {
     console.log(`⚠️ Game ${gameState.lifecycle.gameId} already ended`);
     return;
@@ -2902,7 +2902,7 @@ function endGame(reason = 'manual') {
   gameState.lifecycle.endReason = reason;
   
   // Create end-game snapshot
-  const snapshot = createGameSnapshot();
+  const snapshot = createGameSnapshot(gameState);
   gameState.lifecycle.snapshot = snapshot;
   
   // Add to game history
@@ -2941,7 +2941,7 @@ function endGame(reason = 'manual') {
 }
 
 // Create comprehensive game state snapshot for strategic analysis
-function createGameSnapshot() {
+function createGameSnapshot(gameState) {
   const snapshot = {
     gameInfo: {
       gameId: gameState.lifecycle.gameId,
@@ -3496,7 +3496,7 @@ function checkGameTimeLimit() {
     // Check if this is the second September (game started in previous September)
     const gameAgeInDays = (Date.now() - gameState.lifecycle.startTime) / (1000 * 60 * 60 * 24);
     if (gameAgeInDays > 30) { // Game has been running for more than 30 real days (approximate)
-      endGame('time_limit');
+      endGame(gameState, 'time_limit');
     }
   }
 }
