@@ -272,8 +272,20 @@ app.post('/api/permanent-departure', (req, res) => {
     });
   }
   
-  // Handle permanent departure
-  handlePlayerDeparture(playerId, reason || 'manual');
+  // Find the player's game instance and handle permanent departure
+  let playerGameState = null;
+  for (const [roomId, gameState] of gameInstances.entries()) {
+    if (gameState.core.players.has(playerId)) {
+      playerGameState = gameState;
+      break;
+    }
+  }
+
+  if (playerGameState) {
+    handlePlayerDeparture(playerGameState, playerId, reason || 'manual');
+  } else {
+    console.warn(`⚠️ Player ${playerId} not found in any game instance for departure`);
+  }
   
   res.json({
     success: true,
@@ -362,14 +374,21 @@ wss.on('connection', (ws, req) => {
     console.log(`📱 Client ${clientId} disconnected`);
     
     if (playerId) {
-      // Mark player as disconnected in game state
-      if (gameState.core.players.has(playerId)) {
-        gameState.core.players.get(playerId).connected = false;
-        gameState.core.players.get(playerId).lastSeen = Date.now();
+      // Find the player's game instance and mark as disconnected
+      let playerGameState = null;
+      for (const [roomId, gameState] of gameInstances.entries()) {
+        if (gameState.core.players.has(playerId)) {
+          gameState.core.players.get(playerId).connected = false;
+          gameState.core.players.get(playerId).lastSeen = Date.now();
+          playerGameState = gameState;
+          break;
+        }
       }
-      
+
       // Handle permanent departure from game lifecycle
-      handlePlayerDeparture(playerId, 'disconnect');
+      if (playerGameState) {
+        handlePlayerDeparture(playerGameState, playerId, 'disconnect');
+      }
       
       // Remove from waiting rooms if they were in one
       waitingRooms.forEach((room, roomId) => {
@@ -3491,9 +3510,9 @@ function archiveGame(gameId) {
 }
 
 // Check if game should end due to time limit
-function checkGameTimeLimit() {
+function checkGameTimeLimit(gameState) {
   if (gameState.lifecycle.status !== 'active') return;
-  
+
   // Check if we've reached September 1st of the following year
   if (gameState.core.currentMonth === 'SEPT' && gameState.core.currentDay === 1) {
     // Check if this is the second September (game started in previous September)
@@ -3507,23 +3526,27 @@ function checkGameTimeLimit() {
 // Monitor player connections and handle departures
 function monitorPlayerConnections() {
   setInterval(() => {
-    // Check for players who haven't been seen recently
+    // Check for players who haven't been seen recently across all game instances
     const now = Date.now();
     const disconnectThreshold = 30000; // 30 seconds
-    
-    gameState.lifecycle.activePlayers.forEach(playerId => {
-      const player = gameState.core.players.get(playerId);
-      const client = clients.get(playerId);
-      
-      if (!client || !player || (player.lastSeen && now - player.lastSeen > disconnectThreshold)) {
-        // console.log(`🔌 Player ${playerId} appears disconnected`);
-        handlePlayerDeparture(playerId, 'disconnect');
-      }
-    });
-    
-    // Check game time limit
-    checkGameTimeLimit();
-    
+
+    for (const [roomId, gameState] of gameInstances.entries()) {
+      if (gameState.lifecycle.status !== 'active') continue;
+
+      gameState.lifecycle.activePlayers.forEach(playerId => {
+        const player = gameState.core.players.get(playerId);
+        const client = clients.get(playerId);
+
+        if (!client || !player || (player.lastSeen && now - player.lastSeen > disconnectThreshold)) {
+          // console.log(`🔌 Player ${playerId} appears disconnected in room ${roomId}`);
+          handlePlayerDeparture(gameState, playerId, 'disconnect');
+        }
+      });
+
+      // Check game time limit for this instance
+      checkGameTimeLimit(gameState);
+    }
+
   }, 10000); // Check every 10 seconds
 }
 
