@@ -903,8 +903,29 @@ class RailwayMultiplayerManager {
 
     updateReadyDisplay(data) {
         const statusDiv = document.getElementById('ready-status');
+        const readyBtn = document.getElementById('ready-to-play-btn');
+        const playerCountSpan = document.getElementById('player-count');
+        const roomStatusText = document.getElementById('room-status-text');
+
+        // Update player count
+        if (playerCountSpan) {
+            playerCountSpan.textContent = data.totalCount;
+        }
+
+        // Update ready status
         if (statusDiv) {
             statusDiv.textContent = `${data.readyCount} of ${data.totalCount} players ready`;
+        }
+
+        // Update room status and enable ready button if enough players
+        if (roomStatusText && readyBtn) {
+            if (data.totalCount < 2) {
+                roomStatusText.textContent = 'Need at least 2 players to start';
+                readyBtn.disabled = true;
+            } else {
+                roomStatusText.textContent = `${data.totalCount} players connected - Ready to play!`;
+                readyBtn.disabled = false;
+            }
         }
     }
 

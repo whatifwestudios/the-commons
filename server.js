@@ -2511,9 +2511,9 @@ async function handlePlayerReady(ws, clientId, data) {
     totalCount: totalCount
   });
 
-  // If all players are ready, start the game
-  if (readyCount === totalCount && totalCount >= 2) {
-    console.log(`🚀 All players ready in room ${client.roomId}! Starting game...`);
+  // If 2+ players are ready, start the game
+  if (readyCount >= 2) {
+    console.log(`🚀 ${readyCount} players ready in room ${client.roomId}! Starting game...`);
 
     // Send "game starting" notification
     broadcastToRoom(client.roomId, {

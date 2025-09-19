@@ -9859,12 +9859,6 @@ document.addEventListener('DOMContentLoaded', () => {
     // Initialize lobby functionality
     function initializeLobby() {
         const backBtn = document.getElementById('back-to-setup-btn');
-        const chatInput = document.getElementById('chat-input');
-        const sendBtn = document.getElementById('send-message-btn');
-        const startSoloBtn = document.getElementById('start-solo-from-lobby');
-        const joinMultiplayerBtn = document.getElementById('join-multiplayer-queue');
-        const startMultiplayerBtn = document.getElementById('start-multiplayer-game');
-        const multiplayerSettings = document.getElementById('multiplayer-settings');
         
         // Add current player to lobby
         const playerName = playerHandle.value || 'Player';
@@ -9876,7 +9870,6 @@ document.addEventListener('DOMContentLoaded', () => {
         
         // Connect to WebSocket for lobby
         connectToWaitingRoom(playerSettings);
-        addPlayerToRoom(playerSettings);
         
         // Back to setup button
         if (backBtn) {
@@ -9885,73 +9878,26 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         }
         
-        // Solo play button
-        if (startSoloBtn) {
-            startSoloBtn.addEventListener('click', () => {
-                console.log('🎮 Starting solo game from lobby...');
-                hideLobby();
-                startGame('solo');
-            });
-        }
         
-        // Multiplayer queue button
-        if (joinMultiplayerBtn) {
-            joinMultiplayerBtn.addEventListener('click', () => {
-                console.log('👥 Joining multiplayer queue...');
-                // Show multiplayer settings
-                if (multiplayerSettings) {
-                    multiplayerSettings.style.display = 'block';
-                }
-                // Update UI to show "in queue" state
-                joinMultiplayerBtn.classList.add('selected');
-                joinMultiplayerBtn.querySelector('.mode-description').textContent = 'Looking for players...';
-                
-                // Reset server to normal auto-start settings
-                resetMultiplayerSettings();
-            });
-        }
-        
-        // Start multiplayer game button
-        if (startMultiplayerBtn) {
-            startMultiplayerBtn.addEventListener('click', () => {
-                console.log('🚀 Starting multiplayer game from lobby...');
-                
-                // Send message to server to start game for all players
+        // Ready to play button
+        const readyBtn = document.getElementById('ready-to-play-btn');
+        if (readyBtn) {
+            readyBtn.addEventListener('click', () => {
+                console.log('✅ Player ready to play');
+
+                // Send ready status to server
                 if (window.waitingRoomWS && window.waitingRoomWS.readyState === WebSocket.OPEN) {
                     window.waitingRoomWS.send(JSON.stringify({
-                        type: 'START_MULTIPLAYER_GAME',
+                        type: 'PLAYER_READY',
+                        ready: true,
                         roomId: 'default'
                     }));
+
+                    // Disable button and show waiting state
+                    readyBtn.disabled = true;
+                    readyBtn.textContent = 'Waiting for others...';
                 } else {
-                    // Fallback to local start if no WebSocket connection
-                    console.warn('⚠️ No WebSocket connection, starting locally');
-                    hideLobby();
-                    startGame('multiplayer');
-                }
-            });
-        }
-        
-        // Chat functionality
-        if (chatInput && sendBtn) {
-            const sendMessage = () => {
-                const message = chatInput.value.trim();
-                if (message) {
-                    // Send message to server via WebSocket
-                    if (window.waitingRoomWS && window.waitingRoomWS.readyState === WebSocket.OPEN) {
-                        window.waitingRoomWS.send(JSON.stringify({
-                            type: 'SEND_CHAT_MESSAGE',
-                            message: message,
-                            roomId: 'default'
-                        }));
-                    }
-                    chatInput.value = '';
-                }
-            };
-            
-            sendBtn.addEventListener('click', sendMessage);
-            chatInput.addEventListener('keypress', (e) => {
-                if (e.key === 'Enter') {
-                    sendMessage();
+                    console.warn('⚠️ No WebSocket connection');
                 }
             });
         }

@@ -2578,18 +2578,12 @@
                                 </div>
                             </div>
                             
-                            <div class="welcome-button-container" style="display: flex; gap: 15px; justify-content: center;">
-                                <button class="mode-option enter-game-btn" id="solo-play-btn" style="flex: 1;">
-                                    <div class="mode-details">
-                                        <span class="mode-title">🏠 Solo Play</span>
-                                        <span class="mode-subtitle" style="font-size: 0.8em; opacity: 0.8;">Start your own city</span>
-                                    </div>
+                            <div class="welcome-button-container" style="display: flex; gap: 10px; justify-content: center;">
+                                <button class="mode-option enter-game-btn" id="solo-play-btn" style="flex: 1; padding: 12px 20px;">
+                                    Solo
                                 </button>
-                                <button class="mode-option enter-game-btn" id="multiplayer-btn" style="flex: 1;">
-                                    <div class="mode-details">
-                                        <span class="mode-title">👥 Multiplayer</span>
-                                        <span class="mode-subtitle" style="font-size: 0.8em; opacity: 0.8;">Join the lobby</span>
-                                    </div>
+                                <button class="mode-option enter-game-btn" id="multiplayer-btn" style="flex: 1; padding: 12px 20px;">
+                                    Multiplayer
                                 </button>
                             </div>
                         </div>
@@ -2624,91 +2618,19 @@
             </div>
             
             <div class="lobby-body">
-                <div class="lobby-main-panel">
-                    <div class="game-mode-section">
-                        <div class="section-header">
-                            <h4>Game Mode Selection</h4>
-                            <p>Choose how you want to play</p>
-                        </div>
-                        
-                        <div class="mode-options">
-                            <button class="mode-option solo-mode" id="start-solo-from-lobby">
-                                <div class="mode-icon">🎮</div>
-                                <div class="mode-details">
-                                    <span class="mode-title">Solo Sesh</span>
-                                    <span class="mode-description">Build, explore and control a city on your own. Save your game to return to later and share it with others for clout!</span>
-                                </div>
-                                <div class="mode-status">Available</div>
-                            </button>
-                            
-                            <button class="mode-option multiplayer-mode" id="join-multiplayer-queue">
-                                <div class="mode-icon">👥</div>
-                                <div class="mode-details">
-                                    <span class="mode-title">Multiplayer Session</span>
-                                    <span class="mode-description">Collaborate or compete, the choice is yours.</span>
-                                </div>
-                                <div class="mode-status">Join Queue</div>
-                            </button>
-                        </div>
+                <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; padding: 40px; text-align: center;">
+                    <div style="margin-bottom: 30px;">
+                        <div style="font-size: 18px; color: #ffffff; margin-bottom: 10px;">Waiting for players...</div>
+                        <div style="font-size: 14px; color: #888; margin-bottom: 20px;"><span id="player-count">1</span> player(s) connected</div>
+                        <div id="room-status-text" style="font-size: 14px; color: #666;">Need at least 2 players to start</div>
                     </div>
-                    
-                    <div class="players-section">
-                        <div class="section-header">
-                            <h4>Active Players</h4>
-                            <p><span id="player-count">1</span> connected</p>
-                        </div>
-                        <div class="players-grid" id="waiting-players-list">
-                            <!-- Players will be populated here -->
-                        </div>
-                        <div class="lobby-status" id="room-status-text">
-                            Choose a game mode to continue
-                        </div>
-                    </div>
-                    
-                    <div class="game-settings" id="multiplayer-settings" style="display: none;">
-                        <div class="section-header">
-                            <h4>Session Configuration</h4>
-                            <p>Customize multiplayer parameters</p>
-                        </div>
-                        
-                        <div class="settings-grid">
-                            <div class="setting-item">
-                                <label for="game-size-select">Target Players</label>
-                                <select id="game-size-select" class="setting-input">
-                                    <option value="2">2 players</option>
-                                    <option value="4" selected>4 players</option>
-                                    <option value="6">6 players</option>
-                                    <option value="8">8 players</option>
-                                    <option value="12">12 players</option>
-                                </select>
-                            </div>
-                            <div class="setting-item">
-                                <label for="auto-start">Auto-start</label>
-                                <input type="checkbox" id="auto-start" class="setting-checkbox" checked>
-                            </div>
-                        </div>
-                        
-                        <button id="start-multiplayer-game" class="launch-game-btn" disabled>
-                            <span>Launch Session</span>
-                            <span class="btn-arrow">→</span>
-                        </button>
-                        <div class="launch-info">Minimum 2 players required</div>
-                    </div>
-                </div>
-                
-                <div class="lobby-side-panel">
-                    <div class="communication-section">
-                        <div class="section-header">
-                            <h4>Comms</h4>
 
-                        </div>
-                        <div class="chat-container" id="chat-messages">
-                            <div class="system-message">Welcome to the multiplayer lobby</div>
-                        </div>
-                        <div class="chat-input-container">
-                            <input type="text" id="chat-input" placeholder="Send a message..." maxlength="200" class="chat-input">
-                            <button id="send-message-btn" class="send-btn">→</button>
-                        </div>
+                    <button id="ready-to-play-btn" class="mode-option enter-game-btn" style="padding: 16px 32px; font-size: 16px; min-width: 200px;" disabled>
+                        Ready to Play
+                    </button>
+
+                    <div id="ready-status" style="margin-top: 20px; font-size: 14px; color: #888;">
+                        <!-- Ready status will be shown here -->
                     </div>
                 </div>
             </div>
