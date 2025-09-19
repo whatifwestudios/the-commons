@@ -784,7 +784,7 @@ async function processPurchaseParcel(gameState, action, playerId, roomId) {
       gameState.version.perPlayer[playerId] = gameState.version.global;
       gameState.meta.lastUpdate = Date.now();
       
-      await recalculateAuthoritativeState();
+      await recalculateAuthoritativeState(gameState);
       
       return {
         success: true,
@@ -877,7 +877,7 @@ async function processConstructBuilding(gameState, action, playerId, roomId) {
   gameState.version.perPlayer[playerId] = gameState.version.global;
   gameState.meta.lastUpdate = Date.now();
   
-  await recalculateAuthoritativeState();
+  await recalculateAuthoritativeState(gameState);
   
   return {
     success: true,
@@ -899,7 +899,7 @@ async function processAdvanceTime(gameState, action, playerId, roomId) {
   gameState.version.global++;
   gameState.meta.lastUpdate = Date.now();
   
-  await recalculateAuthoritativeState();
+  await recalculateAuthoritativeState(gameState);
   
   return {
     success: true,
@@ -953,7 +953,7 @@ async function processTreasuryFee(gameState, action, playerId, roomId) {
   gameState.version.perPlayer[playerId] = gameState.version.global;
   gameState.meta.lastUpdate = Date.now();
   
-  await recalculateAuthoritativeState();
+  await recalculateAuthoritativeState(gameState);
   
   console.log(`💰 ${reason || 'Fee'}: $${amount} from ${player.name} → Treasury`);
   
@@ -1107,7 +1107,7 @@ async function processBuildRoad(gameState, action, playerId, roomId) {
     gameState.version.global++;
     gameState.meta.lastUpdate = Date.now();
     
-    await recalculateAuthoritativeState();
+    await recalculateAuthoritativeState(gameState);
     
     return {
       success: true,
@@ -1174,7 +1174,7 @@ async function processBuildTransitStop(gameState, action, playerId, roomId) {
   gameState.version.global++;
   gameState.meta.lastUpdate = Date.now();
   
-  await recalculateAuthoritativeState();
+  await recalculateAuthoritativeState(gameState);
   
   return {
     success: true,
@@ -1237,7 +1237,7 @@ async function processCreateTransitRoute(gameState, action, playerId, roomId) {
   gameState.version.global++;
   gameState.meta.lastUpdate = Date.now();
   
-  await recalculateAuthoritativeState();
+  await recalculateAuthoritativeState(gameState);
   
   return {
     success: true,
@@ -1316,7 +1316,7 @@ let calculationCache = {
 };
 
 // Import the authoritative state calculator - Phase 4: Optimized
-async function recalculateAuthoritativeState() {
+async function recalculateAuthoritativeState(gameState) {
   return recalculateAuthoritativeStateForInstance(gameState);
 }
 
@@ -1557,7 +1557,7 @@ setInterval(async () => {
     // Recalculate state if any construction completed
     const completedCount = Object.values(constructionUpdates).filter(c => c.isComplete).length;
     if (completedCount > 0) {
-      await recalculateAuthoritativeState();
+      await recalculateAuthoritativeState(gameState);
       console.log(`🏗️ ${completedCount} buildings completed construction`);
     }
   }
@@ -1646,7 +1646,7 @@ setInterval(async () => {
     gameState.version.global++;
     gameState.meta.lastUpdate = Date.now();
     
-    await recalculateAuthoritativeState();
+    await recalculateAuthoritativeState(gameState);
     
     // Broadcast time advancement to all clients
     const dailyUpdateMessage = {
@@ -1867,7 +1867,7 @@ async function processEndAuctionNow(gameState, action, playerId, roomId) {
     listing.status = "ended_early";
 
     // Update the game state and broadcast the changes.
-    await recalculateAuthoritativeState();
+    await recalculateAuthoritativeState(gameState);
     broadcastToAll({
         type: "AUCTION_ENDED",
         listingId,
@@ -1898,7 +1898,7 @@ async function processCreateAuctionListing(gameState, action, playerId, roomId) 
     listing.seller = playerId;
     gameState.core.auctions.set(listing.id, listing);
 
-    await recalculateAuthoritativeState();
+    await recalculateAuthoritativeState(gameState);
     broadcastToAll({
         type: "AUCTION_CREATED",
         listing,
@@ -1942,7 +1942,7 @@ async function processBuyNowListing(gameState, action, playerId, roomId) {
     listing.finalPrice = listing.buyNowPrice;
     listing.winner = playerId;
 
-    await recalculateAuthoritativeState();
+    await recalculateAuthoritativeState(gameState);
     broadcastToAll({
         type: "AUCTION_ENDED",
         listingId,
@@ -1982,7 +1982,7 @@ async function processCancelListing(gameState, action, playerId, roomId) {
     seller.actionManager.currentActions += listing.quantity;
     listing.status = 'cancelled';
 
-    await recalculateAuthoritativeState();
+    await recalculateAuthoritativeState(gameState);
     broadcastToAll({
         type: "AUCTION_ENDED",
         listingId,
@@ -2053,7 +2053,7 @@ async function processBidOnListing(gameState, action, playerId, roomId) {
             listing.expiresAt += 5000; // Add 5 seconds
         }
 
-        await recalculateAuthoritativeState();
+        await recalculateAuthoritativeState(gameState);
         broadcastToAll({
             type: "AUCTION_UPDATED",
             listingId,
