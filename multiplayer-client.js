@@ -154,6 +154,18 @@ class RailwayMultiplayerManager {
             case 'PLAYER_JOINED_ROOM':
                 console.log('👥 Another player joined the room:', data.player);
                 this.updateLobbyDisplay({ players: [data.player], playerCount: data.playerCount });
+                this.showReadyPrompt();
+                break;
+
+            case 'READY_STATUS_UPDATE':
+                console.log(`📊 Ready status: ${data.readyCount}/${data.totalCount} players ready`);
+                this.updateReadyDisplay(data);
+                break;
+
+            case 'GAME_STARTING':
+                console.log(`🚀 Game starting! City: ${data.cityName}`);
+                this.hideReadyPrompt();
+                this.showGameStarting(data.cityName);
                 break;
 
             case 'JOIN_SUCCESS':
@@ -821,6 +833,87 @@ class RailwayMultiplayerManager {
         // For now just log the lobby state
         const playerCount = roomData.playerCount || roomData.players?.length || 0;
         console.log(`🏢 Lobby has ${playerCount} players`);
+
+        // Show ready prompt when 2+ players in lobby
+        if (playerCount >= 2) {
+            this.showReadyPrompt();
+        }
+    }
+
+    showReadyPrompt() {
+        // Create ready modal if it doesn't exist
+        if (!document.getElementById('ready-modal')) {
+            const modal = document.createElement('div');
+            modal.id = 'ready-modal';
+            modal.style.cssText = `
+                position: fixed;
+                bottom: 20px;
+                right: 20px;
+                background: rgba(0, 0, 0, 0.9);
+                color: white;
+                padding: 20px;
+                border-radius: 8px;
+                z-index: 10000;
+                min-width: 200px;
+            `;
+            modal.innerHTML = `
+                <h3>Ready to play?</h3>
+                <div id="ready-status">Waiting for players...</div>
+                <button id="ready-button" style="
+                    background: #4CAF50;
+                    color: white;
+                    border: none;
+                    padding: 10px 20px;
+                    border-radius: 4px;
+                    cursor: pointer;
+                    width: 100%;
+                    margin-top: 10px;
+                ">I'm Ready!</button>
+            `;
+            document.body.appendChild(modal);
+
+            // Handle ready button click
+            document.getElementById('ready-button').onclick = () => {
+                this.sendReadyStatus(true);
+                document.getElementById('ready-button').textContent = 'Waiting for others...';
+                document.getElementById('ready-button').disabled = true;
+            };
+        }
+    }
+
+    hideReadyPrompt() {
+        const modal = document.getElementById('ready-modal');
+        if (modal) {
+            modal.remove();
+        }
+    }
+
+    sendReadyStatus(ready) {
+        if (!this.connection || this.connection.readyState !== WebSocket.OPEN) {
+            console.warn('❌ Cannot send ready status: WebSocket not ready');
+            return;
+        }
+
+        this.connection.send(JSON.stringify({
+            type: 'PLAYER_READY',
+            playerId: this.getStoredPlayerId(),
+            ready: ready
+        }));
+    }
+
+    updateReadyDisplay(data) {
+        const statusDiv = document.getElementById('ready-status');
+        if (statusDiv) {
+            statusDiv.textContent = `${data.readyCount} of ${data.totalCount} players ready`;
+        }
+    }
+
+    showGameStarting(cityName) {
+        // Update welcome screen or show starting message
+        const welcomeTitle = document.querySelector('.modal-header h2');
+        if (welcomeTitle) {
+            welcomeTitle.textContent = `Starting ${cityName}...`;
+        }
     }
     
     getConnectionStatus() {

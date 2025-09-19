@@ -417,8 +417,18 @@ wss.on('connection', (ws, req) => {
       
       // Remove from waiting rooms if they were in one
       waitingRooms.forEach((room, roomId) => {
+        // Check both playerId and clientId for cleanup
+        let removed = false;
         if (room.players.has(playerId)) {
           room.players.delete(playerId);
+          removed = true;
+        }
+        if (room.players.has(clientId)) {
+          room.players.delete(clientId);
+          removed = true;
+        }
+
+        if (removed) {
           broadcastToRoom(roomId, {
             type: 'PLAYER_LEFT_ROOM',
             playerId: playerId,
@@ -486,6 +496,10 @@ async function handleWebSocketMessage(ws, clientId, data) {
       
     case 'START_MULTIPLAYER_GAME':
       await handleStartMultiplayerGame(ws, clientId, data);
+      break;
+
+    case 'PLAYER_READY':
+      await handlePlayerReady(ws, clientId, data);
       break;
       
     case 'VIEW_LEADERBOARD':
@@ -2240,17 +2254,30 @@ async function handleJoinWaitingRoom(ws, clientId, data) {
     return;
   }
   
-  // Add player to room
-  const playerData = {
-    id: clientId,
-    name: player.name,
-    color: player.color || '#52C77E',
-    emoji: player.emoji || '🏠',
-    joinedAt: Date.now(),
-    status: 'ready'
-  };
-  
-  room.players.set(clientId, playerData);
+  // Use the player's ID if provided, otherwise use clientId
+  const playerId = player.id || clientId;
+
+  // Check if this player is already in the room (prevent duplicates)
+  if (room.players.has(playerId)) {
+    console.log(`⚠️ Player ${player.name} already in room ${roomId}`);
+    // Update existing player data instead of creating duplicate
+    const existingPlayer = room.players.get(playerId);
+    existingPlayer.name = player.name;
+    existingPlayer.color = player.color || existingPlayer.color;
+    existingPlayer.emoji = player.emoji || existingPlayer.emoji;
+  } else {
+    // Add player to room
+    const playerData = {
+      id: playerId,
+      name: player.name,
+      color: player.color || '#52C77E',
+      emoji: player.emoji || '🏠',
+      joinedAt: Date.now(),
+      status: 'waiting'
+    };
+
+    room.players.set(playerId, playerData);
+  }
   
   // Update client record
   const client = clients.get(clientId);
@@ -2448,6 +2475,59 @@ function addChatMessageToRoom(roomId, message) {
 }
 
 // Auto-start logic removed - games now start manually
+
+// Ready system for coordinated game start
+async function handlePlayerReady(ws, clientId, data) {
+  const client = clients.get(clientId);
+  if (!client || !client.roomId) return;
+
+  const room = waitingRooms.get(client.roomId);
+  if (!room) return;
+
+  const playerId = data.playerId || clientId;
+  const player = room.players.get(playerId);
+
+  if (!player) {
+    console.log(`❌ Player not found in room: ${playerId}`);
+    return;
+  }
+
+  // Update player status
+  player.status = data.ready ? 'ready' : 'waiting';
+
+  // Count ready players
+  const readyCount = Array.from(room.players.values()).filter(p => p.status === 'ready').length;
+  const totalCount = room.players.size;
+
+  console.log(`✅ Player ${player.name} is ${player.status} (${readyCount}/${totalCount} ready)`);
+
+  // Broadcast ready status to all players in room
+  broadcastToRoom(client.roomId, {
+    type: 'READY_STATUS_UPDATE',
+    playerId: playerId,
+    playerName: player.name,
+    ready: data.ready,
+    readyCount: readyCount,
+    totalCount: totalCount
+  });
+
+  // If all players are ready, start the game
+  if (readyCount === totalCount && totalCount >= 2) {
+    console.log(`🚀 All players ready in room ${client.roomId}! Starting game...`);
+
+    // Send "game starting" notification
+    broadcastToRoom(client.roomId, {
+      type: 'GAME_STARTING',
+      message: 'All players ready! Starting game...',
+      cityName: `Commons City ${Date.now().toString(36).toUpperCase()}`
+    });
+
+    // Start the game after a brief delay
+    setTimeout(() => {
+      startGameFromRoom(client.roomId);
+    }, 1000);
+  }
+}
 
 function startGameFromRoom(roomId) {
   const room = waitingRooms.get(roomId);
