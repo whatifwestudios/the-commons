@@ -10130,13 +10130,15 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // Helper functions for waiting room WebSocket integration
     function updateWaitingRoomFromServer(room) {
-        // Update player list
+        // Update player list (if it exists in the current lobby interface)
         const playersList = document.getElementById('waiting-players-list');
-        playersList.innerHTML = '';
-        
-        room.players.forEach(player => {
-            addPlayerToRoomFromServer(player);
-        });
+        if (playersList) {
+            playersList.innerHTML = '';
+
+            room.players.forEach(player => {
+                addPlayerToRoomFromServer(player);
+            });
+        }
         
         // Update chat with server messages
         room.chatMessages.forEach(message => {
@@ -10193,6 +10195,11 @@ document.addEventListener('DOMContentLoaded', () => {
     
     function addChatMessageFromServer(message) {
         const chatMessages = document.getElementById('chat-messages');
+        if (!chatMessages) {
+            // Chat interface doesn't exist in simplified lobby
+            return;
+        }
+
         const messageElement = document.createElement('div');
         messageElement.dataset.author = message.author || 'System'; // Track message author
         
