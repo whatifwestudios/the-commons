@@ -153,8 +153,7 @@ function getGameInstanceForClient(clientId) {
   return getGameInstance('default');
 }
 
-// Default game state - will be replaced with proper parameter threading
-let gameState = getGameInstance('default');
+// Global gameState removed - all functions now use parameter threading
 
 // Waiting room management
 const waitingRooms = new Map();
@@ -238,12 +237,21 @@ app.post('/reset', (req, res) => {
 
 // Health check endpoint
 app.get('/health', (req, res) => {
-  res.json({ 
-    status: 'healthy', 
+  // Calculate total players across all game instances
+  let totalPlayers = 0;
+  let totalVersion = 0;
+  for (const [roomId, gameState] of gameInstances.entries()) {
+    totalPlayers += gameState.core.players.size;
+    totalVersion = Math.max(totalVersion, gameState.version.global);
+  }
+
+  res.json({
+    status: 'healthy',
     uptime: process.uptime(),
-    players: gameState.core.players.size,
+    players: totalPlayers,
     connections: clients.size,
-    version: gameState.version.global
+    version: totalVersion,
+    gameInstances: gameInstances.size
   });
 });
 
