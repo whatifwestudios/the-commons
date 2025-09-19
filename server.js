@@ -172,7 +172,7 @@ const defaultWaitingRoom = {
   chatMessages: [],
   settings: {
     targetSize: 4,
-    minPlayers: 10, // Temporarily set high to disable auto-start for testing
+    minPlayers: 2, // Minimum players to start game
     autoStart: true
   },
   status: 'waiting', // waiting, starting, in-game
@@ -299,7 +299,7 @@ app.post('/api/reset', (req, res) => {
       chatMessages: [],
       settings: {
         targetSize: 4,
-        minPlayers: 10, // Temporarily set high to disable auto-start for testing
+        minPlayers: 2, // Minimum players to start game
         autoStart: true
       },
       status: 'waiting',

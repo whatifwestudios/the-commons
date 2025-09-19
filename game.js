@@ -10122,7 +10122,22 @@ document.addEventListener('DOMContentLoaded', () => {
             case 'ERROR':
                 console.error('❌ Waiting room error:', data.error, data.message);
                 break;
-                
+
+            case 'DAILY_UPDATE':
+                // Handle daily updates while in waiting room (ignore for now)
+                console.log('📅 Daily update received in waiting room');
+                break;
+
+            case 'PLAYER_DEPARTED':
+                // Handle player departures (ignore for now)
+                console.log('👋 Player departed from server');
+                break;
+
+            case 'GAME_ENDED':
+                // Handle game ended notifications (ignore for now)
+                console.log('🏁 Game ended notification received');
+                break;
+
             default:
                 console.warn('Unknown waiting room message type:', data.type);
         }
