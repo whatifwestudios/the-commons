@@ -9766,20 +9766,59 @@ document.addEventListener('DOMContentLoaded', () => {
         setupVitalityTooltips();
     }
     
-    // Setup button event listener for new two-phase flow
-    const continueToLobbyBtn = document.getElementById('continue-to-lobby-btn');
-    if (continueToLobbyBtn) {
-        continueToLobbyBtn.addEventListener('click', () => {
-            console.log('🚀 Continuing to lobby...');
+    // Setup button event listeners for Solo/Multi mode selection
+    const soloPlayBtn = document.getElementById('solo-play-btn');
+    const multiplayerBtn = document.getElementById('multiplayer-btn');
+
+    if (soloPlayBtn) {
+        soloPlayBtn.addEventListener('click', () => {
+            console.log('🎮 Starting solo game...');
+            startSoloGame();
+        });
+    }
+
+    if (multiplayerBtn) {
+        multiplayerBtn.addEventListener('click', () => {
+            console.log('👥 Joining multiplayer lobby...');
             showLobby();
         });
     }
-    
+
+    // Function to start solo game immediately (bypasses lobby)
+    function startSoloGame() {
+        const playerName = playerHandle.value || 'Player';
+
+        // Validate player name
+        if (!playerName.trim()) {
+            alert('Please enter your name first!');
+            return;
+        }
+
+        // Hide setup screen immediately and start game
+        const setupScreen = document.getElementById('setup-screen');
+        if (setupScreen) {
+            setupScreen.style.setProperty('display', 'none', 'important');
+            setupScreen.classList.add('hidden');
+            setupScreen.classList.remove('visible');
+        }
+
+        // Start game directly in solo mode
+        startGame('solo');
+    }
+
     // Function to show the lobby (Phase 2) - Buttery smooth transitions
     function showLobby() {
+        const playerName = playerHandle.value || 'Player';
+
+        // Validate player name
+        if (!playerName.trim()) {
+            alert('Please enter your name first!');
+            return;
+        }
+
         const setupScreen = document.getElementById('setup-screen');
         const waitingRoom = document.getElementById('waiting-room');
-        
+
         if (!waitingRoom) {
             console.error('❌ Lobby element not found!');
             return;
