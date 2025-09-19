@@ -89,7 +89,7 @@ class RailwayMultiplayerManager {
         return new Promise((resolve, reject) => {
             this.connection.onopen = () => {
                 console.log('📡 WebSocket connection established');
-                this.sendJoinGame();
+                this.sendJoinWaitingRoom();
                 resolve(); // Connection is ready
             };
             
@@ -116,14 +116,17 @@ class RailwayMultiplayerManager {
     }
     
     
-    sendJoinGame() {
+    sendJoinWaitingRoom() {
         const playerSettings = this.game.playerSettings || {};
         const message = {
-            type: 'JOIN_GAME',
-            playerId: this.getStoredPlayerId(),
-            playerName: playerSettings.name || 'Player',
-            playerColor: playerSettings.color || '#2196F3',
-            playerEmoji: playerSettings.emoji || '🏠'
+            type: 'JOIN_WAITING_ROOM',
+            roomId: 'default',
+            player: {
+                id: this.getStoredPlayerId(),
+                name: playerSettings.name || 'Player',
+                color: playerSettings.color || '#2196F3',
+                emoji: playerSettings.emoji || '🏠'
+            }
         };
         
         this.connection.send(JSON.stringify(message));
@@ -142,7 +145,17 @@ class RailwayMultiplayerManager {
             case 'CONNECTED':
                 console.log('🔗 Client connected, ID:', data.clientId);
                 break;
-                
+
+            case 'JOINED_WAITING_ROOM':
+                console.log('🏢 Joined waiting room:', data.room);
+                this.updateLobbyDisplay(data.room);
+                break;
+
+            case 'PLAYER_JOINED_ROOM':
+                console.log('👥 Another player joined the room:', data.player);
+                this.updateLobbyDisplay({ players: [data.player], playerCount: data.playerCount });
+                break;
+
             case 'JOIN_SUCCESS':
                 console.log('✅ Successfully joined game as:', data.player.name);
                 this.playerId = data.playerId;
@@ -792,6 +805,22 @@ class RailwayMultiplayerManager {
     updatePlayersDisplay() {
         // Update the players display in the UI
         console.log(`👥 ${this.players.size} players connected`);
+    }
+
+    updateLobbyDisplay(roomData) {
+        console.log('🏢 Updating lobby display:', roomData);
+
+        // Show player list in lobby
+        if (roomData.players) {
+            roomData.players.forEach(player => {
+                console.log(`👤 Player in lobby: ${player.name} ${player.emoji}`);
+            });
+        }
+
+        // TODO: Update actual lobby UI elements when they exist
+        // For now just log the lobby state
+        const playerCount = roomData.playerCount || roomData.players?.length || 0;
+        console.log(`🏢 Lobby has ${playerCount} players`);
     }
     
     getConnectionStatus() {
@@ -1770,7 +1799,7 @@ class MultiplayerManager {
             
             this.connection.onopen = () => {
                 console.log('📡 WebSocket connection established');
-                this.sendJoinGame();
+                this.sendJoinWaitingRoom();
             };
             
             this.connection.onmessage = (event) => {
@@ -1798,14 +1827,17 @@ class MultiplayerManager {
         }
     }
     
-    sendJoinGame() {
+    sendJoinWaitingRoom() {
         const playerSettings = this.game.playerSettings || {};
         const message = {
-            type: 'JOIN_GAME',
-            playerId: this.getStoredPlayerId(),
-            playerName: playerSettings.name || 'Player',
-            playerColor: playerSettings.color || '#2196F3',
-            playerEmoji: playerSettings.emoji || '🏠'
+            type: 'JOIN_WAITING_ROOM',
+            roomId: 'default',
+            player: {
+                id: this.getStoredPlayerId(),
+                name: playerSettings.name || 'Player',
+                color: playerSettings.color || '#2196F3',
+                emoji: playerSettings.emoji || '🏠'
+            }
         };
         
         this.connection.send(JSON.stringify(message));

@@ -2286,10 +2286,7 @@ async function handleJoinWaitingRoom(ws, clientId, data) {
     timestamp: Date.now()
   });
   
-  // Check if room should auto-start
-  if (room.settings.autoStart && room.players.size >= room.settings.minPlayers) {
-    setTimeout(() => checkAutoStart(roomId), 1000);
-  }
+  // Auto-start removed - players will manually start games
 }
 
 async function handleLeaveWaitingRoom(ws, clientId, data) {
@@ -2450,31 +2447,7 @@ function addChatMessageToRoom(roomId, message) {
   });
 }
 
-function checkAutoStart(roomId) {
-  const room = waitingRooms.get(roomId);
-  if (!room || room.status !== 'waiting') return;
-  
-  if (room.players.size >= room.settings.minPlayers && room.settings.autoStart) {
-    // Start game countdown
-    room.status = 'starting';
-    
-    broadcastToRoom(roomId, {
-      type: 'GAME_STARTING',
-      countdown: 5,
-      message: 'Game starting in 5 seconds...'
-    });
-    
-    addChatMessageToRoom(roomId, {
-      type: 'system',
-      text: 'Minimum players reached! Game starting in 5 seconds...',
-      timestamp: Date.now()
-    });
-    
-    setTimeout(() => {
-      startGameFromRoom(roomId);
-    }, 5000);
-  }
-}
+// Auto-start logic removed - games now start manually
 
 function startGameFromRoom(roomId) {
   const room = waitingRooms.get(roomId);
