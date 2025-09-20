@@ -332,8 +332,8 @@ class ServerEconomicEngine {
             if (building.population?.jobsCreated > 0) {
                 totals.jobs.supply += building.population.jobsCreated;
             }
-            if (building.resources?.energyDemand < 0) {
-                totals.energy.supply += Math.abs(building.resources.energyDemand);
+            if (building.resources?.energySupply > 0) {
+                totals.energy.supply += building.resources.energySupply;
             }
             if (building.resources?.foodProduction > 0) {
                 totals.food.supply += building.resources.foodProduction;
@@ -342,13 +342,15 @@ class ServerEconomicEngine {
             // Add demands
             if (building.population?.bedroomsAdded > 0) {
                 totals.jobs.demand += building.population.bedroomsAdded; // Residents need jobs
-                totals.food.demand += building.population.bedroomsAdded; // Residents need food
             }
             if (building.population?.jobsCreated > 0) {
                 totals.housing.demand += building.population.jobsCreated; // Jobs need workers (housing)
             }
             if (building.resources?.energyDemand > 0) {
                 totals.energy.demand += building.resources.energyDemand;
+            }
+            if (building.resources?.foodDemand > 0) {
+                totals.food.demand += building.resources.foodDemand;
             }
         });
 
@@ -441,23 +443,27 @@ class ServerEconomicEngine {
             });
         }
 
-        // Jobs need (from BedroomsAdded)
+        // Jobs need (from BedroomsAdded - 0.6 per resident, rounded down)
         if (building.population?.bedroomsAdded > 0) {
-            needs.push({
-                type: this.NEED_TYPES.JOBS,
-                required: building.population.bedroomsAdded
-            });
+            const jobsRequired = Math.floor(building.population.bedroomsAdded * 0.6);
+            if (jobsRequired > 0) {
+                needs.push({
+                    type: this.NEED_TYPES.JOBS,
+                    required: jobsRequired
+                });
+            }
         }
 
-        // Energy need
-        if (building.resources?.energyDemand > 0) {
+        // Energy need (from energyDemand field or EnergyDemandPerDay from CSV)
+        const energyDemand = building.resources?.energyDemand || building.energyDemand || 0;
+        if (energyDemand > 0) {
             needs.push({
                 type: this.NEED_TYPES.ENERGY,
-                required: building.resources.energyDemand
+                required: energyDemand
             });
         }
 
-        // Food need
+        // Food need (for residential buildings: 1 food per resident)
         if (building.population?.bedroomsAdded > 0) {
             needs.push({
                 type: this.NEED_TYPES.FOOD,
