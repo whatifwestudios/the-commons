@@ -1,6 +1,6 @@
 {
   "name": "the-commons",
-  "version": "1.0.0", 
+  "version": "2.0.0", 
   "type": "commonjs",
   "description": "A city-building game exploring land value economics",
   "main": "server.js",
