@@ -925,7 +925,9 @@ class BuildingManager {
             },
             resources: {
                 energyDemand: parseInt(row.EnergyDemandPerDay) || 0,
-                foodProduction: parseInt(row.FoodProductionPerDay) || 0
+                energySupply: parseInt(row.EnergySupply) || 0,
+                foodProduction: parseInt(row.FoodProductionPerDay) || 0,
+                foodDemand: parseInt(row.FoodDemand) || 0
             },
             prerequisites: prerequisites,
             requiredLandValue: parseInt(row.PrereqLandValue) || 0,

@@ -1738,9 +1738,11 @@ body {
     overflow: hidden;
     max-height: 800px; /* Large enough for any content */
     opacity: 1;
-    transition: max-height 0.35s cubic-bezier(0.4, 0, 0.2, 1), 
-                opacity 0.25s cubic-bezier(0.4, 0, 0.2, 1),
-                padding 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    transition: max-height 0.2s cubic-bezier(0.25, 0.46, 0.45, 0.94),
+                opacity 0.15s cubic-bezier(0.25, 0.46, 0.45, 0.94),
+                padding 0.15s cubic-bezier(0.25, 0.46, 0.45, 0.94),
+                transform 0.15s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+    transform: translateY(0);
 }
 
 .collapsible.collapsed .section-content {
@@ -1748,6 +1750,8 @@ body {
     opacity: 0;
     padding-top: 0;
     padding-bottom: 0;
+    display: none; /* Prevent black bar lingering */
+    transform: translateY(-10px);
 }
 
 
@@ -1796,6 +1800,23 @@ body {
 .metric-value.excellent {
     color: #28a745 !important;
     text-shadow: 0 0 4px rgba(40, 167, 69, 0.5);
+}
+
+/* City Treasury - Golden yellow for both label and value, remove highlighting */
+#treasury-row {
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+}
+
+#treasury-row .metric-label,
+#treasury-row .metric-value {
+    color: #DAA520 !important;
+}
+
+/* Residents - Keep white */
+#residents-row .metric-value {
+    color: #ffffff !important;
 }
 
 @keyframes pulse-warning {

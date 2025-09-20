@@ -509,7 +509,22 @@ class RenderingSystem {
         }
         return false;
     }
-    
+
+    /**
+     * Get building category color
+     */
+    getBuildingCategoryColor(category) {
+        const colors = {
+            residential: '#4CAF50',
+            commercial: '#2196F3',
+            industrial: '#FF9800',
+            civic: '#9C27B0',
+            utilities: '#FFC107',
+            agriculture: '#8BC34A'
+        };
+        return colors[category] || '#666';
+    }
+
     /**
      * Get color for a multiplayer participant
      */
@@ -1083,7 +1098,20 @@ class RenderingSystem {
         return window.CoordinateUtils?.fromIsometric(
             screenX, screenY, this.tileWidth, this.tileHeight,
             this.game.offsetX || 0, this.game.offsetY || 0, this.game.gridSize
-        ) || null;
+        ) || (() => {
+            const x = screenX - (this.game.offsetX || 0);
+            const y = screenY - (this.game.offsetY || 0);
+
+            const col = Math.round((x / (this.tileWidth / 2) + y / (this.tileHeight / 2)) / 2);
+            const row = Math.round((y / (this.tileHeight / 2) - x / (this.tileWidth / 2)) / 2);
+
+            // Validate bounds - return null if outside 12x12 grid
+            if (row < 0 || row >= 12 || col < 0 || col >= 12) {
+                return null;
+            }
+
+            return { col, row };
+        })();
     }
     
     /**

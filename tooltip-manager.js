@@ -82,14 +82,14 @@ class TooltipDataCollector {
      * Get clean owner information
      */
     getOwnerInfo(parcel) {
-        if (window.PlayerUtils?.isCurrentPlayer(parcel.owner, this.game)) {
+        if (this.game.isCurrentPlayer(parcel.owner)) {
             return {
                 name: this.game.playerSettings?.name || 'You',
                 isCurrentPlayer: true
             };
         } else if (parcel.owner && parcel.owner !== 'unclaimed') {
             return {
-                name: window.PlayerUtils?.getPlayerDisplayName(parcel.owner, this.game) || parcel.owner,
+                name: parcel.owner,
                 isCurrentPlayer: false
             };
         } else {
@@ -435,7 +435,11 @@ class TooltipRenderer {
             html += `<span style="color: #FFA726;">🚧 Status:</span> <span style="color: #FF9800;">Under Construction (${data.performance.progressPercent}%)</span>`;
             html += `</div>`;
         } else {
-            const perfColor = window.ColorUtils?.getPerformanceColor(data.performance.performancePercent) || '#4CAF50';
+            // Simple performance color calculation
+            const perfPercent = data.performance.performancePercent;
+            const perfColor = perfPercent >= 75 ? '#4CAF50' :
+                             perfPercent >= 50 ? '#FFC107' :
+                             perfPercent >= 25 ? '#FF9800' : '#F44336';
             html += `<div style="margin-bottom: 8px;">`;
             html += `<span style="color: #E0E0E0;">⚡ Performance:</span> <strong style="color: ${perfColor};">${data.performance.performancePercent}%</strong>`;
             html += `</div>`;
@@ -443,7 +447,8 @@ class TooltipRenderer {
 
         // Cashflow information
         if (data.cashflow !== undefined) {
-            const cashflowColor = window.ColorUtils?.getCashflowColor(data.cashflow) || '#4CAF50';
+            // Simple cashflow color calculation
+            const cashflowColor = data.cashflow >= 0 ? '#4CAF50' : '#F44336';
             const cashflowPrefix = data.cashflow >= 0 ? '+' : '';
             html += `<div style="margin-bottom: 8px;">`;
             html += `<span style="color: #E0E0E0;">💰 Daily Cashflow:</span> <strong style="color: ${cashflowColor};">${cashflowPrefix}$${data.cashflow.toLocaleString()}</strong>`;
@@ -941,24 +946,15 @@ class TooltipManager {
             content += `<strong>Balance:</strong> ${data.balance >= 0 ? '+' : ''}${data.balance.toFixed(1)}<br>`;
             content += `<strong>Ratio:</strong> ${data.ratio.toFixed(0)}%<br><br>`;
 
-            // Show status with appropriate styling
-            const status = data.status || (data.ratio >= 0 ? 'Balanced' : 'Shortage');
-            let statusColor;
-            if (status === 'Surplus') {
-                statusColor = '#22c55e'; // Green
-            } else if (status === 'Balanced') {
-                statusColor = '#22c55e'; // Green
-            } else if (status === 'Minor Shortage') {
-                statusColor = '#fb923c'; // Orange
-            } else if (status === 'Shortage') {
-                statusColor = '#f87171'; // Light red
-            } else if (status === 'Critical Shortage') {
-                statusColor = '#dc2626'; // Dark red
+            if (data.ratio > 0) {
+                content += `<span style="color: #4CAF50">✓ Surplus available</span>`;
+            } else if (data.ratio < -50) {
+                content += `<span style="color: #f44336">⚠ Critical shortage</span>`;
+            } else if (data.ratio < 0) {
+                content += `<span style="color: #ff9800">⚠ Shortage detected</span>`;
             } else {
-                statusColor = '#666'; // Gray fallback
+                content += `<span style="color: #666">— Balanced</span>`;
             }
-
-            content += `<span style="color: ${statusColor}">● ${status}</span>`;
 
             return content;
         } else if (data.type === 'net-score') {

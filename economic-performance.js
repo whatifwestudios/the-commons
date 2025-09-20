@@ -246,6 +246,7 @@ class EconomicPerformanceEngine {
                 // Buildings under construction still represent future demand that needs to be planned for
                 if (building.population?.bedroomsAdded > 0) {
                     totals.jobs.demand += building.population.bedroomsAdded; // Residents need jobs
+                    totals.food.demand += building.population.bedroomsAdded; // Residents need food
                 }
                 if (building.population?.jobsCreated > 0) {
                     totals.housing.demand += building.population.jobsCreated; // Jobs need workers (housing)

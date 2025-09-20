@@ -1992,9 +1992,14 @@ class IsometricGrid {
     
     generateTooltipContent(row, col) {
         // Use modern tooltip system exclusively through game's tooltip manager
+        // Check bounds before accessing grid
+        if (row < 0 || row >= 12 || col < 0 || col >= 12) {
+            return null;
+        }
+
         const parcel = this.grid[row][col];
 
-        if (parcel.building) {
+        if (parcel && parcel.building) {
             const tooltipData = this.tooltipManager.dataCollector.getBuildingTooltipData(row, col);
             if (tooltipData) {
                 const rendered = this.tooltipManager.renderer.renderBuildingTooltip(tooltipData);
