@@ -3054,24 +3054,18 @@ class IsometricGrid {
             const bedroomsAdded = building.population?.bedroomsAdded || 0;
             const jobsCreated = building.population?.jobsCreated || 0;
             const energyDemand = building.resources?.energyDemand || 0;
+            const energySupply = building.resources?.energySupply || 0;
             const foodProduction = building.resources?.foodProduction || 0;
-            
+            const buildingFoodDemand = building.resources?.foodDemand || 0;
+
             // Calculate net supply/demand for each metric
-            // ENERGY: Negative energyDemand means energy production
-            if (energyDemand < 0) {
-                // Energy producer (utilities)
-                supplyDemand.energy = Math.abs(energyDemand); // Show as positive supply
-            } else if (energyDemand > 0) {
-                // Energy consumer
-                supplyDemand.energy = -energyDemand; // Show as negative demand
-            } else {
-                supplyDemand.energy = 0;
-            }
-            
-            // FOOD: Production vs consumption (3 per person per day)
-            const peopleInBuilding = bedroomsAdded * 2; // 2 people per bedroom
-            const foodDemand = peopleInBuilding * 3; // 3 food per person per day
-            supplyDemand.food = foodProduction - foodDemand; // Net food balance
+            // ENERGY: Use separate supply and demand columns
+            const netEnergy = energySupply - energyDemand;
+            supplyDemand.energy = netEnergy;
+
+            // FOOD: Use separate supply and demand columns
+            const netFood = foodProduction - buildingFoodDemand;
+            supplyDemand.food = netFood;
             
             // HOUSING: Bedrooms supplied vs demanded by jobs
             if (bedroomsAdded > 0) {
@@ -4433,103 +4427,68 @@ class IsometricGrid {
         // Clear ALL existing positioning and styling
         progressBar.style.cssText = '';
 
-        // Calculate balance score where 1:1 ratio is optimal
-        // Convert ratio (-100 to +100) to a balance score (0 to 1, where 1 is perfect balance)
-        let balanceScore;
-        let barDirection;
-        let barWidth;
+        // JEFH Bars: Show satisfaction level as fullness + color
+        // Full bar = good/optimal, partial bar = problems, color indicates severity
 
-        if (Math.abs(ratio) < 5) {
-            // Near perfect balance (within 5% of 1:1 ratio)
-            balanceScore = 1.0;
-            barDirection = 'center';
-            barWidth = 10; // Small indicator at center
+        let satisfaction, barColor, barWidth;
+
+        if (ratio >= 0) {
+            // Surplus or balanced (green shades)
+            satisfaction = Math.min(1.0, 1.0 + ratio / 100); // 100% satisfaction at 0% surplus, scales up
+            const greenIntensity = Math.min(1.0, ratio / 20 + 0.5); // Bright green at 20%+ surplus
+            barColor = `linear-gradient(to right,
+                rgba(34, 197, 94, ${0.7 + 0.3 * greenIntensity}),
+                rgba(22, 163, 74, ${0.8 + 0.2 * greenIntensity}))`;
+            barWidth = 100; // Always full when balanced/surplus
         } else {
-            // Calculate how far from balance we are
-            const imbalanceMagnitude = Math.abs(ratio);
+            // Shortage (red - fuller bar means less shortage)
+            const shortage = Math.abs(ratio);
+            satisfaction = Math.max(0.1, 1.0 - shortage / 100); // Scale down based on shortage severity
+            barWidth = Math.max(20, 100 - shortage); // Shrink bar as shortage gets worse
 
-            // Map imbalance to a 0-1 scale (0 = terrible imbalance, 1 = perfect balance)
-            // Use exponential decay so moderate imbalances are more tolerable
-            balanceScore = Math.exp(-imbalanceMagnitude / 40);
-
-            // Determine bar direction and width
-            barDirection = ratio < 0 ? 'left' : 'right';
-            barWidth = Math.min(Math.abs(ratio), 100) / 2; // 0-50% of container width
+            // Color intensity based on severity
+            const redIntensity = Math.min(1.0, shortage / 50);
+            if (shortage > 50) {
+                // Critical shortage: Dark red
+                barColor = `linear-gradient(to right,
+                    rgba(220, 38, 38, 0.9),
+                    rgba(185, 28, 28, 1.0))`;
+            } else if (shortage > 20) {
+                // Moderate shortage: Medium red
+                barColor = `linear-gradient(to right,
+                    rgba(248, 113, 113, 0.8),
+                    rgba(220, 38, 38, 0.9))`;
+            } else {
+                // Minor shortage: Light red/orange
+                barColor = `linear-gradient(to right,
+                    rgba(251, 146, 60, 0.7),
+                    rgba(248, 113, 113, 0.8))`;
+            }
         }
 
-        // Color calculation: Blue for good balance, Red for poor balance, Purple gradient between
-        let barColor;
-        if (balanceScore > 0.8) {
-            // Excellent balance: Blue shades
-            const blueIntensity = balanceScore;
-            barColor = `linear-gradient(to ${barDirection === 'left' ? 'left' : 'right'},
-                rgb(${Math.round(100 * (1 - blueIntensity))}, ${Math.round(150 * (1 - blueIntensity))}, ${Math.round(200 + 55 * blueIntensity)}) 0%,
-                rgb(${Math.round(50 * (1 - blueIntensity))}, ${Math.round(100 * (1 - blueIntensity))}, ${Math.round(180 + 75 * blueIntensity)}) 100%)`;
-        } else if (balanceScore > 0.4) {
-            // Moderate balance: Purple shades (transition from blue to red)
-            const purpleRatio = (balanceScore - 0.4) / 0.4; // 0 to 1 scale within this range
-            const red = Math.round(150 + (255 - 150) * (1 - purpleRatio));
-            const green = Math.round(100 * purpleRatio);
-            const blue = Math.round(200 * purpleRatio);
-            barColor = `linear-gradient(to ${barDirection === 'left' ? 'left' : 'right'},
-                rgb(${red}, ${green}, ${blue}) 0%,
-                rgb(${Math.round(red * 0.8)}, ${Math.round(green * 0.8)}, ${Math.round(blue * 0.8)}) 100%)`;
-        } else {
-            // Poor balance: Red shades
-            const redIntensity = 1 - balanceScore / 0.4; // 0 to 1, where 1 is worst
-            barColor = `linear-gradient(to ${barDirection === 'left' ? 'left' : 'right'},
-                rgb(${Math.round(200 + 55 * redIntensity)}, ${Math.round(100 * (1 - redIntensity))}, ${Math.round(100 * (1 - redIntensity))}) 0%,
-                rgb(${Math.round(150 + 105 * redIntensity)}, ${Math.round(50 * (1 - redIntensity))}, ${Math.round(50 * (1 - redIntensity))}) 100%)`;
-        }
+        // Apply consistent full-width styling with satisfaction-based fill
+        progressBar.style.background = barColor;
+        progressBar.style.width = `${barWidth}%`;
+        progressBar.style.height = '16px';
+        progressBar.style.position = 'relative';
+        progressBar.style.borderRadius = '8px';
+        progressBar.style.transition = 'all 0.3s ease';
 
-        // Apply the styling based on balance state
-        if (barDirection === 'center') {
-            // Perfect balance: small centered indicator
-            progressBar.style.cssText = `
-                position: absolute !important;
-                left: 50% !important;
-                top: 0 !important;
-                width: ${barWidth}px !important;
-                height: 100% !important;
-                transform: translateX(-${barWidth/2}px) !important;
-                background: ${barColor} !important;
-                border-radius: 4px !important;
-                box-shadow: 0 0 3px rgba(100, 150, 255, 0.5) !important;
-            `;
-        } else if (barDirection === 'left') {
-            // Deficit: bar extending LEFT from center
-            progressBar.style.cssText = `
-                position: absolute !important;
-                right: 50% !important;
-                top: 0 !important;
-                width: ${barWidth}% !important;
-                height: 100% !important;
-                background: ${barColor} !important;
-                border-radius: 4px !important;
-            `;
-        } else {
-            // Surplus: bar extending RIGHT from center
-            progressBar.style.cssText = `
-                position: absolute !important;
-                left: 50% !important;
-                top: 0 !important;
-                width: ${barWidth}% !important;
-                height: 100% !important;
-                background: ${barColor} !important;
-                border-radius: 4px !important;
-            `;
-        }
+        // Add subtle shadow for depth
+        progressBar.style.boxShadow = ratio >= 0 ?
+            '0 2px 4px rgba(34, 197, 94, 0.2)' :
+            '0 2px 4px rgba(220, 38, 38, 0.2)';
 
-        // Set up comprehensive tooltip data with balance information
+        // Set up comprehensive tooltip data
         const tooltipData = {
-            type: 'balance-based',
+            type: 'supply-demand',
             domain: domain,
             supply: supply,
             demand: demand,
             ratio: ratio,
             balance: supply - demand,
-            balanceScore: balanceScore,
-            balanceStatus: balanceScore > 0.8 ? 'Excellent' : balanceScore > 0.4 ? 'Moderate' : 'Poor'
+            satisfaction: satisfaction,
+            status: ratio >= 20 ? 'Surplus' : ratio >= 0 ? 'Balanced' : ratio >= -20 ? 'Minor Shortage' : ratio >= -50 ? 'Shortage' : 'Critical Shortage'
         };
 
         progressBar.closest('.vitality-row').setAttribute('data-tooltip-data', JSON.stringify(tooltipData));

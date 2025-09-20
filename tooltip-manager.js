@@ -941,15 +941,24 @@ class TooltipManager {
             content += `<strong>Balance:</strong> ${data.balance >= 0 ? '+' : ''}${data.balance.toFixed(1)}<br>`;
             content += `<strong>Ratio:</strong> ${data.ratio.toFixed(0)}%<br><br>`;
 
-            if (data.ratio > 0) {
-                content += `<span style="color: #4CAF50">✓ Surplus available</span>`;
-            } else if (data.ratio < -50) {
-                content += `<span style="color: #f44336">⚠ Critical shortage</span>`;
-            } else if (data.ratio < 0) {
-                content += `<span style="color: #ff9800">⚠ Shortage detected</span>`;
+            // Show status with appropriate styling
+            const status = data.status || (data.ratio >= 0 ? 'Balanced' : 'Shortage');
+            let statusColor;
+            if (status === 'Surplus') {
+                statusColor = '#22c55e'; // Green
+            } else if (status === 'Balanced') {
+                statusColor = '#22c55e'; // Green
+            } else if (status === 'Minor Shortage') {
+                statusColor = '#fb923c'; // Orange
+            } else if (status === 'Shortage') {
+                statusColor = '#f87171'; // Light red
+            } else if (status === 'Critical Shortage') {
+                statusColor = '#dc2626'; // Dark red
             } else {
-                content += `<span style="color: #666">— Balanced</span>`;
+                statusColor = '#666'; // Gray fallback
             }
+
+            content += `<span style="color: ${statusColor}">● ${status}</span>`;
 
             return content;
         } else if (data.type === 'net-score') {
