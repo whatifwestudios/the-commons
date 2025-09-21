@@ -30,7 +30,6 @@ class UIManager {
             playerCashflow: 'player-cashflow',
             cityName: 'city-name',
             totalResidents: 'total-residents',
-            cityTreasury: 'city-treasury',
             
             // Actions
             currentActions: 'current-actions',
@@ -47,6 +46,11 @@ class UIManager {
             governanceModal: 'governance-modal',
             auctionModal: 'auction-modal',
             routeModal: 'route-modal',
+            cashflowModal: 'cashflow-menu',
+
+            // DCF Interface
+            cashflowItem: 'cashflow-item',
+            closeCashflowBtn: 'close-cashflow',
             
             // Action marketplace
             modalActionBalance: 'modal-action-balance',
@@ -128,7 +132,9 @@ class UIManager {
         };
         
         this.initialized = true;
-        
+
+        // DCF functionality will be setup later when game instance is available
+
         return this;
     }
     
@@ -376,9 +382,6 @@ class UIManager {
         
         if (stats.residents !== undefined) {
             updates.push({ type: 'text', key: 'totalResidents', value: stats.residents.toLocaleString() });
-        }
-        if (stats.treasury !== undefined) {
-            updates.push({ type: 'text', key: 'cityTreasury', value: `$${Math.round(stats.treasury).toLocaleString()}` });
         }
         if (stats.date !== undefined) {
             updates.push({ type: 'text', key: 'gameDate', value: `${stats.date.month} ${stats.date.day}` });
@@ -1045,15 +1048,15 @@ class UIManager {
                     allocationEl.textContent = `${(allocation * 100).toFixed(1)}%`;
                 }
 
-                // Update coffers display with null safety
+                // Update coffers display with new governance system
                 const coffersEl = categoryEl.querySelector('.category-coffers span');
-                if (coffersEl) {
+                if (coffersEl && game.governanceSystem) {
                     if (category === 'ubi') {
-                        const ubiAmount = (game.governance.publicCoffers && game.governance.publicCoffers[category]) || 0;
+                        const ubiAmount = game.governanceSystem.governance.allocations[category] || 0;
                         const ubiPerCitizen = ubiAmount / Math.max(1, game.calculatePopulation());
                         coffersEl.textContent = ubiPerCitizen.toFixed(2);
                     } else {
-                        const cofferAmount = (game.governance.publicCoffers && game.governance.publicCoffers[category]) || 0;
+                        const cofferAmount = game.governanceSystem.governance.allocations[category] || 0;
                         coffersEl.textContent = cofferAmount.toLocaleString();
                     }
                 }
@@ -1230,6 +1233,215 @@ class UIManager {
             return `${hours}h ${minutes % 60}m`;
         }
         return `${minutes}m`;
+    }
+
+    /**
+     * Setup DCF (Daily Cash Flow) interactive functionality
+     * Integrates with existing tooltip and modal systems
+     */
+    setupCashflowMenu(game) {
+        if (!this.elements.cashflowItem || !this.elements.cashflowModal || !this.elements.closeCashflowBtn) {
+            console.warn('DCF elements not found in UIManager cache');
+            return;
+        }
+
+        const cashflowItem = this.elements.cashflowItem;
+        const cashflowModal = this.elements.cashflowModal;
+        const closeCashflowBtn = this.elements.closeCashflowBtn;
+
+        // Show modal on click
+        cashflowItem.addEventListener('click', () => {
+            this.showCashflowModal(game);
+        });
+
+        // Show tooltip on hover
+        let hoverTimeout;
+        cashflowItem.addEventListener('mouseenter', () => {
+            clearTimeout(hoverTimeout);
+            hoverTimeout = setTimeout(() => {
+                this.showCashflowTooltip(game, cashflowItem);
+            }, 300);
+        });
+
+        cashflowItem.addEventListener('mouseleave', () => {
+            clearTimeout(hoverTimeout);
+            this.hideCashflowTooltip(game);
+        });
+
+        // Close modal
+        closeCashflowBtn.addEventListener('click', () => {
+            this.hideCashflowModal();
+        });
+
+        // Close on backdrop click
+        cashflowModal.addEventListener('click', (e) => {
+            if (e.target.id === 'cashflow-menu') {
+                this.hideCashflowModal();
+            }
+        });
+
+        console.log('✅ DCF functionality initialized in UIManager');
+    }
+
+    /**
+     * Show cashflow tooltip using game's tooltip system
+     */
+    showCashflowTooltip(game, element) {
+        if (!game || !game.tooltipManager) return;
+
+        console.log('🔍 DCF Tooltip called - checking data sources:', {
+            dailyCashflowTotals: game.dailyCashflowTotals,
+            topBarElement: document.getElementById('player-cashflow')?.textContent,
+            cache: game.cache?.cashflowBreakdown,
+            economicEngine: game.economicEngine?.cache?.cashflowBreakdown
+        });
+
+        // Use the same exact check as the top bar
+        if (game.dailyCashflowTotals) {
+            const totals = game.dailyCashflowTotals;
+            console.log('✅ Using dailyCashflowTotals:', totals);
+
+        const tooltipContent = `
+            <div style="display: flex; flex-direction: column; gap: 4px; min-width: 200px;">
+                <div style="display: flex; justify-content: space-between;">
+                    <span style="color: #888;">Revenue:</span>
+                    <span style="color: #4CAF50; font-weight: 600;">$${Math.round(totals.revenue || 0).toLocaleString()}</span>
+                </div>
+                <div style="display: flex; justify-content: space-between;">
+                    <span style="color: #888;">Maintenance:</span>
+                    <span style="color: #F44336; font-weight: 600;">-$${Math.round(Math.abs(totals.maintenance || 0)).toLocaleString()}</span>
+                </div>
+                <div style="display: flex; justify-content: space-between;">
+                    <span style="color: #888;">LVT:</span>
+                    <span style="color: #F44336; font-weight: 600;">-$${Math.round(Math.abs(totals.lvt || 0)).toLocaleString()}</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; border-top: 1px solid #444; padding-top: 4px; margin-top: 4px;">
+                    <span style="color: #ccc; font-weight: 600;">Net Daily:</span>
+                    <span style="color: ${(totals.netCashflow || 0) >= 0 ? '#FFD700' : '#F44336'}; font-weight: 700;">$${Math.round(totals.netCashflow || 0).toLocaleString()}</span>
+                </div>
+            </div>
+        `;
+
+            const rect = element.getBoundingClientRect();
+            const x = rect.left + rect.width / 2;
+            const y = rect.bottom + 10;
+
+            game.tooltipManager.show(tooltipContent, x, y, {
+                html: true,
+                delay: 0,
+                maxWidth: 250
+            });
+        } else {
+            console.warn('❌ No dailyCashflowTotals available for tooltip');
+        }
+    }
+
+    /**
+     * Hide cashflow tooltip
+     */
+    hideCashflowTooltip(game) {
+        if (game && game.tooltipManager) {
+            game.tooltipManager.hide();
+        }
+    }
+
+    /**
+     * Show cashflow modal with detailed breakdown
+     */
+    showCashflowModal(game) {
+        if (!this.elements.cashflowModal) return;
+
+        // Show modal immediately
+        this.elements.cashflowModal.classList.add('visible');
+
+        // Add small delay to ensure async data is available before populating
+        setTimeout(() => {
+            this.populateCashflowData(game);
+        }, 50);
+    }
+
+    /**
+     * Hide cashflow modal
+     */
+    hideCashflowModal() {
+        if (this.elements.cashflowModal) {
+            this.elements.cashflowModal.classList.remove('visible');
+        }
+    }
+
+    /**
+     * Populate cashflow modal with current data
+     * Uses existing player stats generation and calculations
+     */
+    populateCashflowData(game) {
+        // Trigger async cashflow calculation to ensure data is fresh
+        game.calculateCurrentCashflow();
+
+        // Use the same data source as the top bar display for consistency
+        const totals = game.dailyCashflowTotals || { revenue: 0, maintenance: 0, lvt: 0, netCashflow: 0 };
+        const breakdown = game.cashflowBreakdown || [];
+
+        console.log('🔍 DCF Modal Debug:', {
+            dailyCashflowTotals: game.dailyCashflowTotals,
+            totals: totals,
+            breakdown: breakdown,
+            cache: game.cache?.cashflowBreakdown,
+            currentCashflowPreview: game.currentCashflowPreview
+        });
+
+        // Update modal title to show current player
+        const modalTitle = document.querySelector('.cashflow-modal h3');
+        if (modalTitle) {
+            const currentPlayer = window.currentCashflowPlayer || 'current';
+            if (currentPlayer === 'current') {
+                modalTitle.textContent = 'DAILY CASHFLOW';
+            } else {
+                const playerData = game.gameState?.players?.[currentPlayer];
+                const playerName = playerData?.name || `Player ${currentPlayer.slice(-4)}`;
+                modalTitle.textContent = `DAILY CASHFLOW - ${playerName.toUpperCase()}`;
+            }
+        }
+
+        // Update summary with safe rounding
+        document.getElementById('total-revenue').textContent = `$${Math.round(totals.revenue || 0).toLocaleString()}`;
+        document.getElementById('total-maintenance').textContent = `-$${Math.round(Math.abs(totals.maintenance || 0)).toLocaleString()}`;
+        document.getElementById('total-lvt').textContent = `-$${Math.round(Math.abs(totals.lvt || 0)).toLocaleString()}`;
+
+        const netDaily = Math.round(totals.netCashflow || 0);
+        const netElement = document.getElementById('net-daily');
+        netElement.textContent = netDaily >= 0 ? `+$${netDaily.toLocaleString()}` : `-$${Math.abs(netDaily).toLocaleString()}`;
+        netElement.className = `summary-value ${netDaily >= 0 ? 'positive' : 'negative'}`;
+
+        // Update table
+        const tbody = document.getElementById('cashflow-tbody');
+        tbody.innerHTML = '';
+
+        breakdown.forEach(item => {
+            const row = document.createElement('tr');
+
+            const formatCurrency = (value) => {
+                const rounded = Math.round(value);
+                return rounded >= 0 ? `$${rounded.toLocaleString()}` : `-$${Math.abs(rounded).toLocaleString()}`;
+            };
+
+            const getValueClass = (value) => {
+                return Math.round(value) > 0 ? 'positive' : Math.round(value) < 0 ? 'negative' : 'neutral';
+            };
+
+            row.innerHTML = `
+                <td>${item.coordinates || 'N/A'}</td>
+                <td>${item.buildingName || 'Unknown'}</td>
+                <td>${item.buildingAge || 0} days</td>
+                <td>${item.decay ? item.decay.toFixed(1) + '%' : 'N/A'}</td>
+                <td>$${Math.round(item.landValue || 0).toLocaleString()}</td>
+                <td class="${getValueClass(item.revenue || 0)}">${formatCurrency(item.revenue || 0)}</td>
+                <td class="${getValueClass(-(item.maintenance || 0))}">${formatCurrency(-(item.maintenance || 0))}</td>
+                <td class="${getValueClass(-(item.lvt || 0))}">${formatCurrency(-(item.lvt || 0))}</td>
+                <td class="${getValueClass(item.netCashflow || 0)}">${formatCurrency(item.netCashflow || 0)}</td>
+            `;
+
+            tbody.appendChild(row);
+        });
     }
 }
 

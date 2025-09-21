@@ -332,8 +332,9 @@ class BuildingSystem {
      * Calculate building economics (revenue, maintenance, etc.)
      */
     calculateBuildingEconomics(parcel, row, col) {
-        // Land Value Tax
-        const dailyLVTRate = 0.50 / 365; // 50% per year
+        // Land Value Tax - use dynamic rate from governance system
+        const annualLVTRate = this.game.governanceSystem ? this.game.governanceSystem.getCurrentLVTRate() : 0.50;
+        const dailyLVTRate = annualLVTRate / 365;
         const landTax = (parcel.landValue?.paidPrice || 0) * dailyLVTRate;
         
         let revenue = 0;
@@ -505,13 +506,6 @@ class BuildingSystem {
             return this.game.governanceSystem.getBuildingCostWithFunding(building);
         }
 
-        // Fallback to legacy governance if new system not available
-        if (this.game.governance?.allocations) {
-            const category = building.category?.toLowerCase();
-            const funding = this.game.governance.allocations[category] || 0;
-            const discount = Math.min(0.5, funding / 1000); // Max 50% discount
-            return Math.round(baseCost * (1 - discount));
-        }
 
         return baseCost;
     }
@@ -724,9 +718,15 @@ class BuildingSystem {
         
         // Process purchase optimistically (immediately)
         this.game.playerCash -= price;
+
+        // Add land purchase price to governance budget
+        if (this.game.governanceSystem) {
+            this.game.governanceSystem.addFunds(price, 'land sales');
+        }
+
         // Use actual player ID if multiplayer is active, otherwise 'player'
-        this.game.grid[row][col].owner = (this.game.multiplayerManager && this.game.multiplayerManager.playerId) 
-            ? this.game.multiplayerManager.playerId 
+        this.game.grid[row][col].owner = (this.game.multiplayerManager && this.game.multiplayerManager.playerId)
+            ? this.game.multiplayerManager.playerId
             : 'player';
         this.game.grid[row][col].landValue.paidPrice = price;
         this.game.grid[row][col].landValue.lastAuctionDay = this.game.currentDay;
@@ -816,9 +816,9 @@ class BuildingSystem {
         // Process building locally
         const oldCash = this.game.playerCash;
         
-        // Deduct public funds (already calculated above)
-        if (publicFunding > 0) {
-            this.game.governance.publicCoffers[buildingCategory] -= publicFunding;
+        // Deduct public funds from governance budget
+        if (publicFunding > 0 && this.game.governanceSystem) {
+            this.game.governanceSystem.spendFromCategory(buildingCategory, publicFunding);
         }
         
         // Store original state for potential rollback
@@ -913,8 +913,8 @@ class BuildingSystem {
         this.game.playerCash -= demolitionFee;
         
         // Add demolition fee to city treasury
-        if (this.game.governance && this.game.governance.unallocatedFunds !== undefined) {
-            this.game.governance.unallocatedFunds += demolitionFee;
+        if (this.game.governanceSystem) {
+            this.game.governanceSystem.addFunds(demolitionFee, 'demolition fees');
         }
         
         
@@ -1089,7 +1089,8 @@ class BuildingSystem {
     calculateBuildingCostWithFunding(building, fullCost) {
         // Get the building category for public funding check
         const category = building?.category || 'housing';
-        const availableFunds = this.game.governance.publicCoffers[category] || 0;
+        const availableFunds = this.game.governanceSystem ?
+            this.game.governanceSystem.getCategoryFunding(category) : 0;
         const publicFunding = Math.min(availableFunds, fullCost);
         const playerCost = fullCost - publicFunding;
 

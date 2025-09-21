@@ -157,8 +157,7 @@ class IsometricGrid {
             playerCash: null,
             playerWealth: null,
             cityName: null,
-            totalResidents: null,
-            cityTreasury: null
+            totalResidents: null
         };
         
         // City vitality tracking
@@ -181,7 +180,7 @@ class IsometricGrid {
         // Game time and player stats
         this.gameStartTime = Date.now();
         this.playerCash = 5000;
-        this.cityTreasury = 0; // City treasury collects revenue from land sales and auction fees
+        // Legacy cityTreasury removed - now using governanceSystem.totalBudget
         this.gameDate = { month: 'SEPT', day: 2 }; // September 2nd start date
         
         // Start game time updates (1 year = 1 hour = 3600 seconds)
@@ -657,7 +656,6 @@ class IsometricGrid {
         this.domCache.cityName = this.uiManager.get('cityName');
         this.domCache.playerCashflow = this.uiManager.get('playerCashflow');
         this.domCache.totalResidents = this.uiManager.get('totalResidents');
-        this.domCache.cityTreasury = this.uiManager.get('cityTreasury');
     }
 
     initializeEdgeParcels() {
@@ -984,10 +982,13 @@ class IsometricGrid {
             
             // NEW: Refresh actions at month start
             this.refreshMonthlyActions();
-            
+
+            // Distribute treasury funds to budget allocations
+            this.governanceSystem.distributeMonthlyBudget();
+
             // Process expired auctions at month end
             this.actionMarketplace.processExpiredAuctions();
-            
+
             // Award voting points and trigger governance button animation
             this.governanceSystem.processMonthlyGovernance();
         } else {
@@ -1201,6 +1202,12 @@ class IsometricGrid {
     }
 
     calculateCurrentCashflow() {
+        console.log('🔍 calculateCurrentCashflow called:', {
+            cache: this.cache?.cashflowBreakdown,
+            economicEngineCache: this.economicEngine.cache?.cashflowBreakdown,
+            dailyCashflowTotals: this.dailyCashflowTotals
+        });
+
         // Trigger async server-side calculation in background
         this.updateCashflowAsync();
 
@@ -1253,13 +1260,61 @@ class IsometricGrid {
             };
             this.dailyCashflowTotals = this.currentCashflowPreview;
 
-            // Trigger UI update - use general update method since updateCashflowDisplay doesn't exist
-            if (this.uiManager) {
-                console.log('📊 Triggering UI update after cashflow calculation');
-                // No specific cashflow display method exists, so we'll just rely on the regular UI updates
-            }
+            // Update UI displays with fresh cashflow data
+            this.updateCashflowDisplay();
         } catch (error) {
             console.error('Async cashflow update failed:', error);
+        }
+    }
+
+    updateCashflowDisplay() {
+        const totals = this.dailyCashflowTotals || { revenue: 0, maintenance: 0, lvt: 0, netCashflow: 0 };
+        const cashflowElement = document.getElementById('player-cashflow');
+
+        if (cashflowElement) {
+            const netDaily = Math.round(totals.netCashflow);
+            cashflowElement.textContent = netDaily >= 0 ? `+$${netDaily.toLocaleString()}` : `-$${Math.abs(netDaily).toLocaleString()}`;
+
+            // Add color coding
+            cashflowElement.className = `info-value ${netDaily >= 0 ? 'positive' : 'negative'}`;
+        }
+    }
+
+    // Calculate cashflow for a specific player (for multiplayer DCF modal)
+    async calculatePlayerCashflow(playerId) {
+        try {
+            // Use economic engine to calculate cashflow for specific player
+            const result = await fetch('/api/calculate-player-cashflow', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    gameState: this.gameState || this.getGameState(),
+                    playerId: playerId
+                })
+            });
+
+            if (result.ok) {
+                const cashflow = await result.json();
+
+                // Update the cached data for this player
+                this.cashflowBreakdown = cashflow.breakdown;
+                this.dailyCashflowTotals = {
+                    revenue: cashflow.totalRevenue,
+                    maintenance: cashflow.totalMaintenance,
+                    lvt: cashflow.totalLVT,
+                    netCashflow: cashflow.netCashflow
+                };
+
+                return cashflow;
+            } else {
+                throw new Error('Failed to calculate player cashflow');
+            }
+        } catch (error) {
+            console.error('Error calculating player cashflow:', error);
+            // Fallback to current player calculation
+            this.calculateCurrentCashflow();
         }
     }
 
@@ -1400,7 +1455,6 @@ class IsometricGrid {
         this.domCache.cityName = this.uiManager.get('cityName');
         this.domCache.playerCashflow = this.uiManager.get('playerCashflow');
         this.domCache.totalResidents = this.uiManager.get('totalResidents');
-        this.domCache.cityTreasury = this.uiManager.get('cityTreasury');
     }
 
     populateBuildingCategories() {
@@ -1575,7 +1629,7 @@ class IsometricGrid {
                 currentDay: this.currentDay,
                 gameDate: this.gameDate,
                 grid: this.grid,
-                governance: this.governance,
+                governance: this.governanceSystem ? this.governanceSystem.exportData() : null,
                 economicMultipliers: this.economicMultipliers,
                 actionManager: this.actionManager
             },
@@ -1847,32 +1901,29 @@ class IsometricGrid {
         // Calculate demographics breakdown asynchronously
         this.updateDemographicsAsync(population);
         
-        // Calculate total city treasury using new governance system
+        // Use treasury balance directly from governance system
         let totalTreasury = 0;
         if (this.governanceSystem) {
-            // Sum all allocated funds
-            Object.values(this.governanceSystem.governance.allocations).forEach(amount => {
-                totalTreasury += amount || 0;
-            });
-            // Include unallocated funds in treasury total
-            totalTreasury += this.governanceSystem.governance.unallocatedFunds || 0;
+            totalTreasury = this.governanceSystem.governance.treasuryBalance || 0;
         }
         
         // Update city treasury display with detailed breakdown
-        if (this.domCache.cityTreasury) {
-            this.domCache.cityTreasury.textContent = `$${Math.round(totalTreasury).toLocaleString()}`;
+        const cityTreasuryEl = document.getElementById('city-treasury');
+        if (cityTreasuryEl) {
+            cityTreasuryEl.textContent = `$${Math.round(totalTreasury).toLocaleString()}`;
             
             // Create detailed treasury breakdown for tooltip
-            const unallocatedAmount = this.governanceSystem ? this.governanceSystem.governance.unallocatedFunds || 0 : 0;
-            const allocatedFunds = totalTreasury - unallocatedAmount;
+            const totalAllocated = this.governanceSystem ?
+                Object.values(this.governanceSystem.governance.allocations).reduce((sum, val) => sum + val, 0) : 0;
+            const unallocatedAmount = totalTreasury - totalAllocated;
             
             const treasuryRow = document.getElementById('treasury-row');
             if (treasuryRow) {
-                treasuryRow.setAttribute('data-tooltip', 
+                treasuryRow.setAttribute('data-tooltip',
                     `<strong>City Treasury Breakdown</strong><br><br>` +
-                    `💰 Total: $${Math.round(totalTreasury).toLocaleString()}<br>` +
-                    `📂 Allocated to Budgets: $${Math.round(allocatedFunds).toLocaleString()}<br>` +
-                    `🏛️ Unassigned Funds: $${Math.round(unallocatedAmount).toLocaleString()}<br><br>` +
+                    `💰 Total Treasury: $${Math.round(totalTreasury).toLocaleString()}<br>` +
+                    `📂 Allocated to Budgets: $${Math.round(totalAllocated).toLocaleString()}<br>` +
+                    `🏛️ Unallocated Funds: $${Math.round(unallocatedAmount).toLocaleString()}<br><br>` +
                     `💡 Click to open Governance!`);
                 
                 // Always make treasury clickable and gold
@@ -2441,49 +2492,7 @@ class IsometricGrid {
         // handles allocations directly
     }
     
-    voteLVTRate(direction) {
-        // Reset previous votes for this player (assuming single player for now)
-        this.governance.lvtRateVotes.decrease = 0;
-        this.governance.lvtRateVotes.maintain = 0;
-        this.governance.lvtRateVotes.increase = 0;
-        
-        // Apply new vote
-        this.governance.lvtRateVotes[direction] = 1;
-        
-        // Calculate proposed rate based on votes
-        if (direction === 'increase') {
-            this.governance.proposedLvtRate = Math.min(1.0, this.governance.currentLvtRate + 0.05);
-        } else if (direction === 'decrease') {
-            this.governance.proposedLvtRate = Math.max(0.0, this.governance.currentLvtRate - 0.05);
-        } else {
-            this.governance.proposedLvtRate = this.governance.currentLvtRate;
-        }
-        
-        this.updateGovernanceUI();
-    }
     
-    applyGovernanceChanges() {
-        // Distribute unallocated funds according to new allocations
-        if (this.governance.unallocatedFunds > 0) {
-            this.governance.budgetCategories.forEach(category => {
-                const allocation = this.governance.categoryAllocations[category] || 0;
-                const distributedAmount = this.governance.unallocatedFunds * allocation;
-                this.governance.publicCoffers[category] += distributedAmount;
-                
-                if (distributedAmount > 0) {
-                }
-            });
-            
-            this.governance.unallocatedFunds = 0; // Clear unallocated funds
-        }
-        
-        // Apply LVT rate change
-        this.governance.currentLvtRate = this.governance.proposedLvtRate;
-        
-        // Hide modal
-        this.hideGovernanceModal();
-        
-    }
     
     // Called at the beginning of each month
     awardMonthlyVotingPoints() {
@@ -2511,49 +2520,38 @@ class IsometricGrid {
         }
     }
     
-    distributeLVTToBudgets() {
-        // Calculate monthly LVT collection
-        this.governance.monthlyLvtCollected = this.calculateMonthlyLVT();
-        
-        // Add to unallocated funds instead of distributing directly
-        this.governance.unallocatedFunds += this.governance.monthlyLvtCollected;
-        
-    }
     
     calculateMonthlyLVT() {
+        // Fixed to use governance system for tax rate
         let totalLVT = 0;
-        
+
+        const currentLVTRate = this.governanceSystem ? this.governanceSystem.getCurrentLVTRate() : 0.50;
+
         for (let row = 0; row < this.gridSize; row++) {
             for (let col = 0; col < this.gridSize; col++) {
                 const parcel = this.grid[row][col];
                 // Collect LVT from ALL owned parcels in the city
-                if (parcel.owner && parcel.owner !== 'unclaimed') {
-                    const landValue = Math.max(parcel.landValue.paidPrice, parcel.landValue.calculatedValue);
-                    totalLVT += landValue * this.governance.currentLvtRate / 12; // Monthly portion
+                if (parcel && parcel.owner && parcel.owner !== 'unclaimed') {
+                    const landValue = Math.max(parcel.landValue?.paidPrice || 0, parcel.landValue?.calculatedValue || 0);
+                    totalLVT += landValue * currentLVTRate / 12; // Monthly portion
                 }
             }
         }
-        
+
         return totalLVT;
     }
     
     // Check if public funds can cover building cost
     canPublicFundsCover(buildingCategory, cost) {
-        const availableFunds = this.governance.publicCoffers[buildingCategory] || 0;
-        return { 
+        // Now use governance system funding
+        const availableFunds = this.governanceSystem ? this.governanceSystem.getCategoryFunding(buildingCategory) : 0;
+        return {
             canCover: availableFunds >= cost,
             availableFunds: availableFunds,
             shortfall: Math.max(0, cost - availableFunds)
         };
     }
     
-    // Use public funds for building
-    usePublicFunds(buildingCategory, amount) {
-        const availableFunds = this.governance.publicCoffers[buildingCategory] || 0;
-        const usedAmount = Math.min(availableFunds, amount);
-        this.governance.publicCoffers[buildingCategory] -= usedAmount;
-        return usedAmount;
-    }
 
     // createEmptyParcelMenu moved to ContextMenuSystem
 
@@ -2670,15 +2668,13 @@ class IsometricGrid {
             reasons.push(`Requires ${requiredPopulation} population (current: ${Math.floor(currentPopulation)})`);
         }
         
-        // Check cash requirement
-        const buildingCost = this.getBuildingCost(buildingId);
-        let publicFunding = 0;
-        const buildingCategory = building?.category;
-        if (buildingCategory && this.governance.publicCoffers[buildingCategory]) {
-            const availableFunds = this.governance.publicCoffers[buildingCategory];
-            publicFunding = Math.min(availableFunds, buildingCost);
-        }
-        const playerCostRequired = buildingCost - publicFunding;
+        // Check cash requirement - now use governance system discounts
+        const baseBuildingCost = this.getBuildingCost(buildingId);
+        const discountedCost = this.governanceSystem ?
+            this.governanceSystem.getBuildingCostWithFunding(building) :
+            baseBuildingCost;
+
+        const playerCostRequired = discountedCost;
         
         if (this.playerCash < playerCostRequired) {
             reasons.push(`Insufficient funds: need $${playerCostRequired.toLocaleString()} (have $${Math.floor(this.playerCash).toLocaleString()})`);
@@ -3699,24 +3695,133 @@ class IsometricGrid {
         }
     }
 
-    // Delegation method for economic engine vitality calculation (now uses server API)
+    // Rock-solid JEFH calculation system
     calculateCityVitality() {
-        // Use server API with fallback to local calculation
+        // Always do immediate local calculation first for responsiveness
+        const localResult = this.economicEngine.calculateCityVitality();
+
+        // Update vitality data immediately with local results
+        if (localResult && localResult.supply && localResult.demand) {
+            this.vitalitySupply = localResult.supply;
+            this.vitalityDemand = localResult.demand;
+            this.cityStats.vitality = localResult;
+
+            // Immediately update UI with fresh data
+            this.updateVitalityUI();
+        }
+
+        // Also get server calculation for validation/improvement (non-blocking)
         const gameState = this.economicAPI.prepareGameState(this);
         this.economicAPI.calculateCityEconomics(gameState).then(result => {
             if (result && result.success && result.vitality) {
-                this.cityStats.vitality = result.vitality;
-                this.vitalitySupply = result.vitality.supply || this.vitalitySupply;
-                this.vitalityDemand = result.vitality.demand || this.vitalityDemand;
-                this.updateVitalityUI();
+                // Only update if server data is significantly different
+                const hasSignificantChange = this.hasSignificantVitalityChange(result.vitality);
+                if (hasSignificantChange) {
+                    this.cityStats.vitality = result.vitality;
+                    this.vitalitySupply = result.vitality.supply || this.vitalitySupply;
+                    this.vitalityDemand = result.vitality.demand || this.vitalityDemand;
+                    this.updateVitalityUI();
+                }
             }
         }).catch(error => {
-            console.warn('Server vitality calculation failed, using local fallback:', error);
-            this.economicEngine.calculateCityVitality();
+            console.warn('Server vitality calculation failed, using local data:', error);
         });
 
-        // Return synchronously for backward compatibility (immediate local calc)
-        return this.economicEngine.calculateCityVitality();
+        return localResult;
+    }
+
+    // Check if server data differs significantly from current data
+    hasSignificantVitalityChange(newVitality) {
+        if (!newVitality.supply || !newVitality.demand) return false;
+
+        const categories = ['ENERGY', 'FOOD', 'HOUSING', 'JOBS'];
+        const threshold = 0.1; // 10% change threshold
+
+        for (const cat of categories) {
+            const oldSupply = this.vitalitySupply[cat] || 0;
+            const newSupply = newVitality.supply[cat] || 0;
+            const oldDemand = this.vitalityDemand[cat] || 0;
+            const newDemand = newVitality.demand[cat] || 0;
+
+            if (Math.abs(oldSupply - newSupply) > oldSupply * threshold ||
+                Math.abs(oldDemand - newDemand) > oldDemand * threshold) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    // Initialize tooltips for JEFH circles (one-time setup)
+    initializeJEFHTooltips() {
+        if (this._jefhTooltipsInitialized) return;
+
+        const categories = ['jobs', 'energy', 'food', 'housing'];
+        categories.forEach(category => {
+            const circleItem = document.querySelector(`.jefh-circle-item[data-vitality="${category}"]`);
+            if (circleItem && !circleItem._tooltipInitialized) {
+                // Add mouseenter event for tooltip
+                circleItem.addEventListener('mouseenter', (e) => {
+                    const tooltipData = circleItem.getAttribute('data-tooltip-data');
+                    if (tooltipData && this.tooltipManager) {
+                        try {
+                            const data = JSON.parse(tooltipData);
+                            const content = this.formatJEFHTooltip(data);
+                            this.tooltipManager.show(content, e.clientX, e.clientY, {
+                                html: true,
+                                maxWidth: 300,
+                                delay: 200
+                            });
+                        } catch (error) {
+                            console.warn('Failed to parse JEFH tooltip data:', error);
+                        }
+                    }
+                });
+
+                // Add mouseleave event to hide tooltip
+                circleItem.addEventListener('mouseleave', () => {
+                    if (this.tooltipManager) {
+                        this.tooltipManager.hide();
+                    }
+                });
+
+                circleItem._tooltipInitialized = true;
+            }
+        });
+
+        this._jefhTooltipsInitialized = true;
+    }
+
+    // Format JEFH circle tooltip content
+    formatJEFHTooltip(data) {
+        const categoryName = data.domain.charAt(0) + data.domain.slice(1).toLowerCase();
+        const supplyIcon = this.getJEFHEmoji(data.domain.toLowerCase());
+
+        return `
+            <div style="text-align: center; margin-bottom: 8px;">
+                <strong style="color: #ffffff;">${supplyIcon} ${categoryName}</strong>
+            </div>
+            <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
+                <span style="color: #22c55e;">Supply:</span>
+                <span style="color: #ffffff;">${Math.round(data.supply)}</span>
+            </div>
+            <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
+                <span style="color: #f59e0b;">Demand:</span>
+                <span style="color: #ffffff;">${Math.round(data.demand)}</span>
+            </div>
+            <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
+                <span style="color: #8b5cf6;">Balance:</span>
+                <span style="color: ${data.balance >= 0 ? '#22c55e' : '#ef4444'};">${data.balance >= 0 ? '+' : ''}${Math.round(data.balance)}</span>
+            </div>
+            <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+                <span style="color: #6b7280;">Market Size:</span>
+                <span style="color: #ffffff;">${Math.round(data.marketSize)}</span>
+            </div>
+            <div style="text-align: center; padding: 4px 8px; background: rgba(0,0,0,0.3); border-radius: 4px;">
+                <span style="color: ${data.status.includes('Surplus') ? '#22c55e' : data.status.includes('Balanced') ? '#3b82f6' : '#ef4444'}; font-weight: bold;">
+                    ${data.status}
+                </span>
+            </div>
+        `;
     }
 
     // Update building revenues based on supply/demand satisfaction
@@ -4138,6 +4243,9 @@ class IsometricGrid {
             this.initializeEconomicDefaults();
         }
 
+        // Initialize JEFH circle tooltips (one-time setup)
+        this.initializeJEFHTooltips();
+
         // Supply & Demand bars (Energy, Food, Housing, Jobs)
         const supplyDemandMetrics = ['ENERGY', 'FOOD', 'HOUSING', 'JOBS'];
 
@@ -4160,7 +4268,14 @@ class IsometricGrid {
             // Clamp to -100 to +100 range
             ratio = Math.max(-100, Math.min(100, ratio));
 
-            this.updateBalanceBasedBar(progressBar, ratio, supply, demand, domain);
+            // Use circle display for JEFH categories
+            const circle = document.getElementById(`${domain.toLowerCase()}-circle`);
+            if (circle) {
+                this.updateJEFHCircle(circle, ratio, supply, demand, domain);
+            } else {
+                // Fallback to bar if circle not found
+                this.updateBalanceBasedBar(progressBar, ratio, supply, demand, domain);
+            }
         });
 
         // Net Score bars (all others)
@@ -4364,6 +4479,63 @@ class IsometricGrid {
         progressBar.closest('.vitality-row').setAttribute('data-tooltip-data', JSON.stringify(tooltipData));
     }
 
+    updateJEFHCircle(circle, ratio, supply, demand, domain) {
+        // Clear existing classes
+        const classes = ['small', 'medium', 'large', 'xlarge', 'deficit-critical', 'deficit-moderate', 'deficit-minor', 'balanced', 'surplus-minor', 'surplus-major'];
+        circle.classList.remove(...classes);
+
+        // Calculate market size based on total supply + demand
+        const marketSize = supply + demand;
+        let sizeClass = 'medium';
+        if (marketSize < 50) sizeClass = 'small';
+        else if (marketSize < 150) sizeClass = 'medium';
+        else if (marketSize < 300) sizeClass = 'large';
+        else sizeClass = 'xlarge';
+
+        // Determine color class based on ratio
+        let colorClass;
+        if (ratio <= -50) colorClass = 'deficit-critical';
+        else if (ratio <= -20) colorClass = 'deficit-moderate';
+        else if (ratio < -5) colorClass = 'deficit-minor';
+        else if (ratio <= 5) colorClass = 'balanced';
+        else if (ratio <= 25) colorClass = 'surplus-minor';
+        else colorClass = 'surplus-major';
+
+        // Apply classes
+        circle.classList.add(sizeClass, colorClass);
+
+        // Update balance indicator
+        const indicator = circle.querySelector('.jefh-balance-indicator');
+        if (indicator) {
+            if (Math.abs(ratio) <= 5) {
+                // Balanced state - show checkmark
+                indicator.textContent = '✓';
+                indicator.style.opacity = '1';
+            } else if (ratio > 25) {
+                // Major surplus - show star
+                indicator.textContent = '★';
+                indicator.style.opacity = '1';
+            } else {
+                // Hide indicator for other states
+                indicator.style.opacity = '0';
+            }
+        }
+
+        // Set up tooltip data
+        const tooltipData = {
+            type: 'jefh-circle',
+            domain: domain,
+            supply: supply,
+            demand: demand,
+            ratio: ratio,
+            balance: supply - demand,
+            marketSize: marketSize,
+            status: ratio >= 25 ? 'Major Surplus' : ratio > 5 ? 'Minor Surplus' : Math.abs(ratio) <= 5 ? 'Balanced' : ratio >= -20 ? 'Minor Deficit' : ratio >= -50 ? 'Moderate Deficit' : 'Critical Deficit'
+        };
+
+        circle.closest('.jefh-circle-item').setAttribute('data-tooltip-data', JSON.stringify(tooltipData));
+    }
+
     getBuildingCountForDomain(domain) {
         let count = 0;
         for (let row = 0; row < this.gridSize; row++) {
@@ -4529,7 +4701,7 @@ class IsometricGrid {
         
         // Calculate diamond dimensions for a rotated square
         // In isometric view, a tile appears as a diamond with 2:1 width:height ratio
-        const diamondWidth = Math.min(this.canvas.width, this.canvas.height * 2) / this.gridSize * 0.6; // Reduced scale for better fit
+        const diamondWidth = Math.min(this.canvas.width, this.canvas.height * 2) / this.gridSize * 0.80; // 5% smaller grid for better layout
         const diamondHeight = diamondWidth * 0.5;
         
         this.tileWidth = diamondWidth;
@@ -5726,7 +5898,9 @@ class IsometricGrid {
         // Calculate land tax if owned by player
         let landTax = 0;
         if (this.isCurrentPlayer(parcel.owner)) {
-            const dailyLVTRate = 0.50 / 365; // 50% annual LVT (matching existing system)
+            // Use dynamic LVT rate from governance system
+            const annualLVTRate = this.governanceSystem ? this.governanceSystem.getCurrentLVTRate() : 0.50;
+            const dailyLVTRate = annualLVTRate / 365;
             landTax = parcel.landValue.paidPrice * dailyLVTRate;
         }
         
@@ -7137,8 +7311,17 @@ document.addEventListener('DOMContentLoaded', () => {
                         if (game.governanceSystem) {
                             game.governanceSystem.setupEventListeners();
                         }
-                        setupMultiplierControls();
-                        setupCashflowMenu();
+                        try {
+                            setupMultiplierControls();
+                        } catch (error) {
+                            console.warn('setupMultiplierControls not available:', error.message);
+                        }
+                        // Setup DCF functionality via UIManager
+                        try {
+                            game.uiManager.setupCashflowMenu(game);
+                        } catch (error) {
+                            console.warn('DCF setup failed:', error.message);
+                        }
                         if (game.tooltipManager && game.tooltipManager.setupVitalityTooltips) {
                             game.tooltipManager.setupVitalityTooltips();
                         }
@@ -7170,8 +7353,12 @@ document.addEventListener('DOMContentLoaded', () => {
             if (game.governanceSystem) {
                 game.governanceSystem.setupEventListeners();
             }
-            setupMultiplierControls();
-            setupCashflowMenu();
+            try {
+                setupMultiplierControls();
+            } catch (error) {
+                console.warn('setupMultiplierControls not available:', error.message);
+            }
+            // DCF functionality now handled by UIManager
             if (game.tooltipManager && game.tooltipManager.setupVitalityTooltips) {
                 game.tooltipManager.setupVitalityTooltips();
             }
@@ -8456,302 +8643,8 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // Cashflow Menu Functionality
-    function setupCashflowMenu() {
-        const cashflowItem = document.getElementById('cashflow-item');
-        const cashflowMenu = document.getElementById('cashflow-menu');
-        const closeCashflowBtn = document.getElementById('close-cashflow');
-        
-        if (!cashflowItem || !cashflowMenu || !closeCashflowBtn) return;
-        
-        // Show cashflow menu on click
-        cashflowItem.addEventListener('click', () => {
-            showCashflowMenu();
-        });
-        
-        // Add hover tooltip with summary numbers
-        let hoverTimeout;
-        cashflowItem.addEventListener('mouseenter', () => {
-            clearTimeout(hoverTimeout);
-            hoverTimeout = setTimeout(() => {
-                showCashflowTooltip(cashflowItem);
-            }, 300); // Small delay to avoid flickering
-        });
-        
-        cashflowItem.addEventListener('mouseleave', () => {
-            clearTimeout(hoverTimeout);
-            hideCashflowTooltip();
-        });
-        
-        // Close cashflow menu
-        closeCashflowBtn.addEventListener('click', () => {
-            hideCashflowMenu();
-        });
-        
-        // Close modal on backdrop click
-        cashflowMenu.addEventListener('click', (e) => {
-            if (e.target.id === 'cashflow-menu') {
-                hideCashflowMenu();
-            }
-        });
-        
-        // Setup table sorting
-        setupTableSorting();
-    }
-    
-    function showCashflowMenu() {
-        const modal = document.getElementById('cashflow-menu');
-        
-        if (!modal) {
-            console.error('Cashflow modal not found!');
-            return;
-        }
-        
-        // Move modal to body to ensure it's not hidden by parent elements
-        if (modal.parentElement !== document.body) {
-            document.body.appendChild(modal);
-        }
-        
-        // Apply visible styles
-        modal.style.cssText = `
-            position: fixed !important;
-            top: 0 !important;
-            left: 0 !important;
-            width: 100% !important;
-            height: 100% !important;
-            background: rgba(0, 0, 0, 0.8) !important;
-            z-index: 99999 !important;
-            display: flex !important;
-            visibility: visible !important;
-            opacity: 1 !important;
-            align-items: center !important;
-            justify-content: center !important;
-        `;
-        
-        modal.classList.add('visible');
-        
-        // Ensure modal content is visible
-        const modalContent = modal.querySelector('.modal-content');
-        if (modalContent) {
-            modalContent.style.display = 'block';
-            modalContent.style.visibility = 'visible';
-            modalContent.style.opacity = '1';
-        }
-        
-        // Trigger cashflow calculation to get current data
-        game.calculateCurrentCashflow();
-        populateCashflowData();
-    }
-    
-    function hideCashflowMenu() {
-        const modal = document.getElementById('cashflow-menu');
-        
-        if (modal) {
-            modal.classList.remove('visible');
-            // Reset inline styles
-            modal.style.cssText = '';
-            
-            // Also reset modal content styles
-            const modalContent = modal.querySelector('.modal-content');
-            if (modalContent) {
-                modalContent.style.cssText = '';
-            }
-        }
-    }
-    
-    function showCashflowTooltip(element) {
-        // Calculate current cashflow data
-        game.calculateCurrentCashflow();
-        const totals = game.dailyCashflowTotals || { revenue: 0, maintenance: 0, lvt: 0, netCashflow: 0 };
-        
-        // Create tooltip content
-        const tooltipContent = `
-            <div style="display: flex; flex-direction: column; gap: 4px; min-width: 200px;">
-                <div style="display: flex; justify-content: space-between;">
-                    <span style="color: #888;">Revenue:</span>
-                    <span style="color: #4CAF50; font-weight: 600;">$${totals.revenue.toLocaleString()}</span>
-                </div>
-                <div style="display: flex; justify-content: space-between;">
-                    <span style="color: #888;">Maintenance:</span>
-                    <span style="color: #F44336; font-weight: 600;">-$${Math.abs(totals.maintenance).toLocaleString()}</span>
-                </div>
-                <div style="display: flex; justify-content: space-between;">
-                    <span style="color: #888;">LVT:</span>
-                    <span style="color: #F44336; font-weight: 600;">-$${Math.abs(totals.lvt).toLocaleString()}</span>
-                </div>
-                <div style="display: flex; justify-content: space-between; border-top: 1px solid #444; padding-top: 4px; margin-top: 4px;">
-                    <span style="color: #ccc; font-weight: 600;">Net Daily:</span>
-                    <span style="color: ${totals.netCashflow >= 0 ? '#FFD700' : '#F44336'}; font-weight: 700;">$${totals.netCashflow.toLocaleString()}</span>
-                </div>
-            </div>
-        `;
-        
-        // Use the existing tooltip system with HTML enabled
-        if (game.tooltipManager) {
-            const rect = element.getBoundingClientRect();
-            // Position tooltip below the top bar (40px height + small margin)
-            const x = rect.left + rect.width / 2;
-            const y = rect.bottom + 10; // Position below the element with 10px margin
-            game.tooltipManager.show(tooltipContent, x, y, {
-                html: true,
-                delay: 0,
-                maxWidth: 250
-            });
-        }
-    }
-    
-    function hideCashflowTooltip() {
-        if (game.tooltipManager) {
-            game.tooltipManager.hide();
-        }
-    }
-    
-    function populateCashflowData() {
-        const totals = game.dailyCashflowTotals || { revenue: 0, maintenance: 0, lvt: 0, netCashflow: 0 };
-        const breakdown = game.cashflowBreakdown || [];
-        
-        // Update summary
-        document.getElementById('total-revenue').textContent = `$${Math.round(totals.revenue).toLocaleString()}`;
-        document.getElementById('total-maintenance').textContent = `-$${Math.round(totals.maintenance).toLocaleString()}`;
-        document.getElementById('total-lvt').textContent = `-$${Math.round(totals.lvt).toLocaleString()}`;
-        
-        const netDaily = Math.round(totals.netCashflow);
-        const netElement = document.getElementById('net-daily');
-        netElement.textContent = netDaily >= 0 ? `+$${netDaily.toLocaleString()}` : `-$${Math.abs(netDaily).toLocaleString()}`;
-        netElement.className = `summary-value ${netDaily >= 0 ? 'positive' : 'negative'}`;
-        
-        // Update table
-        const tbody = document.getElementById('cashflow-tbody');
-        tbody.innerHTML = '';
-        
-        breakdown.forEach(item => {
-            const row = document.createElement('tr');
-            
-            const formatCurrency = (value) => {
-                const rounded = Math.round(value);
-                return rounded >= 0 ? `$${rounded.toLocaleString()}` : `-$${Math.abs(rounded).toLocaleString()}`;
-            };
-            
-            const getValueClass = (value) => {
-                return Math.round(value) > 0 ? 'positive' : Math.round(value) < 0 ? 'negative' : 'neutral';
-            };
-            
-            row.innerHTML = `
-                <td>${item.coordinates || 'N/A'}</td>
-                <td>${item.buildingName || 'Unknown'}</td>
-                <td>${item.buildingAge || 0} days</td>
-                <td>${item.decay ? item.decay.toFixed(1) + '%' : 'N/A'}</td>
-                <td>$${Math.round(item.landValue || 0).toLocaleString()}</td>
-                <td class="${getValueClass(item.revenue || 0)}">${formatCurrency(item.revenue || 0)}</td>
-                <td class="${getValueClass(-(item.maintenance || 0))}">${formatCurrency(-(item.maintenance || 0))}</td>
-                <td class="${getValueClass(-(item.lvt || 0))}">${formatCurrency(-(item.lvt || 0))}</td>
-                <td class="${getValueClass(item.netCashflow || 0)}">${formatCurrency(item.netCashflow || 0)}</td>
-            `;
-            
-            tbody.appendChild(row);
-        });
-    }
-    
-    function setupTableSorting() {
-        const table = document.getElementById('cashflow-table');
-        const headers = table.querySelectorAll('th.sortable');
-        
-        headers.forEach(header => {
-            header.addEventListener('click', () => {
-                const sortKey = header.getAttribute('data-sort');
-                sortTable(sortKey, header);
-            });
-        });
-    }
-    
-    function sortTable(key, headerElement) {
-        const tbody = document.getElementById('cashflow-tbody');
-        const rows = Array.from(tbody.querySelectorAll('tr'));
-        
-        // Toggle sort direction
-        const isAscending = !headerElement.classList.contains('sorted-asc');
-        
-        // Clear all sort indicators
-        document.querySelectorAll('th.sortable').forEach(th => {
-            th.classList.remove('sorted-asc', 'sorted-desc');
-        });
-        
-        // Set current sort indicator
-        headerElement.classList.add(isAscending ? 'sorted-asc' : 'sorted-desc');
-        
-        // Sort rows
-        rows.sort((a, b) => {
-            let aVal, bVal;
-            
-            // Get data from game breakdown rather than DOM for accuracy
-            const aCoords = a.cells[0].textContent;
-            const bCoords = b.cells[0].textContent;
-            const breakdown = game.cashflowBreakdown || [];
-            
-            const aData = breakdown.find(item => item.coordinates === aCoords);
-            const bData = breakdown.find(item => item.coordinates === bCoords);
-            
-            if (!aData || !bData) return 0;
-            
-            switch (key) {
-                case 'coordinates':
-                    aVal = aCoords;
-                    bVal = bCoords;
-                    break;
-                case 'buildingName':
-                    aVal = aData.buildingName;
-                    bVal = bData.buildingName;
-                    break;
-                case 'buildingAge':
-                    aVal = aData.buildingAge;
-                    bVal = bData.buildingAge;
-                    break;
-                case 'decay':
-                    aVal = aData.decay;
-                    bVal = bData.decay;
-                    break;
-                case 'landValue':
-                    aVal = aData.landValue;
-                    bVal = bData.landValue;
-                    break;
-                case 'revenue':
-                    aVal = aData.revenue;
-                    bVal = bData.revenue;
-                    break;
-                case 'maintenance':
-                    aVal = aData.maintenance;
-                    bVal = bData.maintenance;
-                    break;
-                case 'lvt':
-                    aVal = aData.lvt;
-                    bVal = bData.lvt;
-                    break;
-                case 'netCashflow':
-                    aVal = aData.netCashflow;
-                    bVal = bData.netCashflow;
-                    break;
-                default:
-                    return 0;
-            }
-            
-            // Handle numeric vs string sorting
-            if (typeof aVal === 'number' && typeof bVal === 'number') {
-                return isAscending ? aVal - bVal : bVal - aVal;
-            } else {
-                const aStr = String(aVal).toLowerCase();
-                const bStr = String(bVal).toLowerCase();
-                if (isAscending) {
-                    return aStr.localeCompare(bStr);
-                } else {
-                    return bStr.localeCompare(aStr);
-                }
-            }
-        });
-        
-        // Re-append sorted rows
-        rows.forEach(row => tbody.appendChild(row));
-    }
-    
+    // Legacy DCF functions removed - now handled by UIManager
+
     // Transportation modal functions removed - now using modular transportation system
 
 

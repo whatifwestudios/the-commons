@@ -160,8 +160,8 @@ class MobilityLayer {
         // Update animation
         this.animationTime += 0.016;
         
-        // Clear canvas with a slightly darker background
-        ctx.fillStyle = '#0a0f0a';
+        // Clear canvas with a more subdued background (40% reduction from sage green)
+        ctx.fillStyle = '#1a201d'; // Darker sage green for better contrast
         ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height);
         
         // Apply the same camera transform as the main game
@@ -181,7 +181,9 @@ class MobilityLayer {
         
         // Draw shrunken isometric parcels (same diamond shape, just smaller)
         this.drawShrunkenParcels(ctx);
-        
+
+        // Apply special corner treatment to road segments instead of separate elements
+
         // Draw mode-specific hover effects on top
         if (this.currentMode === 'roads') {
             // Draw edge hover effect for road building
@@ -200,8 +202,7 @@ class MobilityLayer {
             this.drawTransitSystem(ctx);
         }
         
-        // Add global lighting effect for depth perception
-        this.drawGlobalLighting(ctx);
+        // Global lighting removed for clean, flat appearance
         
         // Restore context and draw UI overlay
         ctx.restore();
@@ -209,8 +210,8 @@ class MobilityLayer {
     }
     
     drawMobilityGrid(ctx) {
-        // Draw unimproved streets as subtle sunken gray areas that sit below parcels
-        ctx.fillStyle = 'rgba(40, 40, 40, 0.6)'; // More subdued, darker gray
+        // Draw unimproved streets as medium gray areas
+        ctx.fillStyle = '#808080'; // Toned down gray for balanced contrast
         
         this.intersections.forEach(intersection => {
             const { row, col } = intersection;
@@ -245,30 +246,20 @@ class MobilityLayer {
         });
     }
     
-    // Draw an unimproved street as a subtle sunken gray area
+    // Draw an unimproved street as a subtle gray area (with corner treatment)
     drawUnimprovedStreet(ctx, fromIntersection, toIntersection) {
         // Calculate street width (same as would be used for local roads)
         const roadType = this.roadTypes.local;
         const streetWidth = this.game.tileWidth * roadType.width * (1 - this.parcelShrinkFactor);
-        
+
         // Calculate the street shape using the same logic as roads
         const streetShape = this.calculateIsometricRoadShape(fromIntersection, toIntersection, streetWidth);
-        
+
         if (streetShape) {
             ctx.save();
-            
-            // Draw subtle shadow first to create "sunken" appearance
-            ctx.fillStyle = 'rgba(20, 20, 20, 0.3)';
-            ctx.beginPath();
-            ctx.moveTo(streetShape.p1.x + 1, streetShape.p1.y + 1);
-            ctx.lineTo(streetShape.p2.x + 1, streetShape.p2.y + 1);
-            ctx.lineTo(streetShape.p3.x + 1, streetShape.p3.y + 1);
-            ctx.lineTo(streetShape.p4.x + 1, streetShape.p4.y + 1);
-            ctx.closePath();
-            ctx.fill();
-            
-            // Draw main street area with more subdued color
-            ctx.fillStyle = 'rgba(35, 35, 35, 0.5)'; // Even more subdued
+
+            // All unbuilt segments use the same styling (no special corner treatment for unbuilt)
+            ctx.fillStyle = '#808080'; // Consistent gray for all unbuilt segments
             ctx.beginPath();
             ctx.moveTo(streetShape.p1.x, streetShape.p1.y);
             ctx.lineTo(streetShape.p2.x, streetShape.p2.y);
@@ -343,71 +334,130 @@ class MobilityLayer {
         // An intersection at (row, col) affects the 4 parcels around it
         // Intersection (r,c) connects parcels at:
         // - (r-1, c-1) top-left
-        // - (r-1, c) top-right  
+        // - (r-1, c) top-right
         // - (r, c-1) bottom-left
         // - (r, c) bottom-right
-        
+
         return (parcelRow === intersectionRow - 1 && parcelCol === intersectionCol - 1) ||  // top-left
                (parcelRow === intersectionRow - 1 && parcelCol === intersectionCol) ||      // top-right
                (parcelRow === intersectionRow && parcelCol === intersectionCol - 1) ||      // bottom-left
                (parcelRow === intersectionRow && parcelCol === intersectionCol);            // bottom-right
     }
+
+    // Check if a parcel is within transit stop catchment area
+    getTransitCatchmentAt(parcelRow, parcelCol) {
+        // Only show catchment areas during transit stop placement or route creation
+        if (!this.isPlacingTransitStop && !this.isCreatingRoute) {
+            return null;
+        }
+
+        for (const [stopKey, stop] of this.transitStops) {
+            // Only show catchment for stops of the current transit mode
+            if (this.transitMode && stop.type !== this.transitMode) {
+                continue;
+            }
+
+            // Get the road segment position for this stop
+            const [from, ] = stop.roadSegment.split('-');
+            const [stopRow, stopCol] = from.split(',').map(Number);
+
+            // Calculate Manhattan distance
+            const distance = Math.abs(parcelRow - stopRow) + Math.abs(parcelCol - stopCol);
+
+            // Check catchment radius: 1 parcel for bus, 2 parcels for subway
+            const maxDistance = stop.type === 'bus' ? 1 : 2;
+
+            if (distance <= maxDistance) {
+                return { type: stop.type, stop, distance };
+            }
+        }
+
+        // Also check for hovered transit stop during placement
+        if (this.isPlacingTransitStop && this.hoveredEdge) {
+            const [from, ] = this.hoveredEdge.split('-');
+            const [stopRow, stopCol] = from.split(',').map(Number);
+
+            const distance = Math.abs(parcelRow - stopRow) + Math.abs(parcelCol - stopCol);
+            const maxDistance = this.transitMode === 'bus' ? 1 : 2;
+
+            if (distance <= maxDistance) {
+                return { type: this.transitMode, distance };
+            }
+        }
+
+        return null;
+    }
     
     drawShrunkenDiamond(ctx, x, y, parcel, row, col) {
         const shrunkWidth = this.game.tileWidth * this.parcelShrinkFactor;
         const shrunkHeight = this.game.tileHeight * this.parcelShrinkFactor;
-        
+
         ctx.save();
-        ctx.translate(x, y);
-        
-        // Draw squared-off diamond shape for mobility view
+        ctx.translate(x, y); // Draw at road level - flat
+
+        // Draw as clean isometric diamond (square viewed at angle) - no individual rounding
         const halfW = shrunkWidth / 2;
         const halfH = shrunkHeight / 2;
-        const cornerCut = 4; // Square off the corners
-        
+
+        // Draw perfect diamond shape (4 straight edges to 4 points) - NO corner cutting or rounding
         ctx.beginPath();
-        ctx.moveTo(-cornerCut, -halfH);          // top-left start
-        ctx.lineTo(cornerCut, -halfH);           // top edge
-        ctx.lineTo(halfW, -cornerCut);           // top-right corner
-        ctx.lineTo(halfW, cornerCut);            // right edge
-        ctx.lineTo(cornerCut, halfH);            // bottom-right corner
-        ctx.lineTo(-cornerCut, halfH);           // bottom edge
-        ctx.lineTo(-halfW, cornerCut);           // bottom-left corner
-        ctx.lineTo(-halfW, -cornerCut);          // left edge
-        ctx.closePath();
+        ctx.moveTo(0, -halfH);           // North point
+        ctx.lineTo(halfW, 0);            // East point
+        ctx.lineTo(0, halfH);            // South point
+        ctx.lineTo(-halfW, 0);           // West point
+        ctx.closePath();                 // Back to North point
         
-        // Use different color palette for mobility view
+        // Determine base color for the parcel
+        let baseColor;
         if (parcel.building) {
             const building = this.game.buildingManager.getBuildingById(parcel.building);
             if (building) {
                 const categorization = this.categorizeBuildingFunction(building);
-                // Desaturate and darken colors for mobility view
-                ctx.fillStyle = this.getMobilityViewColor(categorization.backgroundColor);
+                baseColor = this.getMobilityViewColor(categorization.backgroundColor);
             } else {
-                ctx.fillStyle = this.getMobilityViewColor('#4a4a4a');
+                baseColor = this.getMobilityViewColor('#4a4a4a');
             }
         } else if (parcel.owner) {
             // Owned but unbuilt parcels - muted green
-            ctx.fillStyle = 'rgba(45, 55, 45, 0.8)';
+            baseColor = 'rgba(45, 55, 45, 0.8)';
         } else {
-            // Unowned parcels - very muted
-            ctx.fillStyle = 'rgba(35, 35, 35, 0.7)';
+            // Unowned parcels - pleasing blue-gray for nice contrast
+            baseColor = '#556B7D'; // Muted blue-gray for pleasant contrast with gray roads
         }
+
+        // Fill as a single flat diamond (functional level)
+        ctx.fillStyle = baseColor;
         ctx.fill();
         
         // Check if this parcel is affected by hovered edge
         const isAffected = this.hoveredEdge && this.isParcelAffectedByEdge(row, col, this.hoveredEdge);
-        
-        // Border styling
+
+        // Check if this parcel is in a transit stop catchment area
+        const transitCatchment = this.getTransitCatchmentAt(row, col);
+
+        // Draw clean border for diamond top face
+        ctx.lineWidth = 1;
+        let strokeStyle = 'rgba(0, 0, 0, 0.15)'; // Default
+
         if (isAffected) {
-            // Very subtle border for affected parcels
-            ctx.strokeStyle = 'rgba(255, 255, 255, 0.25)';
-            ctx.lineWidth = 1;
-        } else {
-            // Subtle border for normal parcels
-            ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
-            ctx.lineWidth = 1;
+            strokeStyle = 'rgba(255, 255, 255, 0.6)'; // Road hover (white)
+        } else if (transitCatchment) {
+            // Transit catchment areas: green for bus, blue for subway
+            strokeStyle = transitCatchment.type === 'bus'
+                ? 'rgba(102, 187, 106, 0.8)'  // Green for bus
+                : 'rgba(66, 165, 245, 0.8)';  // Blue for subway
+            ctx.lineWidth = 2; // Make transit catchment borders more prominent
         }
+
+        ctx.strokeStyle = strokeStyle;
+
+        // Draw simple flat diamond border
+        ctx.beginPath();
+        ctx.moveTo(0, -halfH);           // North point
+        ctx.lineTo(halfW, 0);            // East point
+        ctx.lineTo(0, halfH);            // South point
+        ctx.lineTo(-halfW, 0);           // West point
+        ctx.closePath();
         ctx.stroke();
         
         // Draw building icon if present
@@ -427,40 +477,72 @@ class MobilityLayer {
         
         ctx.restore();
     }
-    
+
+
+
+    // Helper method to darken a color by a given factor
+    darkenColor(color, factor) {
+        if (color.startsWith('#')) {
+            const r = parseInt(color.slice(1, 3), 16);
+            const g = parseInt(color.slice(3, 5), 16);
+            const b = parseInt(color.slice(5, 7), 16);
+            const darkR = Math.floor(r * (1 - factor));
+            const darkG = Math.floor(g * (1 - factor));
+            const darkB = Math.floor(b * (1 - factor));
+            return `rgb(${darkR}, ${darkG}, ${darkB})`;
+        } else if (color.startsWith('rgba')) {
+            // Extract rgba values
+            const match = color.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)(?:,\s*([\d.]+))?\)/);
+            if (match) {
+                const r = parseInt(match[1]);
+                const g = parseInt(match[2]);
+                const b = parseInt(match[3]);
+                const a = match[4] ? parseFloat(match[4]) : 1;
+                const darkR = Math.floor(r * (1 - factor));
+                const darkG = Math.floor(g * (1 - factor));
+                const darkB = Math.floor(b * (1 - factor));
+                return `rgba(${darkR}, ${darkG}, ${darkB}, ${a})`;
+            }
+        }
+        return color; // Fallback
+    }
+
     // Draw inline route configuration UI
     drawInlineRouteConfig(ctx, startX, startY, buttonWidth, buttonSpacing) {
-        const configWidth = 800;
-        const configHeight = 120;
+        const configWidth = 900;
+        const configHeight = 180;
         const padding = 15;
-        
+
         ctx.save();
-        
+
         // Background panel
         ctx.fillStyle = 'rgba(20, 20, 20, 0.95)';
-        ctx.strokeStyle = 'rgba(102, 187, 106, 0.5)';
+        ctx.strokeStyle = this.transitMode === 'bus' ? 'rgba(102, 187, 106, 0.5)' : 'rgba(66, 165, 245, 0.5)';
         ctx.lineWidth = 2;
         this.drawRoundedRect(ctx, startX, startY, configWidth, configHeight, 8);
         ctx.fill();
         ctx.stroke();
-        
+
         const innerX = startX + padding;
         const innerY = startY + padding;
         const innerWidth = configWidth - padding * 2;
-        
+
         // Title
-        ctx.fillStyle = '#66BB6A';
+        ctx.fillStyle = this.transitMode === 'bus' ? '#66BB6A' : '#42A5F5';
         ctx.font = 'bold 16px SF Mono, Monaco, Inconsolata, Roboto Mono, Source Code Pro, monospace';
         ctx.textAlign = 'left';
         ctx.textBaseline = 'top';
         const emoji = this.transitMode === 'bus' ? '🚌' : '🚇';
         ctx.fillText(`${emoji} Configure ${this.transitMode === 'bus' ? 'Bus' : 'Subway'} Route`, innerX, innerY);
-        
-        // Selected stops list
-        const stopsY = innerY + 25;
+
+        // Route name input area
+        const nameY = innerY + 25;
         ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
         ctx.font = '13px SF Mono, Monaco, Inconsolata, Roboto Mono, Source Code Pro, monospace';
-        
+        ctx.fillText(`Name: ${this.pendingRoute.name}`, innerX, nameY);
+
+        // Selected stops list
+        const stopsY = nameY + 18;
         let stopsText = `Stops (${this.selectedTransitStops.length}): `;
         this.selectedTransitStops.forEach((stopKey, index) => {
             const stop = this.transitStops.get(stopKey);
@@ -469,42 +551,111 @@ class MobilityLayer {
                 if (index < this.selectedTransitStops.length - 1) stopsText += ', ';
             }
         });
-        
+
         // Truncate if too long
-        if (stopsText.length > 80) {
-            stopsText = stopsText.substring(0, 77) + '...';
+        if (stopsText.length > 90) {
+            stopsText = stopsText.substring(0, 87) + '...';
         }
-        
+
         ctx.fillText(stopsText, innerX, stopsY);
-        
+
+        // Service level controls (3 buttons side by side)
+        const serviceY = stopsY + 22;
+        ctx.fillText('Service Level:', innerX, serviceY);
+
+        const serviceBtnY = serviceY + 15;
+        const serviceBtnWidth = 110;
+        const serviceBtnSpacing = 115;
+
+        Object.entries(this.serviceLevels).forEach((entry, index) => {
+            const [key, config] = entry;
+            const isSelected = this.pendingRoute.serviceLevel === key;
+            const btnX = innerX + 120 + (index * serviceBtnSpacing);
+
+            // Calculate segment distance for cost display
+            const segmentDistance = this.calculateRouteDistance(this.pendingRoute);
+            const maintenanceCost = config.cost * segmentDistance;
+
+            const btnColor = isSelected ? (this.transitMode === 'bus' ? '#66BB6A' : '#42A5F5') : '#444444';
+            const textColor = isSelected ? '#ffffff' : '#cccccc';
+
+            ctx.fillStyle = btnColor;
+            this.drawRoundedRect(ctx, btnX, serviceBtnY, serviceBtnWidth, 22, 4);
+            ctx.fill();
+
+            ctx.fillStyle = textColor;
+            ctx.font = '11px SF Mono, Monaco, Inconsolata, Roboto Mono, Source Code Pro, monospace';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(config.label, btnX + serviceBtnWidth/2, serviceBtnY + 7);
+            ctx.fillText(`$${maintenanceCost}/day`, btnX + serviceBtnWidth/2, serviceBtnY + 17);
+
+            // Store button bounds for click detection
+            if (!this.serviceLevelButtons) this.serviceLevelButtons = [];
+            this.serviceLevelButtons[index] = { x: btnX, y: serviceBtnY, width: serviceBtnWidth, height: 22, key };
+        });
+
+        // Fare controls
+        const fareY = serviceBtnY + 30;
+        ctx.textAlign = 'left';
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+        ctx.font = '13px SF Mono, Monaco, Inconsolata, Roboto Mono, Source Code Pro, monospace';
+        ctx.fillText(`Fare: $${this.pendingRoute.price.toFixed(2)}`, innerX, fareY);
+
+        // Fare adjustment buttons
+        const fareBtnY = fareY - 8;
+        const fareBtnSize = 20;
+        const fareBtnStartX = innerX + 90;
+
+        // Decrease fare button
+        ctx.fillStyle = '#FF6B6B';
+        this.drawRoundedRect(ctx, fareBtnStartX, fareBtnY, fareBtnSize, fareBtnSize, 3);
+        ctx.fill();
+        ctx.fillStyle = '#ffffff';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.font = 'bold 14px SF Mono, Monaco, Inconsolata, Roboto Mono, Source Code Pro, monospace';
+        ctx.fillText('-', fareBtnStartX + fareBtnSize/2, fareBtnY + fareBtnSize/2);
+
+        // Increase fare button
+        ctx.fillStyle = '#4ECDC4';
+        this.drawRoundedRect(ctx, fareBtnStartX + 25, fareBtnY, fareBtnSize, fareBtnSize, 3);
+        ctx.fill();
+        ctx.fillStyle = '#ffffff';
+        ctx.fillText('+', fareBtnStartX + 25 + fareBtnSize/2, fareBtnY + fareBtnSize/2);
+
+        // Store fare button bounds
+        this.fareButtons = [
+            { x: fareBtnStartX, y: fareBtnY, width: fareBtnSize, height: fareBtnSize, action: 'decrease' },
+            { x: fareBtnStartX + 25, y: fareBtnY, width: fareBtnSize, height: fareBtnSize, action: 'increase' }
+        ];
+
         // Revenue projection
         const revenue = this.calculateRouteRevenue(this.pendingRoute);
-        const projectionY = stopsY + 20;
-        ctx.fillText(`Daily: ${revenue.ridership} riders, $${revenue.dailyRevenue} revenue, $${revenue.dailyProfit} profit`, 
+        const projectionY = fareY + 18;
+        ctx.textAlign = 'left';
+        ctx.fillStyle = revenue.dailyProfit > 0 ? '#4ECDC4' : '#FF6B6B';
+        ctx.fillText(`Daily: ${revenue.ridership} riders, $${revenue.dailyRevenue} revenue, $${revenue.dailyProfit} profit`,
                     innerX, projectionY);
-        
-        // Price controls
-        const priceY = projectionY + 20;
-        ctx.fillText(`Price: $${this.pendingRoute.price.toFixed(2)}`, innerX, priceY);
-        
-        // Buttons
+
+        // Action buttons
         const buttonY = startY + configHeight - 35;
-        
+
         // Optimal price button
         const optimalBtnX = innerX + 200;
-        this.drawTransitButton(ctx, optimalBtnX, buttonY, 120, 25, 'Optimal Price', '#FFA726', 
+        this.drawTransitButton(ctx, optimalBtnX, buttonY, 120, 25, 'Optimal Price', '#FFA726',
                              () => this.calculateOptimalPrice());
-        
+
         // Create route button
         const createBtnX = optimalBtnX + 130;
-        this.drawTransitButton(ctx, createBtnX, buttonY, 100, 25, 'Create Route', '#66BB6A', 
+        this.drawTransitButton(ctx, createBtnX, buttonY, 100, 25, 'Create Route', this.transitMode === 'bus' ? '#66BB6A' : '#42A5F5',
                              () => this.finalizeRouteCreation());
-        
+
         // Cancel button
         const cancelBtnX = createBtnX + 110;
-        this.drawTransitButton(ctx, cancelBtnX, buttonY, 80, 25, 'Cancel', '#666666', 
+        this.drawTransitButton(ctx, cancelBtnX, buttonY, 80, 25, 'Cancel', '#666666',
                              () => this.cancelRouteCreation());
-        
+
         ctx.restore();
     }
     
@@ -532,20 +683,27 @@ class MobilityLayer {
         return 'rgba(60, 60, 60, 0.8)';
     }
     
-    // Add global lighting effect to create depth distinction
+    // Add enhanced global lighting effect to create depth distinction
     drawGlobalLighting(ctx) {
         const canvasWidth = ctx.canvas.width;
         const canvasHeight = ctx.canvas.height;
-        
-        // Create subtle gradient from top-left (lighter) to bottom-right (darker)
-        // This simulates sunlight coming from the northwest
+
+        // Create enhanced gradient from top-left (lighter) to bottom-right (darker)
+        // This simulates sunlight coming from the northwest with warm ambient lighting
         const gradient = ctx.createLinearGradient(0, 0, canvasWidth, canvasHeight);
-        gradient.addColorStop(0, 'rgba(255, 255, 255, 0.02)');    // Very subtle highlight at top
+        gradient.addColorStop(0, 'rgba(255, 248, 220, 0.08)');    // Warm highlight at top (4x stronger)
+        gradient.addColorStop(0.3, 'rgba(255, 255, 255, 0.04)');  // Bright transition
         gradient.addColorStop(0.7, 'rgba(0, 0, 0, 0)');           // Neutral in middle
-        gradient.addColorStop(1, 'rgba(0, 0, 0, 0.08)');          // Subtle shadow at bottom
-        
+        gradient.addColorStop(1, 'rgba(0, 0, 0, 0.06)');          // Reduced shadow at bottom
+
         ctx.save();
         ctx.fillStyle = gradient;
+        ctx.fillRect(0, 0, canvasWidth, canvasHeight);
+        ctx.restore();
+
+        // Add subtle ambient lighting overlay for additional brightness
+        ctx.save();
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.02)';
         ctx.fillRect(0, 0, canvasWidth, canvasHeight);
         ctx.restore();
     }
@@ -644,16 +802,16 @@ class MobilityLayer {
         // Use intersection positions
         const fromIntersection = this.intersections.get(`${fromRow},${fromCol}`);
         const toIntersection = this.intersections.get(`${toRow},${toCol}`);
-        
+
         if (!fromIntersection || !toIntersection) return;
-        
+
         const fromIso = { x: fromIntersection.x, y: fromIntersection.y };
         const toIso = { x: toIntersection.x, y: toIntersection.y };
-        
+
         // Create a stable seed for this road segment based on its coordinates
         const roadSeed = `${fromRow}-${fromCol}-${toRow}-${toCol}`;
-        
-        // Draw road as an isometric parallelogram that matches parcel perspective
+
+        // Draw road segment
         this.drawIsometricRoadSegment(ctx, fromIso, toIso, road, roadSeed);
     }
     
@@ -671,12 +829,9 @@ class MobilityLayer {
         // Create isometric parallelogram that matches parcel perspective
         const roadShape = this.calculateIsometricRoadShape(from, to, roadWidth);
         
-        // Draw road shadow
-        this.drawRoadShadow(ctx, roadShape);
-        
-        // Draw main road surface as filled parallelogram with stable seed
+        // Draw main road surface as filled parallelogram with stable seed (no shadows)
         this.drawRoadSurface(ctx, roadShape, roadType, roadSeed);
-        
+
         // Add road-specific centerline details with stable seed
         this.addRoadCenterlineDetails(ctx, roadShape, road, roadSeed);
         
@@ -779,13 +934,10 @@ class MobilityLayer {
         
         // Add road texture/noise with stable seed
         this.addRoadTexture(ctx, shape, roadType, rng);
-        
+
         ctx.restore();
-        
-        // Add lighting effects (top-left light source)
-        this.addRoadLighting(ctx, shape, rng);
-        
-        // Add subtle worn border with hand-drawn style
+
+        // Add subtle worn border with hand-drawn style (no lighting)
         ctx.save();
         ctx.strokeStyle = 'rgba(0, 0, 0, 0.05)';
         ctx.lineWidth = 0.8;
@@ -1186,25 +1338,17 @@ class MobilityLayer {
             y: shape.p2.y + (shape.p3.y - shape.p2.y) * (1 - trimPercent)
         };
         
-        // Left sidewalk (trimmed) with lighting
+        // Left sidewalk (trimmed) - clean appearance
         ctx.save();
-        // Base sidewalk - lighter (closer to light source)
         ctx.strokeStyle = '#f0f0f0';
         ctx.beginPath();
         ctx.moveTo(leftTrimStart.x, leftTrimStart.y);
         ctx.lineTo(leftTrimEnd.x, leftTrimEnd.y);
         ctx.stroke();
         
-        // Add highlight on top edge
-        ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
-        ctx.lineWidth = 1;
-        ctx.beginPath();
-        ctx.moveTo(leftTrimStart.x - 1, leftTrimStart.y - 0.5);
-        ctx.lineTo(leftTrimEnd.x - 1, leftTrimEnd.y - 0.5);
-        ctx.stroke();
         ctx.restore();
-        
-        // Right sidewalk (trimmed) with lighting
+
+        // Right sidewalk (trimmed) - clean appearance
         ctx.save();
         ctx.strokeStyle = '#ffffff';
         ctx.lineWidth = sidewalkWidth;
@@ -1218,13 +1362,7 @@ class MobilityLayer {
         ctx.lineTo(rightTrimEnd.x, rightTrimEnd.y);
         ctx.stroke();
         
-        // Add shadow on bottom edge
-        ctx.strokeStyle = 'rgba(0, 0, 0, 0.08)';
-        ctx.lineWidth = 1;
-        ctx.beginPath();
-        ctx.moveTo(rightTrimStart.x + 1, rightTrimStart.y + 0.5);
-        ctx.lineTo(rightTrimEnd.x + 1, rightTrimEnd.y + 0.5);
-        ctx.stroke();
+        // No shadows - clean flat appearance
         ctx.restore();
         
         // Draw crosswalks at both ends when sidewalks are present
@@ -1453,7 +1591,78 @@ class MobilityLayer {
         ctx.strokeStyle = hasRoad ? 'rgba(255, 150, 0, 0.8)' : 'rgba(255, 255, 255, 0.6)';
         ctx.lineWidth = 1;
         ctx.stroke();
-        
+
+        // Draw cost display in center of road segment
+        const centerX = (fromIntersection.x + toIntersection.x) / 2;
+        const centerY = (fromIntersection.y + toIntersection.y) / 2;
+        const totalCost = this.calculateSegmentCost();
+
+        // Determine display text based on road status
+        let displayText, backgroundColor, textColor;
+        if (hasRoad) {
+            const existingRoad = this.roads.get(this.hoveredEdge);
+
+            // Check if this would be an upgrade by comparing configurations
+            const isSameType = existingRoad.type === this.selectedRoadType;
+            const hasNewSidewalks = this.infrastructureOptions.sidewalks.active;
+            const hasNewBikeLanes = this.infrastructureOptions.bikeLanes.active;
+            const exactMatch = existingRoad.hasSidewalks === hasNewSidewalks &&
+                             existingRoad.hasBikeLanes === hasNewBikeLanes;
+
+            if (isSameType && exactMatch) {
+                displayText = 'BUILT';
+                backgroundColor = 'rgba(100, 100, 100, 0.9)'; // Gray for already built
+                textColor = '#ffffff';
+            } else {
+                // Calculate upgrade/replacement cost
+                if (isSameType && !exactMatch) {
+                    // Infrastructure upgrade
+                    let upgradeCost = 0;
+                    if (!existingRoad.hasSidewalks && hasNewSidewalks) upgradeCost += this.infrastructureOptions.sidewalks.cost;
+                    if (!existingRoad.hasBikeLanes && hasNewBikeLanes) upgradeCost += this.infrastructureOptions.bikeLanes.cost;
+                    displayText = upgradeCost > 0 ? `$${upgradeCost}` : 'BUILT';
+                    backgroundColor = upgradeCost > 0 ? 'rgba(255, 150, 0, 0.9)' : 'rgba(100, 100, 100, 0.9)';
+                } else {
+                    // Road type replacement
+                    const destructionCost = this.calculateDestructionCost(existingRoad);
+                    const replacementCost = destructionCost + totalCost;
+                    displayText = `$${replacementCost}`;
+                    backgroundColor = 'rgba(200, 60, 60, 0.9)'; // Red for replacement
+                }
+                textColor = '#ffffff';
+            }
+        } else {
+            displayText = `$${totalCost}`;
+            backgroundColor = 'rgba(0, 120, 0, 0.9)'; // Green for new construction
+            textColor = '#ffffff';
+        }
+
+        // Draw cost label with clean styling
+        ctx.font = '14px SF Mono, Monaco, Inconsolata, Roboto Mono, Source Code Pro, monospace';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+
+        // Measure text for background sizing
+        const textMetrics = ctx.measureText(displayText);
+        const textWidth = textMetrics.width;
+        const padding = 8;
+        const labelWidth = textWidth + padding * 2;
+        const labelHeight = 20;
+
+        // Draw background rectangle (slightly above road center)
+        const labelY = centerY - 25; // Raised above the road segment
+        ctx.fillStyle = backgroundColor;
+        ctx.fillRect(centerX - labelWidth/2, labelY - labelHeight/2, labelWidth, labelHeight);
+
+        // Draw subtle border
+        ctx.strokeStyle = 'rgba(0, 0, 0, 0.3)';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(centerX - labelWidth/2, labelY - labelHeight/2, labelWidth, labelHeight);
+
+        // Draw cost text
+        ctx.fillStyle = textColor;
+        ctx.fillText(displayText, centerX, labelY);
+
         ctx.restore();
         
         // No tooltip - clean visual feedback only
@@ -1536,26 +1745,12 @@ class MobilityLayer {
         if (existingRoad.infrastructure?.sidewalks) roadWidth += 4;
         if (existingRoad.infrastructure?.bikeLanes) roadWidth += 6;
         
-        // Calculate isometric road shape with lift effect
-        const liftOffset = -8; // Lift the road up by 8 pixels
-        const fromLifted = { x: fromIntersection.x, y: fromIntersection.y + liftOffset };
-        const toLifted = { x: toIntersection.x, y: toIntersection.y + liftOffset };
-        const roadShape = this.calculateIsometricRoadShape(fromLifted, toLifted, roadWidth);
+        // Calculate isometric road shape at same level as road indicators
+        const roadShape = this.calculateIsometricRoadShape(fromIntersection, toIntersection, roadWidth);
         
         ctx.save();
-        
-        // Draw shadow on ground first
-        ctx.fillStyle = 'rgba(0, 0, 0, 0.2)';
-        const shadowShape = this.calculateIsometricRoadShape(fromIntersection, toIntersection, roadWidth);
-        ctx.beginPath();
-        ctx.moveTo(shadowShape.p1.x, shadowShape.p1.y);
-        ctx.lineTo(shadowShape.p2.x, shadowShape.p2.y);
-        ctx.lineTo(shadowShape.p3.x, shadowShape.p3.y);
-        ctx.lineTo(shadowShape.p4.x, shadowShape.p4.y);
-        ctx.closePath();
-        ctx.fill();
-        
-        // Draw the lifted road with transit-ready highlight
+
+        // Draw the road with transit-ready highlight (no shadows)
         const emoji = this.transitMode === 'bus' ? '🚌' : '🚇';
         const hoverColor = this.transitMode === 'bus' ? '#66BB6A' : '#42A5F5';
         ctx.fillStyle = hoverColor + '80'; // Semi-transparent
@@ -1583,7 +1778,18 @@ class MobilityLayer {
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.fillText(emoji, centerX, centerY);
-        
+
+        // Draw cost indicator for transit stop placement
+        const cost = this.transitMode === 'bus' ? 50 : 200;
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
+        ctx.fillRect(centerX - 15, centerY + 18, 30, 14);
+
+        ctx.fillStyle = 'white';
+        ctx.font = '10px SF Mono, Monaco, Inconsolata, Roboto Mono, Source Code Pro, monospace';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(`$${cost}`, centerX, centerY + 25);
+
         ctx.restore();
     }
     
@@ -1784,9 +1990,7 @@ class MobilityLayer {
                 this.drawRoundedRect(ctx, x, roadRowY, buttonWidth, buttonHeight, borderRadius);
                 ctx.fill();
                 
-                // Selected border with glow effect
-                ctx.shadowColor = config.color;
-                ctx.shadowBlur = 8;
+                // Selected border (no glow)
                 ctx.strokeStyle = '#ffffff';
                 ctx.lineWidth = 2;
                 this.drawRoundedRect(ctx, x, roadRowY, buttonWidth, buttonHeight, borderRadius);
@@ -1855,9 +2059,7 @@ class MobilityLayer {
                 this.drawRoundedRect(ctx, x, optionsRowY, buttonWidth, buttonHeight, borderRadius);
                 ctx.fill();
                 
-                // Active border with subtle glow
-                ctx.shadowColor = config.color;
-                ctx.shadowBlur = 4;
+                // Active border (no glow)
                 ctx.strokeStyle = config.color;
                 ctx.lineWidth = 2;
             } else {
@@ -3417,12 +3619,197 @@ class MobilityLayer {
         };
 
         console.log('Pending route:', this.pendingRoute);
-        
-        // Show inline route configuration instead of modal
-        console.log('Showing inline route configuration');
+
+        // Show sidebar route configuration panel
+        console.log('Showing sidebar route configuration');
         this.routeCreationState = 'configure_route';
-        
-        // This will trigger the inline UI to show in drawTransitConnectControls
+
+        // Show route config panel in sidebar
+        this.showRouteConfigSidebar();
+    }
+
+    showRouteConfigSidebar() {
+        // Auto-close other sidebar panels except mobility
+        this.autoClosePanelsForRouteConfig();
+
+        // Keep mobility panel open
+        this.ensureMobilityPanelOpen();
+
+        // Show and open route config panel by default
+        const routeConfigPanel = document.getElementById('route-config-sidebar');
+        if (routeConfigPanel) {
+            routeConfigPanel.style.display = 'block';
+            routeConfigPanel.classList.remove('collapsed');
+
+            // Populate the form with current route data
+            this.populateRouteConfigForm();
+
+            // Setup event listeners for sidebar form
+            this.setupRouteConfigEventListeners();
+        }
+    }
+
+    autoClosePanelsForRouteConfig() {
+        // Get all sidebar sections except mobility and route-config
+        const sidebarSections = document.querySelectorAll('.sidebar-section:not(.route-config-panel)');
+        sidebarSections.forEach(section => {
+            const header = section.querySelector('.section-header');
+            if (header) {
+                const target = header.getAttribute('data-target');
+                // Don't close mobility panel
+                if (target !== 'mobility-panel') {
+                    section.classList.add('collapsed');
+                    const icon = header.querySelector('.collapse-icon');
+                    if (icon) icon.textContent = '▶';
+                }
+            }
+        });
+    }
+
+    ensureMobilityPanelOpen() {
+        const mobilitySection = document.querySelector('.sidebar-section .section-header[data-target="mobility-panel"]')?.parentElement;
+        if (mobilitySection) {
+            mobilitySection.classList.remove('collapsed');
+            const icon = mobilitySection.querySelector('.collapse-icon');
+            if (icon) icon.textContent = '▼';
+        }
+    }
+
+    populateRouteConfigForm() {
+        if (!this.pendingRoute) return;
+
+        // Populate form fields with pending route data
+        const routeNameInput = document.getElementById('sidebar-route-name');
+        const ticketPriceInput = document.getElementById('sidebar-ticket-price');
+        const routeStopsCount = document.getElementById('sidebar-route-stops-count');
+        const routeType = document.getElementById('sidebar-route-type');
+
+        if (routeNameInput) routeNameInput.value = this.pendingRoute.name;
+        if (ticketPriceInput) ticketPriceInput.value = this.pendingRoute.price;
+        if (routeStopsCount) routeStopsCount.textContent = this.pendingRoute.stops.length;
+        if (routeType) routeType.textContent = this.pendingRoute.type === 'bus' ? 'Bus' : 'Subway';
+
+        // Update revenue projections
+        this.updateRouteRevenueProjctions();
+    }
+
+    updateRouteRevenueProjctions() {
+        if (!this.pendingRoute) return;
+
+        const revenue = this.calculateRouteRevenue(this.pendingRoute);
+        const ridership = this.estimateRouteRidership(this.pendingRoute);
+
+        const dailyRidershipEl = document.getElementById('sidebar-daily-ridership');
+        const dailyRevenueEl = document.getElementById('sidebar-daily-revenue');
+
+        if (dailyRidershipEl) dailyRidershipEl.textContent = Math.round(ridership);
+        if (dailyRevenueEl) dailyRevenueEl.textContent = `$${Math.round(revenue)}`;
+    }
+
+    setupRouteConfigEventListeners() {
+        // Create route button
+        const createBtn = document.getElementById('sidebar-create-route');
+        const cancelBtn = document.getElementById('sidebar-cancel-route');
+        const optimalPricingBtn = document.getElementById('sidebar-optimal-pricing');
+        const ticketPriceInput = document.getElementById('sidebar-ticket-price');
+        const routeNameInput = document.getElementById('sidebar-route-name');
+
+        // Remove existing listeners
+        if (createBtn) {
+            createBtn.replaceWith(createBtn.cloneNode(true));
+            document.getElementById('sidebar-create-route').addEventListener('click', () => this.createRouteFromSidebar());
+        }
+
+        if (cancelBtn) {
+            cancelBtn.replaceWith(cancelBtn.cloneNode(true));
+            document.getElementById('sidebar-cancel-route').addEventListener('click', () => this.cancelRouteCreation());
+        }
+
+        if (optimalPricingBtn) {
+            optimalPricingBtn.replaceWith(optimalPricingBtn.cloneNode(true));
+            document.getElementById('sidebar-optimal-pricing').addEventListener('click', () => this.suggestOptimalPricing());
+        }
+
+        if (ticketPriceInput) {
+            ticketPriceInput.addEventListener('input', () => {
+                if (this.pendingRoute) {
+                    this.pendingRoute.price = parseFloat(ticketPriceInput.value) || 2.50;
+                    this.updateRouteRevenueProjctions();
+                }
+            });
+        }
+
+        if (routeNameInput) {
+            routeNameInput.addEventListener('input', () => {
+                if (this.pendingRoute) {
+                    this.pendingRoute.name = routeNameInput.value;
+                }
+            });
+        }
+    }
+
+    createRouteFromSidebar() {
+        if (!this.pendingRoute) return;
+
+        // Create the route using existing logic
+        this.createRoute(this.pendingRoute);
+
+        // Hide route config sidebar
+        this.hideRouteConfigSidebar();
+    }
+
+    cancelRouteCreation() {
+        // Reset route creation state
+        this.isCreatingRoute = false;
+        this.routeCreationState = 'select_stops';
+        this.selectedTransitStops = [];
+        this.pendingRoute = null;
+
+        // Hide route config sidebar
+        this.hideRouteConfigSidebar();
+
+        // Clear any route visualization
+        this.clearRouteVisualization();
+    }
+
+    hideRouteConfigSidebar() {
+        const routeConfigPanel = document.getElementById('route-config-sidebar');
+        if (routeConfigPanel) {
+            routeConfigPanel.style.display = 'none';
+        }
+    }
+
+    suggestOptimalPricing() {
+        if (!this.pendingRoute) return;
+
+        // Simple optimal pricing logic - find price that maximizes revenue
+        let bestPrice = 2.50;
+        let bestRevenue = 0;
+
+        for (let price = 1.00; price <= 8.00; price += 0.25) {
+            this.pendingRoute.price = price;
+            const revenue = this.calculateRouteRevenue(this.pendingRoute);
+            if (revenue > bestRevenue) {
+                bestRevenue = revenue;
+                bestPrice = price;
+            }
+        }
+
+        this.pendingRoute.price = bestPrice;
+
+        // Update form
+        const ticketPriceInput = document.getElementById('sidebar-ticket-price');
+        if (ticketPriceInput) ticketPriceInput.value = bestPrice;
+
+        this.updateRouteRevenueProjctions();
+    }
+
+    clearRouteVisualization() {
+        // Clear any pending route visualization on the canvas
+        // This would redraw the mobility layer without the pending route
+        if (this.game && this.game.needsRedraw) {
+            this.game.needsRedraw();
+        }
     }
 
     // Modal functions removed - now using inline UI
@@ -3432,9 +3819,13 @@ class MobilityLayer {
         const baseRidership = this.estimateRouteRidership(route);
         const serviceLevel = this.serviceLevels[route.serviceLevel];
         const adjustedRidership = baseRidership * serviceLevel.multiplier;
-        
+
         const dailyRevenue = adjustedRidership * route.price;
-        const dailyCost = serviceLevel.cost * route.stops.length;
+
+        // Calculate maintenance cost based on route distance (not stop count)
+        const segmentDistance = this.calculateRouteDistance(route);
+        const dailyCost = serviceLevel.cost * segmentDistance;
+
         const dailyProfit = dailyRevenue - dailyCost;
         
         // Calculate maintenance costs
@@ -3452,6 +3843,35 @@ class MobilityLayer {
         };
 
         return route.projectedRevenue;
+    }
+
+    // Calculate route distance in segment units for maintenance cost calculation
+    calculateRouteDistance(route) {
+        if (!route || !route.stops || route.stops.length < 2) return 0;
+
+        let totalDistance = 0;
+        for (let i = 0; i < route.stops.length - 1; i++) {
+            const fromStop = this.transitStops.get(route.stops[i]);
+            const toStop = this.transitStops.get(route.stops[i + 1]);
+
+            if (fromStop && toStop) {
+                // Get road segment positions for distance calculation
+                const fromSegment = fromStop.roadSegment;
+                const toSegment = toStop.roadSegment;
+
+                // Parse segment coordinates
+                const [fromStr, ] = fromSegment.split('-');
+                const [fromRow, fromCol] = fromStr.split(',').map(Number);
+                const [toStr, ] = toSegment.split('-');
+                const [toRow, toCol] = toStr.split(',').map(Number);
+
+                // Calculate Manhattan distance (simpler for grid-based system)
+                const segmentDistance = Math.abs(toRow - fromRow) + Math.abs(toCol - fromCol);
+                totalDistance += segmentDistance;
+            }
+        }
+
+        return Math.max(1, totalDistance); // Minimum 1 segment for single-segment routes
     }
 
     // Calculate optimal pricing for inline UI
@@ -3498,12 +3918,16 @@ class MobilityLayer {
             const adjustedRidership = baseRidership * demandMultiplier * convenienceBonus * serviceLevel.multiplier;
             
             const dailyRevenue = adjustedRidership * price;
-            const dailyCost = serviceLevel.cost * this.pendingRoute.stops.length;
+
+            // Use segment distance for service level costs
+            const segmentDistance = this.calculateRouteDistance(this.pendingRoute);
+            const dailyCost = serviceLevel.cost * segmentDistance;
+
             const maintenanceCost = this.pendingRoute.stops.reduce((total, stopKey) => {
                 const stop = this.transitStops.get(stopKey);
                 return total + (stop ? stop.maintenance : 0);
             }, 0);
-            
+
             const dailyProfit = dailyRevenue - dailyCost - maintenanceCost;
             
             results.push({ price, ridership: Math.round(adjustedRidership), profit: Math.round(dailyProfit) });
@@ -3709,7 +4133,19 @@ class MobilityLayer {
         ctx.globalAlpha = Math.max(0.6, stop.condition);
         ctx.fillStyle = '#000000'; // Dark color for emoji visibility
         ctx.fillText(stop.emoji, position.x, position.y);
-        
+
+        // Draw cost indicator (like road cost indicators)
+        ctx.globalAlpha = 1.0;
+        const cost = stop.type === 'bus' ? 50 : 200;
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
+        ctx.fillRect(position.x - 15, position.y + 18, 30, 14);
+
+        ctx.fillStyle = 'white';
+        ctx.font = '10px SF Mono, Monaco, Inconsolata, Roboto Mono, Source Code Pro, monospace';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(`$${cost}`, position.x, position.y + 25);
+
         // Draw stop name if selected
         if (isSelected) {
             ctx.globalAlpha = 1.0;
@@ -3930,6 +4366,39 @@ class MobilityLayer {
                 // No road segment found - show helpful message and don't fall through to road building
                 this.game.showNotification('Click on a road segment to place transit stop', 'info');
                 return true;
+            }
+        }
+
+        // Handle route configuration controls clicks
+        if (this.isCreatingRoute && this.routeCreationState === 'configure_route' && this.pendingRoute) {
+            // Check service level button clicks
+            if (this.serviceLevelButtons) {
+                for (const button of this.serviceLevelButtons) {
+                    if (screenX >= button.x && screenX <= button.x + button.width &&
+                        screenY >= button.y && screenY <= button.y + button.height) {
+                        this.pendingRoute.serviceLevel = button.key;
+                        return true;
+                    }
+                }
+                // Clear service level buttons for next frame
+                this.serviceLevelButtons = [];
+            }
+
+            // Check fare adjustment button clicks
+            if (this.fareButtons) {
+                for (const button of this.fareButtons) {
+                    if (screenX >= button.x && screenX <= button.x + button.width &&
+                        screenY >= button.y && screenY <= button.y + button.height) {
+                        if (button.action === 'increase') {
+                            this.pendingRoute.price = Math.min(10.0, this.pendingRoute.price + 0.25);
+                        } else if (button.action === 'decrease') {
+                            this.pendingRoute.price = Math.max(0.25, this.pendingRoute.price - 0.25);
+                        }
+                        return true;
+                    }
+                }
+                // Clear fare buttons for next frame
+                this.fareButtons = [];
             }
         }
 

@@ -212,7 +212,8 @@ class ContextMenuSystem {
 
             const categoryBtn = document.createElement('button');
             categoryBtn.className = 'category-btn';
-            const availableFunds = this.game.governance.publicCoffers[category] || 0;
+            const availableFunds = this.game.governanceSystem ?
+                this.game.governanceSystem.getCategoryFunding(category) : 0;
 
             // Determine funding status for this category
             const buildings = this.game.buildingManager.getBuildingsByCategory(category);
@@ -280,6 +281,11 @@ class ContextMenuSystem {
                 const playerCost = fundingInfo.playerCost;
                 const publicFunding = fundingInfo.publicFunding;
 
+                // Get budget information for this category
+                const categoryFunding = this.game.governanceSystem ?
+                    this.game.governanceSystem.getCategoryFunding(fundingInfo.category) : 0;
+                const budgetAvailable = categoryFunding >= publicFunding;
+
                 // Determine price color based on funding status with gradients
                 let priceColor = '#ccc'; // Default white/gray
                 if (playerCost === 0) {
@@ -304,10 +310,14 @@ class ContextMenuSystem {
                 }
 
                 if (publicFunding > 0) {
+                    const budgetStatus = budgetAvailable ? '✓' : '⚠️';
+                    const budgetColor = budgetAvailable ? '#4CAF50' : '#FF9800';
+
                     buildingBtn.innerHTML = `
                         <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
                             <span>${building.name}</span>
                             <div style="text-align: right; font-size: 11px;">
+                                <div style="color: ${budgetColor};">${budgetStatus} Budget: $${categoryFunding.toLocaleString()}</div>
                                 <div style="color: #4CAF50;">Public: $${publicFunding.toLocaleString()}</div>
                                 <div style="color: ${priceColor}; font-weight: 600;">You pay: $${playerCost.toLocaleString()}</div>
                             </div>

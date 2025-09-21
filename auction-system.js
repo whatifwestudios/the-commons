@@ -800,18 +800,31 @@ class AuctionSystem {
 
             // Handle treasury collection based on previous ownership
             if (!previousOwner || previousOwner === null) {
-                // Parcel was owned by the city - full payment goes to treasury
-                this.game.cityTreasury += finalBid;
-                console.log(`💰 City treasury received $${finalBid.toLocaleString()} from land sale`);
-            } else if (previousOwner !== 'player') {
-                // Parcel was owned by another player - 1% auction fee to treasury, rest to previous owner
+                // Parcel was owned by the city - full purchase price goes to treasury
+                this.game.governanceSystem.addFunds(finalBid, 'land sales');
+            } else if (previousOwner === 'player') {
+                // Current owner won their own auction - they keep the parcel, only pay 1% auction fee
                 const auctionFee = Math.round(finalBid * 0.01);
-                this.game.cityTreasury += auctionFee;
-                console.log(`💰 City treasury received $${auctionFee.toLocaleString()} auction fee (1%)`);
+                this.game.governanceSystem.addFunds(auctionFee, 'auction fees');
 
-                // Compensate previous owner with remaining amount
+                // Update land value for LVT calculation but don't transfer ownership
                 parcel.landValue.paidPrice = finalBid;
                 parcel.landValue.lastAuctionDay = this.game.currentDay;
+
+                // Player only pays auction fee, not full bid
+                this.game.playerCash -= auctionFee;
+                this.game.showNotification(`Kept parcel! Paid $${auctionFee.toLocaleString()} auction fee. New land value: $${finalBid.toLocaleString()}`, 'success');
+
+                return; // Early return - no ownership transfer needed
+            } else {
+                // Parcel was owned by another player - 1% auction fee to governance budget, rest to previous owner
+                const auctionFee = Math.round(finalBid * 0.01);
+                const ownerPayment = finalBid - auctionFee;
+
+                this.game.governanceSystem.addFunds(auctionFee, 'auction fees');
+
+                // TODO: Pay previous owner $ownerPayment when multiplayer owner payment system is implemented
+                console.log(`💳 Previous owner ${previousOwner} should receive $${ownerPayment.toLocaleString()}`);
             }
 
             // Transfer ownership

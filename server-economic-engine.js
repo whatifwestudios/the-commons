@@ -700,8 +700,10 @@ class ServerEconomicEngine {
      */
     calculateLVT(parcel, gameState) {
         const landValue = parcel.landValue?.paidPrice || 1000; // Default land value
-        const lvtRate = 0.05; // 5% default LVT rate - could come from governance
-        return landValue * lvtRate;
+        // Use governance system rate if available, otherwise default to 50% annual
+        const annualLVTRate = gameState?.governanceSystem?.getCurrentLVTRate?.() || 0.50;
+        const dailyLVTRate = annualLVTRate / 365;
+        return landValue * dailyLVTRate;
     }
 
     /**

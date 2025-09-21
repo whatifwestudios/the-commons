@@ -9,6 +9,8 @@ class GovernanceSystem {
         
         // Governance state
         this.governance = {
+            treasuryBalance: 0,  // Accumulated but not yet distributed funds
+            monthlyCollected: 0, // Funds collected this month (resets monthly)
             totalBudget: 0,
             unallocatedFunds: 0,
             allocations: {
@@ -128,8 +130,58 @@ class GovernanceSystem {
      * Initialize governance system
      */
     initialize() {
+        // Ensure all required structures exist
+        this.ensureGovernanceStructures();
         this.calculateTotalBudget();
         this.updatePolicyEffects();
+    }
+
+    /**
+     * Ensure all governance structures are properly initialized
+     */
+    ensureGovernanceStructures() {
+        // Ensure voteAllocations exists
+        if (!this.governance.voteAllocations) {
+            this.governance.voteAllocations = {
+                education: 0, healthcare: 0, infrastructure: 0, housing: 0,
+                culture: 0, recreation: 0, commercial: 0, civic: 0,
+                emergency: 0, ubi: 0
+            };
+        }
+
+        // Ensure playerVotes exists
+        if (!this.governance.playerVotes) {
+            this.governance.playerVotes = {
+                player: {
+                    categories: {
+                        education: 0, healthcare: 0, infrastructure: 0, housing: 0,
+                        culture: 0, recreation: 0, commercial: 0, civic: 0,
+                        emergency: 0, ubi: 0
+                    },
+                    lvtVotes: 0
+                }
+            };
+        }
+
+        // Ensure player entry exists
+        if (!this.governance.playerVotes.player) {
+            this.governance.playerVotes.player = {
+                categories: {
+                    education: 0, healthcare: 0, infrastructure: 0, housing: 0,
+                    culture: 0, recreation: 0, commercial: 0, civic: 0,
+                    emergency: 0, ubi: 0
+                },
+                lvtVotes: 0
+            };
+        }
+
+        // Ensure treasury fields exist (backward compatibility)
+        if (this.governance.treasuryBalance === undefined) {
+            this.governance.treasuryBalance = 0;
+        }
+        if (this.governance.monthlyCollected === undefined) {
+            this.governance.monthlyCollected = 0;
+        }
     }
     
     /**
@@ -152,14 +204,30 @@ class GovernanceSystem {
     updateUnallocatedFunds() {
         const totalAllocated = Object.values(this.governance.allocations)
             .reduce((sum, amount) => sum + amount, 0);
-        
+
         this.governance.unallocatedFunds = Math.max(0, this.governance.totalBudget - totalAllocated);
     }
-    
+
+    /**
+     * Add funds to the treasury (accumulation stage)
+     */
+    addFunds(amount, source = 'misc') {
+        if (amount <= 0) return;
+
+        this.governance.treasuryBalance += amount;
+        this.governance.monthlyCollected += amount;
+        this.updateGovernanceModal();
+
+        console.log(`💰 Added $${amount.toLocaleString()} to city treasury from ${source}`);
+    }
+
     /**
      * Add a vote to a category (costs 1 voting point)
      */
     addCategoryVote(category, playerId = 'player') {
+        // Ensure structures exist before proceeding
+        this.ensureGovernanceStructures();
+
         if (!this.budgetCategories[category]) {
             console.error('Invalid budget category:', category);
             return false;
@@ -198,6 +266,9 @@ class GovernanceSystem {
      * Remove a vote from a category (refunds 1 voting point)
      */
     removeCategoryVote(category, playerId = 'player') {
+        // Ensure structures exist before proceeding
+        this.ensureGovernanceStructures();
+
         if (!this.budgetCategories[category]) {
             console.error('Invalid budget category:', category);
             return false;
@@ -242,7 +313,6 @@ class GovernanceSystem {
             this.governance.allocations[category] = this.governance.totalBudget * voteShare;
         });
 
-        console.log(`💰 Calculated allocations from ${totalVotes} total votes:`, this.governance.allocations);
         this.updateUnallocatedFunds();
     }
 
@@ -253,6 +323,9 @@ class GovernanceSystem {
      * Increase LVT rate by 1% (costs 1 voting point)
      */
     increaseLVTRate(playerId = 'player') {
+        // Ensure structures exist before proceeding
+        this.ensureGovernanceStructures();
+
         if (this.governance.votingPoints < 1) {
             console.log('Not enough voting points');
             return false;
@@ -291,6 +364,9 @@ class GovernanceSystem {
      * Decrease LVT rate by 1% (refunds 1 voting point if player allocated it)
      */
     decreaseLVTRate(playerId = 'player') {
+        // Ensure structures exist before proceeding
+        this.ensureGovernanceStructures();
+
         // Check if player has LVT votes to remove
         if (!this.governance.playerVotes[playerId] ||
             this.governance.playerVotes[playerId].lvtVotes <= 0) {
@@ -359,7 +435,6 @@ class GovernanceSystem {
         this.calculateActualAllocations();
         this.updatePolicyEffects();
 
-        console.log(`Monthly governance update: +2 voting points (total: ${this.governance.votingPoints})`);
 
         // Update state management system
         if (this.game.gameState) {
@@ -378,6 +453,67 @@ class GovernanceSystem {
             return 0;
         }
         return this.governance.allocations[category] || 0;
+    }
+
+    /**
+     * Spend funds from a specific category allocation
+     */
+    spendFromCategory(category, amount) {
+        if (!this.budgetCategories[category]) {
+            console.error('Invalid budget category:', category);
+            return false;
+        }
+
+        const available = this.governance.allocations[category] || 0;
+        if (amount > available) {
+            console.error(`Insufficient funds in ${category}: need ${amount}, have ${available}`);
+            return false;
+        }
+
+        this.governance.allocations[category] -= amount;
+        this.governance.totalBudget -= amount;
+        this.updateGovernanceModal();
+
+        console.log(`💸 Spent $${amount.toLocaleString()} from ${category} budget`);
+        return true;
+    }
+
+    /**
+     * Distribute treasury funds to allocations based on voting percentages
+     * Called at month rollover
+     */
+    distributeMonthlyBudget() {
+        if (this.governance.treasuryBalance <= 0) {
+            console.log('No treasury funds to distribute');
+            return;
+        }
+
+        const totalVotes = Object.values(this.governance.voteAllocations)
+            .reduce((sum, votes) => sum + votes, 0);
+
+        if (totalVotes === 0) {
+            console.log('No budget allocation votes - funds remain in treasury');
+            return;
+        }
+
+        // Distribute treasury to allocations based on vote percentages
+        const fundsToDistribute = this.governance.treasuryBalance;
+
+        Object.keys(this.governance.allocations).forEach(category => {
+            const votes = this.governance.voteAllocations[category] || 0;
+            const voteShare = votes / totalVotes;
+            const allocation = fundsToDistribute * voteShare;
+
+            this.governance.allocations[category] += allocation;
+        });
+
+        // Move treasury to totalBudget and reset monthly tracking
+        this.governance.totalBudget += this.governance.treasuryBalance;
+        this.governance.treasuryBalance = 0;
+        this.governance.monthlyCollected = 0;
+
+        console.log(`📊 Distributed $${fundsToDistribute.toLocaleString()} from treasury to budget allocations`);
+        this.updateGovernanceModal();
     }
 
     /**
@@ -648,32 +784,30 @@ class GovernanceSystem {
      * Update governance modal with current data
      */
     updateGovernanceModal() {
-        console.log('🔄 Updating governance modal UI...');
-        console.log('📊 Current state:', {
-            votingPoints: this.governance.votingPoints,
-            taxRate: this.governance.taxRate,
-            allocations: this.governance.allocations
-        });
+        // Ensure structures exist before updating UI
+        this.ensureGovernanceStructures();
+
 
         // Update voting points display
         const votingPointsEl = document.getElementById('player-voting-points');
         if (votingPointsEl) {
             votingPointsEl.textContent = this.governance.votingPoints.toString();
-            console.log('✅ Updated voting points display:', this.governance.votingPoints);
-        } else {
-            console.warn('❌ Voting points element not found');
         }
 
-        // Update monthly LVT collection
+        // Note: City treasury display is now handled by updatePlayerStats() in game.js
+
+        // Update monthly collection (governance modal)
         const monthlyLvtEl = document.getElementById('monthly-lvt-amount');
         if (monthlyLvtEl) {
-            monthlyLvtEl.textContent = this.governance.totalBudget.toLocaleString();
+            const monthlyCollected = this.governance.monthlyCollected || 0;
+            monthlyLvtEl.textContent = monthlyCollected.toLocaleString();
         }
 
-        // Update unallocated funds
+        // Update unallocated funds (should match treasury balance since both represent available funds)
         const unallocatedEl = document.getElementById('unallocated-funds-amount');
         if (unallocatedEl) {
-            unallocatedEl.textContent = this.governance.unallocatedFunds.toLocaleString();
+            const availableFunds = this.governance.treasuryBalance || 0;
+            unallocatedEl.textContent = availableFunds.toLocaleString();
         }
 
         // Update tax rate display
@@ -683,7 +817,6 @@ class GovernanceSystem {
         }
 
         // Update vote counts for each category
-        console.log(`🔄 updateGovernanceModal called, current vote allocations:`, this.governance.voteAllocations);
 
         // Safety check: ensure voteAllocations exists
         if (!this.governance.voteAllocations) {
@@ -701,20 +834,15 @@ class GovernanceSystem {
         const playerData = this.governance.playerVotes[playerId] || { categories: {}, lvtVotes: 0 };
 
         Object.entries(this.governance.voteAllocations).forEach(([category, voteCount]) => {
-            console.log(`🔍 Processing category ${category} with ${voteCount} votes`);
             const categoryRow = document.querySelector(`[data-category="${category}"]`);
             const categoryEl = document.querySelector(`[data-category="${category}"] .vote-count`);
 
             if (categoryEl) {
-                console.log(`🔄 Setting ${category} vote count to: ${voteCount}`);
                 categoryEl.textContent = voteCount.toString();
-                console.log(`✅ Updated ${category} vote count: ${voteCount}`);
-            } else {
-                console.warn(`❌ Vote count element not found for category: ${category}`);
             }
 
             // Update percentage display
-            const percentEl = document.querySelector(`[data-category="${category}"] .category-percentage`);
+            const percentEl = document.querySelector(`[data-category="${category}"] .category-allocation`);
             if (percentEl) {
                 const percentage = totalVotes > 0 ? ((voteCount / totalVotes) * 100).toFixed(1) : '0.0';
                 percentEl.textContent = `${percentage}%`;
@@ -896,19 +1024,13 @@ class GovernanceSystem {
      * Set up governance modal event listeners
      */
     setupEventListeners() {
-        console.log('🔧 Setting up governance modal event listeners...');
-
         // Check if elements exist first
         const modal = document.getElementById('governance-modal');
         const closeBtn = document.getElementById('close-governance-modal');
         const voteButtons = document.querySelectorAll('.vote-btn[data-category]');
 
-        console.log('📍 Modal found:', !!modal);
-        console.log('📍 Close button found:', !!closeBtn);
-        console.log('📍 Vote buttons found:', voteButtons.length);
-
         if (!modal) {
-            console.error('❌ Governance modal not found in DOM');
+            console.error('Governance modal not found in DOM');
             return;
         }
 
@@ -936,16 +1058,12 @@ class GovernanceSystem {
 
                 btn.addEventListener('click', () => {
                     try {
-                        console.log(`🔲 Vote button clicked: ${category} ${action}`);
-
                         let result = false;
                         if (action === 'increase') {
                             result = this.addCategoryVote(category);
                         } else {
                             result = this.removeCategoryVote(category);
                         }
-
-                        console.log('📊 Vote allocation result:', result);
                     } catch (error) {
                         console.error('Error in vote button click:', error);
                     }
@@ -955,37 +1073,26 @@ class GovernanceSystem {
             // LVT point allocation buttons
             const lvtIncreaseBtn = document.getElementById('lvt-increase-btn');
             if (lvtIncreaseBtn) {
-                console.log('✅ LVT increase button found, adding event listener');
                 lvtIncreaseBtn.addEventListener('click', () => {
-                    console.log('🔲 LVT increase button clicked!');
                     try {
-                        const result = this.increaseLVTRate();
-                        console.log('📊 LVT increase result:', result);
+                        this.increaseLVTRate();
                     } catch (error) {
                         console.error('Error in LVT increase button:', error);
                     }
                 });
-            } else {
-                console.warn('❌ LVT increase button not found');
             }
 
             const lvtDecreaseBtn = document.getElementById('lvt-decrease-btn');
             if (lvtDecreaseBtn) {
-                console.log('✅ LVT decrease button found, adding event listener');
                 lvtDecreaseBtn.addEventListener('click', () => {
-                    console.log('🔲 LVT decrease button clicked!');
                     try {
-                        const result = this.decreaseLVTRate();
-                        console.log('📊 LVT decrease result:', result);
+                        this.decreaseLVTRate();
                     } catch (error) {
                         console.error('Error in LVT decrease button:', error);
                     }
                 });
-            } else {
-                console.warn('❌ LVT decrease button not found');
             }
 
-            console.log('✅ Governance event listeners setup complete');
         } catch (error) {
             console.error('Error setting up governance modal:', error);
         }

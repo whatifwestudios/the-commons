@@ -1318,9 +1318,9 @@ class EconomicEngine {
         const netCashflow = dailyRevenue - dailyMaintenance - dailyLVT;
         this.game.playerCash += netCashflow;
 
-        // Add daily LVT to unallocated funds (city treasury)
-        if (dailyLVT > 0) {
-            this.game.governance.unallocatedFunds += dailyLVT;
+        // Add daily LVT to governance budget
+        if (dailyLVT > 0 && this.game.governanceSystem) {
+            this.game.governanceSystem.addFunds(dailyLVT, 'LVT revenue');
         }
 
         // Store daily totals for UI
@@ -1364,8 +1364,9 @@ class EconomicEngine {
                 if (this.game.performanceEngine && parcel.building && !parcel._isUnderConstruction) {
                     const performanceInfo = this.game.performanceEngine.calculateBuildingPerformance(row, col);
                     if (performanceInfo) {
-                        // Get LVT (uses paidPrice correctly)
-                        const dailyLVTRate = 0.50 / 365;
+                        // Get LVT - use dynamic rate from governance system
+                        const annualLVTRate = this.game.governanceSystem ? this.game.governanceSystem.getCurrentLVTRate() : 0.50;
+                        const dailyLVTRate = annualLVTRate / 365;
                         const landTax = (parcel.landValue?.paidPrice || 0) * dailyLVTRate;
 
                         // Get building name from building manager

@@ -344,6 +344,30 @@ class TooltipDataCollector {
                     }
                 });
             }
+        } else {
+            // Fallback: Use economic engine's building efficiency data directly
+            if (this.game.economicEngine) {
+                const result = this.game.economicEngine.calculateBuildingEfficiencyPercentage(row, col);
+                if (result && result.unsatisfiedNeeds && result.unsatisfiedNeeds.length > 0) {
+                    result.unsatisfiedNeeds.forEach(need => {
+                        let emoji = '❓';
+                        let type = need.name.toLowerCase();
+                        switch(type) {
+                            case 'workers': emoji = '👷'; break;
+                            case 'energy': emoji = '⚡'; break;
+                            case 'food': emoji = '🌾'; break;
+                        }
+
+                        needs.push({
+                            emoji: emoji,
+                            type: need.name,
+                            needed: Math.ceil(need.deficit),
+                            satisfaction: need.satisfaction,
+                            issue: need.reason
+                        });
+                    });
+                }
+            }
         }
 
         return needs;
@@ -470,7 +494,9 @@ class TooltipRenderer {
             html += `<div style="margin-bottom: 4px;">`;
             html += `<strong style="color: #FFB74D;">Requires:</strong><br>`;
             data.needs.forEach(item => {
-                html += `<span style="margin-left: 8px; color: #FFCC02;">${item.emoji} ${item.amount} ${item.type}</span><br>`;
+                const amount = item.needed || item.amount || 0;
+                const issueText = item.issue ? ` (${item.issue})` : '';
+                html += `<span style="margin-left: 8px; color: #FFCC02;">${item.emoji} ${amount} ${item.type}${issueText}</span><br>`;
             });
             html += `</div>`;
         }
@@ -707,10 +733,19 @@ class TooltipManager {
                 // Bonus for preferred positions (top positions preferred)
                 if (pos.name.includes('top')) score += 10;
                 
-                // Prefer left positioning when near sidebar (rightmost 350px)
-                if (x > viewportWidth - 350) {
-                    if (pos.name.includes('left')) score += 15;
+                // Enhanced sidebar awareness - detect sidebar and prefer positioning away from it
+                const sidebarWidth = 350;
+                const isNearSidebar = x > viewportWidth - sidebarWidth - 50; // 50px buffer
+
+                if (isNearSidebar) {
+                    // Strongly prefer left positioning when near sidebar
+                    if (pos.name.includes('left')) score += 25;
+                    // Penalize right positioning that would overlap sidebar
+                    if (pos.name.includes('right') && pos.x + tooltipWidth > viewportWidth - sidebarWidth) {
+                        score -= 50; // Heavy penalty for sidebar overlap
+                    }
                 } else {
+                    // Default preference for right positioning when not near sidebar
                     if (pos.name.includes('right')) score += 5;
                 }
                 

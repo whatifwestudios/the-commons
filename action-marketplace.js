@@ -457,8 +457,8 @@ class ActionMarketplace {
         // Process the early ending
         
         // Add fee to city treasury
-        if (this.game.governance && this.game.governance.unallocatedFunds !== undefined) {
-            this.game.governance.unallocatedFunds += fee;
+        if (this.game.governanceSystem) {
+            this.game.governanceSystem.addFunds(fee, 'marketplace fees');
         }
         
         // Mark auction as ended early

@@ -2531,6 +2531,128 @@ body {
     /* background will be set by JavaScript */
 }
 
+/* JEFH Circle Design */
+.jefh-circles-container {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: 1fr 1fr;
+    gap: 16px;
+    padding: 12px;
+    max-width: 200px;
+    margin: 0 auto;
+}
+
+.jefh-circle-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+}
+
+.jefh-circle {
+    width: 60px;
+    height: 60px;
+    border-radius: 50%;
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.4s ease;
+    border: 2px solid rgba(255, 255, 255, 0.1);
+    background: radial-gradient(circle at center,
+        rgba(59, 130, 246, 0.8) 0%,
+        rgba(37, 99, 235, 0.6) 100%);
+    box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+}
+
+.jefh-balance-indicator {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 16px;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+    color: #ffffff;
+    text-shadow: 0 0 4px rgba(0, 0, 0, 0.5);
+}
+
+.jefh-circle.balanced .jefh-balance-indicator {
+    opacity: 1;
+}
+
+.jefh-circle-label {
+    font-size: 11px;
+    font-weight: 600;
+    color: #cccccc;
+    text-align: center;
+    letter-spacing: 0.5px;
+}
+
+/* Circle size variations based on market size */
+.jefh-circle.small {
+    width: 45px;
+    height: 45px;
+}
+
+.jefh-circle.medium {
+    width: 60px;
+    height: 60px;
+}
+
+.jefh-circle.large {
+    width: 75px;
+    height: 75px;
+}
+
+.jefh-circle.xlarge {
+    width: 90px;
+    height: 90px;
+}
+
+/* Color transition states */
+.jefh-circle.deficit-critical {
+    background: radial-gradient(circle at center,
+        rgba(220, 38, 38, 0.9) 0%,
+        rgba(185, 28, 28, 0.8) 100%);
+    box-shadow: 0 4px 12px rgba(220, 38, 38, 0.4);
+}
+
+.jefh-circle.deficit-moderate {
+    background: radial-gradient(circle at center,
+        rgba(251, 191, 36, 0.9) 0%,
+        rgba(245, 158, 11, 0.8) 100%);
+    box-shadow: 0 4px 12px rgba(251, 191, 36, 0.4);
+}
+
+.jefh-circle.deficit-minor {
+    background: radial-gradient(circle at center,
+        rgba(147, 51, 234, 0.8) 0%,
+        rgba(126, 34, 206, 0.7) 100%);
+    box-shadow: 0 4px 12px rgba(147, 51, 234, 0.3);
+}
+
+.jefh-circle.balanced {
+    background: radial-gradient(circle at center,
+        rgba(59, 130, 246, 0.8) 0%,
+        rgba(37, 99, 235, 0.6) 100%);
+    box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+}
+
+.jefh-circle.surplus-minor {
+    background: radial-gradient(circle at center,
+        rgba(34, 197, 94, 0.8) 0%,
+        rgba(22, 163, 74, 0.7) 100%);
+    box-shadow: 0 4px 12px rgba(34, 197, 94, 0.3);
+}
+
+.jefh-circle.surplus-major {
+    background: radial-gradient(circle at center,
+        rgba(16, 185, 129, 0.9) 0%,
+        rgba(5, 150, 105, 0.8) 100%);
+    box-shadow: 0 4px 12px rgba(16, 185, 129, 0.4);
+}
+
 
 .form-section {
     margin-bottom: 24px;
@@ -2779,8 +2901,11 @@ body {
 }
 
 .building-info-panel.visible {
-    opacity: 1;
-    visibility: visible;
+    display: flex !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+    pointer-events: auto !important;
+    flex-direction: column;
 }
 
 .building-info-header {
@@ -3225,8 +3350,15 @@ body {
 
 .cashflow-modal .header-left {
     display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.cashflow-modal .header-row {
+    display: flex;
     align-items: center;
-    gap: 32px;
+    gap: 24px;
+    flex-wrap: wrap;
 }
 
 .cashflow-modal .modal-header h3 {
@@ -3236,6 +3368,70 @@ body {
     font-weight: 300;
     text-transform: uppercase;
     letter-spacing: 1px;
+}
+
+.cashflow-modal .cashflow-summary-inline {
+    display: flex;
+    gap: 16px;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+.cashflow-modal .cashflow-summary-inline .summary-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    color: #888;
+    white-space: nowrap;
+}
+
+.cashflow-modal .cashflow-summary-inline .summary-value {
+    font-size: 12px;
+    font-weight: 600;
+    color: #4CAF50;
+}
+
+.cashflow-modal .cashflow-summary-inline .summary-value.expense {
+    color: #F44336;
+}
+
+.cashflow-modal .cashflow-summary-inline .summary-item.total .summary-value {
+    color: #FFD700;
+    font-weight: 700;
+}
+
+/* Player Tabs */
+.cashflow-modal .player-tabs {
+    display: flex;
+    gap: 4px;
+}
+
+.cashflow-modal .player-tab {
+    background: transparent;
+    border: 1px solid #333;
+    color: #888;
+    padding: 8px 16px;
+    border-radius: 6px;
+    font-size: 11px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.cashflow-modal .player-tab:hover {
+    border-color: #555;
+    color: #ccc;
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.cashflow-modal .player-tab.active {
+    background: #FFD700;
+    border-color: #FFD700;
+    color: #000;
+    font-weight: 600;
 }
 
 .cashflow-modal .modal-body {
@@ -7145,6 +7341,7 @@ body {
     visibility: visible !important;
     opacity: 1 !important;
     pointer-events: auto !important;
+    flex-direction: column;
 }
 
 /* Waiting Room Styles */
@@ -7590,4 +7787,151 @@ body {
     .lobby-mode-btn .mode-title {
         font-size: 16px;
     }
+}
+
+/* Route Configuration Sidebar Panel */
+.route-config-panel {
+    border-top: 2px solid #444;
+}
+
+.route-config-panel .section-content {
+    padding: 12px;
+}
+
+.route-config-panel .route-info-section,
+.route-config-panel .pricing-section {
+    margin-bottom: 16px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid #333;
+}
+
+.route-config-panel .route-info-section:last-child,
+.route-config-panel .pricing-section:last-child {
+    border-bottom: none;
+}
+
+.route-config-panel h4 {
+    color: #fff;
+    font-size: 11px;
+    font-weight: 600;
+    margin: 0 0 8px 0;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.route-config-panel .form-group {
+    margin-bottom: 8px;
+}
+
+.route-config-panel .form-group label {
+    display: block;
+    color: #ccc;
+    font-size: 10px;
+    font-weight: 500;
+    margin-bottom: 4px;
+}
+
+.route-config-panel .form-control {
+    width: 100%;
+    background: #2a2a2a;
+    border: 1px solid #444;
+    color: #fff;
+    padding: 6px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+}
+
+.route-config-panel .form-control:focus {
+    outline: none;
+    border-color: #4CAF50;
+}
+
+.route-config-panel .route-stats {
+    display: flex;
+    gap: 12px;
+    margin-top: 8px;
+}
+
+.route-config-panel .stat-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.route-config-panel .stat-label {
+    font-size: 9px;
+    color: #aaa;
+    text-transform: uppercase;
+}
+
+.route-config-panel .stat-value {
+    font-size: 11px;
+    color: #fff;
+    font-weight: 600;
+}
+
+.route-config-panel .revenue-projections {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-top: 8px;
+}
+
+.route-config-panel .projection-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.route-config-panel .proj-label {
+    font-size: 10px;
+    color: #ccc;
+}
+
+.route-config-panel .proj-value {
+    font-size: 10px;
+    color: #4CAF50;
+    font-weight: 600;
+}
+
+.route-config-panel .btn-secondary,
+.route-config-panel .btn-primary {
+    padding: 6px 12px;
+    border: none;
+    border-radius: 4px;
+    font-size: 10px;
+    font-weight: 600;
+    cursor: pointer;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-top: 6px;
+    width: 100%;
+}
+
+.route-config-panel .btn-secondary {
+    background: #444;
+    color: #ccc;
+}
+
+.route-config-panel .btn-secondary:hover {
+    background: #555;
+}
+
+.route-config-panel .btn-primary {
+    background: #4CAF50;
+    color: #fff;
+}
+
+.route-config-panel .btn-primary:hover {
+    background: #45a049;
+}
+
+.route-config-panel .route-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 12px;
+}
+
+.route-config-panel .route-actions button {
+    flex: 1;
 }

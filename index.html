@@ -211,24 +211,19 @@
         <div class="modal-content">
             <div class="modal-header">
                 <div class="header-left">
-                    <h3>DAILY CASHFLOW</h3>
-                    <div class="cashflow-summary">
-                        <div class="summary-item">
-                            <span class="summary-label">Revenue:</span>
-                            <span class="summary-value" id="total-revenue">$0</span>
+                    <div class="header-row">
+                        <h3>DAILY CASHFLOW</h3>
+                        <div class="cashflow-summary-inline">
+                            <span class="summary-item">Revenue: <span class="summary-value" id="total-revenue">$0</span></span>
+                            <span class="summary-item">Maintenance: <span class="summary-value expense" id="total-maintenance">-$0</span></span>
+                            <span class="summary-item">LVT: <span class="summary-value expense" id="total-lvt">-$0</span></span>
+                            <span class="summary-item total">Net Daily: <span class="summary-value" id="net-daily">$0</span></span>
                         </div>
-                        <div class="summary-item">
-                            <span class="summary-label">Maintenance:</span>
-                            <span class="summary-value expense" id="total-maintenance">-$0</span>
-                        </div>
-                        <div class="summary-item">
-                            <span class="summary-label">LVT:</span>
-                            <span class="summary-value expense" id="total-lvt">-$0</span>
-                        </div>
-                        <div class="summary-item total">
-                            <span class="summary-label">Net Daily:</span>
-                            <span class="summary-value" id="net-daily">$0</span>
-                        </div>
+                    </div>
+                    <!-- Player Tabs -->
+                    <div class="player-tabs" id="cashflow-player-tabs">
+                        <button class="player-tab active" data-player="current">Player</button>
+                        <!-- Additional player tabs will be added dynamically in multiplayer -->
                     </div>
                 </div>
                 <button class="close-btn" id="close-cashflow">×</button>
@@ -293,28 +288,30 @@
                 <div id="vitality" class="section-content">
                     <div class="vitality-group">
                         <div class="vitality-group-title">SUPPLY & DEMAND</div>
-                        <div class="vitality-row" data-vitality="energy">
-                            <span class="vitality-label energy">ENERGY</span>
-                            <div class="vitality-bar">
-                                <div class="vitality-progress" id="energy-bar"></div>
+                        <div class="jefh-circles-container">
+                            <div class="jefh-circle-item" data-vitality="jobs">
+                                <div class="jefh-circle" id="jobs-circle">
+                                    <div class="jefh-balance-indicator" id="jobs-indicator"></div>
+                                </div>
+                                <span class="jefh-circle-label">JOBS</span>
                             </div>
-                        </div>
-                        <div class="vitality-row" data-vitality="food">
-                            <span class="vitality-label food">FOOD</span>
-                            <div class="vitality-bar">
-                                <div class="vitality-progress" id="food-bar"></div>
+                            <div class="jefh-circle-item" data-vitality="energy">
+                                <div class="jefh-circle" id="energy-circle">
+                                    <div class="jefh-balance-indicator" id="energy-indicator"></div>
+                                </div>
+                                <span class="jefh-circle-label">ENERGY</span>
                             </div>
-                        </div>
-                        <div class="vitality-row" data-vitality="housing">
-                            <span class="vitality-label housing">HOUSING</span>
-                            <div class="vitality-bar">
-                                <div class="vitality-progress" id="housing-bar"></div>
+                            <div class="jefh-circle-item" data-vitality="food">
+                                <div class="jefh-circle" id="food-circle">
+                                    <div class="jefh-balance-indicator" id="food-indicator"></div>
+                                </div>
+                                <span class="jefh-circle-label">FOOD</span>
                             </div>
-                        </div>
-                        <div class="vitality-row" data-vitality="jobs">
-                            <span class="vitality-label jobs">JOBS</span>
-                            <div class="vitality-bar">
-                                <div class="vitality-progress" id="jobs-bar"></div>
+                            <div class="jefh-circle-item" data-vitality="housing">
+                                <div class="jefh-circle" id="housing-circle">
+                                    <div class="jefh-balance-indicator" id="housing-indicator"></div>
+                                </div>
+                                <span class="jefh-circle-label">HOUSING</span>
                             </div>
                         </div>
                     </div>
@@ -412,6 +409,61 @@
                     </div>
                 </div>
             </div>
+            <!-- Route Configuration Panel -->
+            <div class="sidebar-section collapsible route-config-panel" id="route-config-sidebar" style="display: none;">
+                <div class="section-header" data-target="route-config-content">
+                    <span>🚌 CONFIGURE ROUTE</span>
+                    <span class="collapse-icon">▼</span>
+                </div>
+                <div id="route-config-content" class="section-content">
+                    <!-- Route Basic Info -->
+                    <div class="route-info-section">
+                        <h4>Route Information</h4>
+                        <div class="form-group">
+                            <label for="sidebar-route-name">Route Name:</label>
+                            <input type="text" id="sidebar-route-name" class="form-control" placeholder="Bus Route 1">
+                        </div>
+                        <div class="route-stats">
+                            <div class="stat-item">
+                                <span class="stat-label">Stops:</span>
+                                <span class="stat-value" id="sidebar-route-stops-count">2</span>
+                            </div>
+                            <div class="stat-item">
+                                <span class="stat-label">Route Type:</span>
+                                <span class="stat-value" id="sidebar-route-type">Bus</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Pricing Section -->
+                    <div class="pricing-section">
+                        <h4>Pricing & Revenue</h4>
+                        <div class="form-group">
+                            <label for="sidebar-ticket-price">Ticket Price ($):</label>
+                            <input type="number" id="sidebar-ticket-price" class="form-control" step="0.25" min="0.50" max="10.00" value="2.50">
+                            <button id="sidebar-optimal-pricing" class="btn-secondary">Suggest Optimal Price</button>
+                        </div>
+
+                        <!-- Revenue Projections -->
+                        <div class="revenue-projections">
+                            <div class="projection-item">
+                                <span class="proj-label">Daily Ridership:</span>
+                                <span class="proj-value" id="sidebar-daily-ridership">150</span>
+                            </div>
+                            <div class="projection-item">
+                                <span class="proj-label">Daily Revenue:</span>
+                                <span class="proj-value" id="sidebar-daily-revenue">$375</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Route Actions -->
+                    <div class="route-actions">
+                        <button class="btn-primary" id="sidebar-create-route">Create Route</button>
+                        <button class="btn-secondary" id="sidebar-cancel-route">Cancel</button>
+                    </div>
+                </div>
+            </div>
             <div class="sidebar-section collapsible">
                 <div class="section-header" data-target="players-panel">
                     <span>PLAYERS</span>
@@ -448,11 +500,12 @@
             
 
             <!-- Action Manager Section -->
-            <div class="sidebar-section action-manager">
-                <div class="section-header">
+            <div class="sidebar-section collapsible action-manager">
+                <div class="section-header" data-target="action-manager-content">
                     <span>ACTION MANAGER</span>
+                    <span class="collapse-icon">▼</span>
                 </div>
-                <div class="action-manager-content">
+                <div id="action-manager-content" class="section-content action-manager-content">
                     <div class="action-stats">
                         <div class="action-stat-row">
                             <span class="action-label">Your Actions:</span>

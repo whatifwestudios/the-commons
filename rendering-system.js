@@ -130,11 +130,21 @@ class BuildingTintManager {
                     const b = data[i + 2];
                     const grayscale = 0.299 * r + 0.587 * g + 0.114 * b;
 
-                    // Apply the color scheme based on the grayscale intensity
+                    // Apply the color scheme based on the grayscale intensity at 60% tint strength
                     const intensity = grayscale / 255;
-                    data[i] = scheme.r * intensity;     // Red
-                    data[i + 1] = scheme.g * intensity; // Green
-                    data[i + 2] = scheme.b * intensity; // Blue
+                    const tintStrength = 0.6; // Reduce proximity tinting intensity to 60%
+
+                    // Blend between original color and tinted color
+                    const originalR = r;
+                    const originalG = g;
+                    const originalB = b;
+                    const tintedR = scheme.r * intensity;
+                    const tintedG = scheme.g * intensity;
+                    const tintedB = scheme.b * intensity;
+
+                    data[i] = originalR * (1 - tintStrength) + tintedR * tintStrength;     // Red
+                    data[i + 1] = originalG * (1 - tintStrength) + tintedG * tintStrength; // Green
+                    data[i + 2] = originalB * (1 - tintStrength) + tintedB * tintStrength; // Blue
                     // Alpha stays the same
                 }
 
