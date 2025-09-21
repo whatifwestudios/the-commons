@@ -317,50 +317,7 @@ class IsometricGrid {
             'competitor6': 'Teal Associates'
         };
         
-        // Unified Governance system - players start with 2 points, get 2 more each month
-        this.governance = {
-            totalVotingPoints: 2, // Total points player has earned (starts with 2)
-            playerAllocations: { // Track where player has allocated their points
-                // Budget categories (10 options)
-                education: 0,
-                healthcare: 0,
-                infrastructure: 0,
-                housing: 0,
-                culture: 0,
-                recreation: 0,
-                commercial: 0,
-                civic: 0,
-                emergency: 0,
-                ubi: 0,
-                // LVT rate adjustment (1 option) - can be negative
-                lvtRate: 0
-            },
-            budgetCategories: [
-                'education',
-                'healthcare', 
-                'infrastructure',
-                'housing',
-                'culture',
-                'recreation',
-                'commercial',
-                'civic',
-                'emergency',
-                'ubi'
-            ],
-            categoryAllocations: {}, // Percentage of LVT allocated to each category
-            publicCoffers: {}, // Available funds in each category
-            unallocatedFunds: 0, // Funds collected but not yet allocated to categories
-            baseLvtRate: 0.50, // 50% base rate (unchanged)
-            currentLvtRate: 0.50, // 50% starting rate
-            proposedLvtRate: 0.50,
-            monthlyLvtCollected: 0
-        };
-        
-        // Initialize budget categories
-        this.governance.budgetCategories.forEach(category => {
-            this.governance.categoryAllocations[category] = 0;
-            this.governance.publicCoffers[category] = 0;
-        });
+        // Legacy governance object removed - now using GovernanceSystem class
         
         // Transportation building state
         this.selectedRoadType = 'local_street';
@@ -1890,14 +1847,15 @@ class IsometricGrid {
         // Calculate demographics breakdown asynchronously
         this.updateDemographicsAsync(population);
         
-        // Calculate total city treasury (sum of all public coffers + unallocated funds)
+        // Calculate total city treasury using new governance system
         let totalTreasury = 0;
-        if (this.governance && this.governance.publicCoffers) {
-            Object.values(this.governance.publicCoffers).forEach(amount => {
+        if (this.governanceSystem) {
+            // Sum all allocated funds
+            Object.values(this.governanceSystem.governance.allocations).forEach(amount => {
                 totalTreasury += amount || 0;
             });
             // Include unallocated funds in treasury total
-            totalTreasury += this.governance.unallocatedFunds || 0;
+            totalTreasury += this.governanceSystem.governance.unallocatedFunds || 0;
         }
         
         // Update city treasury display with detailed breakdown
@@ -1905,8 +1863,8 @@ class IsometricGrid {
             this.domCache.cityTreasury.textContent = `$${Math.round(totalTreasury).toLocaleString()}`;
             
             // Create detailed treasury breakdown for tooltip
-            const allocatedFunds = totalTreasury - (this.governance.unallocatedFunds || 0);
-            const unallocatedAmount = this.governance.unallocatedFunds || 0;
+            const unallocatedAmount = this.governanceSystem ? this.governanceSystem.governance.unallocatedFunds || 0 : 0;
+            const allocatedFunds = totalTreasury - unallocatedAmount;
             
             const treasuryRow = document.getElementById('treasury-row');
             if (treasuryRow) {
@@ -1992,8 +1950,8 @@ class IsometricGrid {
     
     generateTooltipContent(row, col) {
         // Use modern tooltip system exclusively through game's tooltip manager
-        // Check bounds before accessing grid
-        if (row < 0 || row >= 12 || col < 0 || col >= 12) {
+        // Check bounds and grid existence before accessing grid
+        if (row < 0 || row >= 12 || col < 0 || col >= 12 || !this.grid || !this.grid[row] || !this.grid[row][col]) {
             return null;
         }
 
@@ -2026,7 +1984,7 @@ class IsometricGrid {
         // Use unified tooltip manager for detailed display
         if (this.tooltipManager && this.tooltipManager.tooltipElement) {
             const content = this.generateTooltipContent(row, col);
-            if (content) {
+            if (content && this.grid && this.grid[row] && this.grid[row][col]) {
                 const parcel = this.grid[row][col];
                 // Include building ID and construction state in cache key to prevent stale data
                 const buildingId = parcel.building || 'empty';
@@ -2457,120 +2415,30 @@ class IsometricGrid {
     }
     
     updateGovernanceUI() {
-        console.log('🔄 updateGovernanceUI called, delegating to uiManager');
-        if (this.uiManager) {
-            const result = this.uiManager.updateGovernanceUI(this);
-            console.log('✅ uiManager.updateGovernanceUI completed');
-            return result;
-        } else {
-            console.error('❌ uiManager is not available');
+        console.log('🔄 updateGovernanceUI called, delegating to new governance system');
+        this.updateGovernanceModal();
+    }
+
+    updateGovernanceModal() {
+        // Delegate to governance system for modal updates
+        if (this.governanceSystem) {
+            this.governanceSystem.updateGovernanceModal();
         }
     }
     
-    allocateVoteToCategory(category, change) {
-        // Solo game - direct local governance
-        const currentAllocation = this.governance.playerAllocations[category] || 0;
-        const newAllocation = Math.max(0, currentAllocation + change);
 
-        // Calculate total points that would be used after this change
-        const totalUsedPoints = this.getTotalAllocatedPoints() - currentAllocation + newAllocation;
-
-        // Check if player has enough points
-        if (totalUsedPoints > this.governance.totalVotingPoints) {
-            return false;
-        }
-
-        this.governance.playerAllocations[category] = newAllocation;
-        this.calculateBudgetAllocations();
-        this.updateGovernanceUI();
-        return true;
-    }
-    
-    allocateLVTPoint(change) {
-        console.log('🏛️ LVT Point allocation called with change:', change);
-
-        // Solo game - direct local governance
-        const currentAllocation = this.governance.playerAllocations.lvtRate || 0;
-        const newAllocation = currentAllocation + change; // Can be negative
-
-        console.log('📊 Governance state:', {
-            currentAllocation,
-            newAllocation,
-            playerAllocations: this.governance.playerAllocations,
-            totalVotingPoints: this.governance.totalVotingPoints
-        });
-
-        // Calculate total points that would be used after this change
-        const totalUsedPoints = this.getTotalAllocatedPoints() - Math.abs(currentAllocation) + Math.abs(newAllocation);
-
-        console.log('📊 Points calculation:', {
-            totalUsedPoints,
-            limit: this.governance.totalVotingPoints,
-            wouldExceed: totalUsedPoints > this.governance.totalVotingPoints
-        });
-
-        // Check if player has enough points
-        if (totalUsedPoints > this.governance.totalVotingPoints) {
-            console.log('❌ Not enough voting points available');
-            return false;
-        }
-
-        this.governance.playerAllocations.lvtRate = newAllocation;
-
-        // Calculate new rate based on base rate + point allocations
-        this.governance.proposedLvtRate = Math.max(0, Math.min(1, this.governance.baseLvtRate + (newAllocation * 0.01)));
-
-        // Apply changes immediately for real-time feedback
-        this.governance.currentLvtRate = this.governance.proposedLvtRate;
-
-        console.log('✅ Calling updateGovernanceUI()');
-        this.updateGovernanceUI();
-
-        console.log('LVT rate updated:', {
-            change,
-            newAllocation,
-            proposedRate: this.governance.proposedLvtRate
-        });
-        return true;
-    }
-
-    getTotalAllocatedPoints() {
-        // Sum all allocated points (budget categories + absolute value of LVT)
-        const budgetPoints = this.governance.budgetCategories.reduce((sum, category) => {
-            return sum + (this.governance.playerAllocations[category] || 0);
-        }, 0);
-        
-        const lvtPoints = Math.abs(this.governance.playerAllocations.lvtRate || 0);
-        
-        return budgetPoints + lvtPoints;
-    }
-    
     getUnallocatedPoints() {
-        return this.governance.totalVotingPoints - this.getTotalAllocatedPoints();
+        // Legacy method - now delegated to governance system
+        if (this.governanceSystem) {
+            return this.governanceSystem.governance.votingPoints;
+        }
+        return 0;
     }
     
     calculateBudgetAllocations() {
-        // Calculate total votes for each category across all players
-        const totalVotes = {};
-        this.governance.budgetCategories.forEach(category => {
-            totalVotes[category] = 0;
-        });
-        
-        // Sum up player allocations (using new unified governance structure)
-        if (this.governance.playerAllocations) {
-            this.governance.budgetCategories.forEach(category => {
-                totalVotes[category] = this.governance.playerAllocations[category] || 0;
-            });
-        }
-        
-        // Calculate total votes across all categories
-        const grandTotal = Object.values(totalVotes).reduce((sum, votes) => sum + votes, 0);
-        
-        // Calculate percentages
-        this.governance.budgetCategories.forEach(category => {
-            this.governance.categoryAllocations[category] = grandTotal > 0 ? 
-                totalVotes[category] / grandTotal : 0;
-        });
+        // Legacy method - budget allocations now handled by GovernanceSystem
+        // This method is no longer needed as the governance system
+        // handles allocations directly
     }
     
     voteLVTRate(direction) {
@@ -2619,14 +2487,11 @@ class IsometricGrid {
     
     // Called at the beginning of each month
     awardMonthlyVotingPoints() {
-        // Award points to player (new unified system)
-        this.governance.totalVotingPoints += 2; // Add 2 points per month (accumulate)
-        
-        // Reset LVT votes
-        this.governance.lvtRateVotes = { increase: 0, decrease: 0, maintain: 0 };
-        
-        // Update the UI
-        this.updateGovernanceUI();
+        // Delegate to new governance system
+        if (this.governanceSystem) {
+            this.governanceSystem.awardVotingPoints(2); // Award 2 points per month
+            this.updateGovernanceModal(); // Update UI
+        }
     }
     
     highlightGovernanceButton() {
@@ -4664,7 +4529,7 @@ class IsometricGrid {
         
         // Calculate diamond dimensions for a rotated square
         // In isometric view, a tile appears as a diamond with 2:1 width:height ratio
-        const diamondWidth = Math.min(this.canvas.width, this.canvas.height * 2) / this.gridSize * 0.8; // Back to original scale
+        const diamondWidth = Math.min(this.canvas.width, this.canvas.height * 2) / this.gridSize * 0.6; // Reduced scale for better fit
         const diamondHeight = diamondWidth * 0.5;
         
         this.tileWidth = diamondWidth;
@@ -6755,9 +6620,11 @@ class IsometricGrid {
                 this.selectorOpacity = 1.0;
                 
                 // Start hover lift for buildings
-                const parcel = this.grid[tile.row][tile.col];
-                if (parcel && parcel.building) {
-                    this.startContinuousBob(); // Direct lift, no bounce
+                if (this.grid && this.grid[tile.row] && this.grid[tile.row][tile.col]) {
+                    const parcel = this.grid[tile.row][tile.col];
+                    if (parcel && parcel.building) {
+                        this.startContinuousBob(); // Direct lift, no bounce
+                    }
                 }
             }
             // Show tooltip using stored mouse event coordinates
@@ -7263,9 +7130,19 @@ document.addEventListener('DOMContentLoaded', () => {
 
                     // Setup other game systems
                     setupContextMenuCloseListener();
-                    if (game.tooltipManager && game.tooltipManager.setupVitalityTooltips) {
-                        game.tooltipManager.setupVitalityTooltips();
-                    }
+
+                    // Add delay to ensure DOM is fully ready
+                    setTimeout(() => {
+                        console.log('🔧 Setting up systems after DOM ready...');
+                        if (game.governanceSystem) {
+                            game.governanceSystem.setupEventListeners();
+                        }
+                        setupMultiplierControls();
+                        setupCashflowMenu();
+                        if (game.tooltipManager && game.tooltipManager.setupVitalityTooltips) {
+                            game.tooltipManager.setupVitalityTooltips();
+                        }
+                    }, 50);
 
                 }, 100);
 
@@ -7286,12 +7163,19 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Setup other game systems
         setupContextMenuCloseListener();
-        setupGovernanceModal();
-        setupMultiplierControls();
-        setupCashflowMenu();
-        if (game.tooltipManager && game.tooltipManager.setupVitalityTooltips) {
-            game.tooltipManager.setupVitalityTooltips();
-        }
+
+        // Add delay to ensure DOM is fully ready
+        setTimeout(() => {
+            console.log('🔧 Setting up systems after DOM ready (fallback)...');
+            if (game.governanceSystem) {
+                game.governanceSystem.setupEventListeners();
+            }
+            setupMultiplierControls();
+            setupCashflowMenu();
+            if (game.tooltipManager && game.tooltipManager.setupVitalityTooltips) {
+                game.tooltipManager.setupVitalityTooltips();
+            }
+        }, 50);
     }
     
     
@@ -8869,93 +8753,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     
     // Transportation modal functions removed - now using modular transportation system
-    
-    // Setup governance modal event handlers
-    function setupGovernanceModal() {
-        console.log('🔧 Setting up governance modal...');
-        try {
-
-            // Close modal button
-            const closeBtn = document.getElementById('close-governance-modal');
-            if (closeBtn) {
-                closeBtn.addEventListener('click', (e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    game.hideGovernanceModal();
-                });
-            }
-
-            // Close modal on backdrop click
-            const modal = document.getElementById('governance-modal');
-            if (modal) {
-                modal.addEventListener('click', (e) => {
-                    if (e.target.id === 'governance-modal') {
-                        game.hideGovernanceModal();
-                    }
-                });
-            }
-
-            // Budget category voting buttons (excluding LVT buttons)
-            const voteButtons = document.querySelectorAll('.vote-btn[data-category]');
-            voteButtons.forEach((btn, index) => {
-                const category = btn.getAttribute('data-category');
-                const action = btn.getAttribute('data-action');
-
-                btn.addEventListener('click', () => {
-                    try {
-                        const change = action === 'increase' ? 1 : -1;
-
-                        const result = game.allocateVoteToCategory(category, change);
-                    } catch (error) {
-                        console.error('Error in vote button click:', error);
-                    }
-                });
-            });
-
-            // LVT point allocation buttons
-            const lvtIncreaseBtn = document.getElementById('lvt-increase-btn');
-            if (lvtIncreaseBtn) {
-                console.log('✅ LVT increase button found, adding event listener');
-                lvtIncreaseBtn.addEventListener('click', () => {
-                    console.log('🔲 LVT increase button clicked!');
-                    try {
-                        const result = game.allocateLVTPoint(1);
-                        console.log('📊 LVT increase result:', result);
-                    } catch (error) {
-                        console.error('Error in LVT increase button:', error);
-                    }
-                });
-            } else {
-                console.warn('❌ LVT increase button not found');
-            }
-
-            const lvtDecreaseBtn = document.getElementById('lvt-decrease-btn');
-            if (lvtDecreaseBtn) {
-                console.log('✅ LVT decrease button found, adding event listener');
-                lvtDecreaseBtn.addEventListener('click', () => {
-                    console.log('🔲 LVT decrease button clicked!');
-                    try {
-                        const result = game.allocateLVTPoint(-1);
-                        console.log('📊 LVT decrease result:', result);
-                    } catch (error) {
-                        console.error('Error in LVT decrease button:', error);
-                    }
-                });
-            } else {
-                console.warn('❌ LVT decrease button not found');
-            }
-        } catch (error) {
-            console.error('Error setting up governance modal:', error);
-        }
-
-        // Apply changes button - removed as element doesn't exist in current HTML
-        // Governance changes are now applied automatically
-        
-        // Setup governance tooltips - now handled by external tooltip-manager.js
-        if (typeof setupGovernanceTooltips === 'function') {
-            setupGovernanceTooltips();
-        }
-    }
 
 
     // Setup economic multiplier controls

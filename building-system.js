@@ -497,17 +497,22 @@ class BuildingSystem {
      */
     calculateBuildingCostWithFunding(building, fullCost = null) {
         if (!building) return 0;
-        
+
         const baseCost = fullCost || building.cost || 0;
-        
-        // Apply governance funding if available
+
+        // Apply governance funding if available through the new governance system
+        if (this.game.governanceSystem) {
+            return this.game.governanceSystem.getBuildingCostWithFunding(building);
+        }
+
+        // Fallback to legacy governance if new system not available
         if (this.game.governance?.allocations) {
             const category = building.category?.toLowerCase();
             const funding = this.game.governance.allocations[category] || 0;
             const discount = Math.min(0.5, funding / 1000); // Max 50% discount
             return Math.round(baseCost * (1 - discount));
         }
-        
+
         return baseCost;
     }
     
