@@ -625,27 +625,10 @@ class RenderingSystem {
         const x = iso.x + offsetX;
         const y = iso.y + offsetY + this.currentElevation;
 
-        // Calculate construction progress
-        let constructionProgress = 1.0;
-        let isUnderConstruction = false;
-
-        if (parcel._isUnderConstruction ||
-            (parcel.constructionStartDay !== null && parcel.constructionDays > 0)) {
-
-            if (parcel._constructionProgress !== undefined) {
-                constructionProgress = parcel._constructionProgress;
-                isUnderConstruction = constructionProgress < 1.0;
-            } else if (parcel.constructionStartDay !== null && parcel.constructionDays > 0) {
-                const totalConstructionTimeMs = parcel.constructionDays * this.game.dayDuration;
-                const elapsedTimeMs = (this.game.currentDay - parcel.constructionStartDay) * this.game.dayDuration +
-                                      (performance.now() - (this.game.lastDayStartTime || Date.now()));
-
-                if (elapsedTimeMs < totalConstructionTimeMs) {
-                    constructionProgress = Math.max(0, Math.min(1.0, elapsedTimeMs / totalConstructionTimeMs));
-                    isUnderConstruction = true;
-                }
-            }
-        }
+        // Use unified building state from buildings.js
+        const buildingState = this.game.buildingManager.getBuildingState(row, col);
+        const constructionProgress = buildingState ? buildingState.construction.progress : 1.0;
+        const isUnderConstruction = buildingState ? !buildingState.construction.isComplete : false;
 
         // Get performance data for completed buildings
         let performancePercent = 100;

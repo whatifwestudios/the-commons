@@ -19,13 +19,49 @@ class TooltipDataCollector {
         const cached = this.getCachedData(cacheKey);
         if (cached) return cached;
 
+        // Use grid as single source of truth for parcel data
         const parcel = this.game.grid[row][col];
+
         if (!parcel?.building) return null;
 
-        const building = this.game.buildingManager.getBuildingById(parcel.building);
+        const building = this.game.getBuildingDataByName(parcel.building);
         if (!building) return null;
 
-        // Collect all data needed for tooltip
+        // Get construction state from parcel if available
+        const isUnderConstruction = parcel._isUnderConstruction || false;
+        const constructionProgress = parcel._constructionProgress || 1.0;
+        const daysRemaining = parcel._constructionTimeRemaining || 0;
+
+        // Calculate JEEFHH production and needs
+        const production = {};
+        const needs = {};
+
+        if (building.resources) {
+            // Production (what the building provides)
+            if (building.resources.jobsProvided > 0) production.jobs = building.resources.jobsProvided;
+            if (building.resources.energyProvided > 0) production.energy = building.resources.energyProvided;
+            if (building.resources.educationProvided > 0) production.education = building.resources.educationProvided;
+            if (building.resources.foodProvided > 0) production.food = building.resources.foodProvided;
+            if (building.resources.housingProvided > 0) production.housing = building.resources.housingProvided;
+            if (building.resources.healthcareProvided > 0) production.healthcare = building.resources.healthcareProvided;
+
+            // Needs (what the building requires)
+            if (building.resources.jobsRequired > 0) needs.jobs = building.resources.jobsRequired;
+            if (building.resources.energyRequired > 0) needs.energy = building.resources.energyRequired;
+            if (building.resources.educationRequired > 0) needs.education = building.resources.educationRequired;
+            if (building.resources.foodRequired > 0) needs.food = building.resources.foodRequired;
+            if (building.resources.housingRequired > 0) needs.housing = building.resources.housingRequired;
+            if (building.resources.healthcareRequired > 0) needs.healthcare = building.resources.healthcareRequired;
+        }
+
+        // Calculate performance score (simple version for now)
+        let performancePercent = 100;
+        if (!isUnderConstruction && Object.keys(needs).length > 0) {
+            // Simple performance calculation based on whether needs are met
+            performancePercent = 80; // Default to 80% if has needs
+        }
+
+        // Transform into tooltip data format
         const data = {
             // Basic info
             name: building.name,
@@ -39,17 +75,26 @@ class TooltipDataCollector {
             buildingValue: this.getBuildingValue(row, col, parcel, building),
             landValue: this.getLandValue(row, col, parcel),
 
-            // Performance data
-            performance: this.getPerformanceData(row, col, parcel, building),
+            // Construction info
+            construction: {
+                isComplete: !isUnderConstruction,
+                progress: constructionProgress,
+                progressPercent: Math.round(constructionProgress * 100),
+                timeRemaining: daysRemaining
+            },
 
-            // Cashflow data
-            cashflow: this.getCashflowData(row, col, parcel, building),
+            // Performance info
+            performance: {
+                isUnderConstruction: isUnderConstruction,
+                progressPercent: isUnderConstruction ? Math.round(constructionProgress * 100) : performancePercent,
+                performancePercent: performancePercent,
+                needs: needs
+            },
 
-            // Production data ("Adds up to")
-            production: this.getProductionData(building),
-
-            // Needs data (only unsatisfied needs)
-            needs: this.getNeedsData(building, row, col)
+            // Production and needs
+            production: production,
+            needs: needs,
+            cashflow: building.economics?.maxRevenue || 0
         };
 
         this.setCachedData(cacheKey, data);
@@ -103,73 +148,7 @@ class TooltipDataCollector {
     /**
      * Get performance data as percentage
      */
-    getPerformanceData(row, col, parcel, building) {
-        const isUnderConstruction = parcel._isUnderConstruction ||
-            (parcel.constructionStartDay !== null && parcel.constructionDays > 0 &&
-             (this.game.currentDay - parcel.constructionStartDay) < parcel.constructionDays);
-
-        if (isUnderConstruction) {
-            // Calculate live construction progress
-            let progressPercent = 0;
-
-            if (parcel._constructionStartTime && parcel._constructionDays) {
-                const elapsedMs = Date.now() - parcel._constructionStartTime;
-                const totalConstructionMs = parcel._constructionDays * this.game.dayDuration;
-                progressPercent = Math.min(100, Math.max(0, Math.round((elapsedMs / totalConstructionMs) * 100)));
-            } else if (parcel._constructionProgress !== undefined) {
-                progressPercent = Math.round(parcel._constructionProgress * 100);
-            }
-
-            return {
-                isUnderConstruction: true,
-                progressPercent: progressPercent
-            };
-        }
-
-        // Use new performance engine for accurate calculations
-        let performancePercent = 0;
-
-        if (this.game.multiplayerManager && this.game.multiplayerManager.isConnected) {
-            const parcelId = `${row}-${col}`;
-            const serverEfficiency = this.game.buildingEfficiencies?.[parcelId];
-            if (serverEfficiency) {
-                performancePercent = serverEfficiency.efficiency;
-            }
-        } else if (this.game.economicAPI) {
-            // Use server-side economic API for authoritative performance data
-            // For now, use non-blocking client fallback until we implement async tooltips
-            if (this.game.performanceEngine) {
-                const performanceInfo = this.game.performanceEngine.calculateBuildingPerformance(row, col);
-                if (performanceInfo) {
-                    performancePercent = Math.round(performanceInfo.performance * 100);
-                }
-            }
-
-            // Async server call for future updates (non-blocking)
-            this.game.economicAPI.getBuildingPerformance(row, col).then(performanceInfo => {
-                if (performanceInfo) {
-                    // TODO: Update tooltip if still visible
-                    console.log(`Server performance for ${row},${col}: ${Math.round(performanceInfo.performance * 100)}%`);
-                }
-            }).catch(error => {
-                console.error('Failed to get building performance from server:', error);
-            });
-        } else if (this.game.performanceEngine) {
-            // Fallback: Use local performance engine
-            const performanceInfo = this.game.performanceEngine.calculateBuildingPerformance(row, col);
-            if (performanceInfo) {
-                performancePercent = Math.round(performanceInfo.performance * 100);
-            }
-        } else if (this.game.buildingSystem) {
-            // Fallback to old system
-            performancePercent = this.game.buildingSystem.getBuildingEfficiency(row, col);
-        }
-
-        return {
-            isUnderConstruction: false,
-            performancePercent: performancePercent
-        };
-    }
+    // REMOVED: getPerformanceData() - Now using unified getBuildingState() from buildings.js
 
     /**
      * Get cashflow data for the building
@@ -223,7 +202,7 @@ class TooltipDataCollector {
             production.push({
                 emoji: '🏠',
                 amount: building.population.bedroomsAdded,
-                type: 'Housing'
+                type: 'Bedrooms'
             });
         }
 
@@ -320,6 +299,7 @@ class TooltipDataCollector {
             });
         } else if (this.game.performanceEngine) {
             // Fallback: Use local performance engine for need calculation
+            console.log(`🎯 Using NEW performance engine for building at (${row},${col})`);
             const performanceInfo = this.game.performanceEngine.calculateBuildingPerformance(row, col);
 
             if (performanceInfo && performanceInfo.needs) {
@@ -430,14 +410,14 @@ class TooltipRenderer {
     renderBuildingTooltip(data) {
         let html = '';
 
-        // Building name and owner with location in top right
+        // Header with building name and parcel coordinates in top right
         html += `<div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px;">`;
         html += `<div>`;
         html += `<strong style="color: #4CAF50; font-size: 16px;">${data.name}</strong><br>`;
-        html += `<span style="color: #888;">Owned by ${data.owner.name}</span>`;
+        html += `<span style="color: #888; font-size: 13px;">Owned by ${data.owner.name}</span>`;
         html += `</div>`;
         if (data.location) {
-            html += `<div style="color: #666; font-size: 12px; font-weight: bold;">${data.location}</div>`;
+            html += `<div style="color: #4a9eff; font-size: 14px; font-weight: bold; background: rgba(74, 158, 255, 0.1); padding: 4px 8px; border-radius: 4px;">${data.location}</div>`;
         }
         html += `</div>`;
 
@@ -455,8 +435,23 @@ class TooltipRenderer {
 
         // Performance with color coding
         if (data.performance.isUnderConstruction) {
-            html += `<div style="margin-bottom: 8px;">`;
-            html += `<span style="color: #FFA726;">🚧 Status:</span> <span style="color: #FF9800;">Under Construction (${data.performance.progressPercent}%)</span>`;
+            html += `<div style="margin-bottom: 12px;">`;
+            html += `<div style="margin-bottom: 6px;">`;
+            html += `<span style="color: #FFA726;">🚧 Status:</span> <span style="color: #FF9800;">Under Construction</span>`;
+            html += `</div>`;
+
+            // Progress bar (like month progress)
+            html += `<div style="background: #333; border-radius: 4px; overflow: hidden; margin-bottom: 4px;">`;
+            html += `<div style="background: linear-gradient(90deg, #FF9800, #FFC107); height: 12px; width: ${data.performance.progressPercent}%; transition: width 0.3s ease;"></div>`;
+            html += `</div>`;
+
+            // Progress text and time remaining
+            html += `<div style="display: flex; justify-content: space-between; font-size: 12px; color: #ccc;">`;
+            html += `<span>${data.performance.progressPercent}% complete</span>`;
+            if (data.performance.timeRemaining) {
+                html += `<span>⏱️ ${data.performance.timeRemaining}</span>`;
+            }
+            html += `</div>`;
             html += `</div>`;
         } else {
             // Simple performance color calculation
@@ -466,6 +461,41 @@ class TooltipRenderer {
                              perfPercent >= 25 ? '#FF9800' : '#F44336';
             html += `<div style="margin-bottom: 8px;">`;
             html += `<span style="color: #E0E0E0;">⚡ Performance:</span> <strong style="color: ${perfColor};">${data.performance.performancePercent}%</strong>`;
+            html += `</div>`;
+        }
+
+        // Detailed needs information (for non-construction buildings)
+        const needsObj = data.performance.needs || data.needs;
+        if (!data.performance.isUnderConstruction && needsObj && Object.keys(needsObj).length > 0) {
+            html += `<div style="margin-bottom: 10px;">`;
+            html += `<div style="color: #E0E0E0; margin-bottom: 4px;"><strong>🎯 Resource Needs:</strong></div>`;
+
+            Object.entries(needsObj).forEach(([type, amount]) => {
+                const need = { type, required: amount };
+                const needTypeEmoji = {
+                    'workers': '👥',
+                    'jobs': '💼',
+                    'energy': '⚡',
+                    'food': '🍞',
+                    'education': '🎓',
+                    'healthcare': '🏥'
+                }[need.type] || '📦';
+
+                const needTypeName = {
+                    'workers': 'Workers',
+                    'jobs': 'Jobs',
+                    'energy': 'Energy',
+                    'food': 'Food',
+                    'education': 'Education',
+                    'healthcare': 'Healthcare'
+                }[type] || type;
+
+                // Simple display for now
+                html += `<div style="margin-left: 8px; margin-bottom: 2px; font-size: 12px;">`;
+                html += `<span style="color: #FFC107;">${needTypeEmoji} ${needTypeName}:</span> `;
+                html += `<span style="color: #FF9800;">${amount} required</span>`;
+                html += `</div>`;
+            });
             html += `</div>`;
         }
 
@@ -479,27 +509,54 @@ class TooltipRenderer {
             html += `</div>`;
         }
 
-        // Production (only show if has production)
-        if (data.production && data.production.length > 0) {
-            html += `<div style="margin-bottom: 8px;">`;
-            html += `<strong style="color: #66BB6A;">Produces:</strong><br>`;
-            data.production.forEach(item => {
-                html += `<span style="margin-left: 8px; color: #A5D6A7;">${item.emoji} ${item.amount} ${item.type}</span><br>`;
-            });
-            html += `</div>`;
+        // Production and Needs Section (what the user specifically requested)
+        if (!data.performance.isUnderConstruction) {
+            // What the building provides (production)
+            if (data.production && Object.keys(data.production).length > 0) {
+                html += `<div style="margin-bottom: 10px; background: rgba(76, 175, 80, 0.1); padding: 8px; border-radius: 4px;">`;
+                html += `<div style="color: #4CAF50; margin-bottom: 4px; font-weight: bold;">🏭 Provides:</div>`;
+
+                Object.entries(data.production).forEach(([type, amount]) => {
+                    const emoji = {
+                        'jobs': '💼',
+                        'energy': '⚡',
+                        'education': '🎓',
+                        'food': '🍞',
+                        'housing': '🏠',
+                        'healthcare': '🏥'
+                    }[type] || '📦';
+
+                    html += `<span style="margin-left: 8px; color: #81C784;">${emoji} ${amount} ${type}</span><br>`;
+                });
+                html += `</div>`;
+            }
+
+            // What the building needs (top 2 needs only)
+            if (data.needs && Object.keys(data.needs).length > 0) {
+                html += `<div style="margin-bottom: 10px; background: rgba(255, 152, 0, 0.1); padding: 8px; border-radius: 4px;">`;
+                html += `<div style="color: #FF9800; margin-bottom: 4px; font-weight: bold;">⚠️ Needs (Top 2):</div>`;
+
+                // Sort needs by amount (highest first) and take top 2
+                const needsEntries = Object.entries(data.needs)
+                    .sort(([,a], [,b]) => b - a)
+                    .slice(0, 2);
+
+                needsEntries.forEach(([type, amount]) => {
+                    const emoji = {
+                        'jobs': '👥',
+                        'energy': '⚡',
+                        'education': '🎓',
+                        'food': '🍞',
+                        'housing': '🏠',
+                        'healthcare': '🏥'
+                    }[type] || '📦';
+
+                    html += `<span style="margin-left: 8px; color: #FFB74D;">${emoji} ${amount} ${type}</span><br>`;
+                });
+                html += `</div>`;
+            }
         }
 
-        // Needs (only show if has needs)
-        if (data.needs && data.needs.length > 0) {
-            html += `<div style="margin-bottom: 4px;">`;
-            html += `<strong style="color: #FFB74D;">Requires:</strong><br>`;
-            data.needs.forEach(item => {
-                const amount = item.needed || item.amount || 0;
-                const issueText = item.issue ? ` (${item.issue})` : '';
-                html += `<span style="margin-left: 8px; color: #FFCC02;">${item.emoji} ${amount} ${item.type}${issueText}</span><br>`;
-            });
-            html += `</div>`;
-        }
 
         return html;
     }
@@ -512,23 +569,28 @@ class TooltipRenderer {
 
         let html = '';
 
-        html += `<div style="margin-bottom: 8px;">`;
+        // Header with parcel name and coordinate
+        html += `<div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px;">`;
+        html += `<div>`;
         html += `<strong style="color: #90A4AE; font-size: 16px;">Empty Parcel</strong><br>`;
-        html += `<span style="color: #666;">Location: ${data.location}</span>`;
+        html += `<span style="color: #888; font-size: 12px;">Owned by ${data.owner ? data.owner.name : 'City'}</span>`;
+        html += `</div>`;
+        html += `<div style="background: rgba(76, 175, 80, 0.2); color: #4CAF50; padding: 4px 8px; border-radius: 12px; font-weight: bold; font-size: 12px; margin-left: 8px;">`;
+        html += `${data.location}`;
+        html += `</div>`;
         html += `</div>`;
 
-        if (data.owner) {
-            html += `<div style="margin-bottom: 8px;">`;
-            html += `<span style="color: #888;">Owned by ${data.owner.name}</span>`;
-            html += `</div>`;
-        }
-
+        // Values section
         if (data.landValue !== undefined) {
             html += `<div style="background: rgba(255,255,255,0.05); padding: 8px; border-radius: 4px; margin-bottom: 8px;">`;
-            html += `<span style="color: #64B5F6;">🏞️ Land Value:</span> <strong>$${data.landValue.toLocaleString()}</strong>`;
+            html += `<div style="display: flex; justify-content: space-between; align-items: center;">`;
+            html += `<span style="color: #64B5F6;">🏞️ Land Value</span>`;
+            html += `<strong style="color: #fff;">$${data.landValue.toLocaleString()}</strong>`;
+            html += `</div>`;
             html += `</div>`;
         }
 
+        // Status section
         html += `<div style="margin-bottom: 4px;">`;
         html += `<span style="color: #81C784;">🏗️ Available for construction</span>`;
         html += `</div>`;

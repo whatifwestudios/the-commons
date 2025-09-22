@@ -37,9 +37,9 @@ class IsometricGrid {
         
         // Initialize Auction System
         this.auctionSystem = new AuctionSystem(this);
-        
-        // Initialize unified tooltip manager
-        this.tooltipManager = new TooltipManager(this);
+
+        // Initialize crisp tooltip system
+        this.crispTooltip = new CrispTooltip(this);
 
         // Initialize context menu system
         this.contextMenuSystem = new ContextMenuSystem(this);
@@ -106,7 +106,7 @@ class IsometricGrid {
             
             // Check if a building is an energy producer
             isEnergyProducer: (building) => {
-                return building.resources?.energyDemand < 0;
+                return (building.resources?.energyProvided || 0) > (building.resources?.energyRequired || 0);
             },
             
             // Check if a building needs transport accessibility for revenue
@@ -346,6 +346,9 @@ class IsometricGrid {
             lvt: 0,
             netCashflow: 0
         };
+
+        // Attenuation visualization toggle for Data Insights overlay
+        this.showAttenuationVisualization = false;
         
         // Initialize unified Action Manager
         this.actionManager = new ActionManager(this);
@@ -382,6 +385,7 @@ class IsometricGrid {
             // Update building construction progress
             if (this.buildingSystem) {
                 this.buildingSystem.ageBuildings();
+                this.buildingSystem.updateConstructionProgress();
             }
         }, 1000);
         
@@ -1044,29 +1048,34 @@ class IsometricGrid {
     // Helper method: Get localized livability scores around a building location
     getLivabilityScores(row, col) {
         const livabilityScores = {};
-        const livabilityDomains = ['health', 'education', 'safety', 'culture', 'mobility', 'environment', 'affordability', 'resilience', 'noise'];
+        // Use new CARENS system domains (Culture, Affordability, Resilience, Environment, Noise, Safety)
+        const livabilityDomains = ['culture', 'affordability', 'resilience', 'environment', 'noise', 'safety'];
         const searchRadius = 3; // Check buildings within 3 tiles for livability impacts
-        
+
         livabilityDomains.forEach(domain => {
             let totalImpact = 0;
-            
+
             // Sum impacts from nearby buildings
             for (let dr = -searchRadius; dr <= searchRadius; dr++) {
                 for (let dc = -searchRadius; dc <= searchRadius; dc++) {
                     const checkRow = row + dr;
                     const checkCol = col + dc;
-                    
-                    if (checkRow >= 0 && checkRow < this.gridSize && 
+
+                    if (checkRow >= 0 && checkRow < this.gridSize &&
                         checkCol >= 0 && checkCol < this.gridSize) {
-                        
+
                         const parcel = this.grid[checkRow][checkCol];
                         if (parcel && parcel.building) {
                             const building = this.buildingManager.getBuildingById(parcel.building);
-                            if (building && building.domainImpacts && building.domainImpacts[domain]) {
-                                // Distance decay for impact (closer buildings have more effect)
+                            if (building && building.livability && building.livability[domain]) {
+                                const livabilityData = building.livability[domain];
+                                const impact = livabilityData.impact || 0;
+                                const attenuation = livabilityData.attenuation || 1;
+
+                                // Distance-based attenuation as specified in building data
                                 const distance = Math.sqrt(dr*dr + dc*dc);
-                                const distanceMultiplier = Math.max(0.1, 1 - distance / searchRadius);
-                                totalImpact += building.domainImpacts[domain] * distanceMultiplier;
+                                const attenuationMultiplier = Math.max(0.1, 1 - distance / attenuation);
+                                totalImpact += impact * attenuationMultiplier;
                             }
                         }
                     }
@@ -1106,8 +1115,14 @@ class IsometricGrid {
     }
     
     // Delegation method for demographic calculation
-    calculateDemographics(totalPopulation) {
-        return this.economicEngine.calculateDemographics(totalPopulation);
+    async calculateDemographics(totalPopulation) {
+        // Use server-side calculation for demographics (consolidated economic flow)
+        try {
+            return await this.economicAPI.getDemographics(totalPopulation);
+        } catch (error) {
+            console.error('Server demographics calculation failed:', error);
+            return null;
+        }
     }
     
     // Helper method: Calculate livability-based multipliers for revenue and decay
@@ -1211,6 +1226,11 @@ class IsometricGrid {
         // Trigger async server-side calculation in background
         this.updateCashflowAsync();
 
+        // Ensure breakdown is populated for DCF modal
+        if (this.economicEngine) {
+            this.economicEngine.buildCashflowBreakdown();
+        }
+
         // Return cached values immediately for UI responsiveness
         if (this.cache?.cashflowBreakdown) {
             const cashflow = this.cache.cashflowBreakdown;
@@ -1244,24 +1264,30 @@ class IsometricGrid {
 
     async updateCashflowAsync() {
         try {
-            const cashflow = await this.economicEngine.calculatePlayerCashflow();
+            // Use server-side cashflow calculation (consolidated economic flow)
+            const gameState = this.economicAPI.prepareGameState(this);
+            const cashflow = await this.economicAPI.getPlayerCashflow(gameState);
 
-            // Update local cache
-            this.cache = this.cache || {};
-            this.cache.cashflowBreakdown = cashflow;
+            if (cashflow && cashflow.totalRevenue !== undefined) {
+                // Update local cache
+                this.cache = this.cache || {};
+                this.cache.cashflowBreakdown = cashflow;
 
-            // Update UI if needed
-            this.cashflowBreakdown = cashflow.breakdown;
-            this.currentCashflowPreview = {
-                revenue: cashflow.totalRevenue,
-                maintenance: cashflow.totalMaintenance,
-                lvt: cashflow.totalLVT,
-                netCashflow: cashflow.netCashflow
-            };
-            this.dailyCashflowTotals = this.currentCashflowPreview;
+                // Update UI if needed
+                this.cashflowBreakdown = cashflow.breakdown;
+                this.currentCashflowPreview = {
+                    revenue: cashflow.totalRevenue,
+                    maintenance: cashflow.totalMaintenance,
+                    lvt: cashflow.totalLVT,
+                    netCashflow: cashflow.netCashflow
+                };
+                this.dailyCashflowTotals = this.currentCashflowPreview;
 
-            // Update UI displays with fresh cashflow data
-            this.updateCashflowDisplay();
+                // Update UI displays with fresh cashflow data
+                this.updateCashflowDisplay();
+            } else {
+                console.warn('Server cashflow calculation returned null or invalid data');
+            }
         } catch (error) {
             console.error('Async cashflow update failed:', error);
         }
@@ -1697,14 +1723,14 @@ class IsometricGrid {
         for (let row = 0; row < this.gridSize; row++) {
             for (let col = 0; col < this.gridSize; col++) {
                 const parcel = this.grid[row][col];
-                if (parcel && parcel.building && 
-                    parcel.constructionStartDay !== null && 
-                    parcel.constructionDays > 0) {
+                if (parcel && parcel.building &&
+                    parcel._constructionStartTime !== null &&
+                    parcel._constructionDays > 0) {
                     
                     // Check if construction is still in progress
-                    const totalConstructionTimeMs = parcel.constructionDays * this.dayDuration;
-                    const elapsedTimeMs = (this.currentDay - parcel.constructionStartDay) * this.dayDuration + 
-                                          (performance.now() - (this.lastDayStartTime || Date.now()));
+                    const constructionDurationPerDay = 3600000 / 365; // ~9.86 seconds per construction day
+                    const totalConstructionTimeMs = parcel._constructionDays * constructionDurationPerDay;
+                    const elapsedTimeMs = Date.now() - parcel._constructionStartTime;
                     
                     if (elapsedTimeMs < totalConstructionTimeMs) {
                         return true; // Found at least one building under construction
@@ -1798,38 +1824,45 @@ class IsometricGrid {
     
     // Live tooltip updates for time-based content
     startLiveTooltipUpdates() {
-        // Update time-based tooltips every second
+        // Update time-based tooltips frequently for smooth construction progress
         this.liveTooltipInterval = setInterval(() => {
             this.updateLiveTooltips();
-        }, 1000); // Update every second for live time display
+        }, 250); // Update every 250ms for smooth construction progress
     }
     
     // Update any visible tooltips that contain time information
     updateLiveTooltips() {
         // Check if tooltip manager exists and a tooltip is currently visible
         if (this.tooltipManager && this.tooltipManager.isVisible) {
-            // Check if the current tooltip content contains "Time Left in Month"
             const tooltipElement = this.tooltipManager.tooltipElement;
-            if (tooltipElement && tooltipElement.innerHTML && 
-                tooltipElement.innerHTML.includes('Time Left in Month')) {
-                // Re-show the month progress tooltip with updated time
-                const progressContainer = document.getElementById('month-progress-container');
-                if (progressContainer) {
-                    // Update the tooltip data first
-                    this.updateMonthCountdown();
-                    // Force refresh the visible tooltip by re-triggering it
-                    const rect = progressContainer.getBoundingClientRect();
-                    const x = rect.left - 20;
-                    const y = rect.top + rect.height / 2;
-                    const tooltipContent = progressContainer.getAttribute('data-tooltip');
-                    if (tooltipContent) {
-                        this.tooltipManager.show(tooltipContent, x, y, {
-                            delay: 0,
-                            maxWidth: 300,
-                            priority: 1,
-                            html: true
-                        });
+            if (tooltipElement && tooltipElement.innerHTML) {
+
+                // Handle month progress tooltips
+                if (tooltipElement.innerHTML.includes('Time Left in Month')) {
+                    // Re-show the month progress tooltip with updated time
+                    const progressContainer = document.getElementById('month-progress-container');
+                    if (progressContainer) {
+                        // Update the tooltip data first
+                        this.updateMonthCountdown();
+                        // Force refresh the visible tooltip by re-triggering it
+                        const rect = progressContainer.getBoundingClientRect();
+                        const x = rect.left - 20;
+                        const y = rect.top + rect.height / 2;
+                        const tooltipContent = progressContainer.getAttribute('data-tooltip');
+                        if (tooltipContent) {
+                            this.tooltipManager.show(tooltipContent, x, y, {
+                                delay: 0,
+                                maxWidth: 300,
+                                priority: 1,
+                                html: true
+                            });
+                        }
                     }
+                }
+
+                // Handle construction progress tooltips
+                else if (tooltipElement.innerHTML.includes('Under Construction') && this.currentTooltipCell) {
+                    // Tooltip now handled automatically by CrispTooltip system
                 }
             }
         }
@@ -1999,72 +2032,6 @@ class IsometricGrid {
         return this.uiManager.createDataInsightsOverlay(row, col, parcel, this);
     }
     
-    generateTooltipContent(row, col) {
-        // Use modern tooltip system exclusively through game's tooltip manager
-        // Check bounds and grid existence before accessing grid
-        if (row < 0 || row >= 12 || col < 0 || col >= 12 || !this.grid || !this.grid[row] || !this.grid[row][col]) {
-            return null;
-        }
-
-        const parcel = this.grid[row][col];
-
-        if (parcel && parcel.building) {
-            const tooltipData = this.tooltipManager.dataCollector.getBuildingTooltipData(row, col);
-            if (tooltipData) {
-                const rendered = this.tooltipManager.renderer.renderBuildingTooltip(tooltipData);
-                return rendered;
-            }
-        } else {
-            const tooltipData = this.tooltipManager.dataCollector.getEmptyParcelTooltipData(row, col);
-            if (tooltipData) {
-                const rendered = this.tooltipManager.renderer.renderEmptyParcelTooltip(tooltipData);
-                return rendered;
-            }
-        }
-
-        return null;
-    }
-    
-    showTooltip(row, col, mouseX, mouseY) {
-        // Don't show tooltip if context menu is open
-        if (this.contextMenu && this.contextMenu.classList && this.contextMenu.classList.contains('visible')) {
-            return;
-        }
-
-
-        // Use unified tooltip manager for detailed display
-        if (this.tooltipManager && this.tooltipManager.tooltipElement) {
-            const content = this.generateTooltipContent(row, col);
-            if (content && this.grid && this.grid[row] && this.grid[row][col]) {
-                const parcel = this.grid[row][col];
-                // Include building ID and construction state in cache key to prevent stale data
-                const buildingId = parcel.building || 'empty';
-                const constructionState = parcel._isUnderConstruction ? `_constructing_${Math.round((parcel._constructionProgress || 0) * 100)}` : '';
-                const ownerState = parcel.owner || 'unowned';
-                const cacheKey = `grid_${row}_${col}_${buildingId}_${ownerState}_${parcel.buildingAge || 0}_${Math.round((parcel.decay || 0) * 100)}${constructionState}`;
-
-                // Ensure content is properly formatted for HTML display
-                const cleanContent = content.replace(/\\n/g, '<br>');
-
-                this.tooltipManager.show(cleanContent, mouseX, mouseY, {
-                    html: true,
-                    maxWidth: 350,
-                    priority: 1,
-                    cacheKey: cacheKey,
-                    delay: 0,
-                    animationSpeed: 'fast'
-                });
-            } else {
-            }
-            return;
-        }
-    }
-    
-    hideTooltip() {
-        if (this.tooltipManager && this.tooltipManager.tooltipElement) {
-            this.tooltipManager.hide();
-        }
-    }
     
     showMobilityTooltip(row, col, mouseX, mouseY) {
         // Don't show tooltip if context menu is open
@@ -2072,7 +2039,7 @@ class IsometricGrid {
             return;
         }
         
-        if (!this.tooltipManager) {
+        if (!this.simpleTooltip) {
             return;
         }
         
@@ -2153,7 +2120,7 @@ class IsometricGrid {
         }
         
         // Always hide tooltip immediately when mouse moves
-        this.hideTooltip();
+        if (this.crispTooltip) this.crispTooltip.hide();
         
         // Update selected tile display
         if (tile && tile.row >= 0 && tile.row < this.gridSize &&
@@ -2229,7 +2196,7 @@ class IsometricGrid {
     
     showContextMenu(row, col, mouseX, mouseY) {
         this.contextMenuSystem.show(row, col, mouseX, mouseY);
-        this.hideTooltip();
+        if (this.crispTooltip) this.crispTooltip.hide();
     }
     
     hideContextMenu() {
@@ -2582,8 +2549,10 @@ class IsometricGrid {
             return;
         }
 
-        // Calculate starting bid based on calculated land value
-        const calculatedValue = await this.economicEngine.calculateLandValue(row, col);
+        // Calculate starting bid based on calculated land value (server-side)
+        const gameState = this.economicAPI.prepareGameState(this);
+        const landValueResult = await this.economicAPI.getLandValue(gameState, row, col);
+        const calculatedValue = landValueResult?.landValue || 100; // fallback value
         const initialLandValue = this.getParcelPrice(row, col);
         
         // Get building value if present (building value - decay)
@@ -2906,58 +2875,35 @@ class IsometricGrid {
     }
 
     getBuildingDataByName(buildingName) {
-        const building = this.buildingManager.getAllBuildings().find(b => b.name === buildingName);
+        const building = this.buildingManager.getAllBuildings().find(b =>
+            b.name === buildingName || b.id === buildingName
+        );
         
         if (building) {
             // Separate supply/demand from soft metrics
-            const allImpacts = building.domainImpacts || this.getBuildingImpacts(building.id);
-            const supplyDemandMetrics = ['energy', 'food', 'housing', 'jobs'];
+            // Legacy domainImpacts system removed - now use resources and livability
+            const supplyDemandMetrics = ['jobs', 'energy', 'education', 'food', 'housing', 'healthcare'];
             
             const supplyDemand = {};
             const softMetrics = {};
             
-            // Get direct supply/demand from building properties
-            const bedroomsAdded = building.population?.bedroomsAdded || 0;
-            const jobsCreated = building.population?.jobsCreated || 0;
-            const energyDemand = building.resources?.energyDemand || 0;
-            const energySupply = building.resources?.energySupply || 0;
-            const foodProduction = building.resources?.foodProduction || 0;
-            const buildingFoodDemand = building.resources?.foodDemand || 0;
+            // Get direct supply/demand from building properties (NEW CSV FORMAT)
+            const resources = building.resources || {};
 
-            // Calculate net supply/demand for each metric
-            // ENERGY: Use separate supply and demand columns
-            const netEnergy = energySupply - energyDemand;
-            supplyDemand.energy = netEnergy;
-
-            // FOOD: Use separate supply and demand columns
-            const netFood = foodProduction - buildingFoodDemand;
-            supplyDemand.food = netFood;
+            // JEEFHH Supply/Demand using new CSV format
+            supplyDemand.jobs = (resources.jobsProvided || 0) - (resources.jobsRequired || 0);
+            supplyDemand.energy = (resources.energyProvided || 0) - (resources.energyRequired || 0);
+            supplyDemand.education = (resources.educationProvided || 0) - (resources.educationRequired || 0);
+            supplyDemand.food = (resources.foodProvided || 0) - (resources.foodRequired || 0);
+            supplyDemand.housing = (resources.housingProvided || 0) - (resources.housingRequired || 0);
+            supplyDemand.healthcare = (resources.healthcareProvided || 0) - (resources.healthcareRequired || 0);
             
-            // HOUSING: Bedrooms supplied vs demanded by jobs
-            if (bedroomsAdded > 0) {
-                supplyDemand.housing = bedroomsAdded; // Supply bedrooms
-            } else if (jobsCreated > 0) {
-                // Jobs create housing demand (0.6 bedrooms per job)
-                supplyDemand.housing = -(jobsCreated * 0.6);
-            } else {
-                supplyDemand.housing = 0;
-            }
-            
-            // JOBS: Jobs created vs demanded by housing
-            if (jobsCreated > 0) {
-                supplyDemand.jobs = jobsCreated; // Supply jobs
-            } else if (bedroomsAdded > 0) {
-                // Housing creates job demand (0.6 jobs per bedroom)
-                supplyDemand.jobs = -(bedroomsAdded * 0.6);
-            } else {
-                supplyDemand.jobs = 0;
-            }
-            
-            // Separate soft metrics from impacts
-            if (allImpacts) {
-                Object.entries(allImpacts).forEach(([key, value]) => {
-                    if (!supplyDemandMetrics.includes(key.toLowerCase())) {
-                        softMetrics[key] = value;
+            // CARENS Livability impacts using new JSON format
+            const livability = building.livability || {};
+            if (livability) {
+                Object.entries(livability).forEach(([key, data]) => {
+                    if (data && typeof data.impact === 'number') {
+                        softMetrics[key.toUpperCase()] = data.impact;
                     }
                 });
             }
@@ -2971,7 +2917,9 @@ class IsometricGrid {
                 supplyDemand: supplyDemand,
                 impacts: softMetrics,
                 image: building.images?.built || null,
-                economics: building.economics
+                economics: building.economics,
+                resources: resources, // Include original resources for tooltip
+                livability: livability // Include livability for tooltip
             };
         }
         
@@ -3093,36 +3041,38 @@ class IsometricGrid {
         if (!container) return;
         
         // Clear and rebuild supply/demand section
-        container.innerHTML = '<div class="vitality-group-title">SUPPLY & DEMAND</div>';
-        
-        // Define supply/demand metrics with colors
+        container.innerHTML = '<div class="vitality-group-title">JEEFHH (SUPPLY & DEMAND)</div>';
+
+        // Define supply/demand metrics with colors (JEEFHH)
         const supplyDemandConfig = {
+            'jobs': { color: '#ec4899', label: 'JOBS' },
             'energy': { color: '#f59e0b', label: 'ENERGY' },
+            'education': { color: '#8b5cf6', label: 'EDUCATION' },
             'food': { color: '#84cc16', label: 'FOOD' },
             'housing': { color: '#06b6d4', label: 'HOUSING' },
-            'jobs': { color: '#ec4899', label: 'JOBS' }
+            'healthcare': { color: '#ef4444', label: 'HEALTHCARE' }
         };
-        
+
         Object.entries(supplyDemandConfig).forEach(([key, config]) => {
             const value = buildingData.supplyDemand?.[key] || 0;
             if (value === 0 && key !== 'energy') return; // Skip if no impact (except energy which can be 0)
-            
+
             const row = document.createElement('div');
-            row.className = 'vitality-row';
-            
+            row.className = 'jeefhh-bar-row';
+
             // Create label
             const label = document.createElement('span');
-            label.className = 'vitality-label';
+            label.className = 'jeefhh-label';
             label.style.color = config.color;
             label.textContent = config.label;
-            
+
             // Create bar container
             const barContainer = document.createElement('div');
-            barContainer.className = 'vitality-bar';
-            
+            barContainer.className = 'jeefhh-bar';
+
             // Create progress bar
             const progress = document.createElement('div');
-            progress.className = 'vitality-progress';
+            progress.className = 'jeefhh-progress';
             
             // Calculate width - supply goes right (green), demand goes left (red)
             const maxValue = key === 'energy' ? 500 : key === 'food' ? 50 : 30;
@@ -3131,22 +3081,48 @@ class IsometricGrid {
             // Set position absolute for proper positioning
             progress.style.position = 'absolute';
             
-            if (value > 0) {
+            // JEEFHH center-balanced bars: Blue dot when balanced, red when imbalanced
+            const isJEEFHH = ['jobs', 'energy', 'education', 'food', 'housing', 'healthcare'].includes(key);
+
+            if (Math.abs(value) < 0.1) {
+                // Nearly balanced - show satisfying blue dot in center
+                progress.style.left = '49%';
+                progress.style.width = '2%';
+                progress.style.height = '8px';
+                progress.style.borderRadius = '50%';
+                progress.style.background = isJEEFHH ? '#3b82f6' : '#8b5cf6'; // Blue for JEEFHH, Purple for CARENS
+                progress.style.border = '1px solid rgba(255,255,255,0.3)';
+            } else if (value > 0) {
                 // Supply - goes right from center
                 progress.style.left = '50%';
                 progress.style.width = `${Math.abs(normalizedValue) * 50}%`;
-                progress.style.background = '#22c55e'; // Green for supply
-            } else if (value < 0) {
+                progress.style.height = '6px';
+                progress.style.borderRadius = '0';
+                progress.style.border = 'none';
+                if (isJEEFHH) {
+                    // Supply excess turns blue fading to red
+                    const intensity = Math.min(normalizedValue, 1);
+                    const redComponent = Math.floor(intensity * 255);
+                    progress.style.background = `rgb(${redComponent}, ${100 + redComponent}, 255)`;
+                } else {
+                    // CARENS: positive moves toward blue on right
+                    progress.style.background = '#3b82f6'; // Blue for positive CARENS
+                }
+            } else {
                 // Demand - goes left from center
                 const width = Math.abs(normalizedValue) * 50;
                 progress.style.left = `${50 - width}%`;
                 progress.style.width = `${width}%`;
-                progress.style.background = '#ef4444'; // Red for demand
-            } else {
-                // Zero - show tiny gray bar at center
-                progress.style.left = '49.5%';
-                progress.style.width = '1%';
-                progress.style.background = '#666666';
+                progress.style.height = '6px';
+                progress.style.borderRadius = '0';
+                progress.style.border = 'none';
+                if (isJEEFHH) {
+                    // Demand excess turns red
+                    progress.style.background = '#ef4444';
+                } else {
+                    // CARENS: negative moves toward red on left
+                    progress.style.background = '#ef4444'; // Red for negative CARENS
+                }
             }
             
             barContainer.appendChild(progress);
@@ -3158,7 +3134,7 @@ class IsometricGrid {
         
         // Add cost and build time at the bottom
         const costRow = document.createElement('div');
-        costRow.className = 'vitality-row';
+        costRow.className = 'jeefhh-bar-row';
         
         // Calculate public funding for this building
         const building = this.buildingManager.getAllBuildings().find(b => b.name === buildingData.name);
@@ -3172,7 +3148,7 @@ class IsometricGrid {
         if (publicFunding > 0) {
             // Show actual player cost (could be $0) with public funding indicator
             costRow.innerHTML = `
-                <span class="vitality-label">COST</span>
+                <span class="jeefhh-label">COST</span>
                 <div style="display: flex; align-items: center; gap: 6px; margin-left: auto;">
                     <span class="info-value">$${playerCost.toLocaleString()}</span>
                     <span style="font-size: 8px; color: #4CAF50; background: rgba(76, 175, 80, 0.15); padding: 1px 4px; border-radius: 2px; font-weight: 600;">FUNDED</span>
@@ -3181,7 +3157,7 @@ class IsometricGrid {
         } else if (availableFunds > 0) {
             // Public funds exist but not enough to cover full cost - show partial funding indicator
             costRow.innerHTML = `
-                <span class="vitality-label">COST</span>
+                <span class="jeefhh-label">COST</span>
                 <div style="display: flex; align-items: center; gap: 6px; margin-left: auto;">
                     <span class="info-value">$${playerCost.toLocaleString()}</span>
                     <span style="font-size: 8px; color: #FFA726; background: rgba(255, 167, 38, 0.15); padding: 1px 4px; border-radius: 2px; font-weight: 600;">PARTIAL</span>
@@ -3190,16 +3166,16 @@ class IsometricGrid {
         } else {
             // No public funding available
             costRow.innerHTML = `
-                <span class="vitality-label">COST</span>
+                <span class="jeefhh-label">COST</span>
                 <span class="info-value" style="margin-left: auto;">$${playerCost.toLocaleString()}</span>
             `;
         }
         container.appendChild(costRow);
         
         const timeRow = document.createElement('div');
-        timeRow.className = 'vitality-row';
+        timeRow.className = 'jeefhh-bar-row';
         timeRow.innerHTML = `
-            <span class="vitality-label">BUILD TIME</span>
+            <span class="jeefhh-label">BUILD TIME</span>
             <span class="info-value" style="margin-left: auto;">${buildingData.buildTime} days</span>
         `;
         container.appendChild(timeRow);
@@ -3214,25 +3190,22 @@ class IsometricGrid {
             return;
         }
 
-        // Define soft metrics (livability) order and colors
-        const livabilityConfig = {
-            'health': '#ef4444',
-            'education': '#3b82f6',
-            'safety': '#10b981',
-            'culture': '#a855f7',
-            'mobility': '#8b5cf6',
-            'environment': '#22c55e',
-            'affordability': '#f97316',
-            'resilience': '#14b8a6',
-            'noise': '#6b7280'
+        // Define CARENS metrics (livability) order and colors with purple center theme
+        const carensConfig = {
+            'safety': '#ef4444',      // Red to purple gradient
+            'culture': '#a855f7',     // Purple
+            'affordability': '#f97316', // Orange to purple gradient
+            'resilience': '#14b8a6',  // Teal to purple gradient
+            'environment': '#22c55e', // Green to purple gradient
+            'noise': '#6b7280'        // Gray to purple gradient
         };
         
         // Sort impacts by livability order
         const sortedImpacts = Object.entries(impacts)
             .filter(([_, value]) => value !== 0)
             .sort(([a], [b]) => {
-                const aIndex = Object.keys(livabilityConfig).indexOf(a.toLowerCase());
-                const bIndex = Object.keys(livabilityConfig).indexOf(b.toLowerCase());
+                const aIndex = Object.keys(carensConfig).indexOf(a.toLowerCase());
+                const bIndex = Object.keys(carensConfig).indexOf(b.toLowerCase());
                 if (aIndex === -1 && bIndex === -1) return 0;
                 if (aIndex === -1) return 1;
                 if (bIndex === -1) return -1;
@@ -3241,38 +3214,54 @@ class IsometricGrid {
 
         sortedImpacts.forEach(([domain, value]) => {
             const row = document.createElement('div');
-            row.className = 'vitality-row';
-            
+            row.className = 'carens-bar-row';
+
             // Create label
             const label = document.createElement('span');
-            label.className = 'vitality-label';
-            label.style.color = livabilityConfig[domain.toLowerCase()] || '#808080';
+            label.className = 'carens-label';
+            label.style.color = carensConfig[domain.toLowerCase()] || '#808080';
             label.textContent = domain.toUpperCase();
-            
+
             // Create bar container
             const barContainer = document.createElement('div');
-            barContainer.className = 'vitality-bar';
-            
+            barContainer.className = 'carens-bar';
+
             // Create progress bar
             const progress = document.createElement('div');
-            progress.className = 'vitality-progress';
+            progress.className = 'carens-progress';
             
             // Set position absolute for proper positioning
             progress.style.position = 'absolute';
             
-            // For soft metrics, positive is always good (right/colored), negative is bad (left/red)
+            // CARENS purple-centered visualization: purple center, red left, blue right
             const maxImpact = 50;
             const normalizedValue = Math.min(Math.max(value / maxImpact, -1), 1);
-            
-            if (value > 0) {
+
+            if (Math.abs(value) < 0.1) {
+                // Nearly neutral - show purple dot in center
+                progress.style.left = '49%';
+                progress.style.width = '2%';
+                progress.style.height = '8px';
+                progress.style.borderRadius = '50%';
+                progress.style.background = '#8b5cf6'; // Purple for CARENS center
+                progress.style.border = '1px solid rgba(255,255,255,0.3)';
+            } else if (value > 0) {
+                // Positive impact - goes right toward blue
                 progress.style.left = '50%';
                 progress.style.width = `${Math.abs(normalizedValue) * 50}%`;
-                progress.style.background = livabilityConfig[domain.toLowerCase()] || '#4a90e2';
+                progress.style.height = '6px';
+                progress.style.borderRadius = '0';
+                progress.style.border = 'none';
+                progress.style.background = '#3b82f6'; // Blue for positive CARENS
             } else {
+                // Negative impact - goes left toward red
                 const width = Math.abs(normalizedValue) * 50;
                 progress.style.left = `${50 - width}%`;
                 progress.style.width = `${width}%`;
-                progress.style.background = '#ef4444'; // Red for negative
+                progress.style.height = '6px';
+                progress.style.borderRadius = '0';
+                progress.style.border = 'none';
+                progress.style.background = '#ef4444'; // Red for negative CARENS
             }
             
             barContainer.appendChild(progress);
@@ -3310,7 +3299,14 @@ class IsometricGrid {
 
     
     async calculateAccessibilityScores(row, col) {
-        return await this.economicEngine.calculateAccessibilityScores(row, col);
+        // Use server-side accessibility calculation (consolidated economic flow)
+        try {
+            const gameState = this.economicAPI.prepareGameState(this);
+            return await this.economicAPI.getAccessibilityScores(gameState, row, col);
+        } catch (error) {
+            console.error('Server accessibility calculation failed:', error);
+            return null;
+        }
     }
 
     calculateAccessibilityScoresLocal(row, col) {
@@ -3695,39 +3691,31 @@ class IsometricGrid {
         }
     }
 
-    // Rock-solid JEFH calculation system
-    calculateCityVitality() {
-        // Always do immediate local calculation first for responsiveness
-        const localResult = this.economicEngine.calculateCityVitality();
+    // Server-only vitality calculation system (as per architecture requirements)
+    async calculateCityVitality() {
+        try {
+            // Get authoritative server calculation only
+            const gameState = this.economicAPI.prepareGameState(this);
+            const result = await this.economicAPI.calculateCityEconomics(gameState);
 
-        // Update vitality data immediately with local results
-        if (localResult && localResult.supply && localResult.demand) {
-            this.vitalitySupply = localResult.supply;
-            this.vitalityDemand = localResult.demand;
-            this.cityStats.vitality = localResult;
-
-            // Immediately update UI with fresh data
-            this.updateVitalityUI();
-        }
-
-        // Also get server calculation for validation/improvement (non-blocking)
-        const gameState = this.economicAPI.prepareGameState(this);
-        this.economicAPI.calculateCityEconomics(gameState).then(result => {
             if (result && result.success && result.vitality) {
-                // Only update if server data is significantly different
-                const hasSignificantChange = this.hasSignificantVitalityChange(result.vitality);
-                if (hasSignificantChange) {
-                    this.cityStats.vitality = result.vitality;
-                    this.vitalitySupply = result.vitality.supply || this.vitalitySupply;
-                    this.vitalityDemand = result.vitality.demand || this.vitalityDemand;
-                    this.updateVitalityUI();
-                }
-            }
-        }).catch(error => {
-            console.warn('Server vitality calculation failed, using local data:', error);
-        });
+                // Update with server data
+                this.cityStats.vitality = result.vitality;
+                this.vitalitySupply = result.vitality.supply || {};
+                this.vitalityDemand = result.vitality.demand || {};
 
-        return localResult;
+                // Update UI with server data
+                this.updateVitalityUI();
+                return result.vitality;
+            } else {
+                console.warn('Server vitality calculation failed or returned invalid data');
+                return null;
+            }
+        } catch (error) {
+            console.error('Server vitality calculation error:', error);
+            // No fallback to local calculation - maintain server authority
+            return null;
+        }
     }
 
     // Check if server data differs significantly from current data
@@ -3751,78 +3739,6 @@ class IsometricGrid {
         return false;
     }
 
-    // Initialize tooltips for JEFH circles (one-time setup)
-    initializeJEFHTooltips() {
-        if (this._jefhTooltipsInitialized) return;
-
-        const categories = ['jobs', 'energy', 'food', 'housing'];
-        categories.forEach(category => {
-            const circleItem = document.querySelector(`.jefh-circle-item[data-vitality="${category}"]`);
-            if (circleItem && !circleItem._tooltipInitialized) {
-                // Add mouseenter event for tooltip
-                circleItem.addEventListener('mouseenter', (e) => {
-                    const tooltipData = circleItem.getAttribute('data-tooltip-data');
-                    if (tooltipData && this.tooltipManager) {
-                        try {
-                            const data = JSON.parse(tooltipData);
-                            const content = this.formatJEFHTooltip(data);
-                            this.tooltipManager.show(content, e.clientX, e.clientY, {
-                                html: true,
-                                maxWidth: 300,
-                                delay: 200
-                            });
-                        } catch (error) {
-                            console.warn('Failed to parse JEFH tooltip data:', error);
-                        }
-                    }
-                });
-
-                // Add mouseleave event to hide tooltip
-                circleItem.addEventListener('mouseleave', () => {
-                    if (this.tooltipManager) {
-                        this.tooltipManager.hide();
-                    }
-                });
-
-                circleItem._tooltipInitialized = true;
-            }
-        });
-
-        this._jefhTooltipsInitialized = true;
-    }
-
-    // Format JEFH circle tooltip content
-    formatJEFHTooltip(data) {
-        const categoryName = data.domain.charAt(0) + data.domain.slice(1).toLowerCase();
-        const supplyIcon = this.getJEFHEmoji(data.domain.toLowerCase());
-
-        return `
-            <div style="text-align: center; margin-bottom: 8px;">
-                <strong style="color: #ffffff;">${supplyIcon} ${categoryName}</strong>
-            </div>
-            <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
-                <span style="color: #22c55e;">Supply:</span>
-                <span style="color: #ffffff;">${Math.round(data.supply)}</span>
-            </div>
-            <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
-                <span style="color: #f59e0b;">Demand:</span>
-                <span style="color: #ffffff;">${Math.round(data.demand)}</span>
-            </div>
-            <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
-                <span style="color: #8b5cf6;">Balance:</span>
-                <span style="color: ${data.balance >= 0 ? '#22c55e' : '#ef4444'};">${data.balance >= 0 ? '+' : ''}${Math.round(data.balance)}</span>
-            </div>
-            <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
-                <span style="color: #6b7280;">Market Size:</span>
-                <span style="color: #ffffff;">${Math.round(data.marketSize)}</span>
-            </div>
-            <div style="text-align: center; padding: 4px 8px; background: rgba(0,0,0,0.3); border-radius: 4px;">
-                <span style="color: ${data.status.includes('Surplus') ? '#22c55e' : data.status.includes('Balanced') ? '#3b82f6' : '#ef4444'}; font-weight: bold;">
-                    ${data.status}
-                </span>
-            </div>
-        `;
-    }
 
     // Update building revenues based on supply/demand satisfaction
     applySupplyDemandEffects() {
@@ -4084,16 +4000,14 @@ class IsometricGrid {
     openSidebarSection(sectionElement) {
         if (sectionElement) {
             sectionElement.classList.remove('collapsed');
-            const icon = sectionElement.querySelector('.collapse-icon');
-            if (icon) icon.textContent = '▼';
+            // CSS handles the circle icon appearance via classes
         }
     }
-    
+
     closeSidebarSection(sectionElement) {
         if (sectionElement) {
             sectionElement.classList.add('collapsed');
-            const icon = sectionElement.querySelector('.collapse-icon');
-            if (icon) icon.textContent = '▶';
+            // CSS handles the circle icon appearance via classes
         }
     }
 
@@ -4135,105 +4049,12 @@ class IsometricGrid {
         };
     }
     
-    // Building and amenity impact definitions
-    getBuildingImpacts(buildingType) {
-        const impacts = {
-            'residential_apartment': {
-                HOUSING: 5,
-                AFFORDABILITY: 3,
-                ENERGY: -2,
-                NOISE: -1
-            },
-            'residential_luxury': {
-                HOUSING: 3,
-                CULTURE: 2,
-                ENVIRONMENT: 1,
-                AFFORDABILITY: -4,
-                ENERGY: -3
-            },
-            'commercial_shop': {
-                JOBS: 3,
-                CULTURE: 1,
-                MOBILITY: -1,
-                NOISE: -1
-            },
-            'commercial_mall': {
-                JOBS: 8,
-                CULTURE: 3,
-                MOBILITY: -3,
-                NOISE: -2,
-                ENVIRONMENT: -1
-            },
-            'industrial_factory': {
-                JOBS: 10,
-                ENERGY: 2,
-                NOISE: -5,
-                ENVIRONMENT: -4,
-                HEALTH: -2
-            },
-            'education_school': {
-                EDUCATION: 8,
-                CULTURE: 2,
-                SAFETY: 1,
-                NOISE: -1
-            },
-            'health_clinic': {
-                HEALTH: 6,
-                JOBS: 2,
-                SAFETY: 1
-            }
-        };
-        return impacts[buildingType] || {};
-    }
-    
-    getAmenityImpacts(amenityType) {
-        const impacts = {
-            'solar_panels': {
-                ENERGY: 3,
-                ENVIRONMENT: 2,
-                RESILIENCE: 1
-            },
-            'garden': {
-                ENVIRONMENT: 2,
-                HEALTH: 1,
-                CULTURE: 1,
-                NOISE: 1
-            },
-            'security_system': {
-                SAFETY: 3,
-                AFFORDABILITY: -1
-            },
-            'parking_garage': {
-                MOBILITY: 2,
-                ENVIRONMENT: -1,
-                NOISE: -1
-            }
-        };
-        return impacts[amenityType] || {};
-    }
     
     
     updateVitalityDisplay() {
-        // Always update UI with current data first (even if zeros)
+        // This method is now deprecated - all vitality updates go through calculateCityVitality()
+        // Just update the UI with current data
         this.updateVitalityUI();
-
-        // Then request updated data from server asynchronously
-        const gameState = this.economicAPI.prepareGameState(this);
-        this.economicAPI.calculateCityEconomics(gameState).then(result => {
-            if (result && result.success && result.vitality) {
-                // Apply server-calculated vitality to client state
-                this.cityStats.vitality = result.vitality;
-                this.vitalitySupply = result.vitality.supply || this.vitalitySupply;
-                this.vitalityDemand = result.vitality.demand || this.vitalityDemand;
-                // Update UI again with fresh server data
-                this.updateVitalityUI();
-            }
-        }).catch(error => {
-            console.warn('Server vitality calculation failed, using local fallback:', error);
-            // Fallback to local calculation, then update UI
-            this.economicEngine.calculateCityVitality();
-            this.updateVitalityUI();
-        });
     }
 
     updateVitalityUI() {
@@ -4243,13 +4064,10 @@ class IsometricGrid {
             this.initializeEconomicDefaults();
         }
 
-        // Initialize JEFH circle tooltips (one-time setup)
-        this.initializeJEFHTooltips();
+        // JEEFHH bars (Jobs, Energy, Education, Food, Housing, Healthcare)
+        const jeefhhMetrics = ['JOBS', 'ENERGY', 'EDUCATION', 'FOOD', 'HOUSING', 'HEALTHCARE'];
 
-        // Supply & Demand bars (Energy, Food, Housing, Jobs)
-        const supplyDemandMetrics = ['ENERGY', 'FOOD', 'HOUSING', 'JOBS'];
-
-        supplyDemandMetrics.forEach(domain => {
+        jeefhhMetrics.forEach(domain => {
             const progressBar = document.getElementById(`${domain.toLowerCase()}-bar`);
             if (!progressBar) return;
 
@@ -4268,29 +4086,65 @@ class IsometricGrid {
             // Clamp to -100 to +100 range
             ratio = Math.max(-100, Math.min(100, ratio));
 
-            // Use circle display for JEFH categories
-            const circle = document.getElementById(`${domain.toLowerCase()}-circle`);
-            if (circle) {
-                this.updateJEFHCircle(circle, ratio, supply, demand, domain);
-            } else {
-                // Fallback to bar if circle not found
-                this.updateBalanceBasedBar(progressBar, ratio, supply, demand, domain);
-            }
+            // Update the JEEFHH balance-based bar
+            this.updateBalanceBasedBar(progressBar, ratio, supply, demand, domain);
         });
 
-        // Net Score bars (all others)
-        const netScoreMetrics = ['MOBILITY', 'EDUCATION', 'HEALTH', 'SAFETY', 'CULTURE', 'ENVIRONMENT', 'AFFORDABILITY', 'NOISE', 'RESILIENCE'];
+        // CARENS livability bars (Culture, Affordability, Resilience, Environment, Noise, Safety)
+        const carensMetrics = ['SAFETY', 'CULTURE', 'AFFORDABILITY', 'RESILIENCE', 'ENVIRONMENT', 'NOISE'];
 
-        netScoreMetrics.forEach(domain => {
+        // Calculate city-wide CARENS net scores
+        const carensScores = this.calculateCityWideCarensScores();
+
+        carensMetrics.forEach(domain => {
             const progressBar = document.getElementById(`${domain.toLowerCase()}-bar`);
             if (!progressBar) return;
 
-            // Calculate net score from building impacts (-100 to +100)
-            const netScore = this.calculateNetScore(domain);
+            const netScore = carensScores[domain.toLowerCase()] || 0;
             this.updateNetScoreBar(progressBar, netScore, domain);
         });
     }
-    
+
+    calculateCityWideCarensScores() {
+        // Initialize scores for all CARENS domains
+        const carensScores = {
+            safety: 0,
+            culture: 0,
+            affordability: 0,
+            resilience: 0,
+            environment: 0,
+            noise: 0
+        };
+
+        // Sum up impacts from all completed buildings across the city
+        if (!this.grid) {
+            console.warn('Grid not initialized yet for CARENS calculation');
+            return carensScores;
+        }
+
+        // Iterate through the grid to find all buildings
+        for (let row = 0; row < this.gridSize; row++) {
+            for (let col = 0; col < this.gridSize; col++) {
+                const parcel = this.grid[row][col];
+                // Check if parcel has a building that's not under construction
+                if (parcel && parcel.building && !parcel._isUnderConstruction) {
+                    const buildingData = this.getBuildingDataByName(parcel.building);
+                    if (buildingData && buildingData.livability) {
+                        // Add impacts from each CARENS domain
+                        Object.keys(carensScores).forEach(domain => {
+                            const livabilityData = buildingData.livability[domain];
+                            if (livabilityData && typeof livabilityData.impact === 'number') {
+                                carensScores[domain] += livabilityData.impact;
+                            }
+                        });
+                    }
+                }
+            }
+        }
+
+        return carensScores;
+    }
+
     updateSupplyDemandBar(progressBar, ratio, supply, demand, domain) {
         // Clear ALL existing positioning and styling
         progressBar.style.cssText = '';
@@ -4347,7 +4201,10 @@ class IsometricGrid {
             balance: supply - demand
         };
         
-        progressBar.closest('.vitality-row').setAttribute('data-tooltip-data', JSON.stringify(tooltipData));
+        const parentRow = progressBar.closest('.jeefhh-bar-row') || progressBar.closest('.carens-bar-row') || progressBar.closest('.vitality-row');
+        if (parentRow) {
+            parentRow.setAttribute('data-tooltip-data', JSON.stringify(tooltipData));
+        }
     }
     
     updateNetScoreBar(progressBar, score, domain) {
@@ -4401,70 +4258,83 @@ class IsometricGrid {
             type: 'net-score',
             domain: domain,
             score: score,
-            buildingCount: this.getBuildingCountForDomain(domain),
-            impactDetails: this.getDomainImpactBreakdown(domain)
+            // TODO: Calculate from building.livability data when server-side CARENS is implemented
+            buildingCount: 0,
+            impactDetails: {}
         };
         
-        progressBar.closest('.vitality-row').setAttribute('data-tooltip-data', JSON.stringify(tooltipData));
+        const parentRow = progressBar.closest('.jeefhh-bar-row') || progressBar.closest('.carens-bar-row') || progressBar.closest('.vitality-row');
+        if (parentRow) {
+            parentRow.setAttribute('data-tooltip-data', JSON.stringify(tooltipData));
+        }
     }
 
     updateBalanceBasedBar(progressBar, ratio, supply, demand, domain) {
-        // Clear ALL existing positioning and styling
+        // Clear existing styling
         progressBar.style.cssText = '';
+        progressBar.innerHTML = '';
 
-        // JEFH Bars: Show satisfaction level as fullness + color
-        // Full bar = good/optimal, partial bar = problems, color indicates severity
+        // Set up container with center-balanced design
+        progressBar.style.cssText = `
+            position: relative !important;
+            width: 100% !important;
+            height: 16px !important;
+            background: #2a2a2a !important;
+            border-radius: 8px !important;
+            overflow: hidden !important;
+        `;
 
-        let satisfaction, barColor, barWidth;
+        // Calculate balance state
+        const absRatio = Math.abs(ratio);
+        const isBalanced = absRatio < 2; // Nearly balanced threshold
 
-        if (ratio >= 0) {
-            // Surplus or balanced (green shades)
-            satisfaction = Math.min(1.0, 1.0 + ratio / 100); // 100% satisfaction at 0% surplus, scales up
-            const greenIntensity = Math.min(1.0, ratio / 20 + 0.5); // Bright green at 20%+ surplus
-            barColor = `linear-gradient(to right,
-                rgba(34, 197, 94, ${0.7 + 0.3 * greenIntensity}),
-                rgba(22, 163, 74, ${0.8 + 0.2 * greenIntensity}))`;
-            barWidth = 100; // Always full when balanced/surplus
+        if (isBalanced) {
+            // Perfect balance: Blue dot at center
+            const centerDot = document.createElement('div');
+            centerDot.style.cssText = `
+                position: absolute !important;
+                left: 50% !important;
+                top: 50% !important;
+                width: 8px !important;
+                height: 8px !important;
+                background: #4a9eff !important;
+                border-radius: 50% !important;
+                transform: translate(-50%, -50%) !important;
+                box-shadow: 0 0 4px rgba(74, 158, 255, 0.6) !important;
+            `;
+            progressBar.appendChild(centerDot);
         } else {
-            // Shortage (red - fuller bar means less shortage)
-            const shortage = Math.abs(ratio);
-            satisfaction = Math.max(0.1, 1.0 - shortage / 100); // Scale down based on shortage severity
-            barWidth = Math.max(20, 100 - shortage); // Shrink bar as shortage gets worse
+            // Imbalanced: Red bar extending from center
+            const barWidth = Math.min(50, (absRatio / 100) * 50); // Max 50% of container width
 
-            // Color intensity based on severity
-            const redIntensity = Math.min(1.0, shortage / 50);
-            if (shortage > 50) {
-                // Critical shortage: Dark red
-                barColor = `linear-gradient(to right,
-                    rgba(220, 38, 38, 0.9),
-                    rgba(185, 28, 28, 1.0))`;
-            } else if (shortage > 20) {
-                // Moderate shortage: Medium red
-                barColor = `linear-gradient(to right,
-                    rgba(248, 113, 113, 0.8),
-                    rgba(220, 38, 38, 0.9))`;
+            const imbalanceBar = document.createElement('div');
+            if (ratio < 0) {
+                // Deficit: Red bar extending LEFT from center
+                imbalanceBar.style.cssText = `
+                    position: absolute !important;
+                    right: 50% !important;
+                    top: 0 !important;
+                    width: ${barWidth}% !important;
+                    height: 100% !important;
+                    background: linear-gradient(to left, #ff6b6b 0%, #c92a2a 100%) !important;
+                    border-radius: 8px 0 0 8px !important;
+                `;
             } else {
-                // Minor shortage: Light red/orange
-                barColor = `linear-gradient(to right,
-                    rgba(251, 146, 60, 0.7),
-                    rgba(248, 113, 113, 0.8))`;
+                // Surplus: Red bar extending RIGHT from center
+                imbalanceBar.style.cssText = `
+                    position: absolute !important;
+                    left: 50% !important;
+                    top: 0 !important;
+                    width: ${barWidth}% !important;
+                    height: 100% !important;
+                    background: linear-gradient(to right, #ff6b6b 0%, #c92a2a 100%) !important;
+                    border-radius: 0 8px 8px 0 !important;
+                `;
             }
+            progressBar.appendChild(imbalanceBar);
         }
 
-        // Apply consistent full-width styling with satisfaction-based fill
-        progressBar.style.background = barColor;
-        progressBar.style.width = `${barWidth}%`;
-        progressBar.style.height = '16px';
-        progressBar.style.position = 'relative';
-        progressBar.style.borderRadius = '8px';
-        progressBar.style.transition = 'all 0.3s ease';
-
-        // Add subtle shadow for depth
-        progressBar.style.boxShadow = ratio >= 0 ?
-            '0 2px 4px rgba(34, 197, 94, 0.2)' :
-            '0 2px 4px rgba(220, 38, 38, 0.2)';
-
-        // Set up comprehensive tooltip data
+        // Add tooltip data for hover information
         const tooltipData = {
             type: 'supply-demand',
             domain: domain,
@@ -4472,125 +4342,22 @@ class IsometricGrid {
             demand: demand,
             ratio: ratio,
             balance: supply - demand,
-            satisfaction: satisfaction,
-            status: ratio >= 20 ? 'Surplus' : ratio >= 0 ? 'Balanced' : ratio >= -20 ? 'Minor Shortage' : ratio >= -50 ? 'Shortage' : 'Critical Shortage'
+            status: ratio >= 20 ? 'Surplus' :
+                   Math.abs(ratio) < 2 ? 'Balanced' :
+                   ratio >= 0 ? 'Minor Surplus' :
+                   ratio >= -20 ? 'Minor Shortage' :
+                   ratio >= -50 ? 'Shortage' : 'Critical Shortage'
         };
 
-        progressBar.closest('.vitality-row').setAttribute('data-tooltip-data', JSON.stringify(tooltipData));
-    }
-
-    updateJEFHCircle(circle, ratio, supply, demand, domain) {
-        // Clear existing classes
-        const classes = ['small', 'medium', 'large', 'xlarge', 'deficit-critical', 'deficit-moderate', 'deficit-minor', 'balanced', 'surplus-minor', 'surplus-major'];
-        circle.classList.remove(...classes);
-
-        // Calculate market size based on total supply + demand
-        const marketSize = supply + demand;
-        let sizeClass = 'medium';
-        if (marketSize < 50) sizeClass = 'small';
-        else if (marketSize < 150) sizeClass = 'medium';
-        else if (marketSize < 300) sizeClass = 'large';
-        else sizeClass = 'xlarge';
-
-        // Determine color class based on ratio
-        let colorClass;
-        if (ratio <= -50) colorClass = 'deficit-critical';
-        else if (ratio <= -20) colorClass = 'deficit-moderate';
-        else if (ratio < -5) colorClass = 'deficit-minor';
-        else if (ratio <= 5) colorClass = 'balanced';
-        else if (ratio <= 25) colorClass = 'surplus-minor';
-        else colorClass = 'surplus-major';
-
-        // Apply classes
-        circle.classList.add(sizeClass, colorClass);
-
-        // Update balance indicator
-        const indicator = circle.querySelector('.jefh-balance-indicator');
-        if (indicator) {
-            if (Math.abs(ratio) <= 5) {
-                // Balanced state - show checkmark
-                indicator.textContent = '✓';
-                indicator.style.opacity = '1';
-            } else if (ratio > 25) {
-                // Major surplus - show star
-                indicator.textContent = '★';
-                indicator.style.opacity = '1';
-            } else {
-                // Hide indicator for other states
-                indicator.style.opacity = '0';
-            }
+        const parentRow = progressBar.closest('.jeefhh-bar-row') || progressBar.closest('.carens-bar-row') || progressBar.closest('.vitality-row');
+        if (parentRow) {
+            parentRow.setAttribute('data-tooltip-data', JSON.stringify(tooltipData));
         }
-
-        // Set up tooltip data
-        const tooltipData = {
-            type: 'jefh-circle',
-            domain: domain,
-            supply: supply,
-            demand: demand,
-            ratio: ratio,
-            balance: supply - demand,
-            marketSize: marketSize,
-            status: ratio >= 25 ? 'Major Surplus' : ratio > 5 ? 'Minor Surplus' : Math.abs(ratio) <= 5 ? 'Balanced' : ratio >= -20 ? 'Minor Deficit' : ratio >= -50 ? 'Moderate Deficit' : 'Critical Deficit'
-        };
-
-        circle.closest('.jefh-circle-item').setAttribute('data-tooltip-data', JSON.stringify(tooltipData));
     }
 
-    getBuildingCountForDomain(domain) {
-        let count = 0;
-        for (let row = 0; row < this.gridSize; row++) {
-            for (let col = 0; col < this.gridSize; col++) {
-                const parcel = this.grid[row][col];
-                if (parcel && parcel.building) {
-                    const building = this.buildingManager.getBuildingById(parcel.building);
-                    if (building && building.domainImpacts && building.domainImpacts[domain] && Math.abs(building.domainImpacts[domain]) > 0) {
-                        count++;
-                    }
-                }
-            }
-        }
-        return count;
-    }
+
     
-    getDomainImpactBreakdown(domain) {
-        const breakdown = {};
-        for (let row = 0; row < this.gridSize; row++) {
-            for (let col = 0; col < this.gridSize; col++) {
-                const parcel = this.grid[row][col];
-                if (parcel && parcel.building) {
-                    const building = this.buildingManager.getBuildingById(parcel.building);
-                    if (building && building.domainImpacts && building.domainImpacts[domain] && Math.abs(building.domainImpacts[domain]) > 0) {
-                        if (!breakdown[building.name]) {
-                            breakdown[building.name] = { count: 0, totalImpact: 0, unitImpact: building.domainImpacts[domain] };
-                        }
-                        breakdown[building.name].count++;
-                        breakdown[building.name].totalImpact += building.domainImpacts[domain];
-                    }
-                }
-            }
-        }
-        return breakdown;
-    }
     
-    calculateNetScore(domain) {
-        // Sum all building impacts for this domain across the city
-        let netScore = 0;
-        
-        for (let row = 0; row < this.gridSize; row++) {
-            for (let col = 0; col < this.gridSize; col++) {
-                const parcel = this.grid[row][col];
-                if (parcel && parcel.building) {
-                    const building = this.buildingManager.getBuildingById(parcel.building);
-                    if (building && building.domainImpacts && building.domainImpacts[domain]) {
-                        netScore += building.domainImpacts[domain];
-                    }
-                }
-            }
-        }
-        
-        // Clamp to -100 to +100 range for display
-        return Math.max(-100, Math.min(100, netScore));
-    }
     
     updateDemographicsDisplay() {
         if (!this.demographics) return;
@@ -5123,6 +4890,37 @@ class IsometricGrid {
         return true;
     }
 
+    // REMOVED: calculateConstructionProgress() - Now using unified getBuildingState() from buildings.js
+
+    /**
+     * Handle construction completion cleanup and notifications
+     * @param {number} row - Row index
+     * @param {number} col - Column index
+     * @param {Object} parcel - Parcel object
+     */
+    handleConstructionCompletion(row, col, parcel) {
+        if (parcel._constructionStartTime !== null && !parcel._completionTriggered) {
+            // Trigger the completion pop animation
+            this.triggerCompletionPop(row, col);
+            parcel._completionTriggered = true;
+        }
+
+        // Clear construction data
+        parcel._constructionStartTime = null;
+        parcel._constructionDays = 0;
+        parcel._constructionAnimating = false;
+        parcel._isUnderConstruction = false;
+        parcel._constructionProgress = 1.0;
+
+        // Clean up pixel row timestamps
+        this.pixelRowTimestamps.delete(`${row},${col}`);
+
+        // Update economic balance after construction completion (server-side)
+        this.calculateCityVitality().catch(error => {
+            console.error('Failed to update vitality after construction completion:', error);
+        });
+    }
+
     drawBuilding(buildingId, offsetX = 0, offsetY = 0, row = 0, col = 0) {
         // Apply hover elevation with bouncing physics
         const isHovered = this.hoveredTile && this.hoveredTile.row === row && this.hoveredTile.col === col;
@@ -5136,62 +4934,16 @@ class IsometricGrid {
         
         // Check if building has custom image
         const building = this.buildingManager.getBuildingById(buildingId);
-        
-        // Calculate construction progress if under construction
-        let constructionProgress = 1.0; // Default to fully built (1.0 = full color)
-        let isUnderConstruction = false;
-        
-        if (parcel && parcel.constructionStartDay !== null && parcel.constructionDays > 0) {
-            // Use server-synchronized construction progress if available
-            if (parcel._constructionProgress !== undefined && parcel._isUnderConstruction !== undefined) {
-                constructionProgress = parcel._constructionProgress;
-                isUnderConstruction = parcel._isUnderConstruction;
-            } else {
-                // Fallback to real-time calculation (for offline/solo mode)
-                const totalConstructionTimeMs = parcel.constructionDays * this.dayDuration; // Total time in milliseconds
-                const elapsedTimeMs = (this.currentDay - parcel.constructionStartDay) * this.dayDuration + 
-                                      (performance.now() - this.lastDayStartTime); // Include current day progress
-                
-                if (elapsedTimeMs < totalConstructionTimeMs) {
-                    // Building is still under construction
-                    isUnderConstruction = true;
-                    constructionProgress = Math.max(0, Math.min(1.0, elapsedTimeMs / totalConstructionTimeMs));
-                } else {
-                    // Construction complete - trigger completion animation and cleanup
-                    if (parcel.constructionStartDay !== null && !parcel._completionTriggered) {
-                        // Trigger the completion pop animation
-                        this.triggerCompletionPop(row, col);
-                        parcel._completionTriggered = true; // Prevent multiple triggers
-                        
-                    }
-                    
-                    // Clear construction data
-                parcel.constructionStartDay = null;
-                parcel.constructionDays = 0;
-                parcel._constructionAnimating = false;
-                
-                // Clean up pixel row timestamps
-                this.pixelRowTimestamps.delete(`${row},${col}`);
-                
-                // Update economic balance after construction completion
-                this.calculateCityVitality(); // Now uses server API
-                this.updateVitalityDisplay();
-                
-                constructionProgress = 1.0;
-                }
-            }
-            
-            // Schedule frequent re-renders during construction for smooth animation
-            if (isUnderConstruction && !parcel._constructionAnimating) {
-                parcel._constructionAnimating = true;
-                this.scheduleConstructionAnimation(row, col);
-            }
-        }
-        
-        // Store construction data for tooltip access
-        if (parcel) {
-            parcel._constructionProgress = constructionProgress;
-            parcel._isUnderConstruction = isUnderConstruction;
+
+        // Use unified building state from buildings.js
+        const buildingState = this.buildingManager.getBuildingState(row, col);
+        const constructionProgress = buildingState ? buildingState.construction.progress : 1.0;
+        const isUnderConstruction = buildingState ? !buildingState.construction.isComplete : false;
+
+        // Schedule frequent re-renders during construction for smooth animation
+        if (isUnderConstruction && parcel && !parcel._constructionAnimating) {
+            parcel._constructionAnimating = true;
+            this.scheduleConstructionAnimation(row, col);
         }
         
         // Apply scale transformation if needed
@@ -6080,6 +5832,11 @@ class IsometricGrid {
         if (this.hoverInfluenceRadius && this.hoverInfluenceRadius.size > 0) {
             this.drawHoverInfluenceRadius();
         }
+
+        // Draw attenuation visualization for Data Insights
+        if (this.showAttenuationVisualization && this.attenuationCenter) {
+            this.drawAttenuationVisualization();
+        }
         
         // Street edge drawing removed
         
@@ -6286,7 +6043,54 @@ class IsometricGrid {
         
         this.ctx.restore();
     }
-    
+
+    // Draw green attenuation visualization for Data Insights
+    drawAttenuationVisualization() {
+        if (!this.attenuationCenter) return;
+
+        const { row: centerRow, col: centerCol } = this.attenuationCenter;
+        const parcel = this.grid[centerRow][centerCol];
+        if (!parcel || !parcel.building) return;
+
+        // Get building data to get attenuation info
+        const buildingData = this.getBuildingDataByName(parcel.building);
+        if (!buildingData || !buildingData.livability) return;
+
+        this.ctx.save();
+
+        // Calculate maximum attenuation distance from all CARENS impacts
+        let maxAttenuation = 1;
+        Object.values(buildingData.livability).forEach(livabilityData => {
+            if (livabilityData && typeof livabilityData.attenuation === 'number') {
+                maxAttenuation = Math.max(maxAttenuation, livabilityData.attenuation);
+            }
+        });
+
+        // Draw 6-step gradient around the building
+        for (let step = 6; step >= 1; step--) {
+            const distance = (step / 6) * maxAttenuation;
+            const alpha = (7 - step) * 0.08; // Fade from 0.48 to 0.08
+
+            // Draw all tiles within this distance
+            for (let row = 0; row < this.gridSize; row++) {
+                for (let col = 0; col < this.gridSize; col++) {
+                    const dr = row - centerRow;
+                    const dc = col - centerCol;
+                    const tileDistance = Math.sqrt(dr * dr + dc * dc);
+
+                    if (tileDistance <= distance && tileDistance > distance - (maxAttenuation / 6)) {
+                        this.drawTileHighlight(col, row, `rgba(76, 175, 80, ${alpha})`, 0);
+                    }
+                }
+            }
+        }
+
+        // Highlight the center building with a bright green outline
+        this.drawTileHighlight(centerCol, centerRow, `rgba(76, 175, 80, 0.8)`, 0);
+
+        this.ctx.restore();
+    }
+
     // Depth-of-field rendering with tilt-shift blur
     // REMOVED - No longer using blur for performance
     /*
@@ -6801,10 +6605,7 @@ class IsometricGrid {
                     }
                 }
             }
-            // Show tooltip using stored mouse event coordinates
-            if (this.lastMouseEvent) {
-                this.showTooltip(tile.row, tile.col, this.lastMouseEvent.clientX, this.lastMouseEvent.clientY);
-            }
+            // Tooltip now handled automatically by CrispTooltip system
         } else {
             this.selectedTile = null;
             if (this.domCache.selectedTile) {
@@ -6823,7 +6624,7 @@ class IsometricGrid {
                 this.stopBounceAnimation();
             }
             
-            this.hideTooltip();
+            if (this.crispTooltip) this.crispTooltip.hide();
         }
     }
 
@@ -6947,7 +6748,7 @@ class IsometricGrid {
                     }
                     this.showContextMenu(tile.row, tile.col, e.clientX, e.clientY);
                 }
-                this.hideTooltip();
+                if (this.crispTooltip) this.crispTooltip.hide();
             } else {
                 if (this.currentLayer !== 'transportation') {
                     this.hideContextMenu();
@@ -7029,7 +6830,7 @@ class IsometricGrid {
         this.calculateCityVitality(); // Now uses server API
         
         // Update market stats
-        const markets = ['energy', 'food', 'housing', 'jobs'];
+        const markets = ['jobs', 'energy', 'education', 'food', 'housing', 'healthcare'];
         markets.forEach(market => {
             const supply = this.vitalitySupply[market.toUpperCase()] || 0;
             const demand = this.vitalityDemand[market.toUpperCase()] || 1;
@@ -7068,7 +6869,7 @@ function applyMarketSettings() {
     if (!window.game) return;
     
     // Update elasticity settings
-    const elasticityInputs = ['energy', 'food', 'housing', 'jobs'];
+    const elasticityInputs = ['jobs', 'energy', 'education', 'food', 'housing', 'healthcare'];
     elasticityInputs.forEach(market => {
         const input = document.getElementById(`${market}-elasticity`);
         if (input) {
@@ -7077,7 +6878,7 @@ function applyMarketSettings() {
     });
     
     // Update radius settings
-    const radiusInputs = ['energy', 'food', 'housing', 'jobs'];
+    const radiusInputs = ['jobs', 'energy', 'education', 'food', 'housing', 'healthcare'];
     radiusInputs.forEach(market => {
         const input = document.getElementById(`${market}-radius`);
         if (input) {
@@ -7102,8 +6903,8 @@ function resetMarketDefaults() {
     
     // Reset to defaults
     window.game.marketSettings = {
-        elasticity: { energy: 0.3, food: 0.5, housing: 0.7, jobs: 1.2 },
-        radius: { energy: 999, food: 5, housing: 3, jobs: 4 },
+        elasticity: { jobs: 1.2, energy: 0.3, education: 0.6, food: 0.5, housing: 0.7, healthcare: 0.8 },
+        radius: { jobs: 4, energy: 999, education: 6, food: 5, housing: 3, healthcare: 5 },
         priceBounds: { min: 0.25, max: 4.0 }
     };
     
@@ -7312,7 +7113,9 @@ document.addEventListener('DOMContentLoaded', () => {
                             game.governanceSystem.setupEventListeners();
                         }
                         try {
-                            setupMultiplierControls();
+                            if (typeof setupMultiplierControls === 'function') {
+                                setupMultiplierControls();
+                            }
                         } catch (error) {
                             console.warn('setupMultiplierControls not available:', error.message);
                         }
@@ -7354,7 +7157,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 game.governanceSystem.setupEventListeners();
             }
             try {
-                setupMultiplierControls();
+                if (typeof setupMultiplierControls === 'function') {
+                    setupMultiplierControls();
+                }
             } catch (error) {
                 console.warn('setupMultiplierControls not available:', error.message);
             }
@@ -7561,8 +7366,8 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // Market dashboard slider event listeners
     const marketSliders = [
-        'energy-elasticity', 'food-elasticity', 'housing-elasticity', 'jobs-elasticity',
-        'energy-radius', 'food-radius', 'housing-radius', 'jobs-radius',
+        'jobs-elasticity', 'energy-elasticity', 'education-elasticity', 'food-elasticity', 'housing-elasticity', 'healthcare-elasticity',
+        'jobs-radius', 'energy-radius', 'education-radius', 'food-radius', 'housing-radius', 'healthcare-radius',
         'min-price', 'max-price'
     ];
     
@@ -7655,6 +7460,33 @@ document.addEventListener('DOMContentLoaded', () => {
         saveGameBtn.addEventListener('click', () => {
             if (window.game) {
                 window.game.showSaveGameModal();
+            }
+            // Close player menu
+            const playerMenu = document.getElementById('player-menu');
+            if (playerMenu) {
+                playerMenu.classList.remove('active');
+            }
+        });
+    }
+
+    // Attenuation overlay toggle button
+    const toggleAttenuationBtn = document.getElementById('toggle-attenuation-overlay');
+    if (toggleAttenuationBtn) {
+        toggleAttenuationBtn.addEventListener('click', () => {
+            if (window.game) {
+                // Toggle the visualization state
+                window.game.showAttenuationVisualization = !window.game.showAttenuationVisualization;
+
+                // Update the status text
+                const statusSpan = document.getElementById('attenuation-status');
+                if (statusSpan) {
+                    statusSpan.textContent = window.game.showAttenuationVisualization ? 'ON' : 'OFF';
+                }
+
+                // Request a re-render to show/hide the overlay
+                window.game.scheduleRender();
+
+                console.log('🌿 Attenuation visualization:', window.game.showAttenuationVisualization ? 'enabled' : 'disabled');
             }
             // Close player menu
             const playerMenu = document.getElementById('player-menu');
@@ -7837,496 +7669,21 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
     
-    // Building creator functionality
-    const createBuildingBtn = document.getElementById('create-building');
-    if (createBuildingBtn) {
-        createBuildingBtn.addEventListener('click', () => {
-        const name = document.getElementById('building-name').value;
-        const category = document.getElementById('building-category').value;
-        
-        if (!name.trim()) {
-            return; // No building name entered
-        }
-        
-        // Collect all form data
-        const buildingData = {
-            id: `custom_${category}_${name.toLowerCase().replace(/\s+/g, '_')}`,
-            name: name,
-            category: category,
-            images: {
-                construction: document.getElementById('construction-image').value,
-                built: document.getElementById('built-image').value
-            },
-            economics: {
-                buildCost: parseInt(document.getElementById('build-cost').value) || 0,
-                constructionDays: parseInt(document.getElementById('construction-days').value) || 1,
-                maxRevenue: parseInt(document.getElementById('max-revenue').value) || 0,
-                maintenanceCost: parseInt(document.getElementById('maintenance-cost').value) || 0
-            },
-            population: {
-                jobsCreated: parseInt(document.getElementById('jobs-created').value) || 0,
-                bedroomsAdded: parseInt(document.getElementById('bedrooms-added').value) || 0,
-                populationRequired: parseInt(document.getElementById('population-required').value) || 0
-            },
-            resources: {
-                energyDemand: parseInt(document.getElementById('energy-demand').value) || 0,
-                foodProduction: parseInt(document.getElementById('food-production').value) || 0
-            },
-            prerequisites: document.getElementById('prerequisites').value
-                .split(',')
-                .map(p => p.trim())
-                .filter(p => p.length > 0),
-            impacts: {}
-        };
-        
-        // Collect domain impacts
-        document.querySelectorAll('.impact-row input').forEach(input => {
-            const domain = input.dataset.domain;
-            const value = parseInt(input.value) || 0;
-            if (value !== 0) {
-                buildingData.impacts[domain] = value;
-            }
-        });
-        
-
-        // Building created successfully (removed alert)
-        });
-    }
+    // Legacy Building Creator removed - now using CSV→JSON upload system
     
-    const exportBuildingBtn = document.getElementById('export-building');
-    if (exportBuildingBtn) {
-        exportBuildingBtn.addEventListener('click', () => {
-        const name = document.getElementById('building-name').value;
-        const category = document.getElementById('building-category').value;
-        
-        if (!name.trim()) {
-            return; // No building name entered
-        }
-        
-        // Collect all form data (same as create building)
-        const buildingData = {
-            id: `custom_${category}_${name.toLowerCase().replace(/\s+/g, '_')}`,
-            name: name,
-            category: category,
-            images: {
-                construction: document.getElementById('construction-image').value,
-                built: document.getElementById('built-image').value
-            },
-            economics: {
-                buildCost: parseInt(document.getElementById('build-cost').value) || 0,
-                constructionDays: parseInt(document.getElementById('construction-days').value) || 1,
-                maxRevenue: parseInt(document.getElementById('max-revenue').value) || 0,
-                maintenanceCost: parseInt(document.getElementById('maintenance-cost').value) || 0
-            },
-            population: {
-                jobsCreated: parseInt(document.getElementById('jobs-created').value) || 0,
-                bedroomsAdded: parseInt(document.getElementById('bedrooms-added').value) || 0,
-                populationRequired: parseInt(document.getElementById('population-required').value) || 0
-            },
-            resources: {
-                energyDemand: parseInt(document.getElementById('energy-demand').value) || 0,
-                foodProduction: parseInt(document.getElementById('food-production').value) || 0
-            },
-            prerequisites: document.getElementById('prerequisites').value
-                .split(',')
-                .map(p => p.trim())
-                .filter(p => p.length > 0),
-            impacts: {}
-        };
-        
-        document.querySelectorAll('.impact-row input').forEach(input => {
-            const domain = input.dataset.domain;
-            const value = parseInt(input.value) || 0;
-            if (value !== 0) {
-                buildingData.impacts[domain] = value;
-            }
-        });
-        
-        // Create downloadable JSON file
-        const jsonString = JSON.stringify(buildingData, null, 2);
-        const blob = new Blob([jsonString], { type: 'application/json' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `${buildingData.id}.json`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-        });
-    }
-    
-    const resetFormBtn = document.getElementById('reset-form');
-    if (resetFormBtn) {
-        resetFormBtn.addEventListener('click', () => {
-        // Reset all form fields to defaults
-        document.getElementById('building-name').value = '';
-        document.getElementById('building-category').value = 'education';
-        document.getElementById('construction-image').value = '';
-        document.getElementById('built-image').value = '';
-        document.getElementById('build-cost').value = '1000';
-        document.getElementById('construction-days').value = '30';
-        document.getElementById('max-revenue').value = '0';
-        document.getElementById('maintenance-cost').value = '10';
-        document.getElementById('jobs-created').value = '0';
-        document.getElementById('bedrooms-added').value = '0';
-        document.getElementById('population-required').value = '0';
-        document.getElementById('energy-demand').value = '0';
-        document.getElementById('food-production').value = '0';
-        document.getElementById('decay-rate').value = '0.1';
-        document.getElementById('prerequisites').value = '';
-        document.querySelectorAll('.impact-row input').forEach(input => {
-            input.value = '0';
-        });
-        });
-    }
+    // Legacy Building Export and Form Reset removed - now using CSV→JSON upload system
 
-    // Amenity Creator functionality
-    let buildingImageCounter = 1;
-
-    const addBuildingImageBtn = document.getElementById('add-building-image');
-    if (addBuildingImageBtn) {
-        addBuildingImageBtn.addEventListener('click', () => {
-        const container = document.getElementById('building-images-container');
-        const newRow = document.createElement('div');
-        newRow.className = 'building-image-row';
-        newRow.innerHTML = `
-            <div class="form-group">
-                <label>Building Type</label>
-                <input type="text" class="building-type-input" placeholder="e.g. single_family_home">
-            </div>
-            <div class="form-group">
-                <label>Image URL with Amenity</label>
-                <input type="url" class="building-image-input" placeholder="https://...">
-            </div>
-            <button type="button" class="remove-image-btn">×</button>
-        `;
-        
-        container.appendChild(newRow);
-        buildingImageCounter++;
-
-        // Add remove functionality to new button
-        newRow.querySelector('.remove-image-btn').addEventListener('click', () => {
-            container.removeChild(newRow);
-        });
-        });
-    }
-
-    // Add remove functionality to initial row
-    const initialRemoveBtn = document.querySelector('.remove-image-btn');
-    if (initialRemoveBtn) {
-        initialRemoveBtn.addEventListener('click', function() {
-        const rows = document.querySelectorAll('.building-image-row');
-        if (rows.length > 1) {
-            this.closest('.building-image-row').remove();
-        }
-        });
-    }
-
-    const createAmenityBtn = document.getElementById('create-amenity');
-    if (createAmenityBtn) {
-        createAmenityBtn.addEventListener('click', () => {
-        const name = document.getElementById('amenity-name').value;
-        const category = document.getElementById('amenity-category').value;
-        
-        if (!name.trim()) {
-            return; // No amenity name entered
-            return;
-        }
-        
-        // Collect building images
-        const buildingImages = {};
-        document.querySelectorAll('.building-image-row').forEach(row => {
-            const buildingType = row.querySelector('.building-type-input').value.trim();
-            const imageUrl = row.querySelector('.building-image-input').value.trim();
-            if (buildingType && imageUrl) {
-                buildingImages[buildingType] = imageUrl;
-            }
-        });
-        
-        const amenityData = {
-            id: `custom_amenity_${name.toLowerCase().replace(/\s+/g, '_')}`,
-            name: name,
-            category: category,
-            economics: {
-                installCost: parseInt(document.getElementById('amenity-cost').value) || 0,
-                installationDays: parseInt(document.getElementById('amenity-install-days').value) || 1,
-                maintenanceCost: parseInt(document.getElementById('amenity-maintenance').value) || 0,
-                energyImpact: parseInt(document.getElementById('amenity-energy').value) || 0
-            },
-            decay: {
-                rate: parseFloat(document.getElementById('amenity-decay-rate').value) || 3.0
-            },
-            buildingImages: buildingImages,
-            prerequisites: {
-                buildings: document.getElementById('amenity-building-prereqs').value
-                    .split(',')
-                    .map(p => p.trim())
-                    .filter(p => p.length > 0),
-                amenities: document.getElementById('amenity-prereqs').value
-                    .split(',')
-                    .map(p => p.trim())
-                    .filter(p => p.length > 0)
-            },
-            impacts: {}
-        };
-        
-        // Collect domain impacts from amenity tab
-        document.querySelector('#amenity-creator .impact-grid').querySelectorAll('.impact-row input').forEach(input => {
-            const domain = input.dataset.domain;
-            const value = parseInt(input.value) || 0;
-            if (value !== 0) {
-                amenityData.impacts[domain] = value;
-            }
-        });
-        
-        
-        // Amenity created successfully (removed alert)
-    });
-
-    document.getElementById('export-amenity').addEventListener('click', () => {
-        const name = document.getElementById('amenity-name').value;
-        const category = document.getElementById('amenity-category').value;
-        
-        if (!name.trim()) {
-            return; // No amenity name entered
-            return;
-        }
-        
-        // Collect building images
-        const buildingImages = {};
-        document.querySelectorAll('.building-image-row').forEach(row => {
-            const buildingType = row.querySelector('.building-type-input').value.trim();
-            const imageUrl = row.querySelector('.building-image-input').value.trim();
-            if (buildingType && imageUrl) {
-                buildingImages[buildingType] = imageUrl;
-            }
-        });
-        
-        const amenityData = {
-            id: `custom_amenity_${name.toLowerCase().replace(/\s+/g, '_')}`,
-            name: name,
-            category: category,
-            economics: {
-                installCost: parseInt(document.getElementById('amenity-cost').value) || 0,
-                installationDays: parseInt(document.getElementById('amenity-install-days').value) || 1,
-                maintenanceCost: parseInt(document.getElementById('amenity-maintenance').value) || 0,
-                energyImpact: parseInt(document.getElementById('amenity-energy').value) || 0
-            },
-            decay: {
-                rate: parseFloat(document.getElementById('amenity-decay-rate').value) || 3.0
-            },
-            buildingImages: buildingImages,
-            prerequisites: {
-                buildings: document.getElementById('amenity-building-prereqs').value
-                    .split(',')
-                    .map(p => p.trim())
-                    .filter(p => p.length > 0),
-                amenities: document.getElementById('amenity-prereqs').value
-                    .split(',')
-                    .map(p => p.trim())
-                    .filter(p => p.length > 0)
-            },
-            impacts: {}
-        };
-        
-        document.querySelector('#amenity-creator .impact-grid').querySelectorAll('.impact-row input').forEach(input => {
-            const domain = input.dataset.domain;
-            const value = parseInt(input.value) || 0;
-            if (value !== 0) {
-                amenityData.impacts[domain] = value;
-            }
-        });
-        
-        // Create downloadable JSON file
-        const jsonString = JSON.stringify(amenityData, null, 2);
-        const blob = new Blob([jsonString], { type: 'application/json' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `${amenityData.id}.json`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-    });
-
-    document.getElementById('reset-amenity-form').addEventListener('click', () => {
-        // Reset all amenity form fields
-        document.getElementById('amenity-name').value = '';
-        document.getElementById('amenity-category').value = 'energy';
-        document.getElementById('amenity-cost').value = '500';
-        document.getElementById('amenity-install-days').value = '7';
-        document.getElementById('amenity-maintenance').value = '1';
-        document.getElementById('amenity-energy').value = '0';
-        document.getElementById('amenity-decay-rate').value = '0.05';
-        document.getElementById('amenity-building-prereqs').value = '';
-        document.getElementById('amenity-prereqs').value = '';
-        
-        // Reset building images to just one row
-        const container = document.getElementById('building-images-container');
-        container.innerHTML = `
-            <div class="building-image-row">
-                <div class="form-group">
-                    <label>Building Type</label>
-                    <input type="text" class="building-type-input" placeholder="e.g. apartment_building">
-                </div>
-                <div class="form-group">
-                    <label>Image URL with Amenity</label>
-                    <input type="url" class="building-image-input" placeholder="https://...">
-                </div>
-                <button type="button" class="remove-image-btn">×</button>
-            </div>
-        `;
-        
-        // Re-add remove functionality
-        document.querySelector('.remove-image-btn').addEventListener('click', function() {
-            const rows = document.querySelectorAll('.building-image-row');
-            if (rows.length > 1) {
-                this.closest('.building-image-row').remove();
-            }
-        });
-        
-        // Reset domain impacts
-        document.querySelector('#amenity-creator .impact-grid').querySelectorAll('.impact-row input').forEach(input => {
-            input.value = '0';
-        });
-    });
-
-    // File upload and image preview functionality
-    function setupImagePreview(fileInput, previewDiv) {
-        fileInput.addEventListener('change', function(e) {
-            const file = e.target.files[0];
-            if (file) {
-                if (file.type.startsWith('image/')) {
-                    const reader = new FileReader();
-                    reader.onload = function(e) {
-                        previewDiv.innerHTML = `<img src="${e.target.result}" alt="Preview">`;
-                        previewDiv.classList.add('has-image');
-                        // Store the base64 data for later use
-                        fileInput.dataset.imageData = e.target.result;
-                    };
-                    reader.readAsDataURL(file);
-                } else {
-                    return; // Invalid image file
-                    fileInput.value = '';
-                    previewDiv.innerHTML = '<div class="placeholder">No image selected</div>';
-                    previewDiv.classList.remove('has-image');
-                }
-            } else {
-                previewDiv.innerHTML = '<div class="placeholder">No image selected</div>';
-                previewDiv.classList.remove('has-image');
-                delete fileInput.dataset.imageData;
-            }
-        });
-
-        // Initialize placeholder
-        if (!fileInput.files.length) {
-            previewDiv.innerHTML = '<div class="placeholder">No image selected</div>';
-        }
-    }
-
-    // Setup image previews for building creator
-    setupImagePreview(
-        document.getElementById('construction-image'),
-        document.getElementById('construction-preview')
-    );
-    setupImagePreview(
-        document.getElementById('built-image'),
-        document.getElementById('built-preview')
-    );
-
-    // Setup image preview for amenity building images (dynamic)
-    function setupAmenityImagePreviews() {
-        document.querySelectorAll('.building-image-input').forEach((input, index) => {
-            const previewDiv = input.nextElementSibling;
-            if (previewDiv && previewDiv.classList.contains('image-preview')) {
-                setupImagePreview(input, previewDiv);
-            }
-        });
-    }
-
-    // Initial setup for amenity images
-    setupAmenityImagePreviews();
-
-    // Override the add building image functionality to include file inputs and previews
-    const originalAddImageButton = document.getElementById('add-building-image');
-    originalAddImageButton.replaceWith(originalAddImageButton.cloneNode(true));
-    
-    document.getElementById('add-building-image').addEventListener('click', () => {
-        const container = document.getElementById('building-images-container');
-        const newRow = document.createElement('div');
-        newRow.className = 'building-image-row';
-        newRow.innerHTML = `
-            <div class="form-group">
-                <label>Building Type</label>
-                <input type="text" class="building-type-input" placeholder="e.g. single_family_home">
-            </div>
-            <div class="form-group">
-                <label>Image with Amenity</label>
-                <input type="file" class="building-image-input" accept="image/*">
-                <div class="image-preview"><div class="placeholder">No image selected</div></div>
-            </div>
-            <button type="button" class="remove-image-btn">×</button>
-        `;
-        
-        container.appendChild(newRow);
-        
-        // Setup image preview for new row
-        const newInput = newRow.querySelector('.building-image-input');
-        const newPreview = newRow.querySelector('.image-preview');
-        setupImagePreview(newInput, newPreview);
-        
-        // Add remove functionality to new button
-        newRow.querySelector('.remove-image-btn').addEventListener('click', () => {
-            container.removeChild(newRow);
-        });
-    });
-
-    // Data persistence functionality
-    const STORAGE_KEYS = {
-        BUILDINGS: 'theCommons_customBuildings',
-        AMENITIES: 'theCommons_customAmenities'
-    };
-
-    function saveToStorage(key, data) {
-        try {
-            const existing = JSON.parse(localStorage.getItem(key) || '[]');
-            existing.push(data);
-            localStorage.setItem(key, JSON.stringify(existing));
-            return true;
-        } catch (error) {
-            console.error('Failed to save to storage:', error);
-            return false;
-        }
-    }
-
-    function loadFromStorage(key) {
-        try {
-            return JSON.parse(localStorage.getItem(key) || '[]');
-        } catch (error) {
-            console.error('Failed to load from storage:', error);
-            return [];
-        }
-    }
-
-    function removeFromStorage(key, id) {
-        try {
-            const existing = JSON.parse(localStorage.getItem(key) || '[]');
-            const filtered = existing.filter(item => item.id !== id);
-            localStorage.setItem(key, JSON.stringify(filtered));
-            return true;
-        } catch (error) {
-            console.error('Failed to remove from storage:', error);
-            return false;
-        }
-    }
+    // Legacy Amenity Creator removed - now using CSV→JSON upload system
 
     // Update building creator to use file data and persistence
     const originalCreateBuilding = document.getElementById('create-building');
-    originalCreateBuilding.replaceWith(originalCreateBuilding.cloneNode(true));
+    if (originalCreateBuilding) {
+        originalCreateBuilding.replaceWith(originalCreateBuilding.cloneNode(true));
+    }
 
-    document.getElementById('create-building').addEventListener('click', () => {
+    const createBuildingBtn = document.getElementById('create-building');
+    if (createBuildingBtn) {
+        createBuildingBtn.addEventListener('click', () => {
         const name = document.getElementById('building-name').value;
         const category = document.getElementById('building-category').value;
         const editingId = document.getElementById('create-building').dataset.editingId;
@@ -8367,15 +7724,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 .split(',')
                 .map(p => p.trim())
                 .filter(p => p.length > 0),
-            domainImpacts: {}
+            // Note: domainImpacts removed - now using JSON building data with livability system
         };
-        
-        // Collect domain impacts
-        document.querySelectorAll('#building-creator .impact-row input').forEach(input => {
-            const domain = input.dataset.domain;
-            const value = parseInt(input.value) || 0;
-            buildingData.domainImpacts[domain] = value;
-        });
         
         // Save using building manager
         window.buildingManager.saveBuilding(buildingData);
@@ -8402,76 +7752,7 @@ document.addEventListener('DOMContentLoaded', () => {
             showTab('building-creator');
         }
     });
-
-    // Update amenity creator to use file data and persistence
-    const originalCreateAmenity = document.getElementById('create-amenity');
-    originalCreateAmenity.replaceWith(originalCreateAmenity.cloneNode(true));
-
-    document.getElementById('create-amenity').addEventListener('click', () => {
-        const name = document.getElementById('amenity-name').value;
-        const category = document.getElementById('amenity-category').value;
-        
-        if (!name.trim()) {
-            return; // No amenity name entered
-            return;
-        }
-        
-        // Collect building images with file data
-        const buildingImages = {};
-        document.querySelectorAll('.building-image-row').forEach(row => {
-            const buildingType = row.querySelector('.building-type-input').value.trim();
-            const imageInput = row.querySelector('.building-image-input');
-            const imageData = imageInput.dataset.imageData || '';
-            
-            if (buildingType && imageData) {
-                buildingImages[buildingType] = imageData;
-            }
-        });
-        
-        const amenityData = {
-            id: `custom_amenity_${name.toLowerCase().replace(/\s+/g, '_')}`,
-            name: name,
-            category: category,
-            economics: {
-                installCost: parseInt(document.getElementById('amenity-cost').value) || 0,
-                installationDays: parseInt(document.getElementById('amenity-install-days').value) || 1,
-                maintenanceCost: parseInt(document.getElementById('amenity-maintenance').value) || 0,
-                energyImpact: parseInt(document.getElementById('amenity-energy').value) || 0
-            },
-            decay: {
-                rate: parseFloat(document.getElementById('amenity-decay-rate').value) || 3.0
-            },
-            buildingImages: buildingImages,
-            prerequisites: {
-                buildings: document.getElementById('amenity-building-prereqs').value
-                    .split(',')
-                    .map(p => p.trim())
-                    .filter(p => p.length > 0),
-                amenities: document.getElementById('amenity-prereqs').value
-                    .split(',')
-                    .map(p => p.trim())
-                    .filter(p => p.length > 0)
-            },
-            impacts: {},
-            createdAt: new Date().toISOString()
-        };
-        
-        // Collect domain impacts
-        document.querySelector('#amenity-creator .impact-grid').querySelectorAll('.impact-row input').forEach(input => {
-            const domain = input.dataset.domain;
-            const value = parseInt(input.value) || 0;
-            if (value !== 0) {
-                amenityData.impacts[domain] = value;
-            }
-        });
-        
-        // Save to localStorage
-        if (saveToStorage(STORAGE_KEYS.AMENITIES, amenityData)) {
-            // Amenity created and saved successfully (removed alert)
-        } else {
-            // Amenity created but could not be saved (removed alert)
-        }
-    });
+    }
 
     // Load saved data on startup
 
@@ -8506,7 +7787,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function populateBuildingList(filter = 'all') {
         const buildingList = document.getElementById('all-building-list');
-        
+
+        // Check if building list element exists
+        if (!buildingList) {
+            console.warn('Building list element not found - skipping population');
+            return;
+        }
+
         // Get all buildings from the building manager
         let allBuildings = window.buildingManager.getAllBuildings();
         
@@ -8594,11 +7881,7 @@ document.addEventListener('DOMContentLoaded', () => {
             document.getElementById('food-production').value = building.resources?.foodProduction || 0;
             document.getElementById('prerequisites').value = building.prerequisites?.join(', ') || '';
             
-            // Set domain impacts
-            document.querySelectorAll('#building-creator .impact-row input').forEach(input => {
-                const domain = input.dataset.domain;
-                input.value = (building.domainImpacts && building.domainImpacts[domain]) || 0;
-            });
+            // Note: Domain impacts section removed - now using livability data from JSON buildings
             
             // Store building ID for update
             if (building.isDefault) {
@@ -8630,10 +7913,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function deleteBuilding(buildingId) {
         const building = window.buildingManager.getBuildingById(buildingId);
-        
+
         if (!building) {
             return; // Building not found
-            return;
         }
         
         if (confirm(`Are you sure you want to delete "${building.name}"? This action cannot be undone.`)) {
@@ -8846,7 +8128,6 @@ document.addEventListener('DOMContentLoaded', () => {
         return defaults[propertyName] || 1.0;
     }
 
-}
 }); // End DOMContentLoaded listener
 
 // REMOVED - Economic balance controls are now only in dev tools

@@ -107,6 +107,20 @@ class ServerEconomicEngine {
                 supplyDemand,
                 transportEfficiency
             },
+            vitality: {
+                supply: {
+                    ENERGY: supplyDemand.energy.supply,
+                    FOOD: supplyDemand.food.supply,
+                    HOUSING: supplyDemand.housing.supply,
+                    JOBS: supplyDemand.jobs.supply
+                },
+                demand: {
+                    ENERGY: supplyDemand.energy.demand,
+                    FOOD: supplyDemand.food.demand,
+                    HOUSING: supplyDemand.housing.demand,
+                    JOBS: supplyDemand.jobs.demand
+                }
+            },
             affectedBuildings: buildingPerformances,
             cacheInfo: {
                 cachedResults: 0,
@@ -154,6 +168,20 @@ class ServerEconomicEngine {
             cityEconomics: {
                 ...cityStats,
                 supplyDemand
+            },
+            vitality: {
+                supply: {
+                    ENERGY: supplyDemand.energy.supply,
+                    FOOD: supplyDemand.food.supply,
+                    HOUSING: supplyDemand.housing.supply,
+                    JOBS: supplyDemand.jobs.supply
+                },
+                demand: {
+                    ENERGY: supplyDemand.energy.demand,
+                    FOOD: supplyDemand.food.demand,
+                    HOUSING: supplyDemand.housing.demand,
+                    JOBS: supplyDemand.jobs.demand
+                }
             },
             affectedBuildings: buildingPerformances,
             cacheInfo: {
@@ -485,37 +513,174 @@ class ServerEconomicEngine {
     }
 
     /**
-     * Get local supply/demand for need type
-     * Adapted from client economic-performance.js getLocalSupplyDemand
+     * Get local supply/demand for need type - CONNECTIVITY-BASED
+     * Only considers resources accessible via adjacency or road connections
      */
     getLocalSupplyDemand(needType, row, col) {
-        const cityData = this.calculateCitySupplyDemand();
+        const accessibleParcels = this.getAccessibleParcels(row, col);
+        const connectedResources = this.calculateConnectedResources(accessibleParcels);
 
         let supply = 0;
         let demand = 0;
 
         switch(needType) {
             case this.NEED_TYPES.WORKERS:
-                supply = cityData.housing.supply;
-                demand = cityData.jobs.demand;
+                supply = connectedResources.housing.supply;
+                demand = connectedResources.housing.demand;
                 break;
             case this.NEED_TYPES.JOBS:
-                supply = cityData.jobs.supply;
-                demand = cityData.housing.demand;
+                supply = connectedResources.jobs.supply;
+                demand = connectedResources.jobs.demand;
                 break;
             case this.NEED_TYPES.ENERGY:
-                supply = cityData.energy.supply;
-                demand = cityData.energy.demand;
+                supply = connectedResources.energy.supply;
+                demand = connectedResources.energy.demand;
                 break;
             case this.NEED_TYPES.FOOD:
-                supply = cityData.food.supply;
-                demand = cityData.food.demand;
+                supply = connectedResources.food.supply;
+                demand = connectedResources.food.demand;
                 break;
             default:
                 return { supply: 0, demand: 0 };
         }
 
         return { supply, demand };
+    }
+
+    /**
+     * Get all parcels accessible from a given position via adjacency or road connections
+     * Ported from client economic-performance.js
+     */
+    getAccessibleParcels(row, col) {
+        const accessible = new Set();
+
+        // Always include the parcel itself
+        accessible.add(`${row},${col}`);
+
+        // Check adjacent parcels (4-directional)
+        const directions = [[-1, 0], [1, 0], [0, -1], [0, 1]];
+        for (const [dRow, dCol] of directions) {
+            const adjRow = row + dRow;
+            const adjCol = col + dCol;
+            const adjKey = `${adjRow},${adjCol}`;
+
+            if (this.gameData.grid[adjKey]) {
+                accessible.add(adjKey);
+            }
+        }
+
+        // Find all road-connected parcels
+        const roadConnected = this.findRoadConnectedParcels(row, col, new Set());
+        roadConnected.forEach(parcel => accessible.add(parcel));
+
+        return Array.from(accessible);
+    }
+
+    /**
+     * Find all parcels connected via road network using flood-fill algorithm
+     * Ported from client economic-performance.js
+     */
+    findRoadConnectedParcels(row, col, visited) {
+        const connected = new Set();
+        const toVisit = [`${row},${col}`];
+
+        while (toVisit.length > 0) {
+            const currentKey = toVisit.shift();
+            if (visited.has(currentKey)) continue;
+
+            visited.add(currentKey);
+            const [currentRow, currentCol] = currentKey.split(',').map(Number);
+            const parcel = this.gameData.grid[currentKey];
+
+            // If this is a road, explore its neighbors
+            if (parcel && this.isRoadParcel(parcel)) {
+                connected.add(currentKey);
+
+                // Add adjacent parcels to exploration queue
+                const directions = [[-1, 0], [1, 0], [0, -1], [0, 1]];
+                for (const [dRow, dCol] of directions) {
+                    const neighborKey = `${currentRow + dRow},${currentCol + dCol}`;
+                    if (!visited.has(neighborKey) && this.gameData.grid[neighborKey]) {
+                        toVisit.push(neighborKey);
+                    }
+                }
+            }
+        }
+
+        return Array.from(connected);
+    }
+
+    /**
+     * Check if a parcel contains a road
+     * Ported from client economic-performance.js
+     */
+    isRoadParcel(parcel) {
+        if (!parcel.building) return false;
+
+        const building = this.gameData.buildings.get(parcel.building);
+        if (!building) return false;
+
+        // Check for road-type buildings
+        return building.type === 'transport-road' ||
+               building.category === 'transport' ||
+               (typeof building === 'string' && building.includes('road'));
+    }
+
+    /**
+     * Calculate total supply and demand from connected parcels
+     * Ported from client economic-performance.js
+     */
+    calculateConnectedResources(accessibleParcels) {
+        const resources = {
+            housing: { supply: 0, demand: 0 },
+            jobs: { supply: 0, demand: 0 },
+            energy: { supply: 0, demand: 0 },
+            food: { supply: 0, demand: 0 }
+        };
+
+        for (const parcelKey of accessibleParcels) {
+            const parcel = this.gameData.grid[parcelKey];
+            if (!parcel?.building) continue;
+
+            const building = this.gameData.buildings.get(parcel.building);
+            if (!building) {
+                console.log(`🚨 [DEBUG] No building data found for parcel ${parcelKey} building ${parcel.building}`);
+                continue;
+            }
+
+            // Building data validated
+
+            // Skip buildings under construction - they provide no supply until complete
+            if (parcel._isUnderConstruction) continue;
+
+            // Add supplies
+            if (building.population?.bedroomsAdded > 0) {
+                resources.housing.supply += building.population.bedroomsAdded;
+            }
+            if (building.population?.jobsCreated > 0) {
+                resources.jobs.supply += building.population.jobsCreated;
+            }
+            if (building.resources?.energySupply > 0) {
+                resources.energy.supply += building.resources.energySupply;
+            }
+            if (building.resources?.foodProduction > 0) {
+                resources.food.supply += building.resources.foodProduction;
+            }
+
+            // Add demands
+            if (building.population?.bedroomsAdded > 0) {
+                resources.jobs.demand += building.population.bedroomsAdded; // Residents need jobs
+                resources.food.demand += building.population.bedroomsAdded; // Residents need food
+            }
+            if (building.population?.jobsCreated > 0) {
+                resources.housing.demand += building.population.jobsCreated; // Jobs need workers (housing)
+            }
+            if (building.resources?.energyDemand > 0) {
+                resources.energy.demand += building.resources.energyDemand;
+            }
+        }
+
+        return resources;
     }
 
     /**

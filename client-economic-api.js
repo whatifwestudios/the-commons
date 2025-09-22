@@ -643,6 +643,50 @@ class ClientEconomicAPI {
     }
 
     /**
+     * FINE-GRAINED: Get building performance for a specific building
+     * Server-authoritative building performance including needs satisfaction
+     */
+    async getBuildingPerformance(row, col) {
+        const cacheKey = `building:${row},${col}`;
+
+        // Check cache (3 second TTL for building performance)
+        if (this.cache.has(cacheKey)) {
+            const cached = this.cache.get(cacheKey);
+            if (Date.now() - cached.timestamp < 3000) {
+                return cached.data;
+            }
+        }
+
+        try {
+            const response = await fetch(`${this.baseUrl}/api/economics/building/${row}/${col}`, {
+                method: 'GET',
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            });
+
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+
+            const data = await response.json();
+            if (data.success) {
+                // Cache the result
+                this.cache.set(cacheKey, {
+                    timestamp: Date.now(),
+                    data: data
+                });
+                return data;
+            } else {
+                throw new Error(data.error || 'Failed to get building performance');
+            }
+        } catch (error) {
+            console.error('Failed to get building performance:', error);
+            return null;
+        }
+    }
+
+    /**
      * Prepare game state for server transmission
      * Converts client game state to server-compatible format
      */

@@ -130,6 +130,10 @@
                         💾 Save Game
                     </button>
                     <div class="dropdown-divider"></div>
+                    <button class="dropdown-item" id="toggle-attenuation-overlay">
+                        🌿 Attenuation Overlay: <span id="attenuation-status">OFF</span>
+                    </button>
+                    <div class="dropdown-divider"></div>
                     <button class="dropdown-item" id="reset-server-btn-menu" onclick="window.game?.resetServerState()">
                         🔄 Reset Server
                     </button>
@@ -256,19 +260,7 @@
     <div id="game-container">
         <div id="main-area">
             <canvas id="gameCanvas"></canvas>
-            <div id="tooltip" class="tooltip">
-                <div class="tooltip-header">
-                    <span class="parcel-coord">A-1</span>
-                </div>
-                <div class="tooltip-price">
-                    <span class="price-label">PRICE:</span>
-                    <span class="price-value">$150</span>
-                </div>
-                <div class="tooltip-building" style="display: none;">
-                    <div class="building-name"></div>
-                    <div class="building-stats"></div>
-                </div>
-            </div>
+            <!-- Legacy tooltip removed - using unified TooltipManager system -->
             <div id="context-menu" class="context-menu">
                 <div class="context-header">
                     <span class="context-coord">A-1</span>
@@ -283,92 +275,91 @@
             <div class="sidebar-section collapsible">
                 <div class="section-header" data-target="vitality">
                     <span>VITALITY</span>
-                    <span class="collapse-icon">▼</span>
+                    <span class="collapse-icon"></span>
                 </div>
                 <div id="vitality" class="section-content">
+                    <!-- JEEFHH Supply & Demand Section -->
                     <div class="vitality-group">
-                        <div class="vitality-group-title">SUPPLY & DEMAND</div>
-                        <div class="jefh-circles-container">
-                            <div class="jefh-circle-item" data-vitality="jobs">
-                                <div class="jefh-circle" id="jobs-circle">
-                                    <div class="jefh-balance-indicator" id="jobs-indicator"></div>
+                        <div class="vitality-group-title">JEEFHH (SUPPLY & DEMAND)</div>
+                        <div class="jeefhh-bars-container">
+                            <div class="jeefhh-bar-row" data-metric="jobs">
+                                <span class="jeefhh-label">JOBS</span>
+                                <div class="jeefhh-bar">
+                                    <div class="jeefhh-progress" id="jobs-bar"></div>
                                 </div>
-                                <span class="jefh-circle-label">JOBS</span>
                             </div>
-                            <div class="jefh-circle-item" data-vitality="energy">
-                                <div class="jefh-circle" id="energy-circle">
-                                    <div class="jefh-balance-indicator" id="energy-indicator"></div>
+                            <div class="jeefhh-bar-row" data-metric="energy">
+                                <span class="jeefhh-label">ENERGY</span>
+                                <div class="jeefhh-bar">
+                                    <div class="jeefhh-progress" id="energy-bar"></div>
                                 </div>
-                                <span class="jefh-circle-label">ENERGY</span>
                             </div>
-                            <div class="jefh-circle-item" data-vitality="food">
-                                <div class="jefh-circle" id="food-circle">
-                                    <div class="jefh-balance-indicator" id="food-indicator"></div>
+                            <div class="jeefhh-bar-row" data-metric="education">
+                                <span class="jeefhh-label">EDUCATION</span>
+                                <div class="jeefhh-bar">
+                                    <div class="jeefhh-progress" id="education-bar"></div>
                                 </div>
-                                <span class="jefh-circle-label">FOOD</span>
                             </div>
-                            <div class="jefh-circle-item" data-vitality="housing">
-                                <div class="jefh-circle" id="housing-circle">
-                                    <div class="jefh-balance-indicator" id="housing-indicator"></div>
+                            <div class="jeefhh-bar-row" data-metric="food">
+                                <span class="jeefhh-label">FOOD</span>
+                                <div class="jeefhh-bar">
+                                    <div class="jeefhh-progress" id="food-bar"></div>
                                 </div>
-                                <span class="jefh-circle-label">HOUSING</span>
+                            </div>
+                            <div class="jeefhh-bar-row" data-metric="housing">
+                                <span class="jeefhh-label">HOUSING</span>
+                                <div class="jeefhh-bar">
+                                    <div class="jeefhh-progress" id="housing-bar"></div>
+                                </div>
+                            </div>
+                            <div class="jeefhh-bar-row" data-metric="healthcare">
+                                <span class="jeefhh-label">HEALTHCARE</span>
+                                <div class="jeefhh-bar">
+                                    <div class="jeefhh-progress" id="healthcare-bar"></div>
+                                </div>
                             </div>
                         </div>
                     </div>
+
+                    <!-- CARENS Livability Section -->
                     <div class="vitality-group">
-                        <div class="vitality-group-title">NET SCORES</div>
-                        <div class="vitality-row" data-vitality="mobility">
-                            <span class="vitality-label mobility">MOBILITY</span>
-                            <div class="vitality-bar">
-                                <div class="vitality-progress" id="mobility-bar"></div>
+                        <div class="vitality-group-title">CARENS (LIVABILITY)</div>
+                        <div class="carens-bars-container">
+                            <div class="carens-bar-row" data-metric="safety">
+                                <span class="carens-label">SAFETY</span>
+                                <div class="carens-bar">
+                                    <div class="carens-progress" id="safety-bar"></div>
+                                </div>
                             </div>
-                        </div>
-                        <div class="vitality-row" data-vitality="education">
-                            <span class="vitality-label education">EDUCATION</span>
-                            <div class="vitality-bar">
-                                <div class="vitality-progress" id="education-bar"></div>
+                            <div class="carens-bar-row" data-metric="culture">
+                                <span class="carens-label">CULTURE</span>
+                                <div class="carens-bar">
+                                    <div class="carens-progress" id="culture-bar"></div>
+                                </div>
                             </div>
-                        </div>
-                        <div class="vitality-row" data-vitality="health">
-                            <span class="vitality-label health">HEALTH</span>
-                            <div class="vitality-bar">
-                                <div class="vitality-progress" id="health-bar"></div>
+                            <div class="carens-bar-row" data-metric="affordability">
+                                <span class="carens-label">AFFORDABILITY</span>
+                                <div class="carens-bar">
+                                    <div class="carens-progress" id="affordability-bar"></div>
+                                </div>
                             </div>
-                        </div>
-                        <div class="vitality-row" data-vitality="safety">
-                            <span class="vitality-label safety">SAFETY</span>
-                            <div class="vitality-bar">
-                                <div class="vitality-progress" id="safety-bar"></div>
+                            <div class="carens-bar-row" data-metric="resilience">
+                                <span class="carens-label">RESILIENCE</span>
+                                <div class="carens-bar">
+                                    <div class="carens-progress" id="resilience-bar"></div>
+                                </div>
                             </div>
-                        </div>
-                        <div class="vitality-row" data-vitality="culture">
-                            <span class="vitality-label culture">CULTURE</span>
-                            <div class="vitality-bar">
-                                <div class="vitality-progress" id="culture-bar"></div>
+                            <div class="carens-bar-row" data-metric="environment">
+                                <span class="carens-label">ENVIRONMENT</span>
+                                <div class="carens-bar">
+                                    <div class="carens-progress" id="environment-bar"></div>
+                                </div>
                             </div>
-                        </div>
-                        <div class="vitality-row" data-vitality="environment">
-                            <span class="vitality-label environment">ENVIRONMENT</span>
-                            <div class="vitality-bar">
-                                <div class="vitality-progress" id="environment-bar"></div>
-                            </div>
-                        </div>
-                        <div class="vitality-row" data-vitality="affordability">
-                            <span class="vitality-label affordability">AFFORDABILITY</span>
-                            <div class="vitality-bar">
-                                <div class="vitality-progress" id="affordability-bar"></div>
-                            </div>
-                        </div>
-                        <div class="vitality-row" data-vitality="noise">
-                            <span class="vitality-label noise">NOISE</span>
-                            <div class="vitality-bar">
-                                <div class="vitality-progress" id="noise-bar"></div>
-                            </div>
-                        </div>
-                        <div class="vitality-row" data-vitality="resilience">
-                            <span class="vitality-label resilience">RESILIENCE</span>
-                            <div class="vitality-bar">
-                                <div class="vitality-progress" id="resilience-bar"></div>
+                            <div class="carens-bar-row" data-metric="noise">
+                                <span class="carens-label">NOISE</span>
+                                <div class="carens-bar">
+                                    <div class="carens-progress" id="noise-bar"></div>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -377,7 +368,7 @@
             <div class="sidebar-section collapsible collapsed">
                 <div class="section-header" data-target="mobility-panel">
                     <span>MOBILITY</span>
-                    <span class="collapse-icon">▶</span>
+                    <span class="collapse-icon"></span>
                 </div>
                 <div id="mobility-panel" class="section-content">
                     <div class="mobility-metrics">
@@ -413,7 +404,7 @@
             <div class="sidebar-section collapsible route-config-panel" id="route-config-sidebar" style="display: none;">
                 <div class="section-header" data-target="route-config-content">
                     <span>🚌 CONFIGURE ROUTE</span>
-                    <span class="collapse-icon">▼</span>
+                    <span class="collapse-icon"></span>
                 </div>
                 <div id="route-config-content" class="section-content">
                     <!-- Route Basic Info -->
@@ -422,6 +413,14 @@
                         <div class="form-group">
                             <label for="sidebar-route-name">Route Name:</label>
                             <input type="text" id="sidebar-route-name" class="form-control" placeholder="Bus Route 1">
+                        </div>
+                        <div class="form-group">
+                            <label for="sidebar-service-level">Service Level:</label>
+                            <select id="sidebar-service-level" class="form-control">
+                                <option value="rush_hour">Rush Hour ($1/stop)</option>
+                                <option value="daytime" selected>Daytime ($2/stop)</option>
+                                <option value="24_hour">24 Hour ($3/stop)</option>
+                            </select>
                         </div>
                         <div class="route-stats">
                             <div class="stat-item">
@@ -448,11 +447,31 @@
                         <div class="revenue-projections">
                             <div class="projection-item">
                                 <span class="proj-label">Daily Ridership:</span>
-                                <span class="proj-value" id="sidebar-daily-ridership">150</span>
+                                <span class="proj-value" id="sidebar-daily-ridership">
+                                    <span class="loading-indicator" style="display: none;">⟳</span>
+                                    <span class="proj-data">150</span>
+                                </span>
                             </div>
                             <div class="projection-item">
                                 <span class="proj-label">Daily Revenue:</span>
-                                <span class="proj-value" id="sidebar-daily-revenue">$375</span>
+                                <span class="proj-value" id="sidebar-daily-revenue">
+                                    <span class="loading-indicator" style="display: none;">⟳</span>
+                                    <span class="proj-data">$375</span>
+                                </span>
+                            </div>
+                            <div class="projection-item">
+                                <span class="proj-label">Daily Maintenance:</span>
+                                <span class="proj-value" id="sidebar-daily-maintenance">
+                                    <span class="loading-indicator" style="display: none;">⟳</span>
+                                    <span class="proj-data">-$180</span>
+                                </span>
+                            </div>
+                            <div class="projection-item">
+                                <span class="proj-label">Daily Net:</span>
+                                <span class="proj-value net-value" id="sidebar-daily-net">
+                                    <span class="loading-indicator" style="display: none;">⟳</span>
+                                    <span class="proj-data">+$195</span>
+                                </span>
                             </div>
                         </div>
                     </div>
@@ -467,7 +486,7 @@
             <div class="sidebar-section collapsible">
                 <div class="section-header" data-target="players-panel">
                     <span>PLAYERS</span>
-                    <span class="collapse-icon">▶</span>
+                    <span class="collapse-icon"></span>
                 </div>
                 <div id="players-panel" class="section-content collapsed">
                     <div class="players-legend">
@@ -484,7 +503,7 @@
             <div class="sidebar-section collapsible">
                 <div class="section-header" data-target="info">
                     <span>METRICS</span>
-                    <span class="collapse-icon">▼</span>
+                    <span class="collapse-icon"></span>
                 </div>
                 <div id="info" class="section-content">
                     <div class="metric-row" id="residents-row">
@@ -503,7 +522,7 @@
             <div class="sidebar-section collapsible action-manager">
                 <div class="section-header" data-target="action-manager-content">
                     <span>ACTION MANAGER</span>
-                    <span class="collapse-icon">▼</span>
+                    <span class="collapse-icon"></span>
                 </div>
                 <div id="action-manager-content" class="section-content action-manager-content">
                     <div class="action-stats">
@@ -567,9 +586,9 @@
                         <div id="building-requirements-list"></div>
                     </div>
                     
-                    <!-- Livability Impacts Section -->
+                    <!-- CARENS Livability Section -->
                     <div class="building-impacts">
-                        <div class="vitality-group-title">LIVABILITY IMPACTS</div>
+                        <div class="vitality-group-title">CARENS (LIVABILITY)</div>
                         <div id="building-impacts-list"></div>
                     </div>
                 </div>
@@ -1267,7 +1286,9 @@
     </div>
     
     <script src="config.js"></script>
-    <script src="buildings.js"></script>
+    <script src="utils/csv-converter.js"></script>
+    <script src="csv-uploader.js"></script>
+    <script type="module" src="buildings.js"></script>
     <!-- Utility Scripts -->
     <script src="utils/player-utils.js"></script>
     <script src="utils/color-utils.js"></script>
@@ -1284,8 +1305,8 @@
     <script src="game-state.js"></script>
     <script src="ui-manager.js"></script>
     <script src="mobility-layer.js"></script>
-    <script src="tooltip-manager.js"></script>
     <script src="transport-capacity.js"></script>
+    <script src="crisp-tooltip.js"></script>
     <script src="context-menu-system.js"></script>
     <script src="action-manager.js"></script>
     <script src="action-marketplace.js"></script>

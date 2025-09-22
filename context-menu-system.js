@@ -383,9 +383,14 @@ class ContextMenuSystem {
 
         actionsSection.appendChild(destroyBtn);
 
-        contentEl.appendChild(actionsSection);
+        // Add Data Insights button
+        const dataInsightsBtn = document.createElement('button');
+        dataInsightsBtn.className = 'context-btn secondary';
+        dataInsightsBtn.textContent = '📊 DATA INSIGHTS';
+        dataInsightsBtn.onclick = () => this.showDataInsights(row, col, parcel);
+        actionsSection.appendChild(dataInsightsBtn);
 
-        // Data insights functionality moved to separate system
+        contentEl.appendChild(actionsSection);
 
         // Upgrade section
         const upgradeSection = document.createElement('div');
@@ -637,6 +642,250 @@ class ContextMenuSystem {
             clearTimeout(this.submenuTimer);
             this.submenuTimer = null;
         }
+    }
+
+    /**
+     * Show Data Insights overlay for a building
+     */
+    showDataInsights(row, col, parcel) {
+        // Hide context menu first
+        this.hide();
+
+        // Create Data Insights overlay
+        this.createDataInsightsOverlay(row, col, parcel);
+    }
+
+    /**
+     * Create comprehensive Data Insights overlay
+     */
+    createDataInsightsOverlay(row, col, parcel) {
+        // Remove any existing overlay
+        const existingOverlay = document.getElementById('data-insights-overlay');
+        if (existingOverlay) {
+            existingOverlay.remove();
+        }
+
+        // Create overlay container
+        const overlay = document.createElement('div');
+        overlay.id = 'data-insights-overlay';
+        overlay.style.cssText = `
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: rgba(0, 0, 0, 0.8);
+            backdrop-filter: blur(5px);
+            z-index: 10000;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        `;
+
+        // Create panel
+        const panel = document.createElement('div');
+        panel.style.cssText = `
+            background: #2a2a2a;
+            border: 2px solid #4a9eff;
+            border-radius: 15px;
+            padding: 30px;
+            min-width: 800px;
+            max-width: 1000px;
+            max-height: 80vh;
+            overflow-y: auto;
+            color: #ffffff;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        `;
+
+        // Use grid as single source of truth for parcel data
+        const gridParcel = this.game.grid[row][col];
+        if (!gridParcel) {
+            console.error(`No parcel data found at grid position ${row},${col}`);
+            return;
+        }
+
+        // Get building data using the grid parcel data
+        const buildingData = gridParcel.building ? this.game.getBuildingDataByName(gridParcel.building) : null;
+        const coord = this.game.getParcelCoordinate(row, col);
+
+        // Create content
+        panel.innerHTML = this.generateDataInsightsContent(row, col, gridParcel, buildingData, coord);
+
+        overlay.appendChild(panel);
+        document.body.appendChild(overlay);
+
+        // Enable attenuation visualization on game canvas
+        this.game.showAttenuationVisualization = true;
+        this.game.attenuationCenter = { row, col };
+        this.game.scheduleRender();
+
+        // Close on escape or click outside
+        const closeOverlay = () => {
+            overlay.remove();
+            this.game.showAttenuationVisualization = false;
+            this.game.scheduleRender();
+        };
+
+        overlay.addEventListener('click', (e) => {
+            if (e.target === overlay) closeOverlay();
+        });
+
+        document.addEventListener('keydown', function escapeHandler(e) {
+            if (e.key === 'Escape') {
+                closeOverlay();
+                document.removeEventListener('keydown', escapeHandler);
+            }
+        });
+    }
+
+    /**
+     * Generate comprehensive data insights content
+     */
+    generateDataInsightsContent(row, col, parcel, buildingData, coord) {
+        let html = '';
+
+        // Handle missing building data
+        if (!buildingData) {
+            return `
+                <div style="text-align: center; padding: 40px;">
+                    <h2 style="color: #ff6b6b;">❌ No Building Data</h2>
+                    <p style="color: #aaa;">Building data not available for this location.</p>
+                </div>
+            `;
+        }
+
+        // Header
+        html += `
+            <div style="text-align: center; margin-bottom: 25px;">
+                <h2 style="margin: 0; color: #4a9eff; font-size: 28px;">
+                    📊 Data Insights
+                </h2>
+                <p style="margin: 10px 0 0 0; color: #aaa; font-size: 16px;">
+                    ${buildingData.name} at ${coord}
+                </p>
+            </div>
+        `;
+
+        // Building Vitals Impact Section
+        html += `
+            <div style="margin-bottom: 30px;">
+                <h3 style="color: #4CAF50; margin-bottom: 15px;">🏗️ Building Impact on City Vitals</h3>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+        `;
+
+        // JEEFHH Impacts
+        if (buildingData.resources) {
+            html += `<div style="background: rgba(76, 175, 80, 0.1); padding: 15px; border-radius: 8px;">`;
+            html += `<h4 style="color: #4CAF50; margin-bottom: 10px;">JEEFHH Resources</h4>`;
+
+            const jeefhhImpacts = [
+                { key: 'jobsProvided', label: 'Jobs', emoji: '💼', type: 'supply' },
+                { key: 'jobsRequired', label: 'Jobs', emoji: '👥', type: 'demand' },
+                { key: 'energyProvided', label: 'Energy', emoji: '⚡', type: 'supply' },
+                { key: 'energyRequired', label: 'Energy', emoji: '⚡', type: 'demand' },
+                { key: 'educationProvided', label: 'Education', emoji: '🎓', type: 'supply' },
+                { key: 'educationRequired', label: 'Education', emoji: '🎓', type: 'demand' },
+                { key: 'foodProvided', label: 'Food', emoji: '🍞', type: 'supply' },
+                { key: 'foodRequired', label: 'Food', emoji: '🍞', type: 'demand' },
+                { key: 'housingProvided', label: 'Housing', emoji: '🏠', type: 'supply' },
+                { key: 'housingRequired', label: 'Housing', emoji: '🏠', type: 'demand' },
+                { key: 'healthcareProvided', label: 'Healthcare', emoji: '🏥', type: 'supply' },
+                { key: 'healthcareRequired', label: 'Healthcare', emoji: '🏥', type: 'demand' }
+            ];
+
+            jeefhhImpacts.forEach(impact => {
+                const value = buildingData.resources[impact.key];
+                if (value && value > 0) {
+                    const color = impact.type === 'supply' ? '#4CAF50' : '#FF9800';
+                    const prefix = impact.type === 'supply' ? '+' : '-';
+                    html += `<div style="margin-bottom: 5px; color: ${color};">
+                        ${impact.emoji} ${prefix}${value} ${impact.label} (${impact.type})
+                    </div>`;
+                }
+            });
+
+            html += `</div>`;
+        }
+
+        // CARENS Impacts
+        if (buildingData.livability) {
+            html += `<div style="background: rgba(156, 39, 176, 0.1); padding: 15px; border-radius: 8px;">`;
+            html += `<h4 style="color: #9C27B0; margin-bottom: 10px;">CARENS Livability</h4>`;
+
+            const carensImpacts = [
+                { key: 'culture', emoji: '🎨' },
+                { key: 'affordability', emoji: '💰' },
+                { key: 'resilience', emoji: '🛡️' },
+                { key: 'environment', emoji: '🌿' },
+                { key: 'noise', emoji: '🔊' },
+                { key: 'safety', emoji: '🚨' }
+            ];
+
+            carensImpacts.forEach(impact => {
+                const livabilityData = buildingData.livability[impact.key];
+                if (livabilityData && typeof livabilityData.impact === 'number') {
+                    const value = livabilityData.impact;
+                    const attenuation = livabilityData.attenuation || 1;
+                    const color = value > 0 ? '#4CAF50' : '#F44336';
+                    const prefix = value > 0 ? '+' : '';
+                    html += `<div style="margin-bottom: 8px; color: ${color};">
+                        ${impact.emoji} ${prefix}${value} ${impact.key}
+                        <div style="font-size: 12px; color: #aaa; margin-left: 20px;">
+                            Attenuation: ${attenuation} tiles
+                        </div>
+                    </div>`;
+                }
+            });
+
+            html += `</div>`;
+        }
+
+        html += `</div></div>`;
+
+        // Performance and Economics Section
+        html += `
+            <div style="margin-bottom: 30px;">
+                <h3 style="color: #2196F3; margin-bottom: 15px;">💼 Performance & Economics</h3>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+        `;
+
+        // Performance metrics
+        html += `<div style="background: rgba(33, 150, 243, 0.1); padding: 15px; border-radius: 8px;">`;
+        html += `<h4 style="color: #2196F3; margin-bottom: 10px;">Performance</h4>`;
+
+        if (buildingData.economics) {
+            html += `<div style="margin-bottom: 5px;">💰 Max Revenue: $${buildingData.economics.maxRevenue}/day</div>`;
+            html += `<div style="margin-bottom: 5px;">🏗️ Build Cost: $${buildingData.economics.buildCost}</div>`;
+            html += `<div style="margin-bottom: 5px;">⏱️ Construction: ${buildingData.economics.constructionDays} days</div>`;
+        }
+
+        html += `</div>`;
+
+        // Land value impact
+        html += `<div style="background: rgba(255, 193, 7, 0.1); padding: 15px; border-radius: 8px;">`;
+        html += `<h4 style="color: #FFC107; margin-bottom: 10px;">Land Value Impact</h4>`;
+        html += `<div style="margin-bottom: 5px;">🏞️ Current Land Value: Calculating...</div>`;
+        html += `<div style="margin-bottom: 5px;">📈 Value Multiplier: Active CARENS impacts</div>`;
+        html += `<div style="margin-bottom: 5px;">🎯 Proximity Effects: See green overlay</div>`;
+        html += `</div>`;
+
+        html += `</div></div>`;
+
+        // Instructions
+        html += `
+            <div style="background: rgba(74, 158, 255, 0.1); padding: 20px; border-radius: 8px; text-align: center;">
+                <h4 style="color: #4a9eff; margin-bottom: 10px;">🎮 Attenuation Visualization Active</h4>
+                <p style="margin: 0; color: #ccc;">
+                    The game canvas now shows the <strong style="color: #4CAF50;">green attenuation overlay</strong>
+                    displaying this building's influence radius with 6-step gradient fade.
+                </p>
+                <p style="margin: 10px 0 0 0; color: #aaa; font-size: 14px;">
+                    Press <kbd style="background: #444; padding: 2px 6px; border-radius: 3px;">ESC</kbd> or click outside to close
+                </p>
+            </div>
+        `;
+
+        return html;
     }
 }
 

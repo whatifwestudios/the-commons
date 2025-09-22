@@ -1,0 +1,414 @@
+{
+  "housing": [
+    {
+      "id": "tiny_house",
+      "name": "Tiny House",
+      "category": "housing",
+      "description": "Test building: Small living",
+      "resources": {
+        "jobsProvided": 0,
+        "jobsRequired": 0,
+        "energyProvided": 0,
+        "energyRequired": 2,
+        "educationProvided": 0,
+        "educationRequired": 0,
+        "foodProvided": 0,
+        "foodRequired": 0,
+        "housingProvided": 1,
+        "housingRequired": 0,
+        "healthcareProvided": 0,
+        "healthcareRequired": 0
+      },
+      "economics": { "buildCost": 50, "constructionDays": 1, "maxRevenue": 50 },
+      "isDefault": true
+    },
+    {
+      "id": "apartment_building",
+      "name": "Apartment Building",
+      "category": "housing",
+      "description": "Test building: Medium density",
+      "resources": {
+        "jobsProvided": 0,
+        "jobsRequired": 2,
+        "energyProvided": 0,
+        "energyRequired": 15,
+        "educationProvided": 0,
+        "educationRequired": 0,
+        "foodProvided": 0,
+        "foodRequired": 0,
+        "housingProvided": 8,
+        "housingRequired": 0,
+        "healthcareProvided": 0,
+        "healthcareRequired": 0
+      },
+      "economics": { "buildCost": 50, "constructionDays": 3, "maxRevenue": 400 },
+      "isDefault": true
+    },
+    {
+      "id": "luxury_skyscraper",
+      "name": "Luxury Skyscraper",
+      "category": "housing",
+      "description": "Test building: High-end living",
+      "resources": {
+        "jobsProvided": 0,
+        "jobsRequired": 10,
+        "energyProvided": 0,
+        "energyRequired": 50,
+        "educationProvided": 0,
+        "educationRequired": 0,
+        "foodProvided": 0,
+        "foodRequired": 0,
+        "housingProvided": 30,
+        "housingRequired": 0,
+        "healthcareProvided": 0,
+        "healthcareRequired": 0
+      },
+      "economics": { "buildCost": 50, "constructionDays": 8, "maxRevenue": 2000 },
+      "isDefault": true
+    }
+  ],
+  "industrial": [
+    {
+      "id": "light_industry",
+      "name": "Light Industry",
+      "category": "industrial",
+      "description": "Test building: Small scale production",
+      "resources": {
+        "jobsProvided": 15,
+        "jobsRequired": 0,
+        "energyProvided": 0,
+        "energyRequired": 8,
+        "educationProvided": 0,
+        "educationRequired": 0,
+        "foodProvided": 0,
+        "foodRequired": 0,
+        "housingProvided": 0,
+        "housingRequired": 0,
+        "healthcareProvided": 0,
+        "healthcareRequired": 0
+      },
+      "economics": { "buildCost": 50, "constructionDays": 3, "maxRevenue": 300 },
+      "livability": {
+        "environment": { "impact": -5, "attenuation": 2 },
+        "noise": { "impact": -3, "attenuation": 1 }
+      },
+      "isDefault": true
+    },
+    {
+      "id": "medium_industry",
+      "name": "Medium Industry",
+      "category": "industrial",
+      "description": "Test building: Medium scale production",
+      "resources": {
+        "jobsProvided": 40,
+        "jobsRequired": 0,
+        "energyProvided": 0,
+        "energyRequired": 25,
+        "educationProvided": 0,
+        "educationRequired": 0,
+        "foodProvided": 0,
+        "foodRequired": 0,
+        "housingProvided": 0,
+        "housingRequired": 0,
+        "healthcareProvided": 0,
+        "healthcareRequired": 0
+      },
+      "economics": { "buildCost": 50, "constructionDays": 5, "maxRevenue": 800 },
+      "livability": {
+        "environment": { "impact": -15, "attenuation": 3 },
+        "noise": { "impact": -8, "attenuation": 2 }
+      },
+      "isDefault": true
+    },
+    {
+      "id": "heavy_industry",
+      "name": "Heavy Industry",
+      "category": "industrial",
+      "description": "Test building: Large scale production",
+      "resources": {
+        "jobsProvided": 100,
+        "jobsRequired": 0,
+        "energyProvided": 0,
+        "energyRequired": 60,
+        "educationProvided": 0,
+        "educationRequired": 0,
+        "foodProvided": 0,
+        "foodRequired": 0,
+        "housingProvided": 0,
+        "housingRequired": 0,
+        "healthcareProvided": 0,
+        "healthcareRequired": 0
+      },
+      "economics": { "buildCost": 50, "constructionDays": 8, "maxRevenue": 2000 },
+      "livability": {
+        "environment": { "impact": -30, "attenuation": 4 },
+        "noise": { "impact": -20, "attenuation": 3 },
+        "safety": { "impact": -5, "attenuation": 2 }
+      },
+      "isDefault": true
+    }
+  ],
+  "energy": [
+    {
+      "id": "coal_plant",
+      "name": "Coal Plant",
+      "category": "energy",
+      "description": "Test building: Basic power generation",
+      "resources": {
+        "jobsProvided": 20,
+        "jobsRequired": 0,
+        "energyProvided": 100,
+        "energyRequired": 0,
+        "educationProvided": 0,
+        "educationRequired": 0,
+        "foodProvided": 0,
+        "foodRequired": 0,
+        "housingProvided": 0,
+        "housingRequired": 0,
+        "healthcareProvided": 0,
+        "healthcareRequired": 0
+      },
+      "economics": { "buildCost": 50, "constructionDays": 5, "maxRevenue": 500 },
+      "livability": {
+        "environment": { "impact": -25, "attenuation": 4 },
+        "noise": { "impact": -10, "attenuation": 2 }
+      },
+      "isDefault": true
+    },
+    {
+      "id": "solar_farm",
+      "name": "Solar Farm",
+      "category": "energy",
+      "description": "Test building: Clean energy",
+      "resources": {
+        "jobsProvided": 5,
+        "jobsRequired": 0,
+        "energyProvided": 60,
+        "energyRequired": 0,
+        "educationProvided": 0,
+        "educationRequired": 0,
+        "foodProvided": 0,
+        "foodRequired": 0,
+        "housingProvided": 0,
+        "housingRequired": 0,
+        "healthcareProvided": 0,
+        "healthcareRequired": 0
+      },
+      "economics": { "buildCost": 50, "constructionDays": 4, "maxRevenue": 300 },
+      "livability": {
+        "environment": { "impact": 10, "attenuation": 2 }
+      },
+      "isDefault": true
+    }
+  ],
+  "commercial": [
+    {
+      "id": "farmers_market",
+      "name": "Farmers Market",
+      "category": "commercial",
+      "description": "Test building: Local food source",
+      "resources": {
+        "jobsProvided": 8,
+        "jobsRequired": 0,
+        "energyProvided": 0,
+        "energyRequired": 2,
+        "educationProvided": 0,
+        "educationRequired": 0,
+        "foodProvided": 30,
+        "foodRequired": 0,
+        "housingProvided": 0,
+        "housingRequired": 0,
+        "healthcareProvided": 0,
+        "healthcareRequired": 0
+      },
+      "economics": { "buildCost": 50, "constructionDays": 2, "maxRevenue": 200 },
+      "livability": {
+        "culture": { "impact": 5, "attenuation": 2 }
+      },
+      "isDefault": true
+    },
+    {
+      "id": "grocery_store",
+      "name": "Grocery Store",
+      "category": "commercial",
+      "description": "Test building: Large food retailer",
+      "resources": {
+        "jobsProvided": 25,
+        "jobsRequired": 0,
+        "energyProvided": 0,
+        "energyRequired": 15,
+        "educationProvided": 0,
+        "educationRequired": 0,
+        "foodProvided": 100,
+        "foodRequired": 0,
+        "housingProvided": 0,
+        "housingRequired": 0,
+        "healthcareProvided": 0,
+        "healthcareRequired": 0
+      },
+      "economics": { "buildCost": 50, "constructionDays": 3, "maxRevenue": 600 },
+      "isDefault": true
+    }
+  ],
+  "education": [
+    {
+      "id": "elementary_school",
+      "name": "Elementary School",
+      "category": "education",
+      "description": "Test building: Basic education",
+      "resources": {
+        "jobsProvided": 8,
+        "jobsRequired": 0,
+        "energyProvided": 0,
+        "energyRequired": 12,
+        "educationProvided": 150,
+        "educationRequired": 0,
+        "foodProvided": 0,
+        "foodRequired": 0,
+        "housingProvided": 0,
+        "housingRequired": 0,
+        "healthcareProvided": 0,
+        "healthcareRequired": 0
+      },
+      "economics": { "buildCost": 50, "constructionDays": 4, "maxRevenue": 0 },
+      "livability": {
+        "culture": { "impact": 8, "attenuation": 3 }
+      },
+      "isDefault": true
+    },
+    {
+      "id": "university",
+      "name": "University",
+      "category": "education",
+      "description": "Test building: Higher education",
+      "resources": {
+        "jobsProvided": 50,
+        "jobsRequired": 0,
+        "energyProvided": 0,
+        "energyRequired": 40,
+        "educationProvided": 500,
+        "educationRequired": 0,
+        "foodProvided": 0,
+        "foodRequired": 0,
+        "housingProvided": 0,
+        "housingRequired": 0,
+        "healthcareProvided": 0,
+        "healthcareRequired": 0
+      },
+      "economics": { "buildCost": 50, "constructionDays": 100, "maxRevenue": 0 },
+      "livability": {
+        "culture": { "impact": 20, "attenuation": 4 },
+        "affordability": { "impact": -5, "attenuation": 2 }
+      },
+      "isDefault": true
+    }
+  ],
+  "healthcare": [
+    {
+      "id": "clinic",
+      "name": "Clinic",
+      "category": "healthcare",
+      "description": "Test building: Basic medical care",
+      "resources": {
+        "jobsProvided": 12,
+        "jobsRequired": 0,
+        "energyProvided": 0,
+        "energyRequired": 8,
+        "educationProvided": 0,
+        "educationRequired": 0,
+        "foodProvided": 0,
+        "foodRequired": 0,
+        "housingProvided": 0,
+        "housingRequired": 0,
+        "healthcareProvided": 100,
+        "healthcareRequired": 0
+      },
+      "economics": { "buildCost": 50, "constructionDays": 3, "maxRevenue": 0 },
+      "livability": {
+        "safety": { "impact": 5, "attenuation": 2 }
+      },
+      "isDefault": true
+    },
+    {
+      "id": "hospital",
+      "name": "Hospital",
+      "category": "healthcare",
+      "description": "Test building: Advanced medical care",
+      "resources": {
+        "jobsProvided": 80,
+        "jobsRequired": 0,
+        "energyProvided": 0,
+        "energyRequired": 35,
+        "educationProvided": 0,
+        "educationRequired": 0,
+        "foodProvided": 0,
+        "foodRequired": 0,
+        "housingProvided": 0,
+        "housingRequired": 0,
+        "healthcareProvided": 400,
+        "healthcareRequired": 0
+      },
+      "economics": { "buildCost": 50, "constructionDays": 8, "maxRevenue": 0 },
+      "livability": {
+        "safety": { "impact": 15, "attenuation": 3 },
+        "resilience": { "impact": 10, "attenuation": 2 }
+      },
+      "isDefault": true
+    }
+  ],
+  "civic": [
+    {
+      "id": "park",
+      "name": "Park",
+      "category": "civic",
+      "description": "Test building: Green space",
+      "resources": {
+        "jobsProvided": 2,
+        "jobsRequired": 0,
+        "energyProvided": 0,
+        "energyRequired": 1,
+        "educationProvided": 0,
+        "educationRequired": 0,
+        "foodProvided": 0,
+        "foodRequired": 0,
+        "housingProvided": 0,
+        "housingRequired": 0,
+        "healthcareProvided": 0,
+        "healthcareRequired": 0
+      },
+      "economics": { "buildCost": 50, "constructionDays": 2, "maxRevenue": 0 },
+      "livability": {
+        "environment": { "impact": 15, "attenuation": 3 },
+        "culture": { "impact": 8, "attenuation": 2 },
+        "safety": { "impact": 3, "attenuation": 2 }
+      },
+      "isDefault": true
+    },
+    {
+      "id": "police_station",
+      "name": "Police Station",
+      "category": "civic",
+      "description": "Test building: Public safety",
+      "resources": {
+        "jobsProvided": 20,
+        "jobsRequired": 0,
+        "energyProvided": 0,
+        "energyRequired": 10,
+        "educationProvided": 0,
+        "educationRequired": 0,
+        "foodProvided": 0,
+        "foodRequired": 0,
+        "housingProvided": 0,
+        "housingRequired": 0,
+        "healthcareProvided": 0,
+        "healthcareRequired": 0
+      },
+      "economics": { "buildCost": 50, "constructionDays": 4, "maxRevenue": 0 },
+      "livability": {
+        "safety": { "impact": 20, "attenuation": 4 },
+        "noise": { "impact": -3, "attenuation": 1 }
+      },
+      "isDefault": true
+    }
+  ]
+}

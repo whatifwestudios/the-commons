@@ -95,16 +95,35 @@ class BuildingSystem {
         }
 
         // Initialize construction if building has construction time
-        if (building.economics && building.economics.constructionDays > 0) {
+        // Default construction days based on building cost if not specified
+        let constructionDays = building.economics?.constructionDays;
+        if (!constructionDays && building.economics?.buildCost) {
+            // Default: 1 day per $10,000 of cost, minimum 3 days, maximum 30 days
+            constructionDays = Math.max(3, Math.min(30, Math.ceil(building.economics.buildCost / 10000)));
+            console.log(`No constructionDays for ${buildingId}, using default based on cost: ${constructionDays} days`);
+        }
+
+        console.log(`Placing building ${buildingId} at (${row},${col}):`, {
+            hasEconomics: !!building.economics,
+            constructionDays: constructionDays,
+            willInitConstruction: !!(constructionDays > 0)
+        });
+
+        if (constructionDays > 0) {
             parcel._isUnderConstruction = true;
             parcel._constructionStartTime = Date.now();
-            parcel._constructionDays = building.economics.constructionDays;
+            parcel._constructionDays = constructionDays; // Use the calculated value, not the original
             parcel._constructionProgress = 0;
+
+            console.log(`Initialized construction for ${buildingId}:`, {
+                startTime: parcel._constructionStartTime,
+                days: parcel._constructionDays
+            });
 
 
             // Set legacy fields for compatibility with game.js drawing system
             parcel.constructionStartDay = this.game.currentDay;
-            parcel.constructionDays = building.economics.constructionDays;
+            parcel.constructionDays = constructionDays; // Use the calculated value
             
             // Create dust cloud effect at construction start
             if (this.game.createDustCloud) {
@@ -119,7 +138,8 @@ class BuildingSystem {
                 this.game.createDustCloud(worldPos.x, worldPos.y, 'building');
             } else {
             }
-            this.completeConstruction(row, col);
+            // Don't complete immediately - let construction progress over time
+            // this.completeConstruction(row, col);
         }
         
         // Deduct cost and use action
@@ -266,6 +286,10 @@ class BuildingSystem {
         }).catch(error => {
             console.warn('Server construction completion calculation failed, using local fallback:', error);
             this.game.markVitalityDirty(); // Fallback to local calculation
+
+            // Immediately recalculate vitality locally for responsive UI
+            this.game.economicEngine.calculateCityVitality();
+            this.game.updateVitalityUI();
         });
 
         // Step 4: Initialize building properties for revenue generation
@@ -343,6 +367,17 @@ class BuildingSystem {
         let netIncome = -landTax;
         
         if (parcel.building) {
+            // Buildings under construction generate no revenue
+            if (parcel._isUnderConstruction) {
+                return {
+                    revenue: 0,
+                    maintenance: 0,
+                    landTax: landTax,
+                    netIncome: -landTax,
+                    buildingName: 'Under Construction'
+                };
+            }
+
             const building = this.buildingManager.getBuildingById(parcel.building);
             
             if (building && building.economics) {
@@ -407,8 +442,8 @@ class BuildingSystem {
             }
         }
         
-        // Apply minimum efficiency floor
-        efficiency = Math.max(25, Math.min(100, efficiency));
+        // Clamp efficiency to 0-100% range (no artificial minimum)
+        efficiency = Math.max(0, Math.min(100, efficiency));
         
         return Math.round(efficiency);
     }
@@ -566,17 +601,46 @@ class BuildingSystem {
     }
     
     /**
+     * Update construction progress for all buildings under construction
+     * Called from the game loop to gradually advance construction over time
+     */
+    updateConstructionProgress() {
+        const now = Date.now();
+        const GAME_DAY_MS = 9860; // 1 day = 9.86 seconds (hardcoded: 1 year = 1 hour = 3600s, so 1 day = 3600/365 = 9.86s)
+
+        for (let row = 0; row < this.game.gridSize; row++) {
+            for (let col = 0; col < this.game.gridSize; col++) {
+                const parcel = this.game.grid[row][col];
+
+                if (parcel && parcel._isUnderConstruction && parcel._constructionStartTime) {
+                    const elapsedTime = now - parcel._constructionStartTime;
+                    const constructionDuration = parcel._constructionDays * GAME_DAY_MS;
+                    const progress = Math.min(1.0, elapsedTime / constructionDuration);
+
+                    parcel._constructionProgress = progress;
+
+                    // Complete construction when progress reaches 100%
+                    if (progress >= 1.0) {
+                        console.log(`🏗️ Construction completed at (${row},${col}): ${parcel.building}`);
+                        this.completeConstruction(row, col);
+                    }
+                }
+            }
+        }
+    }
+
+    /**
      * Age all buildings and update decay
      */
     ageBuildings(deltaTime = 1) {
         for (let row = 0; row < this.game.gridSize; row++) {
             for (let col = 0; col < this.game.gridSize; col++) {
                 const parcel = this.game.grid[row][col];
-                
+
                 if (parcel && parcel.building) {
                     // Age building
                     parcel.buildingAge = (parcel.buildingAge || 0) + deltaTime;
-                    
+
                     // Update decay
                     const building = this.buildingManager.getBuildingById(parcel.building);
                     if (building && building.economics) {
@@ -584,18 +648,8 @@ class BuildingSystem {
                             building.economics.decayRatePercent / 100 : 0.001;
                         parcel.decay = Math.min(1, (parcel.decay || 0) + decayRate * deltaTime);
                     }
-                    
-                    // Update construction progress
-                    if (parcel._isUnderConstruction) {
-                        // Use the same time calculation as the main game system
-                        const elapsedMs = Date.now() - parcel._constructionStartTime;
-                        const totalConstructionMs = parcel._constructionDays * this.game.dayDuration;
-                        parcel._constructionProgress = Math.min(1, elapsedMs / totalConstructionMs);
 
-                        if (parcel._constructionProgress >= 1) {
-                            this.completeConstruction(row, col);
-                        }
-                    }
+                    // Construction progress is now handled by updateConstructionProgress()
                 }
             }
         }
@@ -834,6 +888,7 @@ class BuildingSystem {
 
         // Set construction start day and duration
         if (building && building.economics) {
+            // OLD SYSTEM: Game day based (keep for compatibility)
             this.game.grid[row][col].constructionStartDay = this.game.currentDay;
             this.game.grid[row][col].constructionDays = building.economics.constructionDays || 14;
             this.game.grid[row][col].buildingAge = 0;
@@ -842,6 +897,19 @@ class BuildingSystem {
             if (this.game.grid[row][col].constructionDays < 3) {
                 this.game.grid[row][col].constructionDays = 3;
             }
+
+            // NEW SYSTEM: Real-time based (for unified building state)
+            this.game.grid[row][col]._isUnderConstruction = true;
+            this.game.grid[row][col]._constructionStartTime = Date.now();
+            this.game.grid[row][col]._constructionDays = building.economics.constructionDays || 14;
+            this.game.grid[row][col]._constructionProgress = 0;
+
+            console.log(`🏗️ Construction started at (${row},${col}):`, {
+                buildingId,
+                startTime: this.game.grid[row][col]._constructionStartTime,
+                constructionDays: this.game.grid[row][col]._constructionDays,
+                expectedDuration: (this.game.grid[row][col]._constructionDays * (3600000 / 365)) / 1000 + ' seconds'
+            });
         }
 
         // Broadcast to server and await response

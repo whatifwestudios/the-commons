@@ -1726,22 +1726,40 @@ body {
 }
 
 .collapse-icon {
-    font-size: 12px;
-    transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    display: inline-block;
+    width: 14px;
+    height: 14px;
+    border: 2px solid currentColor;
+    border-radius: 50%;
+    position: relative;
+    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-.collapsible.collapsed .collapse-icon {
-    transform: rotate(-90deg);
+.collapse-icon::after {
+    content: '';
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 6px;
+    height: 6px;
+    background: currentColor;
+    border-radius: 50%;
+    opacity: 1;
+    transition: opacity 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.collapsible.collapsed .collapse-icon::after {
+    opacity: 0;
 }
 
 .section-content {
     overflow: hidden;
     max-height: 800px; /* Large enough for any content */
     opacity: 1;
-    transition: max-height 0.2s cubic-bezier(0.25, 0.46, 0.45, 0.94),
-                opacity 0.15s cubic-bezier(0.25, 0.46, 0.45, 0.94),
-                padding 0.15s cubic-bezier(0.25, 0.46, 0.45, 0.94),
-                transform 0.15s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+    transition: max-height 0.25s cubic-bezier(0.4, 0, 0.2, 1),
+                opacity 0.25s cubic-bezier(0.4, 0, 0.2, 1),
+                padding 0.25s cubic-bezier(0.4, 0, 0.2, 1),
+                transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
     transform: translateY(0);
 }
 
@@ -1878,77 +1896,7 @@ body {
     background: #3a3a3a;
 }
 
-.tooltip {
-    position: absolute;
-    background: #111111;
-    border: 1px solid #2a2a2a;
-    padding: 12px;
-    border-radius: 4px;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.6);
-    pointer-events: none;
-    z-index: 1000;
-    display: none;
-    min-width: 140px;
-    max-width: 280px;
-}
-
-.tooltip.visible {
-    display: block;
-}
-
-.tooltip-header {
-    margin-bottom: 8px;
-}
-
-.parcel-coord {
-    font-size: 14px;
-    font-weight: 600;
-    color: #ffffff;
-    letter-spacing: 0.5px;
-}
-
-.tooltip-price {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 12px;
-    padding-bottom: 8px;
-    border-bottom: 1px solid #1a1a1a;
-}
-
-.price-label {
-    font-size: 10px;
-    color: #666666;
-    letter-spacing: 0.5px;
-}
-
-.price-value {
-    font-size: 12px;
-    font-weight: 600;
-    color: #ffffff;
-    font-variant-numeric: tabular-nums;
-}
-
-.tooltip-building {
-    margin-top: 4px;
-}
-
-.tooltip-building .building-name {
-    font-weight: 600;
-    color: #4CAF50;
-    margin-bottom: 6px;
-    font-size: 12px;
-}
-
-.tooltip-building .building-stats {
-    line-height: 1.4;
-}
-
-.tooltip-building .building-stats div {
-    margin-bottom: 3px;
-    font-size: 10px;
-    color: #cccccc;
-}
+/* Legacy tooltip CSS removed - using unified TooltipManager system */
 
 .context-menu {
     position: absolute;
@@ -2531,127 +2479,150 @@ body {
     /* background will be set by JavaScript */
 }
 
-/* JEFH Circle Design */
-.jefh-circles-container {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    grid-template-rows: 1fr 1fr;
-    gap: 16px;
-    padding: 12px;
-    max-width: 200px;
-    margin: 0 auto;
+/* JEEFHH Bar Styling - inherits the nice vitality bar design */
+.jeefhh-bars-container,
+.carens-bars-container {
+    padding: 8px 12px;
 }
 
-.jefh-circle-item {
+.jeefhh-bar-row,
+.carens-bar-row {
     display: flex;
-    flex-direction: column;
     align-items: center;
-    gap: 8px;
+    margin-bottom: 12px;
 }
 
-.jefh-circle {
-    width: 60px;
-    height: 60px;
-    border-radius: 50%;
+.jeefhh-bar-row:last-child,
+.carens-bar-row:last-child {
+    margin-bottom: 0;
+}
+
+.jeefhh-label,
+.carens-label {
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    min-width: 110px;
+    margin-right: 12px;
+}
+
+/* JEEFHH color scheme */
+.jeefhh-label[data-metric="jobs"],
+.jeefhh-bar-row[data-metric="jobs"] .jeefhh-label {
+    color: #ec4899; /* Pink for jobs */
+}
+
+.jeefhh-label[data-metric="energy"],
+.jeefhh-bar-row[data-metric="energy"] .jeefhh-label {
+    color: #f59e0b; /* Orange for energy */
+}
+
+.jeefhh-label[data-metric="education"],
+.jeefhh-bar-row[data-metric="education"] .jeefhh-label {
+    color: #8b5cf6; /* Purple for education */
+}
+
+.jeefhh-label[data-metric="food"],
+.jeefhh-bar-row[data-metric="food"] .jeefhh-label {
+    color: #84cc16; /* Lime for food */
+}
+
+.jeefhh-label[data-metric="housing"],
+.jeefhh-bar-row[data-metric="housing"] .jeefhh-label {
+    color: #06b6d4; /* Cyan for housing */
+}
+
+.jeefhh-label[data-metric="healthcare"],
+.jeefhh-bar-row[data-metric="healthcare"] .jeefhh-label {
+    color: #ef4444; /* Red for healthcare */
+}
+
+/* CARENS color scheme */
+.carens-label[data-metric="safety"],
+.carens-bar-row[data-metric="safety"] .carens-label {
+    color: #ef4444; /* Red for safety */
+}
+
+.carens-label[data-metric="culture"],
+.carens-bar-row[data-metric="culture"] .carens-label {
+    color: #a855f7; /* Purple for culture */
+}
+
+.carens-label[data-metric="affordability"],
+.carens-bar-row[data-metric="affordability"] .carens-label {
+    color: #f97316; /* Orange for affordability */
+}
+
+.carens-label[data-metric="resilience"],
+.carens-bar-row[data-metric="resilience"] .carens-label {
+    color: #14b8a6; /* Teal for resilience */
+}
+
+.carens-label[data-metric="environment"],
+.carens-bar-row[data-metric="environment"] .carens-label {
+    color: #22c55e; /* Green for environment */
+}
+
+.carens-label[data-metric="noise"],
+.carens-bar-row[data-metric="noise"] .carens-label {
+    color: #6b7280; /* Gray for noise */
+}
+
+.jeefhh-bar,
+.carens-bar {
+    flex: 1;
+    height: 8px;
+    background: #1a1a1a;
+    border-radius: 4px;
     position: relative;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition: all 0.4s ease;
-    border: 2px solid rgba(255, 255, 255, 0.1);
-    background: radial-gradient(circle at center,
-        rgba(59, 130, 246, 0.8) 0%,
-        rgba(37, 99, 235, 0.6) 100%);
-    box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+    overflow: hidden;
 }
 
-.jefh-balance-indicator {
+/* Center line for balance visualization */
+.jeefhh-bar::before,
+.carens-bar::before {
+    content: '';
+    position: absolute;
+    left: 50%;
+    top: 0;
+    width: 1px;
+    height: 100%;
+    background: #444444;
+    transform: translateX(-0.5px);
+    z-index: 1;
+}
+
+.jeefhh-progress,
+.carens-progress {
+    height: 100%;
+    border-radius: 4px;
+    transition: all 0.3s ease;
+    position: relative;
+    z-index: 2;
+    /* background will be set by JavaScript for center-balanced display */
+}
+
+/* Balance indicator dot (optional) */
+.jeefhh-bar .balance-dot,
+.carens-bar .balance-dot {
     position: absolute;
     top: 50%;
     left: 50%;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #00ff00;
     transform: translate(-50%, -50%);
-    font-size: 16px;
+    z-index: 3;
     opacity: 0;
     transition: opacity 0.3s ease;
-    color: #ffffff;
-    text-shadow: 0 0 4px rgba(0, 0, 0, 0.5);
 }
 
-.jefh-circle.balanced .jefh-balance-indicator {
+.jeefhh-bar.balanced .balance-dot,
+.carens-bar.balanced .balance-dot {
     opacity: 1;
 }
 
-.jefh-circle-label {
-    font-size: 11px;
-    font-weight: 600;
-    color: #cccccc;
-    text-align: center;
-    letter-spacing: 0.5px;
-}
-
-/* Circle size variations based on market size */
-.jefh-circle.small {
-    width: 45px;
-    height: 45px;
-}
-
-.jefh-circle.medium {
-    width: 60px;
-    height: 60px;
-}
-
-.jefh-circle.large {
-    width: 75px;
-    height: 75px;
-}
-
-.jefh-circle.xlarge {
-    width: 90px;
-    height: 90px;
-}
-
-/* Color transition states */
-.jefh-circle.deficit-critical {
-    background: radial-gradient(circle at center,
-        rgba(220, 38, 38, 0.9) 0%,
-        rgba(185, 28, 28, 0.8) 100%);
-    box-shadow: 0 4px 12px rgba(220, 38, 38, 0.4);
-}
-
-.jefh-circle.deficit-moderate {
-    background: radial-gradient(circle at center,
-        rgba(251, 191, 36, 0.9) 0%,
-        rgba(245, 158, 11, 0.8) 100%);
-    box-shadow: 0 4px 12px rgba(251, 191, 36, 0.4);
-}
-
-.jefh-circle.deficit-minor {
-    background: radial-gradient(circle at center,
-        rgba(147, 51, 234, 0.8) 0%,
-        rgba(126, 34, 206, 0.7) 100%);
-    box-shadow: 0 4px 12px rgba(147, 51, 234, 0.3);
-}
-
-.jefh-circle.balanced {
-    background: radial-gradient(circle at center,
-        rgba(59, 130, 246, 0.8) 0%,
-        rgba(37, 99, 235, 0.6) 100%);
-    box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
-}
-
-.jefh-circle.surplus-minor {
-    background: radial-gradient(circle at center,
-        rgba(34, 197, 94, 0.8) 0%,
-        rgba(22, 163, 74, 0.7) 100%);
-    box-shadow: 0 4px 12px rgba(34, 197, 94, 0.3);
-}
-
-.jefh-circle.surplus-major {
-    background: radial-gradient(circle at center,
-        rgba(16, 185, 129, 0.9) 0%,
-        rgba(5, 150, 105, 0.8) 100%);
-    box-shadow: 0 4px 12px rgba(16, 185, 129, 0.4);
-}
 
 
 .form-section {
@@ -3596,41 +3567,7 @@ body {
     color: #ccc;
 }
 
-/* Custom Tooltips */
-.custom-tooltip {
-    position: fixed;
-    background: #111111;
-    border: 1px solid #2a2a2a;
-    border-radius: 6px;
-    padding: 12px 16px;
-    font-family: 'SF Mono', Monaco, monospace;
-    font-size: 11px;
-    font-weight: 500;
-    color: #ffffff;
-    pointer-events: none;
-    z-index: 10001;
-    opacity: 0;
-    transition: opacity 0.15s ease;
-    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5);
-    white-space: pre-line;
-    max-width: 280px;
-    line-height: 1.4;
-}
-
-.custom-tooltip.visible {
-    opacity: 1;
-}
-
-.custom-tooltip::before {
-    content: '';
-    position: absolute;
-    top: -5px;
-    left: 50%;
-    transform: translateX(-50%);
-    border-left: 5px solid transparent;
-    border-right: 5px solid transparent;
-    border-bottom: 5px solid #2a2a2a;
-}
+/* Legacy custom-tooltip CSS removed - using unified TooltipManager system */
 
 /* Vitality bar grouping */
 .vitality-group {
@@ -7934,4 +7871,44 @@ body {
 
 .route-config-panel .route-actions button {
     flex: 1;
+}
+
+/* Additional Route Config Panel Styling */
+.route-config-panel select.form-control {
+    width: 100%;
+    background: #2a2a2a;
+    border: 1px solid #444;
+    color: #fff;
+    padding: 6px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+}
+
+.route-config-panel select.form-control:focus {
+    outline: none;
+    border-color: #4CAF50;
+}
+
+.route-config-panel .loading-indicator {
+    display: inline-block;
+    animation: spin 1s linear infinite;
+    color: #4CAF50;
+    margin-right: 4px;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+.route-config-panel .net-value .proj-data {
+    font-weight: 700;
+}
+
+.route-config-panel .net-value.positive .proj-data {
+    color: #4CAF50;
+}
+
+.route-config-panel .net-value.negative .proj-data {
+    color: #f44336;
 }

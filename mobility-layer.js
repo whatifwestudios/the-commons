@@ -507,157 +507,7 @@ class MobilityLayer {
         return color; // Fallback
     }
 
-    // Draw inline route configuration UI
-    drawInlineRouteConfig(ctx, startX, startY, buttonWidth, buttonSpacing) {
-        const configWidth = 900;
-        const configHeight = 180;
-        const padding = 15;
-
-        ctx.save();
-
-        // Background panel
-        ctx.fillStyle = 'rgba(20, 20, 20, 0.95)';
-        ctx.strokeStyle = this.transitMode === 'bus' ? 'rgba(102, 187, 106, 0.5)' : 'rgba(66, 165, 245, 0.5)';
-        ctx.lineWidth = 2;
-        this.drawRoundedRect(ctx, startX, startY, configWidth, configHeight, 8);
-        ctx.fill();
-        ctx.stroke();
-
-        const innerX = startX + padding;
-        const innerY = startY + padding;
-        const innerWidth = configWidth - padding * 2;
-
-        // Title
-        ctx.fillStyle = this.transitMode === 'bus' ? '#66BB6A' : '#42A5F5';
-        ctx.font = 'bold 16px SF Mono, Monaco, Inconsolata, Roboto Mono, Source Code Pro, monospace';
-        ctx.textAlign = 'left';
-        ctx.textBaseline = 'top';
-        const emoji = this.transitMode === 'bus' ? '🚌' : '🚇';
-        ctx.fillText(`${emoji} Configure ${this.transitMode === 'bus' ? 'Bus' : 'Subway'} Route`, innerX, innerY);
-
-        // Route name input area
-        const nameY = innerY + 25;
-        ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
-        ctx.font = '13px SF Mono, Monaco, Inconsolata, Roboto Mono, Source Code Pro, monospace';
-        ctx.fillText(`Name: ${this.pendingRoute.name}`, innerX, nameY);
-
-        // Selected stops list
-        const stopsY = nameY + 18;
-        let stopsText = `Stops (${this.selectedTransitStops.length}): `;
-        this.selectedTransitStops.forEach((stopKey, index) => {
-            const stop = this.transitStops.get(stopKey);
-            if (stop) {
-                stopsText += stop.name;
-                if (index < this.selectedTransitStops.length - 1) stopsText += ', ';
-            }
-        });
-
-        // Truncate if too long
-        if (stopsText.length > 90) {
-            stopsText = stopsText.substring(0, 87) + '...';
-        }
-
-        ctx.fillText(stopsText, innerX, stopsY);
-
-        // Service level controls (3 buttons side by side)
-        const serviceY = stopsY + 22;
-        ctx.fillText('Service Level:', innerX, serviceY);
-
-        const serviceBtnY = serviceY + 15;
-        const serviceBtnWidth = 110;
-        const serviceBtnSpacing = 115;
-
-        Object.entries(this.serviceLevels).forEach((entry, index) => {
-            const [key, config] = entry;
-            const isSelected = this.pendingRoute.serviceLevel === key;
-            const btnX = innerX + 120 + (index * serviceBtnSpacing);
-
-            // Calculate segment distance for cost display
-            const segmentDistance = this.calculateRouteDistance(this.pendingRoute);
-            const maintenanceCost = config.cost * segmentDistance;
-
-            const btnColor = isSelected ? (this.transitMode === 'bus' ? '#66BB6A' : '#42A5F5') : '#444444';
-            const textColor = isSelected ? '#ffffff' : '#cccccc';
-
-            ctx.fillStyle = btnColor;
-            this.drawRoundedRect(ctx, btnX, serviceBtnY, serviceBtnWidth, 22, 4);
-            ctx.fill();
-
-            ctx.fillStyle = textColor;
-            ctx.font = '11px SF Mono, Monaco, Inconsolata, Roboto Mono, Source Code Pro, monospace';
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'middle';
-            ctx.fillText(config.label, btnX + serviceBtnWidth/2, serviceBtnY + 7);
-            ctx.fillText(`$${maintenanceCost}/day`, btnX + serviceBtnWidth/2, serviceBtnY + 17);
-
-            // Store button bounds for click detection
-            if (!this.serviceLevelButtons) this.serviceLevelButtons = [];
-            this.serviceLevelButtons[index] = { x: btnX, y: serviceBtnY, width: serviceBtnWidth, height: 22, key };
-        });
-
-        // Fare controls
-        const fareY = serviceBtnY + 30;
-        ctx.textAlign = 'left';
-        ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
-        ctx.font = '13px SF Mono, Monaco, Inconsolata, Roboto Mono, Source Code Pro, monospace';
-        ctx.fillText(`Fare: $${this.pendingRoute.price.toFixed(2)}`, innerX, fareY);
-
-        // Fare adjustment buttons
-        const fareBtnY = fareY - 8;
-        const fareBtnSize = 20;
-        const fareBtnStartX = innerX + 90;
-
-        // Decrease fare button
-        ctx.fillStyle = '#FF6B6B';
-        this.drawRoundedRect(ctx, fareBtnStartX, fareBtnY, fareBtnSize, fareBtnSize, 3);
-        ctx.fill();
-        ctx.fillStyle = '#ffffff';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.font = 'bold 14px SF Mono, Monaco, Inconsolata, Roboto Mono, Source Code Pro, monospace';
-        ctx.fillText('-', fareBtnStartX + fareBtnSize/2, fareBtnY + fareBtnSize/2);
-
-        // Increase fare button
-        ctx.fillStyle = '#4ECDC4';
-        this.drawRoundedRect(ctx, fareBtnStartX + 25, fareBtnY, fareBtnSize, fareBtnSize, 3);
-        ctx.fill();
-        ctx.fillStyle = '#ffffff';
-        ctx.fillText('+', fareBtnStartX + 25 + fareBtnSize/2, fareBtnY + fareBtnSize/2);
-
-        // Store fare button bounds
-        this.fareButtons = [
-            { x: fareBtnStartX, y: fareBtnY, width: fareBtnSize, height: fareBtnSize, action: 'decrease' },
-            { x: fareBtnStartX + 25, y: fareBtnY, width: fareBtnSize, height: fareBtnSize, action: 'increase' }
-        ];
-
-        // Revenue projection
-        const revenue = this.calculateRouteRevenue(this.pendingRoute);
-        const projectionY = fareY + 18;
-        ctx.textAlign = 'left';
-        ctx.fillStyle = revenue.dailyProfit > 0 ? '#4ECDC4' : '#FF6B6B';
-        ctx.fillText(`Daily: ${revenue.ridership} riders, $${revenue.dailyRevenue} revenue, $${revenue.dailyProfit} profit`,
-                    innerX, projectionY);
-
-        // Action buttons
-        const buttonY = startY + configHeight - 35;
-
-        // Optimal price button
-        const optimalBtnX = innerX + 200;
-        this.drawTransitButton(ctx, optimalBtnX, buttonY, 120, 25, 'Optimal Price', '#FFA726',
-                             () => this.calculateOptimalPrice());
-
-        // Create route button
-        const createBtnX = optimalBtnX + 130;
-        this.drawTransitButton(ctx, createBtnX, buttonY, 100, 25, 'Create Route', this.transitMode === 'bus' ? '#66BB6A' : '#42A5F5',
-                             () => this.finalizeRouteCreation());
-
-        // Cancel button
-        const cancelBtnX = createBtnX + 110;
-        this.drawTransitButton(ctx, cancelBtnX, buttonY, 80, 25, 'Cancel', '#666666',
-                             () => this.cancelRouteCreation());
-
-        ctx.restore();
-    }
+    // Legacy drawInlineRouteConfig function removed - route configuration now handled by sidebar panel
     
     // Convert regular colors to muted mobility view colors
     getMobilityViewColor(originalColor) {
@@ -2177,6 +2027,9 @@ class MobilityLayer {
         this.isCreatingRoute = false;
         this.selectedTransitStops = [];
         this.pendingRoute = null;
+
+        // Hide route config sidebar when switching modes
+        this.hideRouteConfigSidebar();
         
         console.log('Reset all transit state - modes should start fresh');
         
@@ -2275,12 +2128,7 @@ class MobilityLayer {
                 startX + 2 * (buttonWidth + buttonSpacing) + 20, transitY + buttonHeight/2);
         }
         
-        // Route configuration UI stays at bottom left
-        if (this.isCreatingRoute && this.routeCreationState === 'configure_route' && this.pendingRoute) {
-            const bottomStartX = 20;
-            const bottomStartY = ctx.canvas.height - 140;
-            this.drawInlineRouteConfig(ctx, bottomStartX, bottomStartY, buttonWidth, buttonSpacing);
-        }
+        // Route configuration now handled by sidebar panel - no canvas UI needed
 
         // Transit stats for routes
         const statsX = ctx.canvas.width - 300;
@@ -2530,7 +2378,7 @@ class MobilityLayer {
                     const neighborIntersection = this.intersections.get(neighborKey);
                     
                     // Only allow edges that don't extend beyond the parcel grid
-                    const edgeKey = this.getIntersectionEdgeKey(row, col, neighbor.row, neighbor.col);
+                    const edgeKey = this.getEdgeKey(row, col, neighbor.row, neighbor.col);
                     if (neighborIntersection && this.isValidRoadEdge(edgeKey)) {
                         // Calculate distance from mouse to edge midpoint
                         const midX = (intersection.x + neighborIntersection.x) / 2;
@@ -2641,32 +2489,23 @@ class MobilityLayer {
                 }
             }
             
-            // Position tooltip at mouse (approximate)
-            this.game.tooltip = tooltipContent;
-            if (this.game.domCache && this.game.domCache.tooltip) {
-                this.game.domCache.tooltip.innerHTML = tooltipContent;
-                this.game.domCache.tooltip.style.display = 'block';
+            // Use unified tooltip manager instead of legacy DOM cache
+            if (this.game.tooltipManager) {
+                this.game.tooltipManager.show(tooltipContent, 100, 100, {
+                    html: true,
+                    delay: 0
+                });
             }
         }
     }
     
     hideParcelTooltip() {
-        // Hide the tooltip
-        if (this.game.domCache && this.game.domCache.tooltip) {
-            this.game.domCache.tooltip.style.display = 'none';
-        }
-        if (this.game.hideTooltip) {
-            this.game.hideTooltip();
+        // Use unified tooltip manager
+        if (this.game.tooltipManager) {
+            this.game.tooltipManager.hide();
         }
     }
     
-    getIntersectionEdgeKey(row1, col1, row2, col2) {
-        // Ensure consistent edge keys regardless of direction
-        if (row1 > row2 || (row1 === row2 && col1 > col2)) {
-            return `${row2},${col2}-${row1},${col1}`;
-        }
-        return `${row1},${col1}-${row2},${col2}`;
-    }
     
     handleClick(worldX, worldY, screenX, screenY) {
         // Check if clicking on UI buttons using screen coordinates
@@ -3659,8 +3498,7 @@ class MobilityLayer {
                 // Don't close mobility panel
                 if (target !== 'mobility-panel') {
                     section.classList.add('collapsed');
-                    const icon = header.querySelector('.collapse-icon');
-                    if (icon) icon.textContent = '▶';
+                    // CSS handles the circle icon appearance via classes
                 }
             }
         });
@@ -3670,8 +3508,7 @@ class MobilityLayer {
         const mobilitySection = document.querySelector('.sidebar-section .section-header[data-target="mobility-panel"]')?.parentElement;
         if (mobilitySection) {
             mobilitySection.classList.remove('collapsed');
-            const icon = mobilitySection.querySelector('.collapse-icon');
-            if (icon) icon.textContent = '▼';
+            // CSS handles the circle icon appearance via classes
         }
     }
 
@@ -3681,11 +3518,13 @@ class MobilityLayer {
         // Populate form fields with pending route data
         const routeNameInput = document.getElementById('sidebar-route-name');
         const ticketPriceInput = document.getElementById('sidebar-ticket-price');
+        const serviceLevelSelect = document.getElementById('sidebar-service-level');
         const routeStopsCount = document.getElementById('sidebar-route-stops-count');
         const routeType = document.getElementById('sidebar-route-type');
 
         if (routeNameInput) routeNameInput.value = this.pendingRoute.name;
         if (ticketPriceInput) ticketPriceInput.value = this.pendingRoute.price;
+        if (serviceLevelSelect) serviceLevelSelect.value = this.pendingRoute.serviceLevel || 'daytime';
         if (routeStopsCount) routeStopsCount.textContent = this.pendingRoute.stops.length;
         if (routeType) routeType.textContent = this.pendingRoute.type === 'bus' ? 'Bus' : 'Subway';
 
@@ -3693,17 +3532,273 @@ class MobilityLayer {
         this.updateRouteRevenueProjctions();
     }
 
+    calculateEnhancedRouteEconomics(route) {
+        // Service level costs per parcel distance (as specified)
+        const serviceLevelCosts = {
+            rush_hour: 1,   // $1 per parcel distance
+            daytime: 2,     // $2 per parcel distance
+            all_day: 3      // $3 per parcel distance
+        };
+
+        const serviceLevel = route.serviceLevel || 'daytime';
+        const costPerParcelDistance = serviceLevelCosts[serviceLevel];
+
+        // Calculate route distance and maintenance
+        const routeDistance = this.calculateRouteDistance(route);
+        const stopCount = route.stops.length;
+        const dailyMaintenance = routeDistance * costPerParcelDistance;
+
+        // Enhanced ridership calculation
+        const ridership = this.calculateEnhancedRidership(route);
+
+        // Revenue calculation
+        const dailyRevenue = ridership * route.price;
+
+        // Calculate cost per ride for subsidy analysis
+        const costPerRide = dailyMaintenance / Math.max(ridership, 1);
+
+        return {
+            ridership: ridership,
+            revenue: dailyRevenue,
+            maintenance: dailyMaintenance,
+            costPerRide: costPerRide,
+            distance: routeDistance,
+            serviceLevel: serviceLevel
+        };
+    }
+
+    calculateEnhancedRidership(route) {
+        let baseRidership = 0;
+
+        // Distance-based ridership (longer routes = more potential riders)
+        const routeDistance = this.calculateRouteDistance(route);
+        baseRidership += routeDistance * 10; // 10 riders per distance unit
+
+        // Population density at stops
+        route.stops.forEach(stopKey => {
+            const stop = this.transitStops.get(stopKey);
+            if (stop) {
+                const { row, col } = stop;
+
+                // Check surrounding area for population density
+                const radius = 3;
+                let localPopulation = 0;
+
+                for (let r = Math.max(0, row - radius); r <= Math.min(this.game.gridSize - 1, row + radius); r++) {
+                    for (let c = Math.max(0, col - radius); c <= Math.min(this.game.gridSize - 1, col + radius); c++) {
+                        const parcel = this.game.grid[r][c];
+                        if (parcel.building) {
+                            const building = this.game.buildingManager.getBuildingById(parcel.building);
+                            if (building) {
+                                localPopulation += building.housingCapacity || 0;
+                            }
+                        }
+                    }
+                }
+
+                baseRidership += localPopulation * 0.1; // 10% of local population uses transit daily
+            }
+        });
+
+        // Accessibility bonus (connects residential to commercial/jobs)
+        const accessibilityBonus = this.calculateAccessibilityBonus(route);
+        baseRidership *= (1 + accessibilityBonus);
+
+        // Price elasticity (higher price = fewer riders)
+        const priceElasticity = Math.max(0.1, 1 - ((route.price - 1.00) / 5.00)); // Range from 10% to 100%
+        baseRidership *= priceElasticity;
+
+        // Service level multiplier
+        const serviceLevelMultipliers = {
+            rush_hour: 0.7,  // Lower ridership but cheaper to operate
+            daytime: 1.0,    // Standard ridership
+            all_day: 1.3     // Higher ridership but more expensive
+        };
+
+        const serviceMultiplier = serviceLevelMultipliers[route.serviceLevel || 'daytime'];
+        baseRidership *= serviceMultiplier;
+
+        return Math.max(1, Math.round(baseRidership));
+    }
+
+    calculateAccessibilityBonus(route) {
+        let residentialStops = 0;
+        let commercialStops = 0;
+        let jobStops = 0;
+
+        route.stops.forEach(stopKey => {
+            const stop = this.transitStops.get(stopKey);
+            if (stop) {
+                const { row, col } = stop;
+                const radius = 2;
+
+                for (let r = Math.max(0, row - radius); r <= Math.min(this.game.gridSize - 1, row + radius); r++) {
+                    for (let c = Math.max(0, col - radius); c <= Math.min(this.game.gridSize - 1, col + radius); c++) {
+                        const parcel = this.game.grid[r][c];
+                        if (parcel.building) {
+                            const building = this.game.buildingManager.getBuildingById(parcel.building);
+                            if (building) {
+                                const category = building.category?.toLowerCase();
+                                if (category === 'housing') residentialStops++;
+                                else if (category === 'commercial') commercialStops++;
+                                else if (category === 'jobs') jobStops++;
+                            }
+                        }
+                    }
+                }
+            }
+        });
+
+        // Bonus for connecting different types of areas
+        let accessibilityBonus = 0;
+        if (residentialStops > 0 && commercialStops > 0) accessibilityBonus += 0.2;
+        if (residentialStops > 0 && jobStops > 0) accessibilityBonus += 0.3;
+        if (commercialStops > 0 && jobStops > 0) accessibilityBonus += 0.15;
+
+        return Math.min(0.5, accessibilityBonus); // Max 50% bonus
+    }
+
+    calculateSubsidyBenefits(ticketPrice, costPerRide) {
+        if (ticketPrice >= costPerRide) return; // No subsidy
+
+        const subsidyPercentage = ((costPerRide - ticketPrice) / costPerRide) * 100;
+        const vitalityBonus = Math.min(10, subsidyPercentage / 10); // Max 10% boost, formula: subsidy% / 10
+
+        if (vitalityBonus > 0) {
+            console.log(`🚌 Transit Subsidy: ${subsidyPercentage.toFixed(1)}% → ${vitalityBonus.toFixed(1)}% vitality boost`);
+
+            // Apply vitality bonuses to mobility, health, environment, affordability, and resilience
+            this.applyTransitSubsidyBonuses(vitalityBonus);
+        }
+    }
+
+    applyTransitSubsidyBonuses(bonusPercentage) {
+        // Apply subsidized transit bonuses to affected CARENS domains
+        // MOBILITY splits into ENVIRONMENT (reduced emissions) and SAFETY (pedestrian safety)
+        // HEALTH becomes HEALTHCARE (JEEFHH resource, not CARENS livability metric)
+        const affectedVitalities = ['ENVIRONMENT', 'SAFETY', 'HEALTHCARE', 'AFFORDABILITY', 'RESILIENCE'];
+
+        // Calculate the actual bonus amount based on population and route coverage
+        const baseBonusAmount = bonusPercentage * 2; // Scale bonus for meaningful impact
+
+        affectedVitalities.forEach(vitality => {
+            if (this.game.vitalitySupply && this.game.vitalitySupply[vitality] !== undefined) {
+                this.game.vitalitySupply[vitality] += baseBonusAmount;
+                console.log(`🌟 ${vitality}: +${baseBonusAmount.toFixed(1)} from subsidized transit (${bonusPercentage.toFixed(1)}% subsidy)`);
+            }
+        });
+
+        // Mark vitality calculations as needing update
+        if (this.game.vitalityCache) {
+            this.game.vitalityCache.dirty = true;
+        }
+    }
+
     updateRouteRevenueProjctions() {
         if (!this.pendingRoute) return;
 
-        const revenue = this.calculateRouteRevenue(this.pendingRoute);
-        const ridership = this.estimateRouteRidership(this.pendingRoute);
+        // Show loading indicators
+        this.showLoadingIndicators();
 
-        const dailyRidershipEl = document.getElementById('sidebar-daily-ridership');
-        const dailyRevenueEl = document.getElementById('sidebar-daily-revenue');
+        // Calculate enhanced route economics
+        setTimeout(() => {
+            try {
+                const economics = this.calculateEnhancedRouteEconomics(this.pendingRoute);
 
-        if (dailyRidershipEl) dailyRidershipEl.textContent = Math.round(ridership);
-        if (dailyRevenueEl) dailyRevenueEl.textContent = `$${Math.round(revenue)}`;
+                // Update all projections with proper fallback handling
+                this.updateProjectionDisplay('sidebar-daily-ridership', economics.ridership, '', 'riders');
+                this.updateProjectionDisplay('sidebar-daily-revenue', economics.revenue, '$', '');
+                this.updateProjectionDisplay('sidebar-daily-maintenance', economics.maintenance, '-$', '');
+
+                // Calculate and display net with color coding
+                const net = economics.revenue - economics.maintenance;
+                this.updateNetDisplay(net);
+
+                // Calculate and apply subsidized transit benefits if applicable
+                this.calculateSubsidyBenefits(this.pendingRoute.price, economics.costPerRide);
+
+            } catch (error) {
+                console.error('Error calculating route projections:', error);
+                this.showProjectionError();
+            } finally {
+                this.hideLoadingIndicators();
+            }
+        }, 100); // Small delay to show loading state
+    }
+
+    showLoadingIndicators() {
+        const projections = ['sidebar-daily-ridership', 'sidebar-daily-revenue', 'sidebar-daily-maintenance', 'sidebar-daily-net'];
+        projections.forEach(id => {
+            const el = document.getElementById(id);
+            if (el) {
+                const loader = el.querySelector('.loading-indicator');
+                const data = el.querySelector('.proj-data');
+                if (loader) loader.style.display = 'inline-block';
+                if (data) data.style.display = 'none';
+            }
+        });
+    }
+
+    hideLoadingIndicators() {
+        const projections = ['sidebar-daily-ridership', 'sidebar-daily-revenue', 'sidebar-daily-maintenance', 'sidebar-daily-net'];
+        projections.forEach(id => {
+            const el = document.getElementById(id);
+            if (el) {
+                const loader = el.querySelector('.loading-indicator');
+                const data = el.querySelector('.proj-data');
+                if (loader) loader.style.display = 'none';
+                if (data) data.style.display = 'inline-block';
+            }
+        });
+    }
+
+    updateProjectionDisplay(elementId, value, prefix = '', suffix = '') {
+        const el = document.getElementById(elementId);
+        if (!el) return;
+
+        const dataEl = el.querySelector('.proj-data');
+        if (!dataEl) return;
+
+        if (value === null || value === undefined || isNaN(value)) {
+            dataEl.textContent = '-';
+        } else {
+            dataEl.textContent = `${prefix}${Math.round(value)}${suffix}`;
+        }
+    }
+
+    updateNetDisplay(netValue) {
+        const el = document.getElementById('sidebar-daily-net');
+        if (!el) return;
+
+        const dataEl = el.querySelector('.proj-data');
+        if (!dataEl) return;
+
+        // Remove existing classes
+        el.classList.remove('positive', 'negative');
+
+        if (netValue === null || netValue === undefined || isNaN(netValue)) {
+            dataEl.textContent = '-';
+        } else {
+            const rounded = Math.round(netValue);
+            if (rounded >= 0) {
+                dataEl.textContent = `+$${rounded}`;
+                el.classList.add('positive');
+            } else {
+                dataEl.textContent = `-$${Math.abs(rounded)}`;
+                el.classList.add('negative');
+            }
+        }
+    }
+
+    showProjectionError() {
+        const projections = ['sidebar-daily-ridership', 'sidebar-daily-revenue', 'sidebar-daily-maintenance', 'sidebar-daily-net'];
+        projections.forEach(id => {
+            const el = document.getElementById(id);
+            if (el) {
+                const dataEl = el.querySelector('.proj-data');
+                if (dataEl) dataEl.textContent = '-';
+            }
+        });
     }
 
     setupRouteConfigEventListeners() {
@@ -3743,6 +3838,17 @@ class MobilityLayer {
             routeNameInput.addEventListener('input', () => {
                 if (this.pendingRoute) {
                     this.pendingRoute.name = routeNameInput.value;
+                }
+            });
+        }
+
+        // Service level selector
+        const serviceLevelSelect = document.getElementById('sidebar-service-level');
+        if (serviceLevelSelect) {
+            serviceLevelSelect.addEventListener('change', () => {
+                if (this.pendingRoute) {
+                    this.pendingRoute.serviceLevel = serviceLevelSelect.value;
+                    this.updateRouteRevenueProjctions();
                 }
             });
         }
@@ -3894,6 +4000,10 @@ class MobilityLayer {
         this.pendingRoute = null;
         this.transitMode = null;
         this.routeCreationState = null;
+
+        // Hide route config sidebar
+        this.hideRouteConfigSidebar();
+
         this.game.showNotification('Route creation cancelled', 'info');
     }
 
@@ -4011,6 +4121,9 @@ class MobilityLayer {
         this.selectedTransitStops = [];
         this.pendingRoute = null;
         this.transitMode = null;
+
+        // Hide route config sidebar
+        this.hideRouteConfigSidebar();
 
         this.game.showNotification(`Created ${route.name}`, 'success');
         return route;

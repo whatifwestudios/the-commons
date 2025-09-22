@@ -664,30 +664,21 @@ class EconomicEngine {
                 
                 if (parcel.building && !isUnderConstruction) {
                     const building = this.game.buildingManager.getBuildingById(parcel.building);
-                    if (building && building.domainImpacts) {
-                        // Process soft metrics only (not ENERGY, FOOD, HOUSING, JOBS)
-                        const softMetrics = ['HEALTH', 'EDUCATION', 'SAFETY', 'CULTURE', 'MOBILITY', 
-                                           'ENVIRONMENT', 'AFFORDABILITY', 'NOISE', 'RESILIENCE'];
-                        
-                        softMetrics.forEach(domain => {
-                            if (building.domainImpacts[domain] !== undefined) {
-                                const impact = building.domainImpacts[domain];
+                    if (building && building.livability) {
+                        // Process CARENS livability impacts using new JSON format
+                        const carensMetrics = ['safety', 'culture', 'affordability', 'resilience', 'environment', 'noise'];
+
+                        carensMetrics.forEach(domain => {
+                            const livabilityData = building.livability[domain];
+                            if (livabilityData && typeof livabilityData.impact === 'number') {
+                                const impact = livabilityData.impact;
+                                const domainUpper = domain.toUpperCase();
+
                                 if (impact > 0) {
-                                    this.game.vitalitySupply[domain] += impact;
+                                    this.game.vitalitySupply[domainUpper] = (this.game.vitalitySupply[domainUpper] || 0) + impact;
                                 } else if (impact < 0) {
-                                    this.game.vitalityDemand[domain] += Math.abs(impact);
+                                    this.game.vitalityDemand[domainUpper] = (this.game.vitalityDemand[domainUpper] || 0) + Math.abs(impact);
                                 }
-                            }
-                        });
-                    } else {
-                        // Fallback to old system for buildings without domainImpacts
-                        const buildingImpacts = this.game.getBuildingImpacts(parcel.building);
-                        Object.keys(buildingImpacts).forEach(domain => {
-                            const impact = buildingImpacts[domain];
-                            if (impact > 0) {
-                                this.game.vitalitySupply[domain] += impact;
-                            } else if (impact < 0) {
-                                this.game.vitalityDemand[domain] += Math.abs(impact);
                             }
                         });
                     }
@@ -1009,14 +1000,19 @@ class EconomicEngine {
         // Education: Target 90%+ school enrollment
         satisfaction.education = Math.min(1, (demographics.schoolEnrollmentRate || 0) / 0.9);
         
-        // Housing: Based on vitality balance
-        satisfaction.housing = this.game.vitality.HOUSING >= 0 ? 1.0 : Math.max(0, 1 + (this.game.vitality.HOUSING / 50));
+        // Housing: Based on JEEFHH supply/demand balance
+        const housingRatio = this.game.vitalitySupply.HOUSING / Math.max(1, this.game.vitalityDemand.HOUSING);
+        satisfaction.housing = housingRatio >= 1.0 ? 1.0 : Math.max(0, housingRatio);
         
-        // Healthcare: Based on vitality balance
-        satisfaction.healthcare = this.game.vitality.HEALTH >= 0 ? 1.0 : Math.max(0, 1 + (this.game.vitality.HEALTH / 30));
-        
-        // Culture & Recreation: Based on vitality balance
-        satisfaction.culture = this.game.vitality.CULTURE >= 0 ? 1.0 : Math.max(0, 1 + (this.game.vitality.CULTURE / 20));
+        // Healthcare: Based on JEEFHH supply/demand balance
+        const healthcareRatio = this.game.vitalitySupply.HEALTHCARE / Math.max(1, this.game.vitalityDemand.HEALTHCARE);
+        satisfaction.healthcare = healthcareRatio >= 1.0 ? 1.0 : Math.max(0, healthcareRatio);
+
+        // Culture: Based on CARENS supply/demand balance
+        const cultureSupply = this.game.vitalitySupply.CULTURE || 0;
+        const cultureDemand = this.game.vitalityDemand.CULTURE || 0;
+        const cultureRatio = cultureSupply / Math.max(1, cultureDemand);
+        satisfaction.culture = cultureRatio >= 1.0 ? 1.0 : Math.max(0.5, cultureRatio);
         
         // Overall satisfaction (weighted average)
         const weights = {
@@ -1253,8 +1249,31 @@ class EconomicEngine {
     buildCashflowBreakdown() {
         this.game.cashflowBreakdown = [];
 
-        this.game.economicCache.buildingStats.forEach(stats => {
-            this.game.cashflowBreakdown.push({ ...stats }); // Clone stats for UI
+        // Convert building stats to properly formatted breakdown for DCF table
+        this.game.economicCache.buildingStats.forEach((stats, key) => {
+            const [row, col] = key.split('-').map(Number);
+            const parcel = this.game.grid[row][col];
+
+            // Get building information
+            const building = parcel.building ? this.game.buildingManager.getBuildingById(parcel.building) : null;
+            const buildingName = building?.name || 'Vacant Land';
+            const category = building?.category || 'Land';
+
+            // Format for DCF table
+            this.game.cashflowBreakdown.push({
+                building: buildingName,
+                category: category,
+                location: `(${row},${col})`,
+                revenue: stats.revenue || 0,
+                maintenance: stats.maintenance || 0,
+                lvt: stats.lvt || 0,
+                net: (stats.revenue || 0) - (stats.maintenance || 0) - (stats.lvt || 0),
+                // Additional details for tooltip or expanded view
+                details: building ? `${building.name} at (${row},${col})` : `Vacant land at (${row},${col})`,
+                performance: stats.performance,
+                decay: stats.decay,
+                age: stats.age
+            });
         });
 
         // Add transit system financials if available
@@ -1262,7 +1281,7 @@ class EconomicEngine {
             this.game.cashflowBreakdown.push({
                 building: 'Transit System',
                 category: 'Transportation',
-                count: this.game.transitFinancials.activeRoutes,
+                location: 'City-wide',
                 revenue: this.game.transitFinancials.dailyRevenue,
                 maintenance: this.game.transitFinancials.dailyCosts,
                 lvt: 0,

@@ -333,9 +333,11 @@ class TransportationSystem {
         // Build transport network using mobility layer roads
         if (!this.game.mobilityLayer) {
             // Fallback for when mobility layer is not available
+            console.warn('Transportation: Mobility layer not available, roads will not connect properly');
             return {
                 nodes: [],
-                connections: new Map()
+                connections: new Map(),
+                roads: new Map()
             };
         }
 
@@ -377,8 +379,8 @@ class TransportationSystem {
                 ];
 
                 intersectionPositions.forEach(pos => {
-                    if (pos.iRow >= 0 && pos.iRow <= this.game.gridSize &&
-                        pos.iCol >= 0 && pos.iCol <= this.game.gridSize) {
+                    if (pos.iRow >= 0 && pos.iRow < this.game.gridSize &&
+                        pos.iCol >= 0 && pos.iCol < this.game.gridSize) {
                         adjacentIntersections.push(`${pos.iRow},${pos.iCol}`);
                     }
                 });
