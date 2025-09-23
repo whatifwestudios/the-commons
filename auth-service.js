@@ -7,7 +7,12 @@
 
 const nodemailer = require('nodemailer');
 const jwt = require('jsonwebtoken');
-const { v4: uuidv4 } = require('uuid');
+const crypto = require('crypto');
+
+// Generate UUID v4 using crypto module
+function generateUUID() {
+    return crypto.randomUUID();
+}
 
 class AuthService {
     constructor() {
@@ -43,7 +48,7 @@ class AuthService {
     async sendMagicLink(email, baseUrl = 'http://localhost:3000') {
         try {
             // Generate unique magic token
-            const token = uuidv4();
+            const token = generateUUID();
             const expires = Date.now() + this.magicLinkExpiry;
 
             // Store token
@@ -189,7 +194,7 @@ class AuthService {
 
         // Create new user
         const user = {
-            id: uuidv4(),
+            id: generateUUID(),
             email: normalizedEmail,
             createdAt: new Date().toISOString(),
             lastLoginAt: new Date().toISOString()
