@@ -78,10 +78,10 @@ class ServerEconomicEngine {
         this.updateGameState(gameState);
 
         // Debug the game state
-        console.log('🔍 [DEBUG] Game state received - grid size:', gameState.gridSize);
-        console.log('🔍 [DEBUG] Game state grid keys:', Object.keys(gameState.grid || {}).length);
+        // Debug: Game state received
+        // Debug: Game state grid processed
         const buildingsInState = Object.entries(gameState.grid || {}).filter(([_, parcel]) => parcel?.building).length;
-        console.log('🔍 [DEBUG] Buildings in received game state:', buildingsInState);
+        // Debug: Processing buildings in game state
 
         // Clear cache for fresh calculation
         this.invalidateCache();
@@ -104,7 +104,7 @@ class ServerEconomicEngine {
         const calculationTime = Date.now() - startTime;
         console.log(`✅ City economics calculated in ${calculationTime}ms`);
 
-        console.log('🔍 [DEBUG] Server returning buildingPerformances:', buildingPerformances.length, 'buildings');
+        // Debug: Building performances calculated
         buildingPerformances.forEach(building => {
             console.log(`🔍 [DEBUG] Building performance ${building.row},${building.col}:`, building);
         });
@@ -294,20 +294,15 @@ class ServerEconomicEngine {
      * Update internal game state from client data
      */
     updateGameState(gameState) {
-        console.log('🔍 [DEBUG] updateGameState called with:', {
-            hasGrid: !!gameState.grid,
-            gridKeys: Object.keys(gameState.grid || {}),
-            hasBuildings: !!gameState.buildings,
-            buildingKeys: Object.keys(gameState.buildings || {})
-        });
+        // Debug: Game state update initiated
 
         if (gameState.grid) {
             this.gameData.grid = gameState.grid;
-            console.log('🔍 [DEBUG] Updated grid with keys:', Object.keys(this.gameData.grid));
+            // Debug: Grid updated with parcels
         }
         if (gameState.buildings) {
             this.gameData.buildings = new Map(Object.entries(gameState.buildings));
-            console.log('🔍 [DEBUG] Updated buildings map size:', this.gameData.buildings.size);
+            // Debug: Buildings map updated
         }
     }
 
@@ -367,8 +362,8 @@ class ServerEconomicEngine {
         };
 
         console.log('🔍 [DEBUG] Calculating city supply/demand...');
-        console.log('🔍 [DEBUG] Grid entries:', Object.keys(this.gameData.grid || {}));
-        console.log('🔍 [DEBUG] Buildings cache size:', this.gameData.buildings?.size || 0);
+        // Debug: Grid entries calculated
+        // Debug: Buildings cache updated
 
         // Scan all parcels for buildings
         Object.entries(this.gameData.grid).forEach(([gridKey, parcel]) => {
@@ -783,8 +778,8 @@ class ServerEconomicEngine {
     calculateAllBuildingPerformances() {
         const performances = [];
 
-        console.log('🔍 [DEBUG] calculateAllBuildingPerformances - checking grid...');
-        console.log('🔍 [DEBUG] gameData.grid keys:', Object.keys(this.gameData.grid).length);
+        // Debug: Calculating building performances
+        // Debug: Processing grid data
 
         Object.entries(this.gameData.grid).forEach(([gridKey, parcel]) => {
             if (parcel?.building) {
@@ -800,7 +795,7 @@ class ServerEconomicEngine {
             }
         });
 
-        console.log('🔍 [DEBUG] Total performances calculated:', performances.length);
+        // Debug: Building performance calculations complete
         return performances;
     }
 
