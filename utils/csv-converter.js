@@ -49,6 +49,46 @@ class CSVConverter {
     }
 
     /**
+     * Convert CSV text to JSON format
+     * @param {string} csvText - Raw CSV text content
+     * @returns {Object} JSON object with building data
+     */
+    convertCSVToJSON(csvText) {
+        try {
+            // Parse CSV into rows
+            const lines = csvText.trim().split('\n');
+            if (lines.length < 2) {
+                throw new Error('CSV must have at least a header row and one data row');
+            }
+
+            // Parse header
+            const headers = this.parseCSVRow(lines[0]);
+
+            // Parse data rows
+            const buildings = [];
+            for (let i = 1; i < lines.length; i++) {
+                const row = this.parseCSVRow(lines[i]);
+                if (row.length === headers.length) {
+                    const building = this.createBuildingFromRow(headers, row);
+                    if (building) {
+                        buildings.push(building);
+                    }
+                }
+            }
+
+            // Group buildings by category
+            this.buildingCategories = this.groupBuildingsByCategory(buildings);
+
+            // Return as JSON object
+            return this.buildingCategories;
+
+        } catch (error) {
+            console.error('CSV conversion error:', error);
+            throw new Error(`Failed to convert CSV: ${error.message}`);
+        }
+    }
+
+    /**
      * Parse a CSV row, handling quoted values
      * @param {string} row - CSV row text
      * @returns {Array} Array of cell values
@@ -107,23 +147,26 @@ class CSVConverter {
                 maxRevenue: 0
             },
             livability: {},
-            isDefault: true
+            isDefault: true,
+            graphicFile: null  // Track graphic file from CSV
         };
 
         // Map CSV columns to building properties
         for (let i = 0; i < headers.length; i++) {
-            const header = headers[i].toLowerCase().trim();
+            const header = headers[i].toLowerCase().trim().replace(/_/g, '');
             const value = row[i]?.trim() || '';
 
             // Basic properties
-            if (header === 'id' || header === 'building_id') {
+            if (header === 'id' || header === 'buildingid') {
                 building.id = value;
-            } else if (header === 'name' || header === 'building_name') {
+            } else if (header === 'name' || header === 'buildingname') {
                 building.name = value;
             } else if (header === 'category') {
                 building.category = value.toLowerCase();
             } else if (header === 'description') {
                 building.description = value;
+            } else if (header === 'graphicfile' || header === 'graphicsfile') {
+                building.graphicFile = value;  // Store the graphic file name
             }
             // Economic properties
             else if (header === 'build_cost' || header === 'buildcost') {
@@ -166,6 +209,31 @@ class CSVConverter {
             console.warn('Skipping building with missing required fields:', building);
             return null;
         }
+
+        // Use graphic file from CSV if provided, otherwise auto-generate
+        let imagePath;
+        if (building.graphicFile) {
+            // Use the provided graphic file name
+            const filename = building.graphicFile.replace(/\.(png|svg|jpg|jpeg)$/i, '');
+            imagePath = `assets/buildings/${building.category}/${filename}.png`;
+        } else {
+            // Auto-generate based on ID and category
+            imagePath = `assets/buildings/${building.category}/${building.id}.png`;
+        }
+
+        // Set up all the image-related fields
+        building.graphicsFile = imagePath;
+        building.graphics = {
+            filename: imagePath.split('/').pop(),
+            path: imagePath,
+            fallbackPath: "assets/buildings/default.svg"
+        };
+        building.images = {
+            built: imagePath
+        };
+
+        // Clean up temporary field
+        delete building.graphicFile;
 
         return building;
     }

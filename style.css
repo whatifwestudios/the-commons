@@ -501,8 +501,17 @@ body {
 
 
 .indicator {
-    font-size: 8px;
+    font-size: 16px;
+    font-family: "SF Pro Display", "Inter", "Roboto", "Helvetica Neue", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    font-weight: 600;
     opacity: 0.5;
+    transition: transform 0.3s cubic-bezier(.34, 1.56, .64, 1);
+    transform-origin: center;
+    display: inline-block;
+}
+
+.collapsible.collapsed .indicator {
+    transform: rotate(90deg) scale(1.2);
 }
 
 .dropdown-menu {
@@ -1726,40 +1735,41 @@ body {
 }
 
 .collapse-icon {
+    font-size: 20px;
+    opacity: 0.5;
+    transition: transform 0.3s ease;
     display: inline-block;
-    width: 14px;
-    height: 14px;
-    border: 2px solid currentColor;
-    border-radius: 50%;
-    position: relative;
-    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.collapse-icon {
+    display: inline-block;
+    transition: all 0.3s cubic-bezier(.34, 1.56, .64, 1);
+    transform-origin: center;
 }
 
 .collapse-icon::after {
-    content: '';
-    position: absolute;
-    top: 2px;
-    left: 2px;
-    width: 6px;
-    height: 6px;
-    background: currentColor;
-    border-radius: 50%;
-    opacity: 1;
-    transition: opacity 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    content: '+';
+    font-size: 16px;
+    font-family: "SF Pro Display", "Inter", "Roboto", "Helvetica Neue", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    font-weight: 600;
+    display: inline-block;
+    transform-origin: center;
+    transition: all 0.3s cubic-bezier(.34, 1.56, .64, 1);
 }
 
 .collapsible.collapsed .collapse-icon::after {
-    opacity: 0;
+    content: '−';
+    transform: scale(1.2);
 }
 
 .section-content {
     overflow: hidden;
     max-height: 800px; /* Large enough for any content */
     opacity: 1;
-    transition: max-height 0.25s cubic-bezier(0.4, 0, 0.2, 1),
-                opacity 0.25s cubic-bezier(0.4, 0, 0.2, 1),
-                padding 0.25s cubic-bezier(0.4, 0, 0.2, 1),
-                transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    transition: max-height 0.3s ease,
+                opacity 0.3s ease,
+                padding 0.3s ease,
+                transform 0.3s ease;
     transform: translateY(0);
 }
 
@@ -1768,8 +1778,16 @@ body {
     opacity: 0;
     padding-top: 0;
     padding-bottom: 0;
-    display: none; /* Prevent black bar lingering */
     transform: translateY(-10px);
+}
+
+/* Ensure vitality section is properly hidden when collapsed */
+.collapsible.collapsed #vitality {
+    max-height: 0;
+    opacity: 0;
+    padding-top: 0;
+    padding-bottom: 0;
+    overflow: hidden;
 }
 
 
@@ -2068,14 +2086,7 @@ body {
     color: #ffffff;
 }
 
-.category-btn .arrow {
-    font-size: 8px;
-    transition: transform 0.2s ease;
-}
-
-.category-btn.expanded .arrow {
-    transform: rotate(90deg);
-}
+/* Removed category-btn .arrow styles - using simple → instead */
 
 .building-submenu {
     position: absolute;
@@ -3539,7 +3550,7 @@ body {
 }
 
 .cashflow-table th.sorted-desc:after {
-    content: '▼';
+    content: '⌄';
     color: #4CAF50;
 }
 
@@ -4450,12 +4461,13 @@ body {
 }
 
 .governance-section h4::before {
-    content: '';
-    width: 4px;
-    height: 4px;
-    background: #4CAF50;
-    border-radius: 50%;
-    box-shadow: 0 0 8px rgba(76, 175, 80, 0.6);
+    content: '⌄';
+    font-size: 8px;
+    opacity: 0.5;
+    color: #4CAF50;
+    transition: transform 0.3s ease;
+    display: inline-block;
+    margin-right: 6px;
 }
 
 .section-description {
@@ -4491,6 +4503,36 @@ body {
     box-shadow: 0 0 20px rgba(218, 165, 32, 0.08);
     background: linear-gradient(135deg, rgba(25, 25, 25, 0.9), rgba(18, 18, 18, 0.95));
 }
+
+/* Player allocation indicators - colored dots showing budget priorities */
+.player-allocation-indicators {
+    display: flex;
+    gap: 4px;
+    margin-top: 8px;
+    min-height: 16px;
+    align-items: center;
+    justify-content: center;
+}
+
+.player-allocation-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    transition: all 0.3s ease;
+    opacity: 0;
+    transform: scale(0);
+}
+
+.player-allocation-dot.visible {
+    opacity: 1;
+    transform: scale(1);
+}
+
+.player-allocation-dot.size-1 { width: 6px; height: 6px; }
+.player-allocation-dot.size-2 { width: 8px; height: 8px; }
+.player-allocation-dot.size-3 { width: 10px; height: 10px; }
+.player-allocation-dot.size-4 { width: 12px; height: 12px; }
+.player-allocation-dot.size-5 { width: 14px; height: 14px; }
 
 /* Player allocation indicators - purple glow based on points allocated */
 .budget-category.player-allocated-1 {
@@ -4826,7 +4868,7 @@ body {
 /* Metric Tooltips - matches vitality styling */
 .metric-tooltip {
     position: relative;
-    cursor: help;
+    cursor: pointer;
 }
 
 /* Metric tooltip pseudo-elements disabled - using unified manager */
@@ -5153,9 +5195,9 @@ body {
 }
 
 .color-option {
-    width: 56px;
-    height: 56px;
-    border-radius: 16px;
+    width: 33px;
+    height: 33px;
+    border-radius: 3px;
     border: 3px solid transparent;
     cursor: pointer;
     transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
@@ -5184,11 +5226,7 @@ body {
 }
 
 .color-option.selected {
-    border-color: #ffffff;
-    box-shadow: 
-        0 0 0 4px rgba(255, 255, 255, 0.2),
-        0 8px 25px rgba(0, 0, 0, 0.4);
-    transform: scale(1.2);
+    transform: scale(1.15);
 }
 
 .emoji-option {
@@ -5525,11 +5563,11 @@ body {
 
 /* Insufficient Funds Visual Feedback */
 .insufficient-funds-blink {
-    animation: insufficientFundsBlink 0.5s ease-in-out 3;
+    animation: insufficientFundsBlink 0.5s ease-in-out 1;
 }
 
 .cash-blink {
-    animation: cashBlink 0.5s ease-in-out 3;
+    animation: cashBlink 0.5s ease-in-out 1;
 }
 
 @keyframes insufficientFundsBlink {
@@ -5651,8 +5689,8 @@ body {
     }
     
     .color-option {
-        width: 48px;
-        height: 48px;
+        width: 33px;
+        height: 33px;
     }
     
     .emoji-option {

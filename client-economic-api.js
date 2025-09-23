@@ -731,6 +731,31 @@ class ClientEconomicAPI {
 
         return gameState;
     }
+
+    /**
+     * Reset player balance to starting amount
+     */
+    async resetPlayerBalance() {
+        try {
+            const response = await fetch(`${this.baseUrl}/api/player/reset-balance`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            });
+
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+
+            const data = await response.json();
+            console.log('💰 Player balance reset:', data);
+            return data;
+        } catch (error) {
+            console.error('Failed to reset player balance:', error);
+            return null;
+        }
+    }
 }
 
 // Export for use in game

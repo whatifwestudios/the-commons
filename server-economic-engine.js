@@ -77,6 +77,12 @@ class ServerEconomicEngine {
         // Update internal game state
         this.updateGameState(gameState);
 
+        // Debug the game state
+        console.log('🔍 [DEBUG] Game state received - grid size:', gameState.gridSize);
+        console.log('🔍 [DEBUG] Game state grid keys:', Object.keys(gameState.grid || {}).length);
+        const buildingsInState = Object.entries(gameState.grid || {}).filter(([_, parcel]) => parcel?.building).length;
+        console.log('🔍 [DEBUG] Buildings in received game state:', buildingsInState);
+
         // Clear cache for fresh calculation
         this.invalidateCache();
 
@@ -97,6 +103,11 @@ class ServerEconomicEngine {
 
         const calculationTime = Date.now() - startTime;
         console.log(`✅ City economics calculated in ${calculationTime}ms`);
+
+        console.log('🔍 [DEBUG] Server returning buildingPerformances:', buildingPerformances.length, 'buildings');
+        buildingPerformances.forEach(building => {
+            console.log(`🔍 [DEBUG] Building performance ${building.row},${building.col}:`, building);
+        });
 
         return {
             success: true,
@@ -283,11 +294,20 @@ class ServerEconomicEngine {
      * Update internal game state from client data
      */
     updateGameState(gameState) {
+        console.log('🔍 [DEBUG] updateGameState called with:', {
+            hasGrid: !!gameState.grid,
+            gridKeys: Object.keys(gameState.grid || {}),
+            hasBuildings: !!gameState.buildings,
+            buildingKeys: Object.keys(gameState.buildings || {})
+        });
+
         if (gameState.grid) {
             this.gameData.grid = gameState.grid;
+            console.log('🔍 [DEBUG] Updated grid with keys:', Object.keys(this.gameData.grid));
         }
         if (gameState.buildings) {
             this.gameData.buildings = new Map(Object.entries(gameState.buildings));
+            console.log('🔍 [DEBUG] Updated buildings map size:', this.gameData.buildings.size);
         }
     }
 
@@ -346,37 +366,46 @@ class ServerEconomicEngine {
             food: { supply: 0, demand: 0 }
         };
 
+        console.log('🔍 [DEBUG] Calculating city supply/demand...');
+        console.log('🔍 [DEBUG] Grid entries:', Object.keys(this.gameData.grid || {}));
+        console.log('🔍 [DEBUG] Buildings cache size:', this.gameData.buildings?.size || 0);
+
         // Scan all parcels for buildings
         Object.entries(this.gameData.grid).forEach(([gridKey, parcel]) => {
             if (!parcel?.building) return;
 
+            console.log(`🔍 [DEBUG] Checking parcel ${gridKey}, building: ${parcel.building}`);
             const building = this.gameData.buildings.get(parcel.building);
-            if (!building) return;
+            if (!building) {
+                console.log(`🔍 [DEBUG] Building ${parcel.building} not found in cache`);
+                return;
+            }
+            console.log(`🔍 [DEBUG] Found building ${parcel.building}:`, building.id, building.name);
 
-            // Add supplies
-            if (building.population?.bedroomsAdded > 0) {
-                totals.housing.supply += building.population.bedroomsAdded;
+            // Add supplies (using correct building definition fields)
+            if (building.resources?.housingProvided > 0) {
+                totals.housing.supply += building.resources.housingProvided;
             }
-            if (building.population?.jobsCreated > 0) {
-                totals.jobs.supply += building.population.jobsCreated;
+            if (building.resources?.jobsProvided > 0) {
+                totals.jobs.supply += building.resources.jobsProvided;
             }
-            if (building.resources?.energyDemand < 0) {
-                totals.energy.supply += Math.abs(building.resources.energyDemand);
+            if (building.resources?.energyProvided > 0) {
+                totals.energy.supply += building.resources.energyProvided;
             }
-            if (building.resources?.foodProduction > 0) {
-                totals.food.supply += building.resources.foodProduction;
+            if (building.resources?.foodProvided > 0) {
+                totals.food.supply += building.resources.foodProvided;
             }
 
-            // Add demands
-            if (building.population?.bedroomsAdded > 0) {
-                totals.jobs.demand += building.population.bedroomsAdded; // Residents need jobs
-                totals.food.demand += building.population.bedroomsAdded; // Residents need food
+            // Add demands (using correct building definition fields)
+            if (building.resources?.housingProvided > 0) {
+                totals.jobs.demand += building.resources.housingProvided; // Residents need jobs
+                totals.food.demand += building.resources.housingProvided; // Residents need food
             }
-            if (building.population?.jobsCreated > 0) {
-                totals.housing.demand += building.population.jobsCreated; // Jobs need workers (housing)
+            if (building.resources?.jobsProvided > 0) {
+                totals.housing.demand += building.resources.jobsProvided; // Jobs need workers (housing)
             }
-            if (building.resources?.energyDemand > 0) {
-                totals.energy.demand += building.resources.energyDemand;
+            if (building.resources?.energyRequired > 0) {
+                totals.energy.demand += building.resources.energyRequired;
             }
         });
 
@@ -403,7 +432,9 @@ class ServerEconomicEngine {
         const maintenanceInfo = this.calculateMaintenance(parcel, building);
 
         // Determine building needs
+        console.log('🔍 [DEBUG] About to extract needs for building:', building ? building.id : 'null building');
         const needs = this.extractBuildingNeeds(building);
+        console.log('🔍 [DEBUG] Extracted needs result:', needs);
 
         let basePerformance = 1.0;
         let needDetails = [];
@@ -430,7 +461,10 @@ class ServerEconomicEngine {
 
         // Apply decay penalty
         const decayPenalty = 1 - (parcel.decay || 0) * 0.5;
-        const finalPerformance = basePerformance * decayPenalty;
+
+        // Apply CARENS multiplier
+        const carensMultiplier = this.calculateCarensMultiplier(building, row, col);
+        const finalPerformance = basePerformance * decayPenalty * carensMultiplier;
 
         const maxRevenue = building.economics?.maxRevenue || 0;
         const actualRevenue = maxRevenue * finalPerformance;
@@ -461,42 +495,45 @@ class ServerEconomicEngine {
     extractBuildingNeeds(building) {
         const needs = [];
 
-        // Workers need (from JobsCreated)
-        if (building.population?.jobsCreated > 0) {
+        console.log('🔍 [DEBUG] extractBuildingNeeds for building:', building.id, building.resources);
+
+        // Jobs need (from jobsRequired - buildings that need workers)
+        if (building.resources?.jobsRequired > 0) {
             needs.push({
-                type: this.NEED_TYPES.WORKERS,
-                required: building.population.jobsCreated
+                type: this.NEED_TYPES.JOBS,
+                required: building.resources.jobsRequired
             });
+            console.log(`🔍 [DEBUG] Added JOBS need: ${building.resources.jobsRequired}`);
         }
 
-        // Jobs need (from BedroomsAdded - 0.6 per resident, rounded down)
-        if (building.population?.bedroomsAdded > 0) {
-            const jobsRequired = Math.floor(building.population.bedroomsAdded * 0.6);
-            if (jobsRequired > 0) {
-                needs.push({
-                    type: this.NEED_TYPES.JOBS,
-                    required: jobsRequired
-                });
-            }
+        // Housing need (from housingRequired - buildings that need residents)
+        if (building.resources?.housingRequired > 0) {
+            needs.push({
+                type: this.NEED_TYPES.HOUSING,
+                required: building.resources.housingRequired
+            });
+            console.log(`🔍 [DEBUG] Added HOUSING need: ${building.resources.housingRequired}`);
         }
 
-        // Energy need (from energyDemand field - only if positive)
-        const energyDemand = building.resources?.energyDemand || building.energyDemand || 0;
-        if (energyDemand > 0) {
+        // Energy need (from energyRequired - buildings that need power)
+        if (building.resources?.energyRequired > 0) {
             needs.push({
                 type: this.NEED_TYPES.ENERGY,
-                required: energyDemand
+                required: building.resources.energyRequired
             });
+            console.log(`🔍 [DEBUG] Added ENERGY need: ${building.resources.energyRequired}`);
         }
 
-        // Food need (for residential buildings: 1 food per resident)
-        if (building.population?.bedroomsAdded > 0) {
+        // Food need (from foodRequired - buildings that need food)
+        if (building.resources?.foodRequired > 0) {
             needs.push({
                 type: this.NEED_TYPES.FOOD,
-                required: building.population.bedroomsAdded
+                required: building.resources.foodRequired
             });
+            console.log(`🔍 [DEBUG] Added FOOD need: ${building.resources.foodRequired}`);
         }
 
+        console.log(`🔍 [DEBUG] Final needs for ${building.id}:`, needs);
         return needs;
     }
 
@@ -507,9 +544,13 @@ class ServerEconomicEngine {
     calculateNeedSatisfaction(need, row, col) {
         const supplyDemand = this.getLocalSupplyDemand(need.type, row, col);
 
+        // If no supply available, satisfaction is 0
+        if (supplyDemand.supply === 0) return 0.0;
+
+        // If no demand, this building doesn't need this resource - satisfied
         if (supplyDemand.demand === 0) return 1.0;
 
-        return supplyDemand.supply / supplyDemand.demand;
+        return Math.min(1.0, supplyDemand.supply / supplyDemand.demand);
     }
 
     /**
@@ -742,16 +783,24 @@ class ServerEconomicEngine {
     calculateAllBuildingPerformances() {
         const performances = [];
 
+        console.log('🔍 [DEBUG] calculateAllBuildingPerformances - checking grid...');
+        console.log('🔍 [DEBUG] gameData.grid keys:', Object.keys(this.gameData.grid).length);
+
         Object.entries(this.gameData.grid).forEach(([gridKey, parcel]) => {
             if (parcel?.building) {
+                console.log(`🔍 [DEBUG] Found building at ${gridKey}: ${parcel.building}, underConstruction: ${parcel._isUnderConstruction}`);
                 const [row, col] = gridKey.split(',').map(Number);
                 const performance = this.calculateBuildingPerformance(row, col);
                 if (performance) {
                     performances.push(performance);
+                    console.log(`🔍 [DEBUG] Added performance for ${gridKey}:`, performance);
+                } else {
+                    console.log(`🔍 [DEBUG] No performance calculated for ${gridKey} (likely under construction)`);
                 }
             }
         });
 
+        console.log('🔍 [DEBUG] Total performances calculated:', performances.length);
         return performances;
     }
 
@@ -766,6 +815,82 @@ class ServerEconomicEngine {
             totalCapacity: 1000,
             totalUsage: 0
         };
+    }
+
+    /**
+     * Calculate city-wide CARENS scores
+     * Based on livability impacts from all completed buildings
+     */
+    calculateCityWideCarensScores() {
+        const carensScores = {
+            safety: 0,
+            culture: 0,
+            affordability: 0,
+            resilience: 0,
+            environment: 0,
+            noise: 0
+        };
+
+        // Sum up impacts from all completed buildings across the city
+        Object.entries(this.gameData.grid).forEach(([gridKey, parcel]) => {
+            if (parcel?.building && !parcel._isUnderConstruction) {
+                const building = this.gameData.buildings.get(parcel.building);
+                if (building?.livability) {
+                    // Add impacts from each CARENS domain
+                    Object.keys(carensScores).forEach(domain => {
+                        const livabilityData = building.livability[domain];
+                        if (livabilityData && typeof livabilityData.impact === 'number') {
+                            carensScores[domain] += livabilityData.impact;
+                        }
+                    });
+                }
+            }
+        });
+
+        return carensScores;
+    }
+
+    /**
+     * Calculate CARENS multiplier for a specific building
+     * Uses city-wide CARENS scores to boost building performance
+     */
+    calculateCarensMultiplier(building, row, col) {
+        // Base multiplier (no effect)
+        let multiplier = 1.0;
+
+        // Skip if building has no livability data
+        if (!building?.livability) {
+            return multiplier;
+        }
+
+        // Get city-wide CARENS scores
+        const cityCarens = this.calculateCityWideCarensScores();
+
+        // Apply multipliers based on building's relevant CARENS domains
+        Object.keys(building.livability).forEach(domain => {
+            const buildingLivability = building.livability[domain];
+            if (buildingLivability && typeof buildingLivability.impact === 'number') {
+                const cityScore = cityCarens[domain] || 0;
+
+                // Convert city score to a multiplier effect
+                // Positive scores boost performance, negative scores reduce it
+                // Scale: Every 10 points of city CARENS = 5% performance change
+                const domainEffect = 1 + (cityScore * 0.005);
+
+                // Weight the effect by this building's contribution to that domain
+                // Buildings that contribute more to a domain benefit more from citywide success
+                const buildingWeight = Math.abs(buildingLivability.impact) / 20; // Normalize impact
+                const weightedEffect = 1 + ((domainEffect - 1) * Math.min(buildingWeight, 1));
+
+                // Apply the weighted effect to the overall multiplier
+                multiplier *= weightedEffect;
+            }
+        });
+
+        // Cap the multiplier to reasonable bounds (0.5x to 2.0x)
+        multiplier = Math.max(0.5, Math.min(2.0, multiplier));
+
+        return multiplier;
     }
 
     /**

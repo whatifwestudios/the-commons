@@ -608,6 +608,7 @@ class TooltipRenderer {
 
 class TooltipManager {
     constructor(game) {
+
         this.game = game;
         this.currentTooltip = null;
         this.tooltipElement = null;
@@ -712,7 +713,8 @@ class TooltipManager {
             }
         }
         
-        // Set timer to show tooltip after delay
+        // Set timer to show tooltip after delay (ensure non-negative)
+        const actualDelay = Math.max(0, delay);
         this.showTimer = setTimeout(() => {
             if (this.isDestroyed) return;
             
@@ -729,7 +731,8 @@ class TooltipManager {
             this.position(x, y);
             
             // Set animation speed
-            const transitionDuration = animationSpeed === 'fast' ? '0.075s' : '0.15s';
+            const transitionDuration = animationSpeed === 'ultra-fast' ? '0.056s' :
+                                     animationSpeed === 'fast' ? '0.075s' : '0.15s';
             this.tooltipElement.style.transition = `opacity ${transitionDuration} ease, visibility ${transitionDuration} ease`;
             
             // Show tooltip with smooth animation
@@ -740,7 +743,7 @@ class TooltipManager {
             this.lastPosition = { x, y };
             this.metrics.showCount++;
             
-        }, delay);
+        }, actualDelay);
     }
     
     showImmediate(content, x, y, options = {}) {
@@ -961,11 +964,11 @@ class TooltipManager {
                     const y = rect.top + rect.height / 2;
 
                     this.show(content, x, y, {
-                        delay: 0,
+                        delay: -50, // Show twice as fast (negative delay = instant)
                         maxWidth: 320,
                         priority: 2,
                         html: true,
-                        animationSpeed: 'fast'
+                        animationSpeed: 'ultra-fast'
                     });
                 }
             });
@@ -1063,7 +1066,7 @@ class TooltipManager {
                 content += `<strong>Building Breakdown:</strong><br>`;
                 Object.entries(data.impactDetails)
                     .sort(([,a], [,b]) => Math.abs(b.totalImpact) - Math.abs(a.totalImpact))
-                    .slice(0, 4)
+                    .slice(0, 5)
                     .forEach(([name, details]) => {
                         const impact = details.totalImpact >= 0 ? '+' : '';
                         const color = details.totalImpact >= 0 ? '#4CAF50' : '#f44336';

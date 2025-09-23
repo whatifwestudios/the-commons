@@ -201,9 +201,9 @@ class CSVUploader {
             const csvText = await this.readFileAsText(file);
             this.currentCSVData = csvText;
 
-            // Validate and convert
-            const jsContent = this.converter.convertCSVToJS(csvText);
-            this.currentJSContent = jsContent;
+            // Validate and convert to JSON
+            const jsonData = this.converter.convertCSVToJSON(csvText);
+            this.currentJSONData = jsonData;
 
             // Show preview
             const buildingCount = Object.values(this.converter.buildingCategories)
@@ -237,18 +237,32 @@ class CSVUploader {
      * Apply the converted changes
      */
     async applyChanges() {
-        if (!this.currentJSContent) return;
+        if (!this.currentJSONData) return;
 
-        this.showStatus('🔄 Applying changes...', 'info');
+        this.showStatus('🔄 Saving building data to project...', 'info');
 
         try {
-            // Save the JavaScript module
-            await this.saveJavaScriptModule(this.currentJSContent);
+            // Save JSON to server
+            const response = await fetch('/api/buildings/save-json', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    buildingData: this.currentJSONData
+                })
+            });
+
+            const result = await response.json();
+
+            if (!result.success) {
+                throw new Error(result.error || 'Failed to save building data');
+            }
 
             // Update the building manager with new data
             await this.updateBuildingManager();
 
-            this.showStatus('✅ Building data updated successfully!<br><small>Changes will take effect on next page reload</small>', 'success');
+            this.showStatus('✅ Building data saved to buildings-data.json!<br><small>Changes will be committed on next git push.<br>Reload page to see new buildings.</small>', 'success');
 
             // Auto-close after success
             setTimeout(() => {
@@ -256,34 +270,14 @@ class CSVUploader {
                 if (window.game && window.game.populateBuildingCategories) {
                     window.game.populateBuildingCategories();
                 }
-            }, 2000);
+            }, 3000);
 
         } catch (error) {
-            this.showStatus(`❌ Failed to apply changes: ${error.message}`, 'error');
-            console.error('Apply changes error:', error);
+            this.showStatus(`❌ Failed to save changes: ${error.message}`, 'error');
+            console.error('Save changes error:', error);
         }
     }
 
-    /**
-     * Save JavaScript module (simplified - in real implementation would save to file)
-     */
-    async saveJavaScriptModule(jsContent) {
-        // In a real implementation, this would save to the file system
-        // For now, we'll create a blob URL and trigger download
-        const blob = new Blob([jsContent], { type: 'text/javascript' });
-        const url = URL.createObjectURL(blob);
-
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = 'buildings-data.js';
-        a.style.display = 'none';
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-
-        console.log('📁 Generated buildings-data.js file downloaded');
-    }
 
     /**
      * Update building manager with new data
@@ -346,7 +340,7 @@ class CSVUploader {
         document.getElementById('upload-status').style.display = 'none';
         document.getElementById('preview-btn').style.display = 'none';
         this.currentCSVData = null;
-        this.currentJSContent = null;
+        this.currentJSONData = null;
     }
 
     /**

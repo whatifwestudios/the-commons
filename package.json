@@ -1,12 +1,12 @@
 {
   "name": "the-commons",
-  "version": "2.0.0", 
+  "version": "2.0.0",
   "type": "commonjs",
   "description": "A city-building game exploring land value economics",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "dev": "node server.js", 
+    "dev": "node server.js",
     "build": "echo 'No build step required'",
     "lint": "node lint-multiplayer.js",
     "lint:check": "node lint-multiplayer.js",
@@ -14,7 +14,7 @@
   },
   "keywords": [
     "game",
-    "city-building", 
+    "city-building",
     "economics",
     "land-value-tax",
     "multiplayer",
@@ -24,13 +24,18 @@
   "author": "",
   "license": "MIT",
   "dependencies": {
+    "bcryptjs": "^3.0.2",
+    "cookie-parser": "^1.4.7",
+    "cors": "^2.8.5",
     "express": "^4.18.2",
-    "ws": "^8.14.2",
-    "cors": "^2.8.5"
+    "jsonwebtoken": "^9.0.2",
+    "nodemailer": "^7.0.6",
+    "uuid": "^13.0.0",
+    "ws": "^8.14.2"
   },
   "devDependencies": {
-    "eslint": "^9.0.0",
-    "@eslint/js": "^9.0.0"
+    "@eslint/js": "^9.0.0",
+    "eslint": "^9.0.0"
   },
   "engines": {
     "node": ">=18.0.0"

@@ -12,11 +12,13 @@ class GameState {
             // Player state (multiplayer-ready structure)
             players: {
                 'player': {
-                    cash: 5000,
+                    cash: 6000,
                     actions: 20,
                     votingPoints: 0,
                     ownedParcels: [],
                     emoji: '🏠',
+                    name: 'Player',
+                    color: '#10AC84',
                     settings: {}
                 }
             },
@@ -416,19 +418,36 @@ class GameState {
      * Validate state integrity
      */
     validateState(state) {
-        // Check for NaN values
+        // Check and fix NaN values with automatic correction
         if (isNaN(state.players['player'].cash)) {
-            console.error('Player cash is NaN');
-            return false;
+            console.warn('Player cash is NaN, resetting to 6000');
+            state.players['player'].cash = 6000;
         }
-        
+
+        // Ensure cash is a finite number
+        if (!isFinite(state.players['player'].cash)) {
+            console.warn('Player cash is not finite, resetting to 6000');
+            state.players['player'].cash = 6000;
+        }
+
         // Check for negative actions
         if (state.players['player'].actions < 0) {
-            console.error('Player actions cannot be negative');
-            return false;
+            console.warn('Player actions cannot be negative, resetting to 0');
+            state.players['player'].actions = 0;
         }
-        
-        // Add more validation as needed
+
+        // Check for NaN in actions
+        if (isNaN(state.players['player'].actions)) {
+            console.warn('Player actions is NaN, resetting to 20');
+            state.players['player'].actions = 20;
+        }
+
+        // Validate voting points
+        if (isNaN(state.players['player'].votingPoints)) {
+            console.warn('Player voting points is NaN, resetting to 0');
+            state.players['player'].votingPoints = 0;
+        }
+
         return true;
     }
     
@@ -577,6 +596,127 @@ class GameState {
         return true;
     }
     
+    /**
+     * Update player color with conflict resolution
+     */
+    updatePlayerColor(playerId, requestedColor) {
+        const action = {
+            type: 'UPDATE_PLAYER_COLOR',
+            payload: { playerId, requestedColor }
+        };
+
+        // Check for color conflicts
+        const conflictingPlayer = this.findPlayerByColor(requestedColor);
+        if (conflictingPlayer && conflictingPlayer !== playerId) {
+            // Color conflict - assign alternative color
+            const availableColor = this.getAvailableColor(requestedColor);
+            this.state.players[playerId].color = availableColor;
+
+            this.notifySubscribers(action, {
+                success: false,
+                assignedColor: availableColor,
+                reason: 'Color conflict resolved'
+            });
+
+            return { success: false, assignedColor: availableColor };
+        }
+
+        // No conflict - assign requested color
+        this.state.players[playerId].color = requestedColor;
+        this.notifySubscribers(action, { success: true, assignedColor: requestedColor });
+
+        return { success: true, assignedColor: requestedColor };
+    }
+
+    /**
+     * Find player using a specific color
+     */
+    findPlayerByColor(color) {
+        return Object.keys(this.state.players).find(playerId =>
+            this.state.players[playerId].color === color
+        );
+    }
+
+    /**
+     * Get an available color (with fallback if conflicts)
+     */
+    getAvailableColor(preferredColor) {
+        const defaultColors = [
+            '#10AC84', '#3498db', '#e74c3c', '#f39c12',
+            '#9b59b6', '#2ecc71', '#e67e22', '#1abc9c',
+            '#34495e', '#f1c40f'
+        ];
+
+        // Try preferred color first
+        if (!this.findPlayerByColor(preferredColor)) {
+            return preferredColor;
+        }
+
+        // Find first available color from defaults
+        for (const color of defaultColors) {
+            if (!this.findPlayerByColor(color)) {
+                return color;
+            }
+        }
+
+        // Generate random color if all defaults taken
+        return '#' + Math.floor(Math.random()*16777215).toString(16).padStart(6, '0');
+    }
+
+    /**
+     * Get all player colors for conflict checking
+     */
+    getAllPlayerColors() {
+        return Object.values(this.state.players).map(player => player.color);
+    }
+
+    /**
+     * Update player name
+     */
+    updatePlayerName(playerId, name) {
+        const action = {
+            type: 'UPDATE_PLAYER_NAME',
+            payload: { playerId, name }
+        };
+
+        this.state.players[playerId].name = name;
+        this.notifySubscribers(action, { success: true });
+
+        return { success: true };
+    }
+
+    /**
+     * Add or update player
+     */
+    addOrUpdatePlayer(playerId, playerData) {
+        const action = {
+            type: 'ADD_OR_UPDATE_PLAYER',
+            payload: { playerId, playerData }
+        };
+
+        if (!this.state.players[playerId]) {
+            // New player - ensure unique color
+            const assignedColor = this.getAvailableColor(playerData.color || '#10AC84');
+
+            this.state.players[playerId] = {
+                cash: 6000,
+                actions: 20,
+                votingPoints: 0,
+                ownedParcels: [],
+                emoji: '🏠',
+                name: playerData.name || 'Player',
+                color: assignedColor,
+                settings: {}
+            };
+        } else {
+            // Update existing player
+            Object.assign(this.state.players[playerId], playerData);
+        }
+
+        this.notifySubscribers(action, { success: true, playerId });
+        return { success: true, player: this.state.players[playerId] };
+    }
+
     /**
      * Clear all state and reset to defaults
      */

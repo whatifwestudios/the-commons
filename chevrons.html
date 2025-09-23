@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Classic Chevron with Flair</title>
+<style>
+body {
+  font-family: sans-serif;
+  padding: 2rem;
+  display: grid;
+  gap: 1.5rem;
+}
+button {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 2rem;
+  padding: 0.6rem 1rem;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  background: #f8f8f8;
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+button:hover { background: #f0f0f0; }
+button:focus { outline: none; }
+
+/* Base Chevron */
+.chevron {
+  display: inline-block;
+  transition: transform 0.3s ease;
+  will-change: transform;
+}
+
+/* 1. Smooth Classic */
+.chevron.classic {
+  transition: transform 0.3s ease;
+}
+.open .chevron.classic {
+  transform: rotate(90deg);
+}
+
+/* 2. Overshoot Pop */
+.chevron.pop {
+  transition: transform 0.3s cubic-bezier(.34, 1.56, .64, 1);
+}
+.open .chevron.pop {
+  transform: rotate(90deg) scale(1.2);
+}
+
+/* 3. Wobble Settle */
+.chevron.wobble {
+  transition: transform 0.3s ease;
+}
+.open .chevron.wobble {
+  animation: wobble-anim 0.3s ease forwards;
+}
+@keyframes wobble-anim {
+  0%   { transform: rotate(0deg); }
+  60%  { transform: rotate(100deg) scale(1.15); }
+  80%  { transform: rotate(85deg) scale(0.95); }
+  100% { transform: rotate(90deg) scale(1); }
+}
+
+/* 4. Sizzle Glow */
+.chevron.glow {
+  transition: transform 0.3s cubic-bezier(.34, 1.56, .64, 1), color 0.3s ease;
+}
+.open .chevron.glow {
+  transform: rotate(90deg) scale(1.15);
+  color: #0077ff;
+  text-shadow: 0 0 6px rgba(0, 119, 255, 0.5);
+}
+
+/* 5. Big & Bold */
+.chevron.big {
+  font-size: 2rem;
+  transition: transform 0.3s cubic-bezier(.34, 1.56, .64, 1);
+}
+.open .chevron.big {
+  transform: rotate(90deg) scale(1.25);
+}
+</style>
+</head>
+<body>
+
+<button class="toggle">
+  <span class="chevron classic">›</span> Smooth Classic
+</button>
+
+<button class="toggle">
+  <span class="chevron pop">›</span> Overshoot Pop
+</button>
+
+<button class="toggle">
+  <span class="chevron wobble">›</span> Wobble Settle
+</button>
+
+<button class="toggle">
+  <span class="chevron glow">›</span> Sizzle Glow
+</button>
+
+<button class="toggle">
+  <span class="chevron big">›</span> Big & Bold
+</button>
+
+<script>
+document.querySelectorAll(".toggle").forEach(btn => {
+  btn.addEventListener("click", () => {
+    btn.classList.toggle("open");
+  });
+});
+</script>
+
+</body>
+</html>

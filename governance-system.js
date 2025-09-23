@@ -862,6 +862,9 @@ class GovernanceSystem {
                 }
             }
 
+            // Update player allocation indicators (colored dots)
+            this.updatePlayerAllocationDots(category, playerData.categories[category] || 0);
+
             // Update coffers display
             const cofferEl = document.querySelector(`[data-category="${category}"] .category-coffers span`);
             if (cofferEl) {
@@ -1024,6 +1027,12 @@ class GovernanceSystem {
      * Set up governance modal event listeners
      */
     setupEventListeners() {
+        // Prevent duplicate event listener registration
+        if (this._eventListenersSetup) {
+            console.log('🏛️ Governance event listeners already setup, skipping...');
+            return;
+        }
+
         // Check if elements exist first
         const modal = document.getElementById('governance-modal');
         const closeBtn = document.getElementById('close-governance-modal');
@@ -1096,6 +1105,107 @@ class GovernanceSystem {
         } catch (error) {
             console.error('Error setting up governance modal:', error);
         }
+
+        // Mark that event listeners have been set up to prevent duplicates
+        this._eventListenersSetup = true;
+        console.log('🏛️ Governance event listeners setup completed');
+    }
+
+    /**
+     * Update player allocation indicators (colored dots) for a category
+     */
+    updatePlayerAllocationDots(category, playerVotes) {
+        const indicatorsContainer = document.querySelector(`.player-allocation-indicators[data-category="${category}"]`);
+        if (!indicatorsContainer) return;
+
+        // Clear existing dots
+        indicatorsContainer.innerHTML = '';
+
+        if (playerVotes > 0) {
+            // Get player color from current player settings
+            const playerColor = this.getPlayerColorSync();
+
+            // Create a dot for each vote (up to 5 for visual clarity)
+            const dotsToShow = Math.min(playerVotes, 5);
+            for (let i = 0; i < dotsToShow; i++) {
+                const dot = document.createElement('div');
+                dot.className = `player-allocation-dot visible size-${Math.min(playerVotes, 5)}`;
+                dot.style.backgroundColor = playerColor;
+
+                // Add a slight delay for each dot for a nice animation effect
+                setTimeout(() => {
+                    indicatorsContainer.appendChild(dot);
+                }, i * 50);
+            }
+
+            // If more than 5 votes, show a number indicator
+            if (playerVotes > 5) {
+                const numberIndicator = document.createElement('span');
+                numberIndicator.textContent = `×${playerVotes}`;
+                numberIndicator.style.color = playerColor;
+                numberIndicator.style.fontSize = '10px';
+                numberIndicator.style.fontWeight = 'bold';
+                numberIndicator.style.marginLeft = '4px';
+                indicatorsContainer.appendChild(numberIndicator);
+            }
+        }
+    }
+
+    /**
+     * Get current player's color from server (with fallbacks)
+     */
+    async getPlayerColor() {
+        try {
+            // First try to get from server
+            const response = await fetch('/api/players');
+            if (response.ok) {
+                const data = await response.json();
+                const currentPlayer = data.players?.player || data.players?.[Object.keys(data.players)[0]];
+                if (currentPlayer && currentPlayer.color) {
+                    return currentPlayer.color;
+                }
+            }
+        } catch (error) {
+            console.warn('Could not fetch player color from server:', error);
+        }
+
+        // Fallback to game's player settings
+        if (typeof window !== 'undefined' && window.game && window.game.playerSettings && window.game.playerSettings.color) {
+            return window.game.playerSettings.color;
+        }
+
+        // Fallback to localStorage
+        const savedColor = localStorage.getItem('playerColor');
+        if (savedColor) {
+            return savedColor;
+        }
+
+        // Default fallback color
+        return '#10AC84';
+    }
+
+    /**
+     * Synchronous version of getPlayerColor for immediate use
+     */
+    getPlayerColorSync() {
+        // Use cached server data if available
+        if (this._cachedPlayerColors && this._cachedPlayerColors.player) {
+            return this._cachedPlayerColors.player;
+        }
+
+        // Fallback to game's player settings
+        if (typeof window !== 'undefined' && window.game && window.game.playerSettings && window.game.playerSettings.color) {
+            return window.game.playerSettings.color;
+        }
+
+        // Fallback to localStorage
+        const savedColor = localStorage.getItem('playerColor');
+        if (savedColor) {
+            return savedColor;
+        }
+
+        // Default fallback color
+        return '#10AC84';
     }
 }
 

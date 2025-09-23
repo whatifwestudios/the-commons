@@ -72,22 +72,39 @@ class EconomicEngine {
     processDailyEconomics() {
         // Update supply/demand
         this.updateSupplyDemandBalance();
-        
+
         // Calculate and apply cashflow
         const cashflow = this.calculatePlayerCashflow();
-        this.game.playerCash += cashflow.net;
-        
+
+        // Apply cashflow via CashManager for transaction safety
+        if (cashflow && typeof cashflow.net === 'number' && !isNaN(cashflow.net)) {
+            if (this.game.cashManager) {
+                // Use new CashManager system
+                this.game.cashManager.applyDailyCashflow(cashflow);
+            } else {
+                // Fallback to legacy system with validation
+                this.game.playerCash += cashflow.net;
+            }
+        } else {
+            console.warn('Invalid cashflow data detected, skipping cash update:', cashflow);
+            // Ensure playerCash remains a valid number
+            if (isNaN(this.game.playerCash)) {
+                this.game.playerCash = 0;
+                console.warn('Reset playerCash to 0 due to NaN value');
+            }
+        }
+
         // Update market multipliers
         this.updateMarketMultipliers();
-        
+
         // Age buildings and decay
         if (this.game.buildingSystem) {
             this.game.buildingSystem.ageBuildings(1);
         }
-        
+
         // Update road maintenance costs
         this.updateRoadMaintenance();
-        
+
         return cashflow;
     }
     
@@ -332,7 +349,17 @@ class EconomicEngine {
             }
         });
         
-        return this.game.playerCash + assetValue;
+        // Get cash balance from CashManager if available, fallback to legacy
+        let cashBalance = 0;
+        if (this.game.cashManager) {
+            cashBalance = this.game.cashManager.getBalance();
+        } else {
+            cashBalance = isNaN(this.game.playerCash) || this.game.playerCash === null || this.game.playerCash === undefined ? 0 : this.game.playerCash;
+        }
+
+        const safeAssetValue = isNaN(assetValue) || assetValue === null || assetValue === undefined ? 0 : assetValue;
+
+        return cashBalance + safeAssetValue;
     }
     
     /**
@@ -597,11 +624,7 @@ class EconomicEngine {
                 const parcel = this.game.grid[row][col];
                 
                 // Only count completed buildings (not under construction)
-                // Check both new (_isUnderConstruction) and legacy (constructionStartDay) flags
-                const isUnderConstruction = parcel._isUnderConstruction ||
-                    (parcel.constructionStartDay !== null &&
-                     parcel.constructionDays > 0 &&
-                     (this.game.currentDay - parcel.constructionStartDay) < parcel.constructionDays);
+                const isUnderConstruction = parcel._isUnderConstruction;
 
                 if (parcel.building && !isUnderConstruction) {
                     const building = this.game.buildingManager.getBuildingById(parcel.building);
@@ -658,9 +681,7 @@ class EconomicEngine {
                 const parcel = this.game.grid[row][col];
                 
                 // Only count completed buildings
-                const isUnderConstruction = parcel.constructionStartDay !== null && 
-                    parcel.constructionDays > 0 && 
-                    (this.game.currentDay - parcel.constructionStartDay) < parcel.constructionDays;
+                const isUnderConstruction = parcel._isUnderConstruction;
                 
                 if (parcel.building && !isUnderConstruction) {
                     const building = this.game.buildingManager.getBuildingById(parcel.building);
@@ -729,11 +750,9 @@ class EconomicEngine {
                 const parcel = this.game.grid[row][col];
                 if (!parcel.building) continue;
 
+
                 // Skip buildings under construction for efficiency calculations
-                const isUnderConstruction = parcel._isUnderConstruction ||
-                    (parcel.constructionStartDay !== null &&
-                     parcel.constructionDays > 0 &&
-                     (this.game.currentDay - parcel.constructionStartDay) < parcel.constructionDays);
+                const isUnderConstruction = parcel._isUnderConstruction;
 
                 if (isUnderConstruction) {
                     // Don't skip - buildings under construction still create demand
@@ -747,7 +766,7 @@ class EconomicEngine {
                 }
                 
                 buildingsFound++;
-                
+
                 const key = `${row},${col}`;
                 this.game.buildingEfficiencies.set(key, {
                     row, col,
@@ -826,7 +845,8 @@ class EconomicEngine {
             }
             demandsByResource[demand.resource].push(demand);
         });
-        
+
+
         // Process each resource type
         Object.keys(demandsByResource).forEach(resourceType => {
             const demands = demandsByResource[resourceType];
@@ -839,9 +859,7 @@ class EconomicEngine {
                     if (!supplyParcel.building) continue;
                     
                     // Skip buildings under construction
-                    const isUnderConstruction = supplyParcel.constructionStartDay !== null && 
-                        supplyParcel.constructionDays > 0 && 
-                        (this.game.currentDay - supplyParcel.constructionStartDay) < supplyParcel.constructionDays;
+                    const isUnderConstruction = supplyParcel._isUnderConstruction;
                     if (isUnderConstruction) continue;
                     
                     const supplyBuilding = this.game.buildingManager.getBuildingById(supplyParcel.building);
@@ -1484,9 +1502,7 @@ class EconomicEngine {
                 const parcel = this.game.grid[row][col];
 
                 // Check if building is completed (not under construction)
-                const isUnderConstruction = parcel.constructionStartDay !== null &&
-                    parcel.constructionDays > 0 &&
-                    (this.game.currentDay - parcel.constructionStartDay) < parcel.constructionDays;
+                const isUnderConstruction = parcel._isUnderConstruction;
 
                 // Count ALL owned buildings in the city, not just current player's
                 if (parcel.owner && parcel.owner !== 'unclaimed' && parcel.building && !isUnderConstruction) {
@@ -1749,4 +1765,9 @@ class EconomicEngine {
 // Export for use
 if (typeof module !== 'undefined' && module.exports) {
     module.exports = EconomicEngine;
+}
+
+// Make available globally for browser
+if (typeof window !== 'undefined') {
+    window.EconomicEngine = EconomicEngine;
 }

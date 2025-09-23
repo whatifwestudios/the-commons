@@ -110,9 +110,10 @@ class BuildingSystem {
         });
 
         if (constructionDays > 0) {
+            // Initialize new construction system - SINGLE SOURCE OF TRUTH
             parcel._isUnderConstruction = true;
             parcel._constructionStartTime = Date.now();
-            parcel._constructionDays = constructionDays; // Use the calculated value, not the original
+            parcel._constructionDays = constructionDays;
             parcel._constructionProgress = 0;
 
             console.log(`Initialized construction for ${buildingId}:`, {
@@ -120,10 +121,27 @@ class BuildingSystem {
                 days: parcel._constructionDays
             });
 
+            // Create legacy property proxies that delegate to new system
+            Object.defineProperty(parcel, 'constructionStartDay', {
+                get: function() {
+                    // Convert real-time to game-day equivalent
+                    return this._constructionStartTime ? this.game?.currentDay || 0 : null;
+                },
+                set: function(value) {
+                    console.warn('⚠️ Direct constructionStartDay assignment blocked - use new construction system');
+                    console.trace();
+                }
+            });
 
-            // Set legacy fields for compatibility with game.js drawing system
-            parcel.constructionStartDay = this.game.currentDay;
-            parcel.constructionDays = constructionDays; // Use the calculated value
+            Object.defineProperty(parcel, 'constructionDays', {
+                get: function() {
+                    return this._constructionDays || 0;
+                },
+                set: function(value) {
+                    console.warn('⚠️ Direct constructionDays assignment blocked - use new construction system');
+                    console.trace();
+                }
+            });
             
             // Create dust cloud effect at construction start
             if (this.game.createDustCloud) {
@@ -167,7 +185,7 @@ class BuildingSystem {
                 this.game.cityStats.vitality = result.vitality;
                 this.game.vitalitySupply = result.vitality.supply || this.game.vitalitySupply;
                 this.game.vitalityDemand = result.vitality.demand || this.game.vitalityDemand;
-                this.game.updateVitalityUI();
+                this.game.updateVitalityUI(); // Will fetch fresh server data
             }
         }).catch(error => {
             console.warn('Server building placement calculation failed, using local fallback:', error);
@@ -272,24 +290,27 @@ class BuildingSystem {
         // Step 2: Update CLV of all parcels (new building affects others)
         this.game.updateAllLandValues();
 
-        // Step 3: System-wide vitality recalculation via server API
+        // Step 3: Server-authoritative vitality calculation (Option A: Full Server Migration)
+        console.log('🏗️ Building construction completed - updating vitals via server');
+        this.game.calculateCityVitality(); // Server-authoritative calculation
+        this.game.updateVitalityUI(); // Will fetch fresh server data
+
+        // Then sync with server for authoritative data (non-blocking)
         const gameState = this.game.economicAPI.prepareGameState(this.game);
         const buildingData = { row, col, buildingId: building.id, owner: parcel.owner };
         this.game.economicAPI.handleBuildingPlacement(gameState, buildingData).then(result => {
             if (result && result.success && result.vitality) {
+                console.log('✅ Server vitality update received for construction completion');
                 // Update client vitality data from server
                 this.game.cityStats.vitality = result.vitality;
                 this.game.vitalitySupply = result.vitality.supply || this.game.vitalitySupply;
                 this.game.vitalityDemand = result.vitality.demand || this.game.vitalityDemand;
-                this.game.updateVitalityUI();
+                this.game.updateVitalityUI(); // Will fetch fresh server data
+            } else {
+                console.warn('⚠️ Server vitality calculation returned invalid data:', result);
             }
         }).catch(error => {
-            console.warn('Server construction completion calculation failed, using local fallback:', error);
-            this.game.markVitalityDirty(); // Fallback to local calculation
-
-            // Immediately recalculate vitality locally for responsive UI
-            this.game.economicEngine.calculateCityVitality();
-            this.game.updateVitalityUI();
+            console.warn('⚠️ Server construction completion calculation failed:', error);
         });
 
         // Step 4: Initialize building properties for revenue generation
@@ -767,11 +788,22 @@ class BuildingSystem {
             return false;
         }
         
-        // Store original state for potential rollback
-        const originalCash = this.game.playerCash;
-        
-        // Process purchase optimistically (immediately)
-        this.game.playerCash -= price;
+        // Process purchase through CashManager (server-authoritative)
+        try {
+            await this.game.cashManager.spend(price, 'Parcel Purchase', {
+                coordinate: coord,
+                row: row,
+                col: col
+            });
+        } catch (error) {
+            console.error('❌ Parcel purchase failed:', error);
+            // Refund the action since purchase failed
+            this.game.actionManager.currentActions += this.game.actionManager.actionCosts.purchaseParcel;
+            this.game.actionManager.usedThisMonth -= this.game.actionManager.actionCosts.purchaseParcel;
+            this.game.updateActionDisplay();
+            this.game.showInsufficientFundsFeedback();
+            return false;
+        }
 
         // Add land purchase price to governance budget
         if (this.game.governanceSystem) {
@@ -787,10 +819,20 @@ class BuildingSystem {
         
         // Broadcast parcel purchase to other players and handle conflicts
         if (this.game.multiplayerManager) {
-            const success = await this.game.multiplayerManager.onParcelPurchased(row, col, null, price, originalCash);
-            
+            const success = await this.game.multiplayerManager.onParcelPurchased(row, col, null, price);
+
             if (!success) {
-                // Purchase was rejected - rollback already handled by MultiplayerManager
+                // Purchase was rejected - need to refund via CashManager
+                try {
+                    await this.game.cashManager.earn(price, 'Parcel Purchase Rollback', {
+                        coordinate: coord,
+                        row: row,
+                        col: col
+                    });
+                } catch (refundError) {
+                    console.error('❌ Failed to refund parcel purchase:', refundError);
+                }
+
                 // Refund the action since purchase failed
                 this.game.actionManager.currentActions += this.game.actionManager.actionCosts.purchaseParcel;
                 this.game.actionManager.usedThisMonth -= this.game.actionManager.actionCosts.purchaseParcel;
@@ -882,8 +924,24 @@ class BuildingSystem {
         const originalConstructionStartDay = this.game.grid[row][col].constructionStartDay;
         const originalConstructionDays = this.game.grid[row][col].constructionDays;
 
-        // Optimistically update local state
-        this.game.playerCash -= playerCostRequired;
+        // Use CashManager for transaction safety
+        let spendResult = null;
+        if (this.game.cashManager) {
+            try {
+                // CashManager handles optimistic updates and server validation
+                spendResult = await this.game.cashManager.spend(playerCostRequired, 'Building construction', {
+                    buildingId: buildingId,
+                    coordinates: `${row},${col}`,
+                    publicFunding: publicFunding
+                });
+            } catch (error) {
+                console.warn('Building construction payment failed:', error.message);
+                return false;
+            }
+        } else {
+            // Fallback to legacy system
+            this.game.playerCash -= playerCostRequired;
+        }
         this.game.grid[row][col].building = buildingId;
 
         // Set construction start day and duration
@@ -922,7 +980,10 @@ class BuildingSystem {
 
             if (!success) {
                 // Server rejected - rollback optimistic changes
-                this.game.playerCash = originalCash;
+                // Note: CashManager handles cash rollback automatically
+                if (!this.game.cashManager) {
+                    this.game.playerCash = originalCash; // Only for legacy fallback
+                }
                 this.game.grid[row][col].building = originalBuilding;
                 this.game.grid[row][col].amenities = originalAmenities;
                 this.game.grid[row][col].constructionStartDay = originalConstructionStartDay;

@@ -156,7 +156,10 @@ class MobilityLayer {
         
         // Save context state
         ctx.save();
-        
+
+        // Keep smooth rendering for game world elements
+        ctx.imageSmoothingEnabled = true;
+
         // Update animation
         this.animationTime += 0.016;
         
@@ -170,17 +173,17 @@ class MobilityLayer {
         
         // Draw the familiar isometric grid but with modifications
         this.drawMobilityGrid(ctx);
-        
-        // Always draw roads first (they go under parcels)
+
+        // Draw shrunken isometric parcels (same diamond shape, just smaller)
+        this.drawShrunkenParcels(ctx);
+
+        // Draw roads AFTER parcels so they show their full length
         this.drawRoads(ctx);
-        
+
         // Draw illumination effect if a stop was just placed
         if (this.illuminatedSegment) {
             this.drawIlluminatedSegment(ctx);
         }
-        
-        // Draw shrunken isometric parcels (same diamond shape, just smaller)
-        this.drawShrunkenParcels(ctx);
 
         // Apply special corner treatment to road segments instead of separate elements
 
@@ -210,12 +213,14 @@ class MobilityLayer {
     }
     
     drawMobilityGrid(ctx) {
-        // Draw unimproved streets as medium gray areas
+        // Draw unimproved streets as subtle background areas only where no roads exist
+        // These are drawn BEFORE parcels but NEVER over built roads
+
         ctx.fillStyle = '#808080'; // Toned down gray for balanced contrast
-        
+
         this.intersections.forEach(intersection => {
             const { row, col } = intersection;
-            
+
             // Check segments to adjacent intersections
             const neighbors = [
                 { row: row - 1, col },     // North
@@ -223,34 +228,65 @@ class MobilityLayer {
                 { row, col: col - 1 },     // West
                 { row, col: col + 1 }      // East
             ];
-            
+
             neighbors.forEach(neighbor => {
                 if (neighbor.row >= 0 && neighbor.row <= this.game.gridSize &&
                     neighbor.col >= 0 && neighbor.col <= this.game.gridSize) {
-                    
+
                     const neighborKey = `${neighbor.row},${neighbor.col}`;
                     const neighborIntersection = this.intersections.get(neighborKey);
-                    
+
                     if (neighborIntersection) {
                         // Check if this segment has a road built
                         const edgeKey = this.getEdgeKey(row, col, neighbor.row, neighbor.col);
                         const hasRoad = this.roads.has(edgeKey);
-                        
+
                         // Only draw gray fill for unimproved (roadless) segments
+                        // This creates subtle background indication of potential road routes
                         if (!hasRoad) {
-                            this.drawUnimprovedStreet(ctx, intersection, neighborIntersection);
+                            this.drawUnimprovedStreetSubtle(ctx, intersection, neighborIntersection);
                         }
                     }
                 }
             });
         });
     }
-    
+
+    // Draw unimproved street as lighter, more prominent background indication
+    drawUnimprovedStreetSubtle(ctx, fromIntersection, toIntersection) {
+        // Calculate street width using the SAME logic as actual roads to ensure perfect coverage
+        const roadType = this.roadTypes.local;
+        const availableSpace = this.game.tileWidth * (1 - this.parcelShrinkFactor);
+        // Use slightly narrower width than actual roads to ensure roads completely cover gray areas
+        const streetWidth = availableSpace * Math.max(roadType.width, 0.85); // 0.85 instead of 0.9 for guaranteed coverage
+
+        // Calculate the street shape using the same logic as roads
+        const streetShape = this.calculateIsometricRoadShape(fromIntersection, toIntersection, streetWidth);
+
+        if (streetShape) {
+            ctx.save();
+
+            // Lighter, more solid gray for better contrast with dark green background and black roads
+            ctx.fillStyle = '#a0a0a0'; // Solid light gray - good contrast with both background and roads
+            ctx.beginPath();
+            ctx.moveTo(streetShape.p1.x, streetShape.p1.y);
+            ctx.lineTo(streetShape.p2.x, streetShape.p2.y);
+            ctx.lineTo(streetShape.p3.x, streetShape.p3.y);
+            ctx.lineTo(streetShape.p4.x, streetShape.p4.y);
+            ctx.closePath();
+            ctx.fill();
+
+            ctx.restore();
+        }
+    }
+
     // Draw an unimproved street as a subtle gray area (with corner treatment)
     drawUnimprovedStreet(ctx, fromIntersection, toIntersection) {
-        // Calculate street width (same as would be used for local roads)
+        // Calculate street width using the SAME logic as actual roads to ensure perfect coverage
         const roadType = this.roadTypes.local;
-        const streetWidth = this.game.tileWidth * roadType.width * (1 - this.parcelShrinkFactor);
+        const availableSpace = this.game.tileWidth * (1 - this.parcelShrinkFactor);
+        // Use slightly narrower width than actual roads to ensure roads completely cover gray areas
+        const streetWidth = availableSpace * Math.max(roadType.width, 0.85); // 0.85 instead of 0.9 for guaranteed coverage
 
         // Calculate the street shape using the same logic as roads
         const streetShape = this.calculateIsometricRoadShape(fromIntersection, toIntersection, streetWidth);
@@ -429,8 +465,8 @@ class MobilityLayer {
         ctx.fillStyle = baseColor;
         ctx.fill();
         
-        // Check if this parcel is affected by hovered edge
-        const isAffected = this.hoveredEdge && this.isParcelAffectedByEdge(row, col, this.hoveredEdge);
+        // Mobility effects now handled by ParcelSelectorManager
+        const isAffected = false;
 
         // Check if this parcel is in a transit stop catchment area
         const transitCatchment = this.getTransitCatchmentAt(row, col);
@@ -643,9 +679,64 @@ class MobilityLayer {
             const [from, to] = edgeKey.split('-');
             const [fromRow, fromCol] = from.split(',').map(Number);
             const [toRow, toCol] = to.split(',').map(Number);
-            
+
             this.drawRoad(ctx, fromRow, fromCol, toRow, toCol, road);
         });
+    }
+
+    drawIntersections(ctx) {
+        // Draw small circular intersections at points where roads meet
+        this.intersections.forEach((intersection, key) => {
+            const connectedRoads = this.getConnectedRoads(intersection.row, intersection.col);
+
+            // Only draw intersection if there are roads connected
+            if (connectedRoads.length > 0) {
+                ctx.save();
+
+                // Draw a small circular intersection
+                const radius = Math.max(3, this.game.tileWidth * 0.08);
+
+                // Use a darker road color for intersections
+                ctx.fillStyle = connectedRoads.length > 1 ? '#4a4a4a' : '#555555';
+                ctx.beginPath();
+                ctx.arc(intersection.x, intersection.y, radius, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Add a subtle border for multi-road intersections
+                if (connectedRoads.length > 1) {
+                    ctx.strokeStyle = '#666666';
+                    ctx.lineWidth = 1;
+                    ctx.stroke();
+                }
+
+                ctx.restore();
+            }
+        });
+    }
+
+    getConnectedRoads(intersectionRow, intersectionCol) {
+        const connectedRoads = [];
+
+        // Check all possible edges from this intersection
+        const neighbors = [
+            { row: intersectionRow - 1, col: intersectionCol },     // North
+            { row: intersectionRow + 1, col: intersectionCol },     // South
+            { row: intersectionRow, col: intersectionCol - 1 },     // West
+            { row: intersectionRow, col: intersectionCol + 1 }      // East
+        ];
+
+        neighbors.forEach(neighbor => {
+            if (neighbor.row >= 0 && neighbor.row <= this.game.gridSize &&
+                neighbor.col >= 0 && neighbor.col <= this.game.gridSize) {
+
+                const edgeKey = this.getEdgeKey(intersectionRow, intersectionCol, neighbor.row, neighbor.col);
+                if (this.roads.has(edgeKey)) {
+                    connectedRoads.push(edgeKey);
+                }
+            }
+        });
+
+        return connectedRoads;
     }
     
     drawRoad(ctx, fromRow, fromCol, toRow, toCol, road) {
@@ -670,7 +761,8 @@ class MobilityLayer {
         
         // Calculate road width based on available space between shrunken parcels
         const availableSpace = this.game.tileWidth * (1 - this.parcelShrinkFactor);
-        let roadWidth = availableSpace * roadType.width;
+        // Ensure built roads are always wider than unimproved streets (85%) for proper coverage
+        let roadWidth = availableSpace * Math.max(roadType.width, 0.9);
         
         // Adjust for infrastructure
         if (road.hasSidewalks) roadWidth *= 1.1;
@@ -700,11 +792,11 @@ class MobilityLayer {
     calculateIsometricRoadShape(from, to, width) {
         // Calculate road shape that aligns with the isometric grid's inherent angles
         // Roads must "lay flat" following the grid's natural perspective
-        
+
         const dx = to.x - from.x;
         const dy = to.y - from.y;
         const length = Math.sqrt(dx * dx + dy * dy);
-        
+
         if (length === 0) return null;
         
         // Determine if this is a horizontal or vertical grid connection
@@ -728,10 +820,7 @@ class MobilityLayer {
         
         // Calculate the four corners using grid-aligned perpendiculars
         const halfWidth = width / 2;
-        
-        // Segments extend exactly to grid intersection points - no trimming
-        // This ensures roads meet precisely along gridlines to form continuous paths
-        
+
         return {
             // Parallelogram corners extending exactly to intersection gridlines
             p1: { x: from.x + perpX * halfWidth, y: from.y + perpY * halfWidth },
@@ -768,9 +857,9 @@ class MobilityLayer {
         // Use seeded random for consistent texture
         const rng = this.createSeededRandom(roadSeed);
         
-        // Draw main road surface as filled parallelogram with opacity
+        // Draw main road surface as filled parallelogram - fully opaque for clear visibility
         ctx.save();
-        ctx.globalAlpha = 0.85;
+        ctx.globalAlpha = 1.0; // Full opacity for built roads
         ctx.fillStyle = roadType.color;
         
         // Create path with hand-drawn edge roughness
@@ -1831,43 +1920,64 @@ class MobilityLayer {
             
             // Draw rounded button background
             ctx.save();
+
+            // Keep coordinates clean but don't force pixel alignment
+            const alignedX = x;
+            const alignedY = roadRowY;
+            const alignedWidth = buttonWidth;
+            const alignedHeight = buttonHeight;
+
             if (this.selectedRoadType === type) {
-                // Selected button - gradient background
-                const gradient = ctx.createLinearGradient(x, roadRowY, x, roadRowY + buttonHeight);
+                // Selected button - solid background with crisp gradient
+                const gradient = ctx.createLinearGradient(alignedX, alignedY, alignedX, alignedY + alignedHeight);
                 gradient.addColorStop(0, config.color + 'DD');
                 gradient.addColorStop(1, config.color + 'AA');
                 ctx.fillStyle = gradient;
-                this.drawRoundedRect(ctx, x, roadRowY, buttonWidth, buttonHeight, borderRadius);
+                this.drawRoundedRect(ctx, alignedX, alignedY, alignedWidth, alignedHeight, borderRadius);
                 ctx.fill();
-                
-                // Selected border (no glow)
+
+                // Sharp selected border
                 ctx.strokeStyle = '#ffffff';
                 ctx.lineWidth = 2;
-                this.drawRoundedRect(ctx, x, roadRowY, buttonWidth, buttonHeight, borderRadius);
+                this.drawRoundedRect(ctx, alignedX, alignedY, alignedWidth, alignedHeight, borderRadius);
                 ctx.stroke();
             } else {
-                // Unselected button - subtle styling
-                ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
-                this.drawRoundedRect(ctx, x, roadRowY, buttonWidth, buttonHeight, borderRadius);
+                // Unselected button - clean solid background
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
+                this.drawRoundedRect(ctx, alignedX, alignedY, alignedWidth, alignedHeight, borderRadius);
                 ctx.fill();
-                
-                ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
+
+                // Crisp subtle border
+                ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
                 ctx.lineWidth = 1;
-                this.drawRoundedRect(ctx, x, roadRowY, buttonWidth, buttonHeight, borderRadius);
+                this.drawRoundedRect(ctx, alignedX, alignedY, alignedWidth, alignedHeight, borderRadius);
                 ctx.stroke();
             }
             ctx.restore();
             
-            // Draw text with better typography
+            // Draw text with sharp, crisp typography
+            ctx.save();
+            ctx.imageSmoothingEnabled = false;
+
+            // Main label - pixel-aligned for sharpness
             ctx.fillStyle = this.selectedRoadType === type ? '#ffffff' : 'rgba(255, 255, 255, 0.9)';
-            ctx.font = '13px SF Mono, Monaco, Inconsolata, Roboto Mono, Source Code Pro, monospace';
+            ctx.font = 'bold 13px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, monospace';
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
-            ctx.fillText(config.label, x + buttonWidth/2, roadRowY + buttonHeight/2 - 6);
-            
-            ctx.font = '13px SF Mono, Monaco, Inconsolata, Roboto Mono, Source Code Pro, monospace';
-            ctx.fillStyle = this.selectedRoadType === type ? 'rgba(255, 255, 255, 0.9)' : 'rgba(255, 255, 255, 0.6)';
-            ctx.fillText(`$${config.cost}`, x + buttonWidth/2, roadRowY + buttonHeight/2 + 8);
+
+            const labelX = Math.floor(x + buttonWidth/2);
+            const labelY = Math.floor(roadRowY + buttonHeight/2 - 6);
+            ctx.fillText(config.label, labelX, labelY);
+
+            // Cost text - slightly smaller and dimmer
+            ctx.font = '12px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, monospace';
+            ctx.fillStyle = this.selectedRoadType === type ? 'rgba(255, 255, 255, 0.8)' : 'rgba(255, 255, 255, 0.5)';
+
+            const costX = Math.floor(x + buttonWidth/2);
+            const costY = Math.floor(roadRowY + buttonHeight/2 + 8);
+            ctx.fillText(`$${config.cost}`, costX, costY);
+
+            ctx.restore();
         });
         
         // Second row: Enhanced infrastructure options
@@ -2356,7 +2466,7 @@ class MobilityLayer {
         
         // Then check for edge hover (for road building)
         let closestEdge = null;
-        let closestDistance = this.game.tileWidth * 0.4; // Detection threshold
+        let closestDistance = Math.max(this.game.tileWidth * 0.6, 30); // Increased detection threshold with minimum
         
         // Check all possible edges between adjacent intersections
         this.intersections.forEach(intersection => {
@@ -2652,7 +2762,12 @@ class MobilityLayer {
                 const upgradeResult = this.handleRoadUpgradeOrReplacement(existingRoad, totalCost);
                 
                 if (upgradeResult.success) {
-                    this.game.playerCash -= upgradeResult.cost;
+                    // Use CashManager for transaction safety
+                    if (this.game.cashManager) {
+                        this.game.cashManager.spend(upgradeResult.cost, 'Road upgrade');
+                    } else {
+                        this.game.playerCash -= upgradeResult.cost;
+                    }
                     this.roads.set(this.hoveredEdge, {
                         type: this.selectedRoadType,
                         hasSidewalks: this.infrastructureOptions.sidewalks.active,
@@ -2665,8 +2780,14 @@ class MobilityLayer {
                 }
             } else {
                 // Build new road with selected options
-                if (this.game.playerCash >= totalCost) {
-                    this.game.playerCash -= totalCost;
+                const currentCash = this.game.cashManager ? this.game.cashManager.getBalance() : this.game.playerCash;
+                if (currentCash >= totalCost) {
+                    // Use CashManager for transaction safety
+                    if (this.game.cashManager) {
+                        this.game.cashManager.spend(totalCost, 'Road construction');
+                    } else {
+                        this.game.playerCash -= totalCost;
+                    }
                     this.roads.set(this.hoveredEdge, {
                         type: this.selectedRoadType,
                         hasSidewalks: this.infrastructureOptions.sidewalks.active,
@@ -2687,7 +2808,11 @@ class MobilityLayer {
                     
                     this.game.showNotification(`Built road segment ($${totalCost})`, 'success');
                 } else {
-                    this.game.showNotification(`Insufficient funds: need $${totalCost}, have $${this.game.playerCash}`, 'error');
+                    this.game.showNotification(`Insufficient funds: need $${totalCost}, have $${currentCash}`, 'error');
+                    // Add red blink visual feedback
+                    if (this.game.showInsufficientFundsFeedback) {
+                        this.game.showInsufficientFundsFeedback();
+                    }
                 }
             }
         }
@@ -2721,7 +2846,8 @@ class MobilityLayer {
                 if (canAddSidewalks) upgradeCost += this.infrastructureOptions.sidewalks.cost;
                 if (canAddBikeLanes) upgradeCost += this.infrastructureOptions.bikeLanes.cost;
                 
-                if (this.game.playerCash >= upgradeCost) {
+                const currentCash = this.game.cashManager ? this.game.cashManager.getBalance() : this.game.playerCash;
+                if (currentCash >= upgradeCost) {
                     const addedItems = [];
                     if (canAddSidewalks) addedItems.push('sidewalks');
                     if (canAddBikeLanes) addedItems.push('bike lanes');
@@ -2734,7 +2860,7 @@ class MobilityLayer {
                 } else {
                     return {
                         success: false,
-                        message: `Insufficient funds for upgrade: need $${upgradeCost}, have $${this.game.playerCash}`
+                        message: `Insufficient funds for upgrade: need $${upgradeCost}, have $${currentCash}`
                     };
                 }
             } else {
@@ -4473,6 +4599,10 @@ class MobilityLayer {
                     // User must click the button again or switch modes to cancel
                 } else {
                     this.game.showNotification(result.message, 'error');
+                    // Add red blink visual feedback for insufficient funds
+                    if (result.message.includes('Insufficient funds') && this.game.showInsufficientFundsFeedback) {
+                        this.game.showInsufficientFundsFeedback();
+                    }
                 }
                 return true;
             } else {
@@ -4541,7 +4671,7 @@ class MobilityLayer {
 
     // Get intersection at world coordinates
     getIntersectionAt(worldX, worldY) {
-        const tolerance = 15;
+        const tolerance = Math.max(this.game.tileWidth * 0.4, 20); // Smaller tolerance for precise intersection clicks
         
         for (const [key, intersection] of this.intersections) {
             const distance = Math.sqrt(
@@ -4560,7 +4690,7 @@ class MobilityLayer {
 
     // Get road segment at world coordinates
     getRoadSegmentAt(worldX, worldY) {
-        const tolerance = 20; // Slightly larger tolerance for road segments
+        const tolerance = Math.max(this.game.tileWidth * 0.6, 30); // Use same detection threshold as edge hover
         let closestSegment = null;
         let closestDistance = tolerance;
         
@@ -4609,7 +4739,7 @@ class MobilityLayer {
 
     // Get transit stop at world coordinates (for clicking)
     getTransitStopAt(worldX, worldY) {
-        const tolerance = 20; // Click tolerance for transit stops
+        const tolerance = Math.max(this.game.tileWidth * 0.5, 25); // Consistent tolerance for transit stops
         
         for (const [stopKey, stop] of this.transitStops) {
             const stopPosition = this.getTransitStopPosition(stop);
