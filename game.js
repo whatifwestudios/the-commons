@@ -19,7 +19,7 @@ class IsometricGrid {
         // Initialize Building System
         this.buildingSystem = new BuildingSystem(this);
         
-        // Initialize Economic Engine
+        // Initialize Economic Engine (needed for client-side wealth calculation)
         this.economicEngine = new EconomicEngine(this);
         this.performanceEngine = new EconomicPerformanceEngine(this);
 
@@ -31,15 +31,42 @@ class IsometricGrid {
         
         // Initialize Rendering System
         this.renderingSystem = new RenderingSystem(this);
-        
-        // Initialize Governance System
+
+        // Initialize Parcel Selection System
+        this.parcelSelector = new ParcelSelectorManager(this);
+
+        // Initialize Governance System - SINGLE SOURCE OF TRUTH
         this.governanceSystem = new GovernanceSystem(this);
-        
+
+        // Define legacy governance/budget proxies that delegate to GovernanceSystem
+        Object.defineProperty(this, 'cityTreasury', {
+            get: function() {
+                return this.governanceSystem ? this.governanceSystem.governance.treasuryBalance : 0;
+            },
+            set: function(value) {
+                console.warn('⚠️ Direct cityTreasury assignment blocked - use GovernanceSystem instead');
+                console.trace();
+            }
+        });
+
+        Object.defineProperty(this, 'totalBudget', {
+            get: function() {
+                return this.governanceSystem ? this.governanceSystem.governance.totalBudget : 0;
+            },
+            set: function(value) {
+                console.warn('⚠️ Direct totalBudget assignment blocked - use GovernanceSystem instead');
+                console.trace();
+            }
+        });
+
         // Initialize Auction System
         this.auctionSystem = new AuctionSystem(this);
 
         // Initialize crisp tooltip system
         this.crispTooltip = new CrispTooltip(this);
+
+        // Initialize unified tooltip manager
+        this.tooltipManager = new TooltipManager(this);
 
         // Initialize context menu system
         this.contextMenuSystem = new ContextMenuSystem(this);
@@ -179,8 +206,23 @@ class IsometricGrid {
 
         // Game time and player stats
         this.gameStartTime = Date.now();
-        this.playerCash = 5000;
+
+        // Initialize cash management system - SINGLE SOURCE OF TRUTH
+        this.cashManager = new CashManager(this);
+
         // Legacy cityTreasury removed - now using governanceSystem.totalBudget
+        console.log('💰 CashManager initialized');
+
+        // Define playerCash as getter/setter that delegates to CashManager
+        Object.defineProperty(this, 'playerCash', {
+            get: function() {
+                return this.cashManager ? this.cashManager.getBalance() : 0;
+            },
+            set: function(value) {
+                console.warn('⚠️ Direct playerCash assignment blocked - use CashManager instead');
+                console.trace(); // Show where this is being called from
+            }
+        });
         this.gameDate = { month: 'SEPT', day: 2 }; // September 2nd start date
         
         // Start game time updates (1 year = 1 hour = 3600 seconds)
@@ -470,16 +512,16 @@ class IsometricGrid {
         
     }
 
-    startGame() {
+    async startGame() {
         // Reset all game state for clean start
         this.resetGameState();
         
         // Initialize building system
         this.buildingSystem.initialize();
         
-        // Reset and initialize economic engine for new game
-        this.economicEngine.reset();
-        this.economicEngine.initialize();
+        // DISABLED: Legacy client-side economic engine - using server-authoritative system
+        // this.economicEngine.reset();
+        // this.economicEngine.initialize();
         
         // Initialize rendering system
         this.renderingSystem.initialize();
@@ -502,13 +544,18 @@ class IsometricGrid {
         this.startLiveTooltipUpdates();
         
         // Load existing player settings if available
-        this.loadPlayerSettings();
+        await this.loadPlayerSettings();
         
         // Update player button with current settings
         this.updatePlayerButton();
-        
+
         // Initialize panel states - ensure players panel is collapsed by default
         this.initializePanelStates();
+
+        // Initialize UI displays with current values
+        this.updatePlayerStats();
+        this.updateActionDisplay();
+        this.updateMonthCountdown();
     }
     
     initializePanelStates() {
@@ -578,11 +625,41 @@ class IsometricGrid {
         }
     }
     
-    loadPlayerSettings() {
+    async loadPlayerSettings() {
         try {
             const savedSettings = localStorage.getItem('theCommons_playerSettings');
             if (savedSettings && !this.playerSettings) {
                 this.playerSettings = JSON.parse(savedSettings);
+            }
+
+            // Fetch player color from server to override local settings
+            try {
+                const response = await fetch('/api/players');
+                if (response.ok) {
+                    const data = await response.json();
+                    const serverPlayer = data.players?.player || data.players?.[Object.keys(data.players)[0]];
+                    if (serverPlayer && serverPlayer.color) {
+                        // Update player settings with server color
+                        if (!this.playerSettings) {
+                            this.playerSettings = { name: 'Player', emoji: '🏛️' };
+                        }
+                        this.playerSettings.color = serverPlayer.color;
+                        // Set CSS custom property for welcome underline
+                        document.documentElement.style.setProperty('--player-color', serverPlayer.color);
+                        // Update ParcelSelectorManager with new color
+                        if (this.parcelSelector) {
+                            this.parcelSelector.updatePlayerColor();
+                        }
+                        // Also save to localStorage for consistency
+                        localStorage.setItem('theCommons_playerSettings', JSON.stringify(this.playerSettings));
+                    }
+                }
+            } catch (serverError) {
+                console.warn('Could not fetch player color from server:', serverError);
+            }
+
+            if (this.playerSettings) {
+                this.updatePlayerNameInUI();
             }
         } catch (error) {
             console.error('Failed to load player settings:', error);
@@ -593,8 +670,29 @@ class IsometricGrid {
         const playerBtn = document.getElementById('player-btn');
         if (playerBtn) {
             const playerName = this.playerSettings?.name || 'PLAYER';
-            playerBtn.innerHTML = `${playerName.toUpperCase()}<span class="indicator">▼</span>`;
+            playerBtn.innerHTML = `${playerName.toUpperCase()}<span class="indicator">⌄</span>`;
         }
+    }
+
+    updatePlayerNameInUI() {
+        // Update player button
+        this.updatePlayerButton();
+
+        // Update cashflow modal player tab
+        const playerTab = document.querySelector('[data-player="current"]');
+        if (playerTab) {
+            const playerName = this.playerSettings?.name || 'Player';
+            playerTab.textContent = playerName;
+        }
+
+        // Update any other UI elements that should show player name
+        const playerElements = document.querySelectorAll('.player-name-display');
+        const playerName = this.playerSettings?.name || 'Player';
+        playerElements.forEach(element => {
+            element.textContent = playerName;
+        });
+
+        console.log('🎮 Updated player name in UI elements:', playerName);
     }
     
     
@@ -1003,13 +1101,19 @@ class IsometricGrid {
     }
 
     processDailyCashflow() {
-        // Delegate to economic engine for proper modularity
-        return this.economicEngine.processDailyCashflow();
+        // Use economic engine's cashflow calculation
+        if (this.economicEngine) {
+            return this.economicEngine.processDailyCashflow();
+        }
+        console.warn('⚠️ No economic engine available for cashflow calculation');
+        return { totalRevenue: 0, totalMaintenance: 0, netCashflow: 0 };
     }
     
     // Helper method: Update player parcel tracking and mark aging buildings as dirty
     calculateRoadMaintenance() {
-        return this.economicEngine.calculateRoadMaintenance();
+        // TODO: Move to server-side calculation
+        console.log('⚠️ calculateRoadMaintenance() - placeholder for server migration');
+        return 0;
     }
     
     updatePlayerParcelsAndAging() {
@@ -1035,8 +1139,9 @@ class IsometricGrid {
     
     // Helper method: Update economic cache for dirty buildings only
     updateEconomicCache() {
-        // Delegate to economic engine for proper modularity
-        return this.economicEngine.updateEconomicCache();
+        // DISABLED: Legacy client-side economic cache - using server-authoritative system
+        console.log('⚠️ Legacy updateEconomicCache disabled - using server-authoritative system');
+        return Promise.resolve();
     }
     
     // Helper method: Calculate economics for a single building/parcel
@@ -1161,8 +1266,9 @@ class IsometricGrid {
     
     // Helper method: Build cashflow breakdown from cached stats for UI
     buildCashflowBreakdown() {
-        // Delegate to economic engine for proper modularity
-        return this.economicEngine.buildCashflowBreakdown();
+        // DISABLED: Legacy client-side cashflow breakdown - using server-authoritative system
+        console.log('⚠️ Legacy buildCashflowBreakdown disabled - using server-authoritative system');
+        return { breakdown: [], totalRevenue: 0, totalMaintenance: 0, totalLVT: 0, netCashflow: 0 };
     }
     
     // Mark building for economic recalculation
@@ -1219,17 +1325,13 @@ class IsometricGrid {
     calculateCurrentCashflow() {
         console.log('🔍 calculateCurrentCashflow called:', {
             cache: this.cache?.cashflowBreakdown,
-            economicEngineCache: this.economicEngine.cache?.cashflowBreakdown,
             dailyCashflowTotals: this.dailyCashflowTotals
         });
 
         // Trigger async server-side calculation in background
         this.updateCashflowAsync();
 
-        // Ensure breakdown is populated for DCF modal
-        if (this.economicEngine) {
-            this.economicEngine.buildCashflowBreakdown();
-        }
+        // DISABLED: Legacy economic engine cashflow breakdown - using server-authoritative system
 
         // Return cached values immediately for UI responsiveness
         if (this.cache?.cashflowBreakdown) {
@@ -1245,10 +1347,10 @@ class IsometricGrid {
             return cashflow.netCashflow;
         }
 
-        // Fallback to economic engine cache or default
-        const engineCashflow = this.economicEngine.cache?.cashflowBreakdown;
-        if (engineCashflow) {
-            this.cashflowBreakdown = engineCashflow.breakdown;
+        // DISABLED: Legacy economic engine cache fallback - using server-authoritative system
+        // Fallback to default values
+        if (false) {
+            // Disabled legacy code path
             this.currentCashflowPreview = {
                 revenue: engineCashflow.totalRevenue,
                 maintenance: engineCashflow.totalMaintenance,
@@ -1298,7 +1400,10 @@ class IsometricGrid {
         const cashflowElement = document.getElementById('player-cashflow');
 
         if (cashflowElement) {
-            const netDaily = Math.round(totals.netCashflow);
+            // Ensure netCashflow is a valid number
+            const rawNetDaily = totals.netCashflow;
+            const netDaily = isNaN(rawNetDaily) || rawNetDaily === null || rawNetDaily === undefined ? 0 : Math.round(rawNetDaily);
+
             cashflowElement.textContent = netDaily >= 0 ? `+$${netDaily.toLocaleString()}` : `-$${Math.abs(netDaily).toLocaleString()}`;
 
             // Add color coding
@@ -1442,8 +1547,9 @@ class IsometricGrid {
 
 
     calculatePopulation() {
-        // Delegate to economic engine for proper modularity (consolidating duplicate method)
-        return this.economicEngine.calculatePopulation();
+        // DISABLED: Legacy client-side population calculation - using server-authoritative system
+        console.log('⚠️ Legacy calculatePopulation disabled - using server-authoritative system');
+        return 0;
     }
     
     // Solo game - no state drift checking needed
@@ -1462,8 +1568,12 @@ class IsometricGrid {
     }
 
     calculateTotalWealth() {
-        // Delegate to economic engine
-        return this.economicEngine.calculateTotalWealth();
+        // Use economic engine's wealth calculation
+        if (this.economicEngine) {
+            return this.economicEngine.calculateTotalWealth();
+        }
+        console.warn('⚠️ No economic engine available for wealth calculation');
+        return 0;
     }
 
     initDOMCache() {
@@ -1613,7 +1723,43 @@ class IsometricGrid {
         // Show modal via UI Manager
         this.uiManager.showModal('save-game-modal');
     }
-    
+
+    async resetGame() {
+        console.log('🔄 Resetting game...');
+
+        try {
+            // Clear ALL game-related localStorage data to prevent restored state
+            const keys = Object.keys(localStorage);
+            keys.forEach(key => {
+                if (key.startsWith('theCommons_') && key !== 'theCommons_playerSettings') {
+                    localStorage.removeItem(key);
+                }
+            });
+
+            // Set a flag to force cash reset on next load
+            localStorage.setItem('theCommons_forceReset', 'true');
+
+            // Reset player balance on server first
+            if (this.economicAPI) {
+                await this.economicAPI.resetPlayerBalance();
+            }
+
+            // Reload the page to completely reset client state
+            window.location.reload();
+        } catch (error) {
+            console.error('❌ Reset failed:', error);
+            // Fallback: clear localStorage and reload anyway
+            const keys = Object.keys(localStorage);
+            keys.forEach(key => {
+                if (key.startsWith('theCommons_') && key !== 'theCommons_playerSettings') {
+                    localStorage.removeItem(key);
+                }
+            });
+            localStorage.setItem('theCommons_forceReset', 'true');
+            window.location.reload();
+        }
+    }
+
     // Generate comprehensive player statistics
     generatePlayerStats() {
         return this.uiManager.generatePlayerStats(this);
@@ -1894,20 +2040,40 @@ class IsometricGrid {
     updatePlayerStats() {
         const population = this.calculatePopulation();
         const totalWealth = this.calculateTotalWealth();
-        
+
+        // Cash is now guaranteed valid by CashManager
+        // Force immediate cash sync to fix display timing issues
+        let currentCash = 0;
+        if (this.cashManager) {
+            currentCash = this.cashManager.getBalance();
+            // Ensure UI gets the correct value immediately
+            if (currentCash === 6000 && this.domCache.playerCash && this.domCache.playerCash.textContent !== '$6,000') {
+                console.log('💰 Forcing immediate cash display sync from', this.domCache.playerCash.textContent, 'to $6,000');
+            }
+        }
+
+        console.log('💰 updatePlayerStats cash check:', {
+            currentCash,
+            hasCashManager: !!this.cashManager,
+            cashManagerBalance: this.cashManager ? this.cashManager.getBalance() : 'N/A',
+            domCashDisplay: this.domCache.playerCash ? this.domCache.playerCash.textContent : 'N/A'
+        });
+        const safeWealth = isNaN(totalWealth) || totalWealth === null || totalWealth === undefined ? 0 : totalWealth;
+
         // Round cash and wealth to nearest dollar for display
-        this.domCache.playerCash.textContent = `$${Math.round(this.playerCash).toLocaleString()}`;
-        this.domCache.playerWealth.textContent = `$${Math.round(totalWealth).toLocaleString()}`;
-        
+        this.domCache.playerCash.textContent = `$${Math.round(currentCash).toLocaleString()}`;
+        this.domCache.playerWealth.textContent = `$${Math.round(safeWealth).toLocaleString()}`;
+
         // Update cashflow with proper formatting and color coding
-        
+
         if (this.domCache.playerCashflow && this.dailyCashflowTotals) {
-            const netCashflow = this.dailyCashflowTotals.netCashflow;
+            const rawNetCashflow = this.dailyCashflowTotals.netCashflow;
+            const netCashflow = isNaN(rawNetCashflow) || rawNetCashflow === null || rawNetCashflow === undefined ? 0 : rawNetCashflow;
             const roundedCashflow = Math.round(netCashflow);
-            const formattedCashflow = roundedCashflow >= 0 ? 
-                `+$${roundedCashflow.toLocaleString()}` : 
+            const formattedCashflow = roundedCashflow >= 0 ?
+                `+$${roundedCashflow.toLocaleString()}` :
                 `-$${Math.abs(roundedCashflow).toLocaleString()}`;
-            
+
             this.domCache.playerCashflow.textContent = formattedCashflow;
             
             // Color coding: green for positive, red for negative, gray for zero
@@ -1984,7 +2150,67 @@ class IsometricGrid {
         });
         
     }
-    
+
+    async completeGameReset() {
+        console.log('🔄 Performing complete game reset - clearing all state');
+
+        try {
+            // Step 1: Reset server state (cash balance and any server-side data)
+            const resetResponse = await fetch('/api/reset', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            });
+
+            if (!resetResponse.ok) {
+                console.error('Failed to reset server state');
+            } else {
+                console.log('✅ Server state reset complete');
+            }
+
+            // Step 2: Clear all localStorage
+            localStorage.clear();
+            console.log('✅ localStorage cleared');
+
+            // Step 3: Reset all client-side game state
+            // Grid initialization now handled by server state
+            this.buildings = {};
+            this.buildingEfficiencies.clear();
+            this.currentDay = 1;
+            this.currentMonth = 1;
+            this.currentYear = 2025;
+            this.isGameActive = false;
+
+            // Step 4: Reset cash manager to $6,000
+            if (this.cashManager) {
+                this.cashManager.balance = 6000;
+                this.cashManager.notifyBalanceChange();
+                console.log('✅ Cash reset to $6,000');
+            }
+
+            // Step 5: Reset governance system
+            if (this.governanceSystem) {
+                this.governanceSystem.reset();
+                console.log('✅ Governance system reset');
+            }
+
+            // Step 6: Clear and reinitialize all UI displays
+            this.initializePanelStates();
+            this.updatePlayerStats();
+            this.updateActionDisplay();
+            this.updateMonthCountdown();
+            this.updateVitalityDisplay();
+            this.updateDemographicsDisplay();
+
+            // Step 7: Redraw empty grid
+            this.renderingSystem.render();
+
+            console.log('🎉 Complete game reset finished - fresh start ready!');
+
+        } catch (error) {
+            console.error('❌ Game reset failed:', error);
+        }
+    }
+
     getParcelCoordinate(row, col) {
         const letter = String.fromCharCode(65 + col); // A-N (0-13)
         const number = row + 1; // 1-14 (0-13)
@@ -3289,7 +3515,8 @@ class IsometricGrid {
         for (const regionKey of this.dirtyRegions) {
             const [row, col] = regionKey.split('-').map(Number);
             if (row >= 0 && row < this.gridSize && col >= 0 && col < this.gridSize) {
-                this.grid[row][col].landValue.calculatedValue = this.economicEngine.calculateLandValueLocal(row, col);
+                // DISABLED: Legacy client-side land value calculation - using server-authoritative system
+                this.grid[row][col].landValue.calculatedValue = 0;
             }
         }
 
@@ -3310,7 +3537,9 @@ class IsometricGrid {
     }
 
     calculateAccessibilityScoresLocal(row, col) {
-        return this.economicEngine.calculateAccessibilityScoresLocal(row, col);
+        // DISABLED: Legacy client-side accessibility calculation - using server-authoritative system
+        console.log('⚠️ Legacy calculateAccessibilityScoresLocal disabled - using server-authoritative system');
+        return { accessibility: 0, transport: 0, commerce: 0, entertainment: 0 };
     }
     
     getNearbyPopulation(row, col, maxDistance) {
@@ -3473,7 +3702,9 @@ class IsometricGrid {
 
     // Delegation method for supply/demand calculation
     calculateSupplyDemandBalance() {
-        return this.economicEngine.updateSupplyDemandBalance();
+        // DISABLED: Legacy client-side supply/demand calculation - using server-authoritative system
+        console.log('⚠️ Legacy calculateSupplyDemandBalance disabled - using server-authoritative system');
+        return { energy: { supply: 0, demand: 0 }, food: { supply: 0, demand: 0 }, housing: { supply: 0, demand: 0 }, jobs: { supply: 0, demand: 0 } };
     }
     
     buildTransportNetwork() {
@@ -3704,8 +3935,80 @@ class IsometricGrid {
                 this.vitalitySupply = result.vitality.supply || {};
                 this.vitalityDemand = result.vitality.demand || {};
 
+                // Clear legacy building efficiency data to ensure fresh server data
+                this.buildingEfficiencies.clear();
+                console.log('🔍 [DEBUG] Cleared legacy buildingEfficiencies data');
+
+                // Process building performance data from server
+                if (result.affectedBuildings && Array.isArray(result.affectedBuildings)) {
+                    console.log('🔍 [DEBUG] Processing affectedBuildings from server:', result.affectedBuildings.length, 'buildings');
+
+                    result.affectedBuildings.forEach(building => {
+                        const key = `${building.row},${building.col}`;
+                        console.log(`🔍 [DEBUG] Server building performance for ${key}:`, building);
+
+                        // Convert server building performance to client buildingEfficiencies format
+                        const efficiencyData = {
+                            row: building.row,
+                            col: building.col,
+                            building: building.buildingId,
+                            category: building.category || 'unknown',
+                            overallEfficiency: building.performance || 1.0, // Add overall performance
+                            needs: {}
+                        };
+
+                        // Convert needs to format expected by UI
+                        if (building.needs && Array.isArray(building.needs)) {
+                            building.needs.forEach(need => {
+                                efficiencyData.needs[need.type] = {
+                                    satisfaction: need.satisfaction,
+                                    demand: need.required,
+                                    fulfilled: need.required * need.satisfaction,
+                                    accessibleSources: need.satisfaction > 0 ? 1 : 0,
+                                    connectivityIssue: need.satisfaction === 0,
+                                    supplyShortage: need.satisfaction < 1.0
+                                };
+                            });
+                        }
+
+                        this.buildingEfficiencies.set(key, efficiencyData);
+                        console.log(`🔍 [DEBUG] Updated buildingEfficiencies for ${key}:`, efficiencyData);
+                    });
+                } else {
+                    console.log('🔍 [DEBUG] No affectedBuildings data from server');
+                }
+
+                // Ensure all buildings have efficiency data - add defaults for buildings not in server response
+                for (let row = 0; row < this.gridSize; row++) {
+                    for (let col = 0; col < this.gridSize; col++) {
+                        const key = `${row},${col}`;
+                        const parcel = this.grid[row][col];
+
+                        if (parcel && parcel.building && !this.buildingEfficiencies.has(key)) {
+                            // Add default high-efficiency data for buildings not reported by server
+                            const building = this.buildingManager.getBuildingById(parcel.building);
+                            if (building) {
+                                const defaultEfficiencyData = {
+                                    row, col,
+                                    building: building.id,
+                                    category: building.category || 'unknown',
+                                    overallEfficiency: 1.0, // Default to full efficiency
+                                    needs: {
+                                        jobs: { satisfaction: 1.0, demand: 0, fulfilled: 0, connectivityIssue: false, supplyShortage: false },
+                                        education: { satisfaction: 1.0, demand: 0, fulfilled: 0, connectivityIssue: false, supplyShortage: false },
+                                        food: { satisfaction: 1.0, demand: 0, fulfilled: 0, connectivityIssue: false, supplyShortage: false },
+                                        housing: { satisfaction: 1.0, demand: 0, fulfilled: 0, connectivityIssue: false, supplyShortage: false }
+                                    }
+                                };
+                                this.buildingEfficiencies.set(key, defaultEfficiencyData);
+                                console.log(`🔍 [DEBUG] Added default efficiency data for ${key} (${building.name})`);
+                            }
+                        }
+                    }
+                }
+
                 // Update UI with server data
-                this.updateVitalityUI();
+                await this.updateVitalityUI();
                 return result.vitality;
             } else {
                 console.warn('Server vitality calculation failed or returned invalid data');
@@ -3761,7 +4064,8 @@ class IsometricGrid {
         };
         
         // ENERGY EFFECTS - smooth curves instead of cliffs
-        this.economicEffects.energyMultiplier = this.economicEngine.calculateSmoothMultiplier(energyRatio, 0.2); // Energy is inelastic
+        // DISABLED: Legacy client-side multiplier calculation - using server-authoritative system
+        this.economicEffects.energyMultiplier = 1.0; // Default neutral multiplier
         
         // Business efficiency affected by severe energy shortages only
         if (energyRatio < 0.3) {
@@ -3770,7 +4074,8 @@ class IsometricGrid {
         }
         
         // FOOD EFFECTS - smooth curves
-        this.economicEffects.foodMultiplier = this.economicEngine.calculateSmoothMultiplier(foodRatio, 0.4); // Food is semi-elastic
+        // DISABLED: Legacy client-side multiplier calculation - using server-authoritative system
+        this.economicEffects.foodMultiplier = 1.0; // Default neutral multiplier
         
         // Population effects only for severe food shortages
         if (foodRatio < 0.4) {
@@ -3779,7 +4084,8 @@ class IsometricGrid {
         }
         
         // HOUSING EFFECTS - smooth curves
-        this.economicEffects.housingMultiplier = this.economicEngine.calculateSmoothMultiplier(housingRatio, 0.6); // Housing is elastic
+        // DISABLED: Legacy client-side multiplier calculation - using server-authoritative system
+        this.economicEffects.housingMultiplier = 1.0; // Default neutral multiplier
         
         // Business and population effects for severe housing shortages only
         if (housingRatio < 0.5) {
@@ -3788,7 +4094,8 @@ class IsometricGrid {
         }
         
         // JOBS EFFECTS - smooth curves
-        this.economicEffects.jobsMultiplier = this.economicEngine.calculateSmoothMultiplier(jobsRatio, 0.8); // Jobs are elastic
+        // DISABLED: Legacy client-side multiplier calculation - using server-authoritative system
+        this.economicEffects.jobsMultiplier = 1.0; // Default neutral multiplier
         
         // Population and business effects for severe job shortages only
         if (jobsRatio < 0.4) {
@@ -4051,17 +4358,49 @@ class IsometricGrid {
     
     
     
-    updateVitalityDisplay() {
+    async updateVitalityDisplay() {
         // This method is now deprecated - all vitality updates go through calculateCityVitality()
         // Just update the UI with current data
-        this.updateVitalityUI();
+        await this.updateVitalityUI();
     }
 
-    updateVitalityUI() {
-        // Ensure we have initialized vitality data (should be set by initializeEconomicDefaults)
-        if (!this.vitalitySupply || !this.vitalityDemand) {
-            console.warn('Vitality data missing - reinitializing defaults');
-            this.initializeEconomicDefaults();
+    async updateVitalityUI() {
+        // First sync game state with server, then fetch supply/demand data
+        try {
+            // Sync complete game state with server first
+            const gameState = this.economicAPI.prepareGameState(this);
+            await this.economicAPI.calculateCityEconomics(gameState);
+
+            // Now fetch fresh supply/demand data from server
+            const supplyDemandData = await this.economicAPI.getSupplyDemand();
+            if (supplyDemandData && typeof supplyDemandData === 'object') {
+                // Update vitality properties with server data
+                this.vitalitySupply = {
+                    JOBS: supplyDemandData.jobs?.supply || 0,
+                    ENERGY: supplyDemandData.energy?.supply || 0,
+                    EDUCATION: 0, // TODO: Add to server calculation
+                    FOOD: supplyDemandData.food?.supply || 0,
+                    HOUSING: supplyDemandData.housing?.supply || 0,
+                    HEALTHCARE: 0 // TODO: Add to server calculation
+                };
+
+                this.vitalityDemand = {
+                    JOBS: supplyDemandData.jobs?.demand || 0,
+                    ENERGY: supplyDemandData.energy?.demand || 0,
+                    EDUCATION: 0, // TODO: Add to server calculation
+                    FOOD: supplyDemandData.food?.demand || 0,
+                    HOUSING: supplyDemandData.housing?.demand || 0,
+                    HEALTHCARE: 0 // TODO: Add to server calculation
+                };
+
+                console.log('📊 Updated vitality from server:', { supply: this.vitalitySupply, demand: this.vitalityDemand });
+            }
+        } catch (error) {
+            console.warn('Failed to fetch server vitality data, using cached values:', error);
+            // Fallback to existing values or defaults
+            if (!this.vitalitySupply || !this.vitalityDemand) {
+                this.initializeEconomicDefaults();
+            }
         }
 
         // JEEFHH bars (Jobs, Energy, Education, Food, Housing, Healthcare)
@@ -4208,49 +4547,142 @@ class IsometricGrid {
     }
     
     updateNetScoreBar(progressBar, score, domain) {
-        // Clear ALL existing positioning and styling
+        // Clear and reset the progress bar completely
         progressBar.style.cssText = '';
-        
+        progressBar.innerHTML = '';
+
+        // Set up container with center-balanced design for CARENS (purple theme)
+        progressBar.style.cssText = `
+            position: relative !important;
+            width: 100% !important;
+            height: 8px !important;
+            background: #2a2a2a !important;
+            border-radius: 4px !important;
+            overflow: hidden !important;
+        `;
+
         // Convert score (-100 to +100) to bar display
         const absScore = Math.abs(score);
-        const barPercent = Math.min(absScore, 100); // 0-100% of half container width
-        
-        if (Math.abs(score) < 0.5) {
-            // Nearly neutral - show minimal indicator at center
-            progressBar.style.cssText = `
+        const isBalanced = absScore < 2; // Nearly balanced threshold
+
+        if (isBalanced) {
+            // Perfect balance: Purple dot at center with ripples
+            const centerDot = document.createElement('div');
+            centerDot.style.cssText = `
                 position: absolute !important;
                 left: 50% !important;
-                top: 0 !important;
-                width: 2px !important;
-                height: 100% !important;
-                transform: translateX(-1px) !important;
-                background: #666 !important;
-                border-radius: 4px !important;
+                top: 50% !important;
+                width: 8px !important;
+                height: 8px !important;
+                background: #8b5cf6 !important;
+                border-radius: 50% !important;
+                transform: translate(-50%, -50%) !important;
+                box-shadow: 0 0 4px rgba(139, 92, 246, 0.6) !important;
+                z-index: 10 !important;
             `;
-        } else if (score < 0) {
-            // Negative: Red bar extending LEFT from center
-            const width = (barPercent / 100) * 50; // Convert to percentage of half container
-            progressBar.style.cssText = `
-                position: absolute !important;
-                right: 50% !important;
-                top: 0 !important;
-                width: ${width}% !important;
-                height: 100% !important;
-                background: linear-gradient(to left, #ff6b6b 0%, #c92a2a 100%) !important;
-                border-radius: 4px !important;
-            `;
+
+            // Add ripple effects if there's any activity (score is not exactly 0)
+            if (absScore > 0.01) {
+                // Calculate ripple intensity based on balance optimality
+                const balanceOptimality = Math.max(0, 1 - absScore / 2);
+                const rippleIntensity = Math.max(0.3, balanceOptimality);
+
+                // Create purple ripple layers for CARENS
+                for (let i = 1; i <= 3; i++) {
+                    const ripple = document.createElement('div');
+                    const delay = i * 0.6; // Stagger the ripples
+                    const duration = 2.5 + (i * 0.5); // Vary duration for wave effect
+
+                    ripple.style.cssText = `
+                        position: absolute !important;
+                        left: 50% !important;
+                        top: 50% !important;
+                        width: 8px !important;
+                        height: 8px !important;
+                        border: 2px solid rgba(139, 92, 246, ${rippleIntensity * 0.4}) !important;
+                        border-radius: 50% !important;
+                        transform: translate(-50%, -50%) !important;
+                        pointer-events: none !important;
+                        animation: carens-ripple-${i} ${duration}s infinite ease-out !important;
+                        animation-delay: ${delay}s !important;
+                    `;
+                    progressBar.appendChild(ripple);
+                }
+
+                // Add the CSS keyframes for CARENS if not already added
+                if (!document.getElementById('carens-ripple-styles')) {
+                    const style = document.createElement('style');
+                    style.id = 'carens-ripple-styles';
+                    style.textContent = `
+                        @keyframes carens-ripple-1 {
+                            0% {
+                                transform: translate(-50%, -50%) scale(1);
+                                opacity: 0.5;
+                            }
+                            100% {
+                                transform: translate(-50%, -50%) scale(3);
+                                opacity: 0;
+                            }
+                        }
+                        @keyframes carens-ripple-2 {
+                            0% {
+                                transform: translate(-50%, -50%) scale(1);
+                                opacity: 0.4;
+                            }
+                            100% {
+                                transform: translate(-50%, -50%) scale(2.5);
+                                opacity: 0;
+                            }
+                        }
+                        @keyframes carens-ripple-3 {
+                            0% {
+                                transform: translate(-50%, -50%) scale(1);
+                                opacity: 0.45;
+                            }
+                            100% {
+                                transform: translate(-50%, -50%) scale(2.2);
+                                opacity: 0;
+                            }
+                        }
+                    `;
+                    document.head.appendChild(style);
+                }
+            }
+
+            progressBar.appendChild(centerDot);
         } else {
-            // Positive: Green bar extending RIGHT from center
-            const width = (barPercent / 100) * 50; // Convert to percentage of half container
-            progressBar.style.cssText = `
-                position: absolute !important;
-                left: 50% !important;
-                top: 0 !important;
-                width: ${width}% !important;
-                height: 100% !important;
-                background: linear-gradient(to right, #69db7c 0%, #2b8a3e 100%) !important;
-                border-radius: 4px !important;
-            `;
+            // Imbalanced: Red (negative) or Green (positive) bar extending from center
+            const barWidth = Math.min(50, (absScore / 100) * 50); // Max 50% of container width
+
+            const imbalanceBar = document.createElement('div');
+
+            if (score < 0) {
+                // Negative impact: Red bar extending LEFT from center
+                imbalanceBar.style.cssText = `
+                    position: absolute !important;
+                    right: 50% !important;
+                    top: 50% !important;
+                    width: ${barWidth}% !important;
+                    height: 6px !important;
+                    background: linear-gradient(to left, #ff6b6b 0%, #c92a2a 100%) !important;
+                    border-radius: 3px !important;
+                    transform: translateY(-50%) !important;
+                `;
+            } else {
+                // Positive impact: Green bar extending RIGHT from center
+                imbalanceBar.style.cssText = `
+                    position: absolute !important;
+                    left: 50% !important;
+                    top: 50% !important;
+                    width: ${barWidth}% !important;
+                    height: 6px !important;
+                    background: linear-gradient(to right, #69db7c 0%, #2b8a3e 100%) !important;
+                    border-radius: 3px !important;
+                    transform: translateY(-50%) !important;
+                `;
+            }
+
+            progressBar.appendChild(imbalanceBar);
         }
         
         // Set up comprehensive tooltip data
@@ -4278,9 +4710,9 @@ class IsometricGrid {
         progressBar.style.cssText = `
             position: relative !important;
             width: 100% !important;
-            height: 16px !important;
+            height: 8px !important;
             background: #2a2a2a !important;
-            border-radius: 8px !important;
+            border-radius: 4px !important;
             overflow: hidden !important;
         `;
 
@@ -4289,7 +4721,7 @@ class IsometricGrid {
         const isBalanced = absRatio < 2; // Nearly balanced threshold
 
         if (isBalanced) {
-            // Perfect balance: Blue dot at center
+            // Perfect balance: Blue dot at center with ripples
             const centerDot = document.createElement('div');
             centerDot.style.cssText = `
                 position: absolute !important;
@@ -4301,7 +4733,77 @@ class IsometricGrid {
                 border-radius: 50% !important;
                 transform: translate(-50%, -50%) !important;
                 box-shadow: 0 0 4px rgba(74, 158, 255, 0.6) !important;
+                z-index: 10 !important;
             `;
+
+            // Add ripple effects if both supply and demand exist
+            if (supply > 0 && demand > 0) {
+                // Calculate ripple intensity based on balance optimality (closer to 1.0 = more intense)
+                const balanceOptimality = Math.max(0, 1 - Math.abs(ratio - 1) / 2);
+                const rippleIntensity = Math.max(0.3, balanceOptimality);
+
+                // Create multiple ripple layers for depth
+                for (let i = 1; i <= 3; i++) {
+                    const ripple = document.createElement('div');
+                    const delay = i * 0.6; // Stagger the ripples
+                    const duration = 2 + (i * 0.5); // Vary duration for wave effect
+
+                    ripple.style.cssText = `
+                        position: absolute !important;
+                        left: 50% !important;
+                        top: 50% !important;
+                        width: 8px !important;
+                        height: 8px !important;
+                        border: 2px solid rgba(74, 158, 255, ${rippleIntensity * 0.4}) !important;
+                        border-radius: 50% !important;
+                        transform: translate(-50%, -50%) !important;
+                        pointer-events: none !important;
+                        animation: jefhh-ripple-${i} ${duration}s infinite ease-out !important;
+                        animation-delay: ${delay}s !important;
+                    `;
+                    progressBar.appendChild(ripple);
+                }
+
+                // Add the CSS keyframes if not already added
+                if (!document.getElementById('jefhh-ripple-styles')) {
+                    const style = document.createElement('style');
+                    style.id = 'jefhh-ripple-styles';
+                    style.textContent = `
+                        @keyframes jefhh-ripple-1 {
+                            0% {
+                                transform: translate(-50%, -50%) scale(1);
+                                opacity: 0.6;
+                            }
+                            100% {
+                                transform: translate(-50%, -50%) scale(3);
+                                opacity: 0;
+                            }
+                        }
+                        @keyframes jefhh-ripple-2 {
+                            0% {
+                                transform: translate(-50%, -50%) scale(1);
+                                opacity: 0.4;
+                            }
+                            100% {
+                                transform: translate(-50%, -50%) scale(2.5);
+                                opacity: 0;
+                            }
+                        }
+                        @keyframes jefhh-ripple-3 {
+                            0% {
+                                transform: translate(-50%, -50%) scale(1);
+                                opacity: 0.5;
+                            }
+                            100% {
+                                transform: translate(-50%, -50%) scale(2);
+                                opacity: 0;
+                            }
+                        }
+                    `;
+                    document.head.appendChild(style);
+                }
+            }
+
             progressBar.appendChild(centerDot);
         } else {
             // Imbalanced: Red bar extending from center
@@ -4459,6 +4961,12 @@ class IsometricGrid {
     
     setupCanvas() {
         const container = document.getElementById('main-area');
+        if (!container) {
+            console.warn('Main-area container not found, using default canvas size');
+            this.canvas.width = 800;
+            this.canvas.height = 600;
+            return;
+        }
         const rect = container.getBoundingClientRect();
         
         this.canvas.width = rect.width - 40;
@@ -4579,70 +5087,7 @@ class IsometricGrid {
         return null; // Not on an edge
     }
     
-    drawTile(col, row, color, elevation = 0) {
-        
-        const iso = this.toIsometric(col, row);
-        const elevationHeight = elevation * 8;
-        const adjustedY = iso.y - elevationHeight;
-        
-        this.ctx.save();
-        this.ctx.translate(iso.x, adjustedY);
-        
-        // Calculate tile size based on layer
-        const sizeMultiplier = 1.0;
-        const tileWidth = this.tileWidth * sizeMultiplier;
-        const tileHeight = this.tileHeight * sizeMultiplier;
-        
-        // Draw diamond-shaped tile (rotated square)
-        this.ctx.beginPath();
-        this.ctx.moveTo(0, -tileHeight / 2);  // top
-        this.ctx.lineTo(tileWidth / 2, 0);    // right
-        this.ctx.lineTo(0, tileHeight / 2);   // bottom
-        this.ctx.lineTo(-tileWidth / 2, 0);   // left
-        this.ctx.closePath();
-        
-        this.ctx.fillStyle = color;
-        this.ctx.fill();
-        
-        // Check if this parcel has roads along its edges and draw white lines accordingly
-        this.drawParcelBorders(row, col, tileWidth, tileHeight);
-        
-        // Default border for areas without roads
-        this.ctx.strokeStyle = '#1a1a1a';
-        this.ctx.lineWidth = 0.5;
-        this.ctx.stroke();
-        
-        // Draw elevation sides if elevated
-        if (elevation > 0) {
-            // Left side
-            this.ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
-            this.ctx.beginPath();
-            this.ctx.moveTo(-this.tileWidth / 2, 0);
-            this.ctx.lineTo(-this.tileWidth / 2, elevationHeight);
-            this.ctx.lineTo(0, this.tileHeight / 2 + elevationHeight);
-            this.ctx.lineTo(0, this.tileHeight / 2);
-            this.ctx.closePath();
-            this.ctx.fill();
-            
-            // Right side
-            this.ctx.fillStyle = 'rgba(0, 0, 0, 0.15)';
-            this.ctx.beginPath();
-            this.ctx.moveTo(this.tileWidth / 2, 0);
-            this.ctx.lineTo(this.tileWidth / 2, elevationHeight);
-            this.ctx.lineTo(0, this.tileHeight / 2 + elevationHeight);
-            this.ctx.lineTo(0, this.tileHeight / 2);
-            this.ctx.closePath();
-            this.ctx.fill();
-        }
-        
-        // Draw building if present (only on normal layer)
-        const parcel = this.grid[row][col];
-        if (parcel && parcel.building && this.currentLayer === 'normal') {
-            this.renderingSystem.drawBuilding(parcel.building, 0, -this.tileHeight / 4, row, col);
-        }
-        
-        this.ctx.restore();
-    }
+    // drawTile method removed - now delegated to rendering system
     
     drawParcelBorders(row, col, tileWidth, tileHeight) {
         // Draw white lines where roads exist instead of black parcel borders
@@ -4922,9 +5367,10 @@ class IsometricGrid {
     }
 
     drawBuilding(buildingId, offsetX = 0, offsetY = 0, row = 0, col = 0) {
-        // Apply hover elevation with bouncing physics
-        const isHovered = this.hoveredTile && this.hoveredTile.row === row && this.hoveredTile.col === col;
-        let elevation = isHovered ? this.currentElevation : 0;
+        // DISABLED: Legacy hover elevation - replaced by ParcelSelectorManager
+        // const isHovered = this.hoveredTile && this.hoveredTile.row === row && this.hoveredTile.col === col;
+        // let elevation = isHovered ? this.currentElevation : 0;
+        let elevation = 0; // No elevation for buildings
         let scale = 1.0;
         
         // No completion animations in simplified system
@@ -5225,13 +5671,14 @@ class IsometricGrid {
     }
     
     drawJEFHWarningIndicators(buildingId, offsetX, offsetY, row, col) {
+        // DISABLED: Duplicate warning system - rendering-system.js handles warnings
+        // Legacy warning system replaced by server-side needs satisfaction
+        return;
+
         // Don't show indicators for buildings under construction
         const parcel = this.grid[row][col];
-        if (parcel?.constructionStartDay !== null && parcel?.constructionDays > 0) {
-            const isUnderConstruction = (this.currentDay - parcel.constructionStartDay) < parcel.constructionDays;
-            if (isUnderConstruction) {
-                return; // Hide indicators during construction
-            }
+        if (parcel?._isUnderConstruction) {
+            return; // Hide indicators during construction
         }
         
         // Get building efficiency data
@@ -5395,10 +5842,7 @@ class IsometricGrid {
                 const parcel = this.grid[r][c];
                 if (parcel?.building) {
                     // Skip buildings under construction
-                    const isUnderConstruction = parcel.constructionStartDay !== null && 
-                        parcel.constructionDays > 0 && 
-                        (this.currentDay - parcel.constructionStartDay) < parcel.constructionDays;
-                    if (isUnderConstruction) continue;
+                    if (parcel._isUnderConstruction) continue;
                     
                     const building = this.buildingManager.getBuildingById(parcel.building);
                     const supply = this.getBuildingSupply(building, resource);
@@ -5793,71 +6237,7 @@ class IsometricGrid {
         }
     }
     
-    drawScene() {
-        // Check if we're in mobility layer mode - use completely different rendering
-        if (this.currentLayer === 'mobility') {
-            // Use the new mobility layer rendering system
-            this.mobilityLayer.render(this.ctx);
-            return;
-        }
-        
-        // Apply zoom and pan transformations for normal rendering
-        this.ctx.save();
-        this.ctx.translate(this.panOffset.x, this.panOffset.y);
-        this.ctx.scale(this.zoomScale, this.zoomScale);
-        
-        // Check if we're in special layer mode
-        if (false) {
-            // Future special layer rendering
-        } else {
-            // Normal isometric rendering
-            this.ctx.beginPath();
-            
-            for (let row = 0; row < this.gridSize; row++) {
-                for (let col = 0; col < this.gridSize; col++) {
-                    const tile = this.grid[row][col];
-                    if (tile) {
-                        this.drawTile(col, row, this.getTileColor(row, col), tile.elevation);
-                    }
-                }
-            }
-        }
-        
-        // NEW: Draw parcel reach visualization if a parcel is selected
-        if (this.selectedParcel) {
-            this.renderingSystem.drawParcelReach();
-        }
-        
-        // Draw hover influence radius
-        if (this.hoverInfluenceRadius && this.hoverInfluenceRadius.size > 0) {
-            this.drawHoverInfluenceRadius();
-        }
-
-        // Draw attenuation visualization for Data Insights
-        if (this.showAttenuationVisualization && this.attenuationCenter) {
-            this.drawAttenuationVisualization();
-        }
-        
-        // Street edge drawing removed
-        
-        // Draw cashflow numbers now handled in rendering system layer overlays
-        
-        // Draw selection highlight (ensure it's drawn last, on top of everything)
-        if (this.selectedTile && 
-            this.selectedTile.row >= 0 && this.selectedTile.row < this.gridSize &&
-            this.selectedTile.col >= 0 && this.selectedTile.col < this.gridSize) {
-            const tile = this.grid[this.selectedTile.row][this.selectedTile.col];
-            if (tile) {
-                // Draw with a subtle white glow that fades with hover time
-                const alpha = 0.3 * this.selectorOpacity; // Apply fade to the base alpha
-                this.drawTileHighlight(this.selectedTile.col, this.selectedTile.row, 
-                                     `rgba(255, 255, 255, ${alpha})`, tile.elevation);
-            }
-        }
-        
-        // Restore transformation matrix
-        this.ctx.restore();
-    }
+    // Legacy drawScene method removed - now handled by rendering system delegation
     
     
     // Optimized tile drawing with reduced save/restore calls
@@ -6017,32 +6397,6 @@ class IsometricGrid {
                connections2.some(conn => conn.row === row1 && conn.col === col1);
     }
     
-    // Draw hover influence radius with different intensities for adjacent vs road-connected
-    drawHoverInfluenceRadius() {
-        if (!this.hoverInfluenceRadius) return;
-        
-        this.ctx.save();
-        
-        // Draw influence tiles with different colors based on connection type
-        this.hoverInfluenceRadius.forEach(tileKey => {
-            const isExtended = tileKey.includes(':extended');
-            const actualKey = isExtended ? tileKey.split(':')[0] : tileKey;
-            const [row, col] = actualKey.split(',').map(Number);
-            
-            // Different styling for adjacent vs road-connected
-            if (isExtended) {
-                // Road-connected tiles: subtle blue glow
-                const alpha = 0.15;
-                this.drawTileHighlight(col, row, `rgba(33, 150, 243, ${alpha})`, 0);
-            } else {
-                // Adjacent tiles: stronger white glow
-                const alpha = 0.25;
-                this.drawTileHighlight(col, row, `rgba(255, 255, 255, ${alpha})`, 0);
-            }
-        });
-        
-        this.ctx.restore();
-    }
 
     // Draw green attenuation visualization for Data Insights
     drawAttenuationVisualization() {
@@ -6565,10 +6919,21 @@ class IsometricGrid {
         if (this.currentLayer === 'mobility') {
             // Delegate to mobility layer for road building
             const needsRender = this.mobilityLayer.handleMouseMove(worldCoords.x, worldCoords.y);
+
+            // Update ParcelSelectorManager with mobility effects
+            if (this.parcelSelector && this.mobilityLayer.hoveredEdge) {
+                // Clear previous effects and add new mobility effects
+                this.parcelSelector.clearProximityEffects();
+                this.parcelSelector.addMobilityEffects();
+            } else if (this.parcelSelector) {
+                // Clear mobility effects when no edge is hovered
+                this.parcelSelector.clearProximityEffects();
+            }
+
             if (needsRender) {
                 this.scheduleRender();
             }
-            
+
             // Handle delayed tooltips in mobility mode
             const mockEvent = { clientX: screenX, clientY: screenY };
             this.handleMobilityTooltips(tile, mockEvent);
@@ -6585,24 +6950,26 @@ class IsometricGrid {
             // Force a render to show the highlight
             this.scheduleRender();
             
-            // Update cursor-based illumination and start hover timing
-            if (!this.hoveredTile || 
-                this.hoveredTile.row !== tile.row || 
-                this.hoveredTile.col !== tile.col) {
-                this.hoveredTile = { row: tile.row, col: tile.col };
-                this.updateParcelIllumination(this.hoveredTile);
-                // this.updateBlurredBackground(); // Removed - no longer using blur
-                
-                // Reset hover timing and selector opacity when moving to new tile
-                this.hoverStartTime = performance.now();
-                this.selectorOpacity = 1.0;
-                
-                // Start hover lift for buildings
-                if (this.grid && this.grid[tile.row] && this.grid[tile.row][tile.col]) {
-                    const parcel = this.grid[tile.row][tile.col];
-                    if (parcel && parcel.building) {
-                        this.startContinuousBob(); // Direct lift, no bounce
-                    }
+            // Update parcel illumination for connected roads calculation
+            this.updateParcelIllumination(tile);
+
+            // Update cursor-based hover state using new parcel selector
+            if (this.parcelSelector) {
+                this.parcelSelector.setHoveredParcel(tile.row, tile.col);
+            }
+
+            // Keep legacy hoveredTile for compatibility with other systems
+            this.hoveredTile = { row: tile.row, col: tile.col };
+
+            // Reset hover timing and selector opacity when moving to new tile
+            this.hoverStartTime = performance.now();
+            this.selectorOpacity = 1.0;
+
+            // Start hover lift for buildings
+            if (this.grid && this.grid[tile.row] && this.grid[tile.row][tile.col]) {
+                const parcel = this.grid[tile.row][tile.col];
+                if (parcel && parcel.building) {
+                    this.startContinuousBob(); // Direct lift, no bounce
                 }
             }
             // Tooltip now handled automatically by CrispTooltip system
@@ -6612,12 +6979,16 @@ class IsometricGrid {
                 this.domCache.selectedTile.textContent = '--';
             }
             
-            // Clear illumination when not hovering any tile
+            // Clear hover state when not hovering any tile
             if (this.hoveredTile) {
+                // Clear hover state in new parcel selector
+                if (this.parcelSelector) {
+                    this.parcelSelector.setHoveredParcel(null, null);
+                }
+
+                // Clear legacy hoveredTile for compatibility
                 this.hoveredTile = null;
-                this.updateParcelIllumination(null);
-                // this.updateBlurredBackground(); // Removed - no longer using blur
-                
+
                 // Reset hover timing and selector opacity
                 this.hoverStartTime = null;
                 this.selectorOpacity = 1.0;
@@ -6629,10 +7000,11 @@ class IsometricGrid {
     }
 
     drawTileHighlight(col, row, color, elevation = 0) {
+        console.log(`🚨 [DEBUG] drawTileHighlight called for ${row},${col} with color ${color}`);
         const iso = this.toIsometric(col, row);
         const elevationHeight = elevation * 8;
         const adjustedY = iso.y - elevationHeight;
-        
+
         this.ctx.save();
         this.ctx.translate(iso.x, adjustedY);
         
@@ -6671,6 +7043,7 @@ class IsometricGrid {
             this.processMouseMove(screenX, screenY);
         };
         
+        // Re-enabled with new parcel selector system
         this.canvas.addEventListener('mousemove', debouncedMouseMove, { passive: true });
 
         // Add mouse down handler for panning and 3D rotation
@@ -6707,6 +7080,11 @@ class IsometricGrid {
                 this.isPanning = false;
                 this.canvas.style.cursor = this.zoomScale > 1.1 ? 'grab' : 'default';
             }
+
+            // Clear hover state and auto-deselect when cursor leaves canvas
+            if (this.parcelSelector) {
+                this.parcelSelector.setHoveredParcel(null, null);
+            }
         });
         
         this.canvas.addEventListener('click', (e) => {
@@ -6730,7 +7108,13 @@ class IsometricGrid {
                 }
                 return; // Don't process other clicks in mobility mode
             }
-            
+
+            // Handle parcel selection via ParcelSelectorManager
+            if (tile && this.parcelSelector) {
+                this.parcelSelector.handleParcelClick(tile.row, tile.col, this.currentPlayerId || 1);
+                this.scheduleRender();
+            }
+
             if (tile && tile.row >= 0 && tile.row < this.gridSize &&
                 tile.col >= 0 && tile.col < this.gridSize) {
                 
@@ -6742,11 +7126,20 @@ class IsometricGrid {
                     this.contextMenu && this.contextMenu.classList && this.contextMenu.classList.contains('visible')) {
                     this.hideContextMenu();
                 } else {
+                    // Skip legacy context menu handling if tooltip transition is in progress
+                    if (this.preventLegacyContextMenu) {
+                        return;
+                    }
+
                     // Clicking any other parcel: hide previous menu and show new one
                     if (this.contextMenu && this.contextMenu.classList && this.contextMenu.classList.contains('visible')) {
                         this.hideContextMenu();
                     }
-                    this.showContextMenu(tile.row, tile.col, e.clientX, e.clientY);
+                    // Only show context menu if it's not already being shown for this tile (prevents tooltip transition interference)
+                    if (!this.contextMenu || !this.contextMenu.classList.contains('visible') ||
+                        !this.selectedTile || this.selectedTile.row !== tile.row || this.selectedTile.col !== tile.col) {
+                        this.showContextMenu(tile.row, tile.col, e.clientX, e.clientY);
+                    }
                 }
                 if (this.crispTooltip) this.crispTooltip.hide();
             } else {
@@ -6957,7 +7350,14 @@ document.addEventListener('DOMContentLoaded', () => {
     const canvas = document.getElementById('gameCanvas');
     const game = new IsometricGrid(canvas, 12);
     window.game = game; // Make game accessible globally right away
-    
+
+    // COMPLETE RESET ON EVERY BROWSER RELOAD - Fresh start guaranteed
+    game.completeGameReset().then(() => {
+        console.log('🎯 Fresh game session initialized');
+    }).catch(error => {
+        console.error('🚨 Reset failed:', error);
+    });
+
     // Solo game - no multiplayer departure handling needed
     
     // Simple auto-start functionality
@@ -6975,83 +7375,148 @@ document.addEventListener('DOMContentLoaded', () => {
     // Save default player settings
     localStorage.setItem('theCommons_playerSettings', JSON.stringify(playerSettings));
 
+    // Force cash reset to $6000 for new session
+    localStorage.setItem('theCommons_forceReset', 'true');
+
     // Enhanced welcome screen with DOM readiness check
     if (welcomeScreen) {
-        const welcomeTitle = welcomeScreen.querySelector('.welcome-title');
-        let isGameReady = false;
-        let minTimeElapsed = false;
+        // Validate all required welcome screen elements exist
+        const startGameBtn = document.getElementById('start-game-btn');
+        const playerNameInput = document.getElementById('player-name');
+        const colorSelector = document.getElementById('color-selector');
+
+        if (!startGameBtn || !playerNameInput || !colorSelector) {
+            console.error('⚠️ Critical welcome screen elements missing:', {
+                startGameBtn: !!startGameBtn,
+                playerNameInput: !!playerNameInput,
+                colorSelector: !!colorSelector
+            });
+
+            // Show error and exit
+            document.body.innerHTML = `
+                <div style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: #0a0a0a; display: flex; align-items: center; justify-content: center; color: #ff6b6b; font-family: sans-serif; text-align: center; z-index: 99999;">
+                    <div>
+                        <h2>Welcome Screen Setup Error</h2>
+                        <p>Required elements are missing. Please refresh the page.</p>
+                        <button onclick="window.location.reload()" style="background: #4CAF50; color: white; border: none; padding: 12px 24px; border-radius: 8px; cursor: pointer;">Reload Page</button>
+                    </div>
+                </div>
+            `;
+            return;
+        }
 
         // Show welcome screen
         welcomeScreen.style.display = 'flex';
         welcomeScreen.classList.add('visible');
         gameInterface.classList.add('hidden');
 
-        // Staggered fade-in: text first, then underline
-        setTimeout(() => {
-            if (welcomeTitle) {
-                welcomeTitle.classList.add('show-text');
-            }
-        }, 200);
+        // Welcome screen is now ready - no title animations needed
 
-        setTimeout(() => {
-            if (welcomeTitle) {
-                welcomeTitle.classList.add('show-underline');
-            }
-        }, 450); // 250ms after text starts appearing
+        // Setup welcome screen interactions
+        setupWelcomeScreenHandlers();
 
-        // Set minimum display time
-        setTimeout(() => {
-            minTimeElapsed = true;
-            if (isGameReady) {
-                startGameTransition();
-            }
-        }, 2550);
+        // Add space bar shortcut to skip welcome screen
+        document.addEventListener('keydown', async (e) => {
+            if (e.code === 'Space' && welcomeScreen.style.display !== 'none') {
+                e.preventDefault();
+                // Use current color and trigger instant start
+                const currentSelected = document.querySelector('.color-option.selected');
+                const selectedColor = currentSelected ? currentSelected.dataset.color : '#10AC84';
+                const playerName = document.getElementById('player-name')?.value.trim() || 'Player';
 
-        // Check for game readiness (DOM + server sync)
-        const checkGameReady = () => {
-            // Check if essential elements are present
-            const essentialElements = [
-                document.getElementById('gameCanvas'),
-                document.getElementById('sidebar'),
-                document.getElementById('top-bar')
-            ];
+                const playerSettings = {
+                    name: playerName,
+                    color: selectedColor,
+                    emoji: '🏛️',
+                    setupComplete: true
+                };
 
-            const allElementsReady = essentialElements.every(el => el !== null);
+                localStorage.setItem('theCommons_playerSettings', JSON.stringify(playerSettings));
 
-            if (allElementsReady) {
-                isGameReady = true;
-                if (minTimeElapsed) {
-                    startGameTransition();
+                // Sync player color with server
+                try {
+                    await fetch('/api/player/color', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            playerId: 'player',
+                            color: selectedColor
+                        })
+                    });
+                } catch (error) {
+                    console.warn('Could not sync player color with server:', error);
                 }
-            } else {
-                setTimeout(checkGameReady, 100);
-            }
-        };
 
-        // Start checking for readiness
-        setTimeout(checkGameReady, 500);
+                if (window.game) {
+                    window.game.playerSettings = playerSettings;
+                    // Update ParcelSelectorManager with new color
+                    if (window.game.parcelSelector) {
+                        window.game.parcelSelector.updatePlayerColor();
+                    }
+                    // Set CSS custom property for welcome underline
+                    document.documentElement.style.setProperty('--player-color', selectedColor);
+                    window.game.updatePlayerNameInUI();
+                    window.game.scheduleRender();
+                }
+
+                // Skip all animations and go straight to game
+                welcomeScreen.style.display = 'none';
+                const transitionOverlay = document.getElementById('transition-overlay');
+                if (transitionOverlay) transitionOverlay.style.display = 'none';
+                continueGameTransition();
+            }
+        });
 
         function startGameTransition() {
-            // Remove show classes to prepare for fade out
-            if (welcomeTitle) {
-                welcomeTitle.classList.remove('show-text', 'show-underline');
-            }
+            // Phase 1: Fade out the entire modal first
+            welcomeScreen.classList.add('fade-out');
 
-            // Phase 1: Fade title and underline to completely transparent
+            // Phase 2: After modal fade out, pause briefly on black screen
             setTimeout(() => {
-                if (welcomeTitle) {
-                    welcomeTitle.style.transition = 'opacity 0.8s ease-out';
-                    welcomeTitle.style.opacity = '0';
-                }
-            }, 100);
+                // Hide the modal completely
+                welcomeScreen.style.display = 'none';
 
-            // Phase 2: Fade out entire welcome screen after text is invisible
-            setTimeout(() => {
-                welcomeScreen.classList.add('fade-out');
-            }, 1000);
+                // Phase 3: Brief pause for mental space, then show "Welcome to..." text
+                setTimeout(() => {
+                    // Show transition overlay with "Welcome to The Commons"
+                    const transitionOverlay = document.getElementById('transition-overlay');
+                    const transitionText = document.getElementById('transition-text');
 
-            // Phase 3: Hide welcome screen and show game interface
-            setTimeout(() => {
+                    if (transitionOverlay && transitionText) {
+                        transitionOverlay.style.display = 'flex';
+                        transitionOverlay.style.opacity = '0';
+                        transitionOverlay.style.transition = 'none'; // Remove any existing transition
+
+                        // Force reflow to ensure display change takes effect
+                        transitionOverlay.offsetHeight;
+
+                        // Fade in the welcome text
+                        setTimeout(() => {
+                            transitionOverlay.style.transition = 'opacity 0.7s ease-out';
+                            transitionOverlay.style.opacity = '1';
+                        }, 50);
+
+                        // After showing welcome text, continue with normal transition
+                        setTimeout(() => {
+                            transitionOverlay.style.transition = 'opacity 0.7s ease-out';
+                            transitionOverlay.style.opacity = '0';
+
+                            // Hide transition overlay and proceed to game
+                            setTimeout(() => {
+                                transitionOverlay.style.display = 'none';
+                                // Continue with the original Phase 3 logic
+                                continueGameTransition();
+                            }, 700);
+                        }, 2500); // Show welcome text for 2.5 seconds
+                    } else {
+                        // Fallback if transition overlay not found
+                        continueGameTransition();
+                    }
+                }, 300); // Brief pause on black screen for mental space
+            }, 500); // Match the 0.5s CSS transition
+
+            // Helper function to continue the game transition
+            function continueGameTransition() {
                 welcomeScreen.style.display = 'none';
                 welcomeScreen.classList.remove('visible', 'fade-out');
 
@@ -7076,7 +7541,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 }, 50);
 
                 // Setup canvas and start game
-                setTimeout(() => {
+                setTimeout(async () => {
                     game.setupCanvas();
                     game.render();
                     game.scheduleRender();
@@ -7084,14 +7549,29 @@ document.addEventListener('DOMContentLoaded', () => {
                     // Configure game with player settings
                     game.playerSettings = playerSettings;
 
-                    // Update player name in UI
-                    const playerBtn = document.getElementById('player-btn');
-                    if (playerBtn) {
-                        playerBtn.innerHTML = `${playerSettings.name.toUpperCase()}<span class="indicator">▼</span>`;
-                    }
+                    // Update player name throughout UI
+                    game.updatePlayerNameInUI();
+
+                    // Expose useful testing methods to console
+                    window.resetCash = () => {
+                        if (game.cashManager) {
+                            game.cashManager.forceReset6k();
+                        } else {
+                            console.error('CashManager not available');
+                        }
+                    };
+                    console.log('🧪 Testing helper: Use resetCash() in console to reset cash to $6,000');
+
+                    // Force correct cash display immediately after initialization
+                    setTimeout(() => {
+                        if (game.cashManager) {
+                            game.cashManager.forceReset6k();
+                            console.log('🔧 Auto-corrected cash to $6,000 on startup');
+                        }
+                    }, 200);
 
                     // Start the game
-                    game.startGame();
+                    await game.startGame();
 
                     // Initialize tooltip system
                     if (typeof initializeTooltips === 'function') {
@@ -7132,23 +7612,138 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 }, 100);
 
-            }, 1600); // Allow time for title fade + screen fade
+            }
         }
 
-    } else {
-        // Fallback if no welcome screen found
-        console.warn('⚠️ Welcome screen not found, starting game immediately');
+        function setupWelcomeScreenHandlers() {
+        // Generate 10 random colors for territorial markers
+        const colors = [
+            '#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FECA57',
+            '#FF9FF3', '#54A0FF', '#5F27CD', '#00D2D3', '#FF9F43',
+            '#10AC84', '#EE5A6F', '#C44569', '#F8B500', '#6C5CE7',
+            '#A55EEA', '#26DE81', '#FD79A8', '#74B9FF', '#E17055'
+        ];
 
-        gameInterface.classList.remove('hidden');
-        gameInterface.classList.add('fade-in');
-        game.setupCanvas();
-        game.render();
-        game.scheduleRender();
-        game.playerSettings = playerSettings;
-        game.startGame();
+        // Shuffle array and take first 5
+        const shuffledColors = colors.sort(() => 0.5 - Math.random()).slice(0, 5);
+        let selectedColor = shuffledColors[0]; // Default to first color
 
-        // Setup other game systems
-        setupContextMenuCloseListener();
+        // Generate color picker HTML
+        const colorSelector = document.getElementById('color-selector');
+        if (colorSelector) {
+            colorSelector.innerHTML = shuffledColors.map((color, index) =>
+                `<div class="color-option ${index === 0 ? 'selected' : ''}"
+                      data-color="${color}"
+                      style="background: ${color}">
+                </div>`
+            ).join('');
+
+            // Setup color selection handlers
+            const colorOptions = colorSelector.querySelectorAll('.color-option');
+            colorOptions.forEach(option => {
+                option.addEventListener('click', () => {
+                    // Remove selected class from all options
+                    colorOptions.forEach(opt => opt.classList.remove('selected'));
+                    // Add selected class to clicked option
+                    option.classList.add('selected');
+                    selectedColor = option.dataset.color;
+                });
+            });
+        }
+
+        // Start game button
+        const startGameBtn = document.getElementById('start-game-btn');
+        const playerNameInput = document.getElementById('player-name');
+
+        if (startGameBtn && playerNameInput) {
+            startGameBtn.addEventListener('click', async () => {
+                console.log('🚀 Enter button clicked - starting transition');
+
+                const playerName = playerNameInput.value.trim() || 'Player';
+
+                // Save player settings
+                const playerSettings = {
+                    name: playerName,
+                    color: selectedColor,
+                    emoji: '🏛️', // Default civic emoji
+                    setupComplete: true
+                };
+
+                localStorage.setItem('theCommons_playerSettings', JSON.stringify(playerSettings));
+
+                // Sync player color with server
+                try {
+                    await fetch('/api/player/color', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            playerId: 'player',
+                            color: selectedColor
+                        })
+                    });
+                } catch (error) {
+                    console.warn('Could not sync player color with server:', error);
+                }
+
+                // Update game settings and trigger transition
+                if (window.game) {
+                    window.game.playerSettings = playerSettings;
+                    // Set CSS custom property for welcome underline
+                    document.documentElement.style.setProperty('--player-color', selectedColor);
+                    window.game.updatePlayerNameInUI();
+                    window.game.scheduleRender(); // Force re-render with new color
+                }
+
+                // Start transition immediately when user clicks
+                startGameTransition();
+            });
+
+            // Allow Enter key to start game
+            playerNameInput.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') {
+                    startGameBtn.click();
+                }
+            });
+        }
+    }
+
+} else {
+        // CRITICAL: Never auto-start if welcome screen is missing
+        console.error('⚠️ Welcome screen not found! Cannot start game without user consent.');
+
+        // Show error message instead of auto-starting
+        document.body.innerHTML = `
+            <div style="
+                position: fixed;
+                top: 0; left: 0; right: 0; bottom: 0;
+                background: #0a0a0a;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                color: #ff6b6b;
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+                font-size: 18px;
+                text-align: center;
+                z-index: 99999;
+            ">
+                <div>
+                    <h2 style="color: #ff6b6b; margin-bottom: 16px;">Welcome Screen Missing</h2>
+                    <p style="margin-bottom: 24px;">The game cannot start without proper user registration.</p>
+                    <button onclick="window.location.reload()" style="
+                        background: #4CAF50;
+                        color: white;
+                        border: none;
+                        padding: 12px 24px;
+                        border-radius: 8px;
+                        font-size: 16px;
+                        cursor: pointer;
+                    ">Reload Page</button>
+                </div>
+            </div>
+        `;
+
+        // Exit without starting any game systems
+        return;
 
         // Add delay to ensure DOM is fully ready
         setTimeout(() => {
@@ -7177,6 +7772,70 @@ document.addEventListener('DOMContentLoaded', () => {
             e.preventDefault();
             document.body.classList.toggle('testing-mode');
             const isTestingMode = document.body.classList.contains('testing-mode');
+        }
+    });
+
+    // Space bar shortcut to skip welcome screen for faster development
+    document.addEventListener('keydown', async (e) => {
+        if (e.code === 'Space') {
+            const welcomeScreen = document.getElementById('welcome-screen');
+            if (welcomeScreen && welcomeScreen.style.display !== 'none') {
+                e.preventDefault();
+
+                // Get current form values
+                const nameInput = document.getElementById('player-name');
+                const selectedColorOption = document.querySelector('.color-option.selected');
+
+                const playerName = nameInput ? nameInput.value.trim() || 'Player' : 'Player';
+                const selectedColor = selectedColorOption ? selectedColorOption.dataset.color : '#10AC84';
+
+                // Save to localStorage
+                localStorage.setItem('playerName', playerName);
+                localStorage.setItem('playerColor', selectedColor);
+
+                // Sync player color with server
+                try {
+                    await fetch('/api/player/color', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            playerId: 'player',
+                            color: selectedColor
+                        })
+                    });
+                } catch (error) {
+                    console.warn('Could not sync player color with server:', error);
+                }
+
+                // Update player settings
+                if (!this.playerSettings) {
+                    this.playerSettings = { name: 'Player', emoji: '🏛️' };
+                }
+                this.playerSettings.name = playerName;
+                this.playerSettings.color = selectedColor;
+
+                // Update ParcelSelectorManager with new color
+                if (this.parcelSelector) {
+                    this.parcelSelector.updatePlayerColor();
+                }
+
+                // Update current player (legacy support)
+                if (typeof currentPlayer !== 'undefined' && currentPlayer) {
+                    currentPlayer.name = playerName;
+                    currentPlayer.color = selectedColor;
+                }
+
+                // Set CSS custom property for welcome underline
+                document.documentElement.style.setProperty('--player-color', selectedColor);
+
+                // Hide all welcome elements immediately
+                welcomeScreen.style.display = 'none';
+                const overlay = document.getElementById('transition-overlay');
+                if (overlay) overlay.style.display = 'none';
+
+                // Continue to game immediately
+                continueGameTransition();
+            }
         }
     });
 
@@ -7248,8 +7907,6 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
     
-    const playerBtn = document.getElementById('player-btn');
-    const playerMenu = document.getElementById('player-menu');
     // Governance button functionality - only set up after game starts
     window.setupGovernanceButton = function() {
         const governanceBtn = document.getElementById('governance-btn');
@@ -7409,23 +8066,6 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
     
-    playerBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        playerMenu.classList.toggle('active');
-    });
-    
-    document.addEventListener('click', () => {
-        playerMenu.classList.remove('active');
-    });
-    
-    playerMenu.addEventListener('click', (e) => {
-        e.stopPropagation();
-    });
-    
-    
-    
-    
-    
     // Player menu options
     const showLeaderboardBtn = document.getElementById('show-leaderboard');
     if (showLeaderboardBtn) {
@@ -7460,6 +8100,23 @@ document.addEventListener('DOMContentLoaded', () => {
         saveGameBtn.addEventListener('click', () => {
             if (window.game) {
                 window.game.showSaveGameModal();
+            }
+            // Close player menu
+            const playerMenu = document.getElementById('player-menu');
+            if (playerMenu) {
+                playerMenu.classList.remove('active');
+            }
+        });
+    }
+
+    // Reset game button
+    const resetGameBtn = document.getElementById('reset-game');
+    if (resetGameBtn) {
+        resetGameBtn.addEventListener('click', () => {
+            if (confirm('Are you sure you want to reset the game? This will clear all progress and cannot be undone.')) {
+                if (window.game) {
+                    window.game.resetGame();
+                }
             }
             // Close player menu
             const playerMenu = document.getElementById('player-menu');
@@ -7652,8 +8309,8 @@ document.addEventListener('DOMContentLoaded', () => {
             game.tooltipManager.setupVitalityTooltips();
         }
     }
-    if (typeof setupMetricTooltips === 'function') {
-        setupMetricTooltips();
+    if (game.tooltipManager && game.tooltipManager.setupGameTooltips) {
+        game.tooltipManager.setupGameTooltips();
     }
     
     // Tab switching
@@ -8128,6 +8785,78 @@ document.addEventListener('DOMContentLoaded', () => {
         return defaults[propertyName] || 1.0;
     }
 
+    // Setup road adjustment controls
+    const roadAngle = document.getElementById('road-angle');
+    const roadAngleValue = document.getElementById('road-angle-value');
+    const roadWidthMultiplier = document.getElementById('road-width-multiplier');
+    const roadWidthValue = document.getElementById('road-width-value');
+    const roadOffsetX = document.getElementById('road-offset-x');
+    const roadOffsetXValue = document.getElementById('road-offset-x-value');
+    const roadOffsetY = document.getElementById('road-offset-y');
+    const roadOffsetYValue = document.getElementById('road-offset-y-value');
+
+    const resetRoadBtn = document.getElementById('reset-road-controls');
+
+    // Helper function to update road values and trigger redraw (roads only!)
+    function updateRoadAdjustment(property, value, displayElement, suffix = '') {
+        game.roadAdjustments[property] = parseFloat(value);
+        displayElement.textContent = value + suffix;
+        game.scheduleRender();
+    }
+
+    // Road angle control
+    if (roadAngle) {
+        roadAngle.addEventListener('input', (e) => {
+            updateRoadAdjustment('angle', e.target.value, roadAngleValue, '°');
+        });
+    }
+
+    // Road width multiplier control
+    if (roadWidthMultiplier) {
+        roadWidthMultiplier.addEventListener('input', (e) => {
+            updateRoadAdjustment('widthMultiplier', e.target.value, roadWidthValue, 'x');
+        });
+    }
+
+    // Road X offset control
+    if (roadOffsetX) {
+        roadOffsetX.addEventListener('input', (e) => {
+            updateRoadAdjustment('offsetX', e.target.value, roadOffsetXValue, 'px');
+        });
+    }
+
+    // Road Y offset control
+    if (roadOffsetY) {
+        roadOffsetY.addEventListener('input', (e) => {
+            updateRoadAdjustment('offsetY', e.target.value, roadOffsetYValue, 'px');
+        });
+    }
+
+    // Reset button
+    if (resetRoadBtn) {
+        resetRoadBtn.addEventListener('click', () => {
+        // Reset all road adjustment values to defaults
+        game.roadAdjustments = {
+            angle: 0,
+            widthMultiplier: 1.0,
+            offsetX: 0,
+            offsetY: 0,
+        };
+
+        // Update UI controls
+        roadAngle.value = 0;
+        roadAngleValue.textContent = '0°';
+        roadWidthMultiplier.value = 1.0;
+        roadWidthValue.textContent = '1.0x';
+        roadOffsetX.value = 0;
+        roadOffsetXValue.textContent = '0px';
+        roadOffsetY.value = 0;
+        roadOffsetYValue.textContent = '0px';
+
+        game.scheduleRender();
+        });
+    }
+
 }); // End DOMContentLoaded listener
 
 // REMOVED - Economic balance controls are now only in dev tools
@@ -8211,79 +8940,5 @@ function syncSidebarSlider(propertyName, value) {
     }
 }
 */
-
-// Setup road adjustment controls
-function setupRoadControls(game) {
-    const roadAngle = document.getElementById('road-angle');
-    const roadAngleValue = document.getElementById('road-angle-value');
-    const roadWidthMultiplier = document.getElementById('road-width-multiplier');
-    const roadWidthValue = document.getElementById('road-width-value');
-    const roadOffsetX = document.getElementById('road-offset-x');
-    const roadOffsetXValue = document.getElementById('road-offset-x-value');
-    const roadOffsetY = document.getElementById('road-offset-y');
-    const roadOffsetYValue = document.getElementById('road-offset-y-value');
-    
-    const resetRoadBtn = document.getElementById('reset-road-controls');
-    
-    // Helper function to update road values and trigger redraw (roads only!)
-    function updateRoadAdjustment(property, value, displayElement, suffix = '') {
-        game.roadAdjustments[property] = parseFloat(value);
-        displayElement.textContent = value + suffix;
-        game.scheduleRender();
-    }
-    
-    // Road angle control
-    if (roadAngle) {
-        roadAngle.addEventListener('input', (e) => {
-            updateRoadAdjustment('angle', e.target.value, roadAngleValue, '°');
-        });
-    }
-
-    // Road width multiplier control
-    if (roadWidthMultiplier) {
-        roadWidthMultiplier.addEventListener('input', (e) => {
-            updateRoadAdjustment('widthMultiplier', e.target.value, roadWidthValue, 'x');
-        });
-    }
-
-    // Road X offset control
-    if (roadOffsetX) {
-        roadOffsetX.addEventListener('input', (e) => {
-            updateRoadAdjustment('offsetX', e.target.value, roadOffsetXValue, 'px');
-        });
-    }
-
-    // Road Y offset control
-    if (roadOffsetY) {
-        roadOffsetY.addEventListener('input', (e) => {
-            updateRoadAdjustment('offsetY', e.target.value, roadOffsetYValue, 'px');
-        });
-    }
-
-    // Reset button
-    if (resetRoadBtn) {
-        resetRoadBtn.addEventListener('click', () => {
-        // Reset all road adjustment values to defaults
-        game.roadAdjustments = {
-            angle: 0,
-            widthMultiplier: 1.0,
-            offsetX: 0,
-            offsetY: 0,
-        };
-        
-        // Update UI controls
-        roadAngle.value = 0;
-        roadAngleValue.textContent = '0°';
-        roadWidthMultiplier.value = 1.0;
-        roadWidthValue.textContent = '1.0x';
-        roadOffsetX.value = 0;
-        roadOffsetXValue.textContent = '0px';
-        roadOffsetY.value = 0;
-        roadOffsetYValue.textContent = '0px';
-        
-        game.scheduleRender();
-        });
-    }
-}
 
 

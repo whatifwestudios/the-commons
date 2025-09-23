@@ -409,6 +409,7 @@ class RenderingSystem {
      * Draw a single tile
      */
     drawTile(col, row, color = null, elevation = 0) {
+
         // Performance tracking
         if (this.game.perfMonitor) {
             this.game.perfMonitor.recordDraw('tile');
@@ -431,23 +432,76 @@ class RenderingSystem {
         
         // Draw parcel borders
         this.drawParcelBorders(row, col, this.tileWidth, this.tileHeight);
-        
+
+        // Draw parcel selection effects (hover, selection, proximity) BEFORE building
+        if (this.game.parcelSelector) {
+            this.game.parcelSelector.renderParcelSelection(row, col, this.ctx, iso.x, adjustedY, this.tileWidth, this.tileHeight);
+        }
+
         // Draw building if present with unified rendering
         if (parcel && parcel.building && this.game.currentLayer !== 'mobility' && this.game.currentLayer !== 'players') {
-            // Check for hover effect
-            const isHovered = this.game.hoveredTile && this.game.hoveredTile.row === row && this.game.hoveredTile.col === col;
-            const hoverOffset = isHovered ? -(this.game.currentElevation || 0) : 0;
-
-            this.drawBuilding(parcel.building, 0, -this.tileHeight / 4 + hoverOffset, row, col, parcel);
+            this.drawBuilding(parcel.building, 0, -this.tileHeight / 4, row, col, parcel);
         }
         
         this.ctx.restore();
     }
     
     /**
+     * DISABLED: Legacy parcel reach illumination system - replaced by ParcelSelectorManager
+     * Draw parcel reach illumination for a single tile (draws behind buildings)
+     */
+    drawParcelReachForTile(row, col, x, y) {
+        // DISABLED - replaced by ParcelSelectorManager system
+        return;
+
+        // console.log(`🔷 [RENDER DEBUG] drawParcelReachForTile called for ${row},${col} - parcelReach:`, this.game.parcelReach, 'selectedParcel:', this.game.selectedParcel);
+        if (!this.game.parcelReach || !this.game.selectedParcel) {
+            // console.log(`🔷 [RENDER DEBUG] Early return from drawParcelReachForTile - no parcelReach or selectedParcel`);
+            return;
+        }
+
+        // Create a set of all reachable parcels including the selected one
+        const allReachable = new Set(this.game.parcelReach);
+        allReachable.add(`${this.game.selectedParcel.row},${this.game.selectedParcel.col}`);
+
+        const tileKey = `${row},${col}`;
+
+        // Check if this tile should be illuminated
+        if (allReachable.has(tileKey)) {
+            this.ctx.save();
+
+            // Determine if this is the selected parcel or a reachable one
+            const isSelected = (row === this.game.selectedParcel.row && col === this.game.selectedParcel.col);
+
+            if (isSelected) {
+                // Selected parcel - bright yellow with glow
+                const time = Date.now() / 1000;
+                const glowIntensity = 0.3 + Math.sin(time * 2) * 0.1;
+
+                this.ctx.globalAlpha = glowIntensity;
+                this.ctx.fillStyle = '#FFD700'; // Gold
+                this.ctx.shadowBlur = 12;
+                this.ctx.shadowColor = '#FFD700';
+            } else {
+                // Reachable parcel - subtle blue
+                this.ctx.globalAlpha = 0.2;
+                this.ctx.fillStyle = '#87CEEB'; // Sky blue
+            }
+
+            // Draw the illumination overlay
+            // console.log(`🌟 [RENDER DEBUG] Drawing illumination overlay with fill style:`, this.ctx.fillStyle);
+            this.drawDiamond(x, y, this.tileWidth, this.tileHeight);
+            this.ctx.fill();
+
+            this.ctx.restore();
+        }
+    }
+
+    /**
      * Draw diamond shape for isometric tiles
      */
     drawDiamond(x, y, width, height) {
+        // console.log(`💎 [RENDER DEBUG] drawDiamond called at (${x},${y}) with size ${width}x${height}`);
         this.ctx.beginPath();
         this.ctx.moveTo(x, y - height / 2); // Top
         this.ctx.lineTo(x + width / 2, y);  // Right
@@ -540,8 +594,13 @@ class RenderingSystem {
      */
     getPlayerColor(playerId) {
         if (!playerId) return '#6a6a6a';
-        
-        // Get color from multiplayer manager if available
+
+        // Check if this is the current player and use their chosen color
+        if (this.isCurrentPlayer(playerId) && this.game.playerSettings && this.game.playerSettings.color) {
+            return this.game.playerSettings.color;
+        }
+
+        // Get color from multiplayer manager if available (for other players)
         if (this.game.multiplayerManager && this.game.multiplayerManager.players.has(playerId)) {
             const player = this.game.multiplayerManager.players.get(playerId);
             if (player.color) {
@@ -549,11 +608,11 @@ class RenderingSystem {
                 return this.hexToRgba(player.color, 0.4);
             }
         }
-        
+
         // Fallback: deterministic colors based on player ID
         const colors = [
             'rgba(33, 150, 243, 0.4)',  // Blue
-            'rgba(255, 152, 0, 0.4)',   // Orange  
+            'rgba(255, 152, 0, 0.4)',   // Orange
             'rgba(156, 39, 176, 0.4)',  // Purple
             'rgba(255, 193, 7, 0.4)',   // Amber
             'rgba(244, 67, 54, 0.4)',   // Red
@@ -561,14 +620,14 @@ class RenderingSystem {
             'rgba(139, 195, 74, 0.4)',  // Light Green
             'rgba(255, 87, 34, 0.4)'    // Deep Orange
         ];
-        
+
         // Hash player ID to get consistent color
         let hash = 0;
         for (let i = 0; i < playerId.length; i++) {
             hash = ((hash << 5) - hash) + playerId.charCodeAt(i);
             hash = hash & hash; // Convert to 32-bit integer
         }
-        
+
         return colors[Math.abs(hash) % colors.length];
     }
     
@@ -590,10 +649,9 @@ class RenderingSystem {
         
         // Different border styles based on state
         if (parcel && parcel.owner) {
-            // Get border color using ColorUtils
-            this.ctx.strokeStyle = window.ColorUtils?.getPlayerBorderColor(parcel.owner, this.game) ||
-                                  (this.isCurrentPlayer(parcel.owner) ? '#4CAF50' : '#999');
-            this.ctx.lineWidth = 2;
+            // Use consistent light gray border for all owned parcels
+            this.ctx.strokeStyle = '#999';
+            this.ctx.lineWidth = 1;
         } else {
             this.ctx.strokeStyle = '#666';
             this.ctx.lineWidth = 1;
@@ -608,6 +666,8 @@ class RenderingSystem {
      * Handles construction state, performance effects, and all visual states
      */
     drawBuilding(buildingId, offsetX = 0, offsetY = 0, row, col, parcel = null) {
+        // console.log(`🏗️ [RENDER DEBUG] drawBuilding called for ${buildingId} at ${row},${col} with offsets (${offsetX},${offsetY})`);
+
         if (this.game.perfMonitor) {
             this.game.perfMonitor.recordDraw('building');
         }
@@ -633,8 +693,16 @@ class RenderingSystem {
         // Get performance data for completed buildings
         let performancePercent = 100;
         if (!isUnderConstruction) {
-            if (this.game.buildingSystem) {
-                performancePercent = this.game.buildingSystem.getBuildingEfficiency(row, col);
+            // Check if we have cached building efficiency data
+            const key = `${row},${col}`;
+            const efficiencyData = this.game.buildingEfficiencies?.get(key);
+
+            if (efficiencyData && efficiencyData.overallEfficiency !== undefined) {
+                // Use server-synchronized efficiency data
+                performancePercent = Math.round(efficiencyData.overallEfficiency * 100);
+            } else {
+                // Fallback: assume good performance if no data available yet
+                performancePercent = 90; // Default to 90% instead of 100% to show slight dimming
             }
         }
 
@@ -728,13 +796,11 @@ class RenderingSystem {
         let baseVariant = 'stock';
         let applyPerformanceFilter = true;
 
-        // Check for proximity tinting (overrides performance)
-        if (this.game.hoverInfluenceRadius) {
-            if (this.game.hoverInfluenceRadius.has(extendedKey)) {
-                baseVariant = 'blue';
-                applyPerformanceFilter = false; // Proximity overrides performance
-            } else if (this.game.hoverInfluenceRadius.has(tileKey)) {
-                baseVariant = 'yellow';
+        // Check for proximity tinting via ParcelSelectorManager (unified system)
+        if (this.game.parcelSelector) {
+            const buildingTint = this.game.parcelSelector.getBuildingTint(row, col);
+            if (buildingTint) {
+                baseVariant = buildingTint;
                 applyPerformanceFilter = false; // Proximity overrides performance
             }
         }
@@ -742,20 +808,56 @@ class RenderingSystem {
         // Step 2: Get the appropriate image variant (instant swap)
         let buildingImage = this.getVariantImageSafe(buildingName, baseVariant);
 
-        // Step 3: Apply performance-based filters if not overridden by proximity
+        // Step 3: Calculate all visual effects (construction, performance, decay)
         let filterEffects = '';
-        if (state.isUnderConstruction) {
-            // Under construction: always desaturated regardless of proximity
-            filterEffects = 'sepia(0.8) saturate(30%) brightness(0.6) contrast(0.7)';
-        } else if (applyPerformanceFilter) {
-            // Apply performance-based desaturation in 10% increments
-            const performance = state.performancePercent;
-            const desaturationLevel = Math.max(0, Math.min(100, Math.round((100 - performance) / 10) * 10));
+        const filters = [];
 
-            if (desaturationLevel > 0) {
-                const saturationPercent = 100 - desaturationLevel;
-                filterEffects = `saturate(${saturationPercent}%)`;
+        // Get performance and decay data
+        const performance = state.performancePercent;
+        const parcel = this.game.grid[row][col];
+        const decayPercent = (parcel?.decay || 0) * 100;
+
+        // Construction dimming (smooth transition from 30% to 100% brightness)
+        if (state.isUnderConstruction) {
+            const constructionProgress = state.constructionProgress || 0;
+            const brightness = 0.3 + (constructionProgress * 0.7); // 30% to 100%
+            const saturation = 20 + (constructionProgress * 80); // 20% to 100%
+            filters.push(`brightness(${brightness})`);
+            filters.push(`saturate(${saturation}%)`);
+            filters.push(`contrast(${0.7 + constructionProgress * 0.3})`); // 70% to 100%
+        } else {
+            // Performance-based effects for completed buildings
+
+            // Performance-based desaturation (0-100%)
+            let baseSaturation = 100;
+            if (performance < 100) {
+                baseSaturation = Math.max(0, performance);
             }
+
+            // If proximity tinting is active, we still apply performance desaturation
+            // The colored variant will inherit the saturation level
+            if (baseSaturation < 100 || baseVariant === 'stock') {
+                filters.push(`saturate(${baseSaturation}%)`);
+            }
+
+            // Glow effect for performance above 100%
+            if (performance > 100) {
+                const glowIntensity = Math.min((performance - 100) / 50, 1); // Max at 150%
+                filters.push(`drop-shadow(0 0 ${Math.round(glowIntensity * 8)}px rgba(255, 215, 0, ${glowIntensity * 0.6}))`);
+                filters.push(`brightness(${1 + glowIntensity * 0.3})`);
+            }
+
+            // DISABLED: Sepia filter for decay - now using needs-based performance
+            // Legacy decay visual system replaced by server-side needs satisfaction
+            // if (decayPercent > 20) { // 80% health = 20% decay
+            //     const sepiaIntensity = Math.min((decayPercent - 20) / 80, 1); // Max at 100% decay
+            //     filters.push(`sepia(${sepiaIntensity * 0.8})`);
+            //     filters.push(`contrast(${1 - sepiaIntensity * 0.3})`);
+            // }
+        }
+
+        if (filters.length > 0) {
+            filterEffects = filters.join(' ');
         }
 
         if (filterEffects) {
@@ -899,112 +1001,23 @@ class RenderingSystem {
      * Draw special effects (parcel reach, selection, etc.)
      */
     drawSpecialEffects() {
-        // Draw hover influence radius FIRST (so it appears under other highlights)
-        if (this.game.hoverInfluenceRadius && this.game.hoverInfluenceRadius.size > 0) {
-            this.drawHoverInfluenceRadius();
-            // Note: Building tints are now applied during building rendering via CSS filters
+        // Note: Proximity effects now handled by ParcelSelectorManager during tile rendering
+
+
+        // Note: Parcel reach illumination now drawn per-tile behind buildings
+        // Draw parcel reach border/perimeter only
+        if (this.game.selectedParcel) {
+            this.drawParcelReachBorder();
         }
 
-        // Draw white border for the core hovered parcel
-        if (this.game.hoveredTile) {
-            this.drawHoveredParcelBorder();
-        }
-        
-        // Draw parcel reach if active
-        if (this.game.selectedParcel) {
-            this.drawParcelReach();
-        }
-        
-        // Draw selected tile highlight
-        if (this.game.selectedTile) {
-            this.drawSelectedTileHighlight();
-        }
+        // DISABLED: Legacy selected tile highlight system - replaced by ParcelSelectorManager
+        // if (this.game.selectedTile) {
+        //     this.drawSelectedTileHighlight();
+        // }
     }
     
-    /**
-     * Draw white border for the core hovered parcel
-     */
-    drawHoveredParcelBorder() {
-        if (!this.game.hoveredTile) return;
-        
-        const { row, col } = this.game.hoveredTile;
-        const iso = this.toIsometric(col, row);
-        
-        this.ctx.save();
-        this.ctx.globalAlpha = 0.8;
-        this.ctx.strokeStyle = 'rgba(255, 255, 255, 1)'; // White
-        this.ctx.lineWidth = 2;
-        
-        // Draw diamond border for the hovered parcel
-        this.drawDiamond(iso.x, iso.y, this.tileWidth, this.tileHeight);
-        this.ctx.stroke();
-        
-        this.ctx.restore();
-    }
-
-    /**
-     * Draw hover influence radius with border highlights for adjacent vs road-connected
-     */
-    drawHoverInfluenceRadius() {
-        if (!this.game.hoverInfluenceRadius) return;
-
-        this.ctx.save();
-
-        // Draw influence tiles with different border colors based on connection type
-        this.game.hoverInfluenceRadius.forEach(tileKey => {
-            const isExtended = tileKey.includes(':extended');
-            const actualKey = isExtended ? tileKey.split(':')[0] : tileKey;
-            const [row, col] = actualKey.split(',').map(Number);
-
-            // Skip drawing borders on parcels that have buildings (they get building tints instead)
-            const parcel = this.game.grid[row][col];
-            if (parcel && parcel.building) {
-                return; // Skip this tile - let building tinting handle the visual effect
-            }
-
-            const iso = this.toIsometric(col, row);
-
-            // Different styling for adjacent vs road-connected
-            if (isExtended) {
-                // Road-connected tiles: blue border showing transportation reach
-                this.ctx.globalAlpha = 0.4;
-                this.ctx.strokeStyle = 'rgba(33, 150, 243, 1)';
-                this.ctx.lineWidth = 2;
-            } else {
-                // Adjacent tiles: yellow border for immediate neighbors
-                this.ctx.globalAlpha = 0.4;
-                this.ctx.strokeStyle = 'rgba(255, 235, 59, 1)'; // Soft yellow
-                this.ctx.lineWidth = 1.5;
-            }
-
-            // Draw diamond border only
-            this.drawDiamond(iso.x, iso.y, this.tileWidth, this.tileHeight);
-            this.ctx.stroke();
-        });
-
-        this.ctx.restore();
-    }
 
 
-    /**
-     * Draw parcel reach visualization
-     */
-    drawParcelReach() {
-        if (!this.game.parcelReach?.reachable) return;
-        
-        this.ctx.save();
-        this.ctx.globalAlpha = 0.3;
-        this.ctx.fillStyle = '#4CAF50';
-        
-        for (const reachableKey of this.game.parcelReach.reachable) {
-            const [row, col] = reachableKey.split(',').map(Number);
-            const iso = this.toIsometric(col, row);
-            this.drawDiamond(iso.x, iso.y, this.tileWidth, this.tileHeight);
-            this.ctx.fill();
-        }
-        
-        this.ctx.restore();
-    }
     
     /**
      * Draw selected tile highlight
@@ -1229,14 +1242,8 @@ class RenderingSystem {
         if (!parcel || !parcel.building) return;
         
         // Don't show hazard during construction
-        if (parcel.constructionStartDay !== null && parcel.constructionDays > 0) {
-            const totalConstructionTimeMs = parcel.constructionDays * this.game.dayDuration;
-            const elapsedTimeMs = (this.game.currentDay - parcel.constructionStartDay) * this.game.dayDuration + 
-                                  (performance.now() - (this.game.lastDayStartTime || Date.now()));
-            
-            if (elapsedTimeMs < totalConstructionTimeMs) {
-                return; // Still under construction
-            }
+        if (parcel._isUnderConstruction) {
+            return; // Still under construction
         }
         
         // Get building efficiency from the economic engine
@@ -1278,45 +1285,25 @@ class RenderingSystem {
     /**
      * Draw parcel reach visualization with animations
      */
-    drawParcelReach() {
+    drawParcelReachBorder() {
         if (!this.game.parcelReach || !this.game.selectedParcel) return;
-        
+
         // Create a set of all reachable parcels including the selected one
         const allReachable = new Set(this.game.parcelReach);
         allReachable.add(`${this.game.selectedParcel.row},${this.game.selectedParcel.col}`);
-        
+
         this.ctx.save();
-        
+
         // Calculate animation values using time
         const time = Date.now() / 1000; // Convert to seconds
         const pulseAmount = Math.sin(time * 2) * 0.5 + 0.5; // Oscillates between 0 and 1
         const glowAmount = Math.sin(time * 3) * 0.3 + 0.7; // Faster, smaller oscillation for glow
-        
-        // Animated fill for reachable area with pulsing opacity
-        const baseOpacity = 0.04;
-        const maxOpacity = 0.08;
-        const fillOpacity = baseOpacity + (maxOpacity - baseOpacity) * pulseAmount;
-        this.ctx.fillStyle = `rgba(255, 215, 0, ${fillOpacity})`; // Pulsing yellow fill
-        
-        allReachable.forEach(key => {
-            const [r, c] = key.split(',').map(Number);
-            const iso = this.toIsometric(c, r);
-            const tile = this.game.grid[r][c];
-            const elevation = tile ? tile.elevation * 8 : 0;
-            
-            this.ctx.beginPath();
-            this.ctx.moveTo(iso.x, iso.y - elevation - this.tileHeight / 2);
-            this.ctx.lineTo(iso.x + this.tileWidth / 2, iso.y - elevation);
-            this.ctx.lineTo(iso.x, iso.y - elevation + this.tileHeight / 2);
-            this.ctx.lineTo(iso.x - this.tileWidth / 2, iso.y - elevation);
-            this.ctx.closePath();
-            this.ctx.fill();
-        });
-        
+
+        // Skip the fill since it's now drawn per-tile behind buildings
         // Animated border with glow effect
         this.ctx.shadowColor = 'rgba(255, 215, 0, 0.8)';
         this.ctx.shadowBlur = 3 + (2 * glowAmount); // Animated glow
-        
+
         // Draw only the outer border of the reachable area
         const borderOpacity = 0.25 + (0.15 * glowAmount); // Oscillating border opacity
         this.ctx.strokeStyle = `rgba(255, 215, 0, ${borderOpacity})`;
@@ -1334,25 +1321,28 @@ class RenderingSystem {
         this.ctx.shadowBlur = 0;
         this.ctx.shadowColor = 'transparent';
         
-        // Highlight the selected parcel itself with animated glow
+        // Highlight the selected parcel itself with animated glow (only if no building)
         const iso = this.toIsometric(this.game.selectedParcel.col, this.game.selectedParcel.row);
         const tile = this.game.grid[this.game.selectedParcel.row][this.game.selectedParcel.col];
         const elevation = tile ? tile.elevation * 8 : 0;
-        
-        // Strong glow for selected parcel to make it stand out
-        this.ctx.shadowColor = 'rgba(255, 215, 0, 1)';
-        this.ctx.shadowBlur = 5 + (3 * pulseAmount); // Stronger glow for selected
-        
-        this.ctx.strokeStyle = `rgba(255, 215, 0, ${0.6 + 0.2 * glowAmount})`; // Brighter yellow for selected
-        this.ctx.lineWidth = 2 + (0.5 * pulseAmount); // Thicker, animated line
-        this.ctx.setLineDash([]);
-        this.ctx.beginPath();
-        this.ctx.moveTo(iso.x, iso.y - elevation - this.tileHeight / 2);
-        this.ctx.lineTo(iso.x + this.tileWidth / 2, iso.y - elevation);
-        this.ctx.lineTo(iso.x, iso.y - elevation + this.tileHeight / 2);
-        this.ctx.lineTo(iso.x - this.tileWidth / 2, iso.y - elevation);
-        this.ctx.closePath();
-        this.ctx.stroke();
+
+        // Only draw border if there's no building on this tile
+        if (!tile || !tile.building) {
+            // Strong glow for selected parcel to make it stand out
+            this.ctx.shadowColor = 'rgba(255, 215, 0, 1)';
+            this.ctx.shadowBlur = 5 + (3 * pulseAmount); // Stronger glow for selected
+
+            this.ctx.strokeStyle = `rgba(255, 215, 0, ${0.6 + 0.2 * glowAmount})`; // Brighter yellow for selected
+            this.ctx.lineWidth = 2 + (0.5 * pulseAmount); // Thicker, animated line
+            this.ctx.setLineDash([]);
+            this.ctx.beginPath();
+            this.ctx.moveTo(iso.x, iso.y - elevation - this.tileHeight / 2);
+            this.ctx.lineTo(iso.x + this.tileWidth / 2, iso.y - elevation);
+            this.ctx.lineTo(iso.x, iso.y - elevation + this.tileHeight / 2);
+            this.ctx.lineTo(iso.x - this.tileWidth / 2, iso.y - elevation);
+            this.ctx.closePath();
+            this.ctx.stroke();
+        }
 
         // Reset shadow properties before restore
         this.ctx.shadowBlur = 0;
@@ -1397,20 +1387,23 @@ class RenderingSystem {
             }
         });
         
-        // Draw only the edge parcels
+        // Draw only the edge parcels (skip parcels with buildings)
         edgeParcels.forEach(key => {
             const [r, c] = key.split(',').map(Number);
             const iso = this.toIsometric(c, r);
             const tile = this.game.grid[r][c];
             const elevation = tile ? tile.elevation * 8 : 0;
-            
-            this.ctx.beginPath();
-            this.ctx.moveTo(iso.x, iso.y - elevation - this.tileHeight / 2);
-            this.ctx.lineTo(iso.x + this.tileWidth / 2, iso.y - elevation);
-            this.ctx.lineTo(iso.x, iso.y - elevation + this.tileHeight / 2);
-            this.ctx.lineTo(iso.x - this.tileWidth / 2, iso.y - elevation);
-            this.ctx.closePath();
-            this.ctx.stroke();
+
+            // Only draw border if there's no building on this tile
+            if (!tile || !tile.building) {
+                this.ctx.beginPath();
+                this.ctx.moveTo(iso.x, iso.y - elevation - this.tileHeight / 2);
+                this.ctx.lineTo(iso.x + this.tileWidth / 2, iso.y - elevation);
+                this.ctx.lineTo(iso.x, iso.y - elevation + this.tileHeight / 2);
+                this.ctx.lineTo(iso.x - this.tileWidth / 2, iso.y - elevation);
+                this.ctx.closePath();
+                this.ctx.stroke();
+            }
         });
     }
     
@@ -1461,11 +1454,8 @@ class RenderingSystem {
     drawJEFHWarningIndicators(buildingId, offsetX, offsetY, row, col) {
         // Don't show indicators for buildings under construction
         const parcel = this.game.grid[row][col];
-        if (parcel?.constructionStartDay !== null && parcel?.constructionDays > 0) {
-            const isUnderConstruction = (this.game.currentDay - parcel.constructionStartDay) < parcel.constructionDays;
-            if (isUnderConstruction) {
-                return; // Hide indicators during construction
-            }
+        if (parcel?._isUnderConstruction) {
+            return; // Hide indicators during construction
         }
         
         // Get building efficiency data
@@ -1714,20 +1704,15 @@ class RenderingSystem {
                 const y = row * cellSize;
 
                 // Draw parcel ownership
-                if (this.game.isCurrentPlayer(parcel.owner)) {
-                    // Use player's selected color for minimap
-                    if (this.game.playerSettings && this.game.playerSettings.color) {
-                        const hex = this.game.playerSettings.color.replace('#', '');
-                        const r = parseInt(hex.substr(0, 2), 16);
-                        const g = parseInt(hex.substr(2, 2), 16);
-                        const b = parseInt(hex.substr(4, 2), 16);
-                        ctx.fillStyle = `rgba(${r}, ${g}, ${b}, 0.3)`;
+                if (parcel.owner && parcel.owner !== 'none') {
+                    const playerColor = this.getPlayerColor(parcel.owner);
+                    // Extract RGB from the rgba string and use lower opacity for minimap
+                    const rgba = playerColor.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)(?:,\s*[\d.]+)?\)/);
+                    if (rgba) {
+                        ctx.fillStyle = `rgba(${rgba[1]}, ${rgba[2]}, ${rgba[3]}, 0.3)`;
                     } else {
-                        ctx.fillStyle = 'rgba(0, 102, 204, 0.2)';
+                        ctx.fillStyle = 'rgba(102, 102, 102, 0.2)'; // Fallback gray
                     }
-                    ctx.fillRect(x, y, cellSize, cellSize);
-                } else if (parcel.owner && parcel.owner !== 'none') {
-                    ctx.fillStyle = 'rgba(204, 102, 0, 0.2)';
                     ctx.fillRect(x, y, cellSize, cellSize);
                 }
 

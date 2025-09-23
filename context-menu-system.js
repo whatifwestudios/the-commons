@@ -11,19 +11,20 @@ class ContextMenuSystem {
         this.selectedParcel = null;
         this.currentSubmenu = null;
         this.submenuTimer = null;
+
+        // Track event listeners for cleanup
+        this.eventListeners = [];
     }
 
     /**
      * Show context menu for a specific parcel
      */
     show(row, col, mouseX, mouseY) {
-
         // Early return if context menu element doesn't exist or doesn't have querySelector
         if (!this.contextMenu || typeof this.contextMenu.querySelector !== 'function') {
             console.error('❌ Context menu element not found or invalid');
             return;
         }
-
 
         // Set the selected tile and calculate reach
         this.selectedTile = { row, col };
@@ -32,8 +33,6 @@ class ContextMenuSystem {
         this.game.selectedParcel = { row, col };
         this.game.parcelReach = this.game.calculateParcelReach(row, col);
         this.game.scheduleRender(); // Redraw to show reach visualization
-        this.game.hoveredTile = { row, col };
-        this.game.updateParcelIllumination(this.game.hoveredTile);
 
         // Update the selected tile display
         const coord = this.game.getParcelCoordinate(row, col);
@@ -70,11 +69,11 @@ class ContextMenuSystem {
             this.createCompetitorOwnedParcelMenu(statusEl, contentEl, row, col, parcel);
         }
 
-        // Position the context menu
-        this.positionMenu(mouseX, mouseY);
-
-        // Show the menu
+        // Show the menu first
         this.contextMenu.classList.add('visible');
+
+        // Then position it to avoid any layout shifts
+        this.positionMenu(mouseX, mouseY);
     }
 
     /**
@@ -84,6 +83,12 @@ class ContextMenuSystem {
         if (this.contextMenu && this.contextMenu.classList) {
             this.contextMenu.classList.remove('visible');
         }
+
+        // Hide building info panel when context menu closes
+        this.hideBuildingInfo();
+
+        // Clean up event listeners to prevent memory leaks
+        this.cleanupEventListeners();
 
         // Clear selection and reach visualization when context menu closes
         this.selectedTile = null;
@@ -168,10 +173,10 @@ class ContextMenuSystem {
      * Position context menu at coordinates
      */
     positionMenu(mouseX, mouseY) {
-        // Position the context menu to match tooltip position exactly
+        // Position the context menu exactly at provided coordinates
         if (this.contextMenu && this.contextMenu.classList) {
-            this.contextMenu.style.left = `${mouseX + 30}px`;
-            this.contextMenu.style.top = `${mouseY - 80}px`;
+            this.contextMenu.style.left = `${mouseX}px`;
+            this.contextMenu.style.top = `${mouseY}px`;
         }
     }
 
@@ -245,13 +250,10 @@ class ContextMenuSystem {
 
             categoryBtn.innerHTML = `
                 <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
-                    <div style="display: flex; align-items: center; gap: 6px;">
-                        <div style="width: 6px; height: 6px; border-radius: 50%; background: ${indicatorColor};"></div>
-                        <span>${category.charAt(0).toUpperCase() + category.slice(1)}</span>
-                    </div>
+                    <span>${category.charAt(0).toUpperCase() + category.slice(1)}</span>
                     <div style="display: flex; align-items: center; gap: 8px;">
                         ${fundingDisplay}
-                        <span class="arrow">▶</span>
+                        <span style="font-size: 12px; opacity: 0.7;">→</span>
                     </div>
                 </div>
             `;
@@ -480,7 +482,7 @@ class ContextMenuSystem {
     addBuildingHoverHandlers(submenu) {
         const buildingButtons = submenu.querySelectorAll('.building-btn');
         buildingButtons.forEach(btn => {
-            btn.addEventListener('mouseenter', (e) => {
+            const mouseEnterHandler = (e) => {
                 // Extract building name from the button structure
                 let buildingName = '';
 
@@ -497,10 +499,25 @@ class ContextMenuSystem {
                 if (buildingName) {
                     this.showBuildingInfo(buildingName);
                 }
-            });
+            };
 
-            btn.addEventListener('mouseleave', () => {
+            const mouseLeaveHandler = () => {
                 this.hideBuildingInfo();
+            };
+
+            btn.addEventListener('mouseenter', mouseEnterHandler);
+            btn.addEventListener('mouseleave', mouseLeaveHandler);
+
+            // Track listeners for cleanup
+            this.eventListeners.push({
+                element: btn,
+                event: 'mouseenter',
+                handler: mouseEnterHandler
+            });
+            this.eventListeners.push({
+                element: btn,
+                event: 'mouseleave',
+                handler: mouseLeaveHandler
             });
         });
     }
@@ -886,6 +903,18 @@ class ContextMenuSystem {
         `;
 
         return html;
+    }
+
+    /**
+     * Clean up all event listeners to prevent memory leaks
+     */
+    cleanupEventListeners() {
+        this.eventListeners.forEach(({ element, event, handler }) => {
+            if (element && element.removeEventListener) {
+                element.removeEventListener(event, handler);
+            }
+        });
+        this.eventListeners = [];
     }
 }
 
