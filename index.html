@@ -1797,6 +1797,34 @@
     <script type="module" src="buildings.js"></script>
     <!-- Utility Scripts -->
     <script src="utils/player-utils.js"></script>
+
+    <!-- Initialize user session -->
+    <script>
+        // Fetch current user information on page load
+        async function initializeCurrentUser() {
+            try {
+                const response = await fetch('/api/auth/me', {
+                    credentials: 'include'
+                });
+                const data = await response.json();
+
+                if (data.success && data.user) {
+                    window.currentUser = data.user;
+                    console.log('👤 Current user initialized:', data.user.username || data.user.id);
+                } else {
+                    window.currentUser = null;
+                    console.log('👤 No authenticated user (playing as guest)');
+                }
+            } catch (error) {
+                console.warn('❌ Failed to fetch current user:', error);
+                window.currentUser = null;
+            }
+        }
+
+        // Initialize on page load
+        document.addEventListener('DOMContentLoaded', initializeCurrentUser);
+    </script>
+
     <script src="utils/color-utils.js"></script>
     <script src="utils/coordinate-utils.js"></script>
 

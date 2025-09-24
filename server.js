@@ -68,7 +68,8 @@ let soloGameData = {
     ]
 };
 
-// Per-user cash balances (server-authoritative)
+// Per-player game state (server-authoritative for concurrent solo players)
+let playerGameStates = new Map(); // userId -> gameState
 let playerBalances = new Map(); // userId -> balance
 
 // Get or initialize player balance
@@ -77,6 +78,24 @@ const getPlayerBalance = (userId) => {
         playerBalances.set(userId, 6000); // Default starting balance
     }
     return playerBalances.get(userId);
+};
+
+// Get or initialize player game state (creates empty grid and default state)
+const getPlayerGameState = (userId) => {
+    if (!playerGameStates.has(userId)) {
+        // Initialize with empty game state
+        const defaultGameState = {
+            grid: {}, // Empty grid - will be populated as player builds
+            currentDay: 1,
+            currentMonth: 'SEPT',
+            playerCash: 6000,
+            playerActions: 20,
+            // Add other default state properties as needed
+        };
+        playerGameStates.set(userId, defaultGameState);
+        console.log(`🏠 Initialized game state for player: ${userId}`);
+    }
+    return playerGameStates.get(userId);
 };
 
 // Backward compatibility for solo play
@@ -390,6 +409,35 @@ app.post('/api/player/color', optionalAuth, (req, res) => {
     }
 });
 
+// Get current authenticated user info
+app.get('/api/auth/me', optionalAuth, (req, res) => {
+    try {
+        if (req.user && req.user.id) {
+            res.json({
+                success: true,
+                user: {
+                    id: req.user.id,
+                    username: req.user.username,
+                    authenticated: true
+                }
+            });
+        } else {
+            res.json({
+                success: true,
+                user: null,
+                authenticated: false
+            });
+        }
+    } catch (error) {
+        console.error('❌ Get current user failed:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Failed to get current user',
+            message: error.message
+        });
+    }
+});
+
 // Get player info endpoint
 app.get('/api/player/:playerId', optionalAuth, (req, res) => {
     try {
@@ -619,13 +667,27 @@ app.post('/api/economics/transport-update', (req, res) => {
     }
 });
 
-// FINE-GRAINED: Player cashflow calculation
-app.post('/api/economics/player-cashflow', (req, res) => {
+// FINE-GRAINED: Player cashflow calculation (now with session-based player isolation)
+app.post('/api/economics/player-cashflow', optionalAuth, (req, res) => {
     try {
         console.log('💰 Player cashflow calculation requested');
-        const { gameState, playerId } = req.body;
 
-        const result = economicEngine.calculatePlayerCashflow(gameState, playerId || 'player');
+        // Determine player ID from session or fallback to legacy 'player'
+        let playerId = 'player'; // Default for backward compatibility
+        if (req.user && req.user.id) {
+            playerId = req.user.id;
+            console.log(`👤 Using authenticated player: ${playerId}`);
+        }
+
+        // Get or merge player-specific game state
+        let gameState = req.body.gameState;
+        if (req.user && req.user.id) {
+            const serverPlayerState = getPlayerGameState(req.user.id);
+            // Merge client state with server state (client state takes precedence for current session)
+            gameState = { ...serverPlayerState, ...gameState };
+        }
+
+        const result = economicEngine.calculatePlayerCashflow(gameState, playerId);
         res.json(result);
     } catch (error) {
         console.error('❌ Player cashflow calculation failed:', error);

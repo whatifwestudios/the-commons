@@ -302,7 +302,12 @@ class ClientEconomicAPI {
      * FINE-GRAINED: Calculate player cashflow breakdown
      * Server-authoritative cashflow calculation
      */
-    async getPlayerCashflow(gameState, playerId = 'player') {
+    async getPlayerCashflow(gameState, playerId = null) {
+        // Use dynamic player ID if not provided
+        if (!playerId) {
+            playerId = window.PlayerUtils.getCurrentPlayerId();
+        }
+
         const cacheKey = `cashflow:${playerId}`;
 
         // Check cache (5 second TTL for cashflow)

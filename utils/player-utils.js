@@ -4,6 +4,24 @@
 
 window.PlayerUtils = {
     /**
+     * Get current player ID (from session or fallback to 'player')
+     */
+    getCurrentPlayerId() {
+        // Try to get from session/auth if available
+        if (window.currentUser && window.currentUser.id) {
+            return window.currentUser.id;
+        }
+
+        // Generate or retrieve anonymous session ID for guests
+        if (!localStorage.getItem('anonymousPlayerId')) {
+            const anonymousId = 'guest_' + Math.random().toString(36).substr(2, 9);
+            localStorage.setItem('anonymousPlayerId', anonymousId);
+        }
+
+        return localStorage.getItem('anonymousPlayerId');
+    },
+
+    /**
      * Get player display name
      */
     getPlayerName(playerId) {
@@ -17,14 +35,24 @@ window.PlayerUtils = {
             'competitor6': 'Brown Enterprises'
         };
 
+        // If it's the current player, always show "You"
+        if (this.isCurrentPlayer(playerId)) {
+            return 'You';
+        }
+
+        // Handle anonymous guest players
+        if (playerId && playerId.startsWith('guest_')) {
+            return 'Guest Player';
+        }
+
         return playerNames[playerId] || 'Unknown Player';
     },
 
     /**
-     * Check if player is current player
+     * Check if player is current player (now supports dynamic player IDs)
      */
     isCurrentPlayer(playerId) {
-        return playerId === 'player';
+        return playerId === this.getCurrentPlayerId();
     },
 
     /**
