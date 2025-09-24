@@ -4,26 +4,6 @@
 
 window.ColorUtils = {
     /**
-     * Get border color for a player's parcel
-     */
-    getPlayerBorderColor(owner, game) {
-        if (!owner || !game) return '#333';
-
-        // Player colors
-        const playerColors = {
-            'player': '#4CAF50',
-            'competitor1': '#2196F3',
-            'competitor2': '#FF9800',
-            'competitor3': '#9C27B0',
-            'competitor4': '#F44336',
-            'competitor5': '#607D8B',
-            'competitor6': '#795548'
-        };
-
-        return playerColors[owner] || '#666';
-    },
-
-    /**
      * Get color for building category
      */
     getBuildingColor(category) {

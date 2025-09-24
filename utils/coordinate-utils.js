@@ -37,14 +37,5 @@ window.CoordinateUtils = {
         }
 
         return { row: roundedRow, col: roundedCol };
-    },
-
-    /**
-     * Calculate distance between two grid coordinates
-     */
-    distance(row1, col1, row2, col2) {
-        const dx = col2 - col1;
-        const dy = row2 - row1;
-        return Math.sqrt(dx * dx + dy * dy);
     }
 };

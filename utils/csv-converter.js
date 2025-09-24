@@ -9,46 +9,6 @@ class CSVConverter {
     }
 
     /**
-     * Convert CSV text to JavaScript building data
-     * @param {string} csvText - Raw CSV text content
-     * @returns {string} JavaScript module content
-     */
-    convertCSVToJS(csvText) {
-        try {
-            // Parse CSV into rows
-            const lines = csvText.trim().split('\n');
-            if (lines.length < 2) {
-                throw new Error('CSV must have at least a header row and one data row');
-            }
-
-            // Parse header
-            const headers = this.parseCSVRow(lines[0]);
-
-            // Parse data rows
-            const buildings = [];
-            for (let i = 1; i < lines.length; i++) {
-                const row = this.parseCSVRow(lines[i]);
-                if (row.length === headers.length) {
-                    const building = this.createBuildingFromRow(headers, row);
-                    if (building) {
-                        buildings.push(building);
-                    }
-                }
-            }
-
-            // Group buildings by category
-            this.buildingCategories = this.groupBuildingsByCategory(buildings);
-
-            // Generate JavaScript module content
-            return this.generateJavaScriptModule(this.buildingCategories);
-
-        } catch (error) {
-            console.error('CSV conversion error:', error);
-            throw new Error(`Failed to convert CSV: ${error.message}`);
-        }
-    }
-
-    /**
      * Convert CSV text to JSON format
      * @param {string} csvText - Raw CSV text content
      * @returns {Object} JSON object with building data
