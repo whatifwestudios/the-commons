@@ -3,9 +3,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>The Commons - Magic Link Welcome</title>
+    <title>THE COMMONS</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect fill='%231a1a1a' width='100' height='100'/><path fill='%234CAF50' d='M20 70 L50 30 L80 70 Z M35 70 L50 50 L65 70 Z'/></svg>" type="image/svg+xml">
+    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="auth-styles.css">
     <style>
-        /* Welcome Screen Styles - Matching original design exactly */
+        /* Clean welcome screen for future matchmaking integration */
         .welcome-screen {
             position: fixed;
             top: 0;
@@ -32,14 +35,137 @@
             background: #1a1a1a;
             border-radius: 12px;
             padding: 38px;
-            width: 300px;
-            max-height: 600px;
+            width: 320px;
+            max-height: 700px;
             text-align: center;
             box-shadow: 0 10px 30px rgba(0, 0, 0, 0.8);
             display: flex;
             flex-direction: column;
             gap: 12px;
             font-family: 'SF Mono', Monaco, Inconsolata, 'Roboto Mono', 'Source Code Pro', monospace;
+        }
+
+        /* Clean transition overlay styling */
+        .transition-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: #0a0a0a;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            transition: opacity 0.5s ease-out;
+            z-index: 9999;
+        }
+
+        .transition-text {
+            color: #fff;
+            font-size: 20px;
+            font-weight: 300;
+            text-align: center;
+            position: relative;
+        }
+
+        .transition-text::after {
+            content: '';
+            position: absolute;
+            bottom: -8px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 60%;
+            height: 2px;
+            background: var(--player-color, #10AC84);
+        }
+
+        /* Future matchmaking area - hidden for now */
+        .matchmaking-area {
+            margin-top: 3rem;
+            opacity: 0;
+            pointer-events: none;
+            transition: all 0.5s ease;
+        }
+
+        .matchmaking-area.active {
+            opacity: 1;
+            pointer-events: auto;
+        }
+
+
+        .game-description {
+            text-align: center;
+            margin-bottom: 2rem;
+            color: #ccc;
+            line-height: 1.6;
+        }
+
+        .game-description p {
+            margin: 0.5rem 0;
+        }
+
+        .game-description strong {
+            color: #00ff88;
+        }
+
+        .player-setup {
+            text-align: left;
+        }
+
+        .setup-section {
+            margin-bottom: 1.5rem;
+        }
+
+        .setup-header {
+            text-align: center;
+            margin-bottom: 2rem;
+            padding-bottom: 1rem;
+            border-bottom: 1px solid rgba(42, 42, 42, 0.4);
+        }
+
+        .setup-header h3 {
+            margin: 0 0 0.5rem 0;
+            font-size: 14px;
+            font-weight: 500;
+            color: #ffffff;
+            background: linear-gradient(135deg, #ffffff, #cccccc);
+            background-clip: text;
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .setup-subtitle {
+            color: #999;
+            font-size: 13px;
+            font-style: italic;
+        }
+
+        .setup-sections {
+            display: flex;
+            flex-direction: column;
+            gap: 1.5rem;
+        }
+
+        .setup-section h4 {
+            margin: 0 0 0.5rem 0;
+            font-size: 13px;
+            font-weight: 500;
+            color: #ffffff;
+            background: linear-gradient(135deg, #ffffff, #cccccc);
+            background-clip: text;
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .section-description {
+            color: #999;
+            font-size: 12px;
+            margin-bottom: 1rem;
+            line-height: 1.4;
         }
 
         .input-group {
@@ -56,6 +182,93 @@
             letter-spacing: 0.5px;
         }
 
+        .setup-section input {
+            width: 100%;
+            padding: 12px 16px;
+            background: rgba(26, 26, 26, 0.8);
+            border: 1px solid rgba(42, 42, 42, 0.6);
+            border-radius: 8px;
+            color: #fff;
+            font-size: 14px;
+            font-weight: 400;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            backdrop-filter: blur(8px);
+        }
+
+        .setup-section input:focus {
+            outline: none;
+            border-color: rgba(76, 175, 80, 0.6);
+            background: rgba(26, 26, 26, 0.9);
+            box-shadow: 0 0 0 2px rgba(76, 175, 80, 0.1);
+        }
+
+        .color-section {
+            text-align: center;
+        }
+
+        .color-label {
+            display: block;
+            font-size: 14px;
+            color: #ccc;
+            margin-bottom: 10px;
+        }
+
+        .color-controls {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-top: 8px;
+        }
+
+        .color-selector {
+            display: grid;
+            grid-template-columns: repeat(5, 1fr);
+            gap: 12px;
+            flex: 1;
+        }
+
+        .regenerate-colors-btn {
+            background: transparent;
+            border: none;
+            border-radius: 8px;
+            color: #ffffff;
+            font-size: 16px;
+            width: 40px;
+            height: 40px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .regenerate-colors-btn:hover {
+            transform: translateY(-1px);
+        }
+
+        .regenerate-colors-btn.spinning {
+            animation: spin 0.6s ease-in-out;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .color-option {
+            transition: all 0.3s ease;
+        }
+
+        .color-option.changing {
+            animation: colorChange 0.6s ease-in-out;
+        }
+
+        @keyframes colorChange {
+            0% { transform: scale(1); opacity: 1; }
+            50% { transform: scale(1.1); opacity: 0.7; }
+            100% { transform: scale(1); opacity: 1; }
+        }
+
         .input-group input {
             width: 100%;
             padding: 12px 16px;
@@ -66,7 +279,10 @@
             font-size: 14px;
             font-family: 'SF Mono', Monaco, Inconsolata, 'Roboto Mono', 'Source Code Pro', monospace;
             transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-            box-sizing: border-box;
+        }
+
+        .input-group input::placeholder {
+            color: rgba(255, 255, 255, 0.5);
         }
 
         .input-group input:focus {
@@ -75,10 +291,188 @@
             background: rgba(255, 255, 255, 0.08);
         }
 
-        .input-group input::placeholder {
-            color: rgba(255, 255, 255, 0.5);
+            font-weight: 400;
+            margin: 0;
+            text-align: center;
         }
 
+        .color-option {
+            width: 33px;
+            height: 33px;
+            border-radius: 3px;
+            border: 3px solid transparent;
+            cursor: pointer;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .color-option:hover {
+            border-color: rgba(255, 255, 255, 0.3);
+            transform: scale(1.05);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+        }
+
+        .color-option.selected {
+            transform: scale(1.15);
+            border-color: #9C27B0;
+            box-shadow: 0 0 0 2px rgba(156, 39, 176, 0.3);
+        }
+
+
+        .emoji-selector {
+            display: flex;
+            gap: 0.5rem;
+            flex-wrap: wrap;
+        }
+
+        .emoji-btn {
+            width: 50px;
+            height: 50px;
+            border: 2px solid rgba(255, 255, 255, 0.2);
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            font-size: 1.5rem;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .emoji-btn:hover {
+            border-color: #00ff88;
+            background: rgba(0, 255, 136, 0.1);
+            transform: scale(1.05);
+        }
+
+        .emoji-btn.active {
+            border-color: #00ff88;
+            background: rgba(0, 255, 136, 0.2);
+        }
+
+        .setup-section h3 {
+            color: #fff;
+            font-size: 1rem;
+            margin-bottom: 1rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .feature-list {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+        }
+
+        .feature-list li {
+            padding: 0.5rem 0;
+            color: #ccc;
+            line-height: 1.4;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .feature-list li:last-child {
+            border-bottom: none;
+        }
+
+        .feature-list strong {
+            color: #fff;
+        }
+
+        .initial-resources {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr); /* Put all 3 resources in single row */
+            gap: 8px; /* Smaller gap for compact layout */
+            margin-top: 1rem;
+        }
+
+        .resource-item {
+            display: flex;
+            flex-direction: column; /* Stack icon and details vertically for compact row layout */
+            align-items: center;
+            gap: 6px; /* Smaller gap */
+            padding: 12px 8px; /* Less horizontal padding */
+            background: rgba(26, 26, 26, 0.6);
+            border: 1px solid rgba(42, 42, 42, 0.4);
+            border-radius: 8px;
+            backdrop-filter: blur(8px);
+            text-align: center;
+        }
+
+        .resource-icon {
+            font-size: 18px;
+            width: 24px;
+            text-align: center;
+        }
+
+        .resource-details {
+            flex: 1;
+        }
+
+        .resource-label {
+            color: #999;
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 2px;
+        }
+
+        .resource-value {
+            color: #fff;
+            font-size: 14px;
+            font-weight: 500;
+        }
+
+        .setup-complete-btn {
+            width: 100%;
+            padding: 10px 20px;
+            background: #000000;
+            color: #ffffff;
+            border: 2px solid #9C27B0;
+            border-radius: 8px;
+            font-size: 18px;
+            font-weight: 400;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            cursor: pointer;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            margin-top: 2rem;
+            backdrop-filter: blur(8px);
+            box-shadow: 0 4px 12px rgba(156, 39, 176, 0.2);
+            font-family: 'SF Mono', Monaco, Inconsolata, 'Roboto Mono', 'Source Code Pro', monospace;
+        }
+
+        .setup-complete-btn:hover {
+            background: rgba(156, 39, 176, 0.1); /* Slight purple tint on hover */
+            border-color: #9C27B0;
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(156, 39, 176, 0.3);
+        }
+
+        .lobby-container {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            padding: 1.5rem;
+            margin-top: 1rem;
+            backdrop-filter: blur(10px);
+        }
+
+        .game-interface.hidden {
+            display: none;
+        }
+
+        .game-interface {
+            opacity: 0;
+            transition: opacity 0.96s ease-in;
+        }
+
+        .game-interface.fade-in {
+            opacity: 1;
+        }
+
+        /* Magic Link Authentication Styles */
         .auth-section {
             margin-bottom: 1.5rem;
         }
@@ -106,6 +500,8 @@
             text-transform: uppercase;
             letter-spacing: 0.5px;
             font-family: inherit;
+            display: block !important;
+            visibility: visible !important;
         }
 
         .auth-toggle button.active {
@@ -142,113 +538,6 @@
             border-color: rgba(116, 185, 255, 0.4);
         }
 
-        .color-section {
-            text-align: center;
-        }
-
-        .color-label {
-            display: block;
-            font-size: 14px;
-            color: #ccc;
-            margin-bottom: 10px;
-        }
-
-        .color-controls {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            margin-top: 8px;
-        }
-
-        .color-selector {
-            display: grid;
-            grid-template-columns: repeat(5, 1fr);
-            gap: 12px;
-            flex: 1;
-        }
-
-        .color-option {
-            width: 33px;
-            height: 33px;
-            border-radius: 3px;
-            border: 3px solid transparent;
-            cursor: pointer;
-            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-            position: relative;
-            overflow: hidden;
-        }
-
-        .color-option:hover {
-            border-color: rgba(255, 255, 255, 0.3);
-            transform: scale(1.05);
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-        }
-
-        .color-option.selected {
-            transform: scale(1.15);
-        }
-
-        .regenerate-colors-btn {
-            background: transparent;
-            border: none;
-            border-radius: 8px;
-            color: #ffffff;
-            font-size: 16px;
-            width: 40px;
-            height: 40px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            cursor: pointer;
-            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-        }
-
-        .regenerate-colors-btn:hover {
-            transform: translateY(-1px);
-        }
-
-        .regenerate-colors-btn.spinning {
-            animation: spin 0.6s ease-in-out;
-        }
-
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
-
-        .setup-complete-btn {
-            width: 100%;
-            padding: 10px 20px;
-            background: #000000;
-            color: #ffffff;
-            border: 2px solid #9C27B0;
-            border-radius: 8px;
-            font-size: 18px;
-            font-weight: 400;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-            cursor: pointer;
-            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-            margin-top: 2rem;
-            backdrop-filter: blur(8px);
-            box-shadow: 0 4px 12px rgba(156, 39, 176, 0.2);
-            font-family: 'SF Mono', Monaco, Inconsolata, 'Roboto Mono', 'Source Code Pro', monospace;
-        }
-
-        .setup-complete-btn:hover {
-            background: rgba(156, 39, 176, 0.1);
-            border-color: #9C27B0;
-            transform: translateY(-2px);
-            box-shadow: 0 8px 25px rgba(156, 39, 176, 0.3);
-        }
-
-        .setup-complete-btn:disabled {
-            opacity: 0.5;
-            cursor: not-allowed;
-            transform: none;
-            box-shadow: none;
-        }
-
         .guest-note, .magic-link-note {
             margin-top: 1rem;
             padding: 12px;
@@ -267,18 +556,869 @@
             border-color: rgba(42, 42, 42, 0.6);
         }
 
-        .color-option.changing {
-            animation: colorChange 0.6s ease-in-out;
-        }
-
-        @keyframes colorChange {
-            0% { transform: scale(1); opacity: 1; }
-            50% { transform: scale(1.1); opacity: 0.7; }
-            100% { transform: scale(1); opacity: 1; }
+        .auth-form {
+            margin-bottom: 0;
+            padding: 0;
         }
     </style>
 </head>
 <body>
+
+    <!-- Main Game Interface (hidden until setup complete) -->
+    <div id="game-interface" class="game-interface hidden">
+    <div id="top-bar">
+        <!-- Left container: Player menu -->
+        <div class="top-bar-left">
+            <div class="top-bar-section">
+                <button class="top-bar-btn" id="player-btn">
+                    PLAYER
+                    <span class="indicator">⌄</span>
+                </button>
+                <div class="dropdown-menu" id="player-menu">
+                    <button class="dropdown-item" id="show-leaderboard">
+                        🏆 Leaderboard
+                    </button>
+                    <button class="dropdown-item" id="show-player-stats">
+                        📊 Player Stats
+                    </button>
+                    <button class="dropdown-item" id="reset-game" style="color: #ff6b6b;">
+                        🔄 Reset Game
+                    </button>
+                    <div class="dropdown-divider"></div>
+                    <button class="dropdown-item" id="toggle-attenuation-overlay">
+                        🌿 Attenuation Overlay: <span id="attenuation-status">OFF</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Center container: Date, Layer switcher, Governance, Finances -->
+        <div class="top-bar-center">
+            <div class="top-bar-section">
+                <div class="top-bar-info">
+                    <div class="info-item date-only">
+                        <span class="info-value date-value" id="game-date">SEPT 2</span>
+                    </div>
+                </div>
+            </div>
+            <div class="top-bar-section">
+                <button class="top-bar-btn city-name" id="city-name-btn">
+                    <span id="city-name">LOADING...</span>
+                </button>
+                <div class="dropdown-menu" id="city-menu">
+                    <button class="dropdown-item layer-option active" id="layer-normal" data-layer="normal">
+                        🗺️ Normal View
+                    </button>
+                    <button class="dropdown-item layer-option" id="layer-landvalue" data-layer="landvalue">
+                        🔥 Land Values Heatmap
+                    </button>
+                    <button class="dropdown-item layer-option" id="layer-cashflow" data-layer="cashflow">
+                        📊 Cashflow View
+                    </button>
+                    <button class="dropdown-item layer-option" id="layer-mobility" data-layer="mobility">
+                        🚶 Mobility View
+                    </button>
+                    <button class="dropdown-item layer-option" id="layer-players" data-layer="players">
+                        👥 Players View
+                    </button>
+                </div>
+            </div>
+            <div class="top-bar-section">
+                <button class="top-bar-btn" id="governance-btn">
+                    GOVERNANCE
+                </button>
+            </div>
+            <div class="top-bar-section">
+                <div class="top-bar-info">
+                    <div class="info-item finances-row">
+                        <div class="finance-item">
+                            <span class="info-label">CASH:</span>
+                            <span class="info-value" id="player-cash">$5,000</span>
+                        </div>
+                        <div class="finance-item">
+                            <span class="info-label">WEALTH:</span>
+                            <span class="info-value" id="player-wealth">$5,000</span>
+                        </div>
+                        <div class="finance-item clickable" id="cashflow-item">
+                            <span class="info-label">DAILY:</span>
+                            <span class="info-value" id="player-cashflow">$0</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Right container: Zoom controls -->
+        <div class="top-bar-right">
+            <div class="top-bar-section">
+                <div class="zoom-controls">
+                    <button class="zoom-btn" id="zoom-out" title="Zoom Out">-</button>
+                    <button class="zoom-btn" id="zoom-reset" title="Reset Zoom">◦</button>
+                    <button class="zoom-btn" id="zoom-in" title="Zoom In">+</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Cashflow Modal -->
+    <div class="cashflow-modal" id="cashflow-menu">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div class="header-left">
+                    <div class="header-row">
+                        <h3>DAILY CASHFLOW</h3>
+                        <div class="cashflow-summary-inline">
+                            <span class="summary-item">Revenue: <span class="summary-value" id="total-revenue">$0</span></span>
+                            <span class="summary-item">Maintenance: <span class="summary-value expense" id="total-maintenance">-$0</span></span>
+                            <span class="summary-item">LVT: <span class="summary-value expense" id="total-lvt">-$0</span></span>
+                            <span class="summary-item total">Net Daily: <span class="summary-value" id="net-daily">$0</span></span>
+                        </div>
+                    </div>
+                    <!-- Player Tabs -->
+                    <div class="player-tabs" id="cashflow-player-tabs">
+                        <button class="player-tab active" data-player="current">Player</button>
+                        <!-- Additional player tabs will be added dynamically in multiplayer -->
+                    </div>
+                </div>
+                <button class="close-btn" id="close-cashflow">×</button>
+            </div>
+            <div class="modal-body">
+                <div class="cashflow-table-container">
+                    <table class="cashflow-table" id="cashflow-table">
+                        <thead>
+                            <tr>
+                                <th class="sortable" data-sort="coordinates">Parcel</th>
+                                <th class="sortable" data-sort="buildingName">Building</th>
+                                <th class="sortable" data-sort="buildingAge">Age</th>
+                                <th class="sortable" data-sort="decay">Decay</th>
+                                <th class="sortable" data-sort="landValue">Land Value</th>
+                                <th class="sortable" data-sort="revenue">Revenue</th>
+                                <th class="sortable" data-sort="maintenance">Maintenance</th>
+                                <th class="sortable" data-sort="lvt">LVT</th>
+                                <th class="sortable" data-sort="netCashflow">Net</th>
+                            </tr>
+                        </thead>
+                        <tbody id="cashflow-tbody">
+                            <!-- Dynamic content -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div id="game-container">
+        <div id="main-area">
+            <canvas id="gameCanvas"></canvas>
+            <!-- Legacy tooltip removed - using unified TooltipManager system -->
+            <div id="context-menu" class="context-menu">
+                <div class="context-header">
+                    <span class="context-coord">A-1</span>
+                    <span class="context-status">UNOWNED</span>
+                </div>
+                <div class="context-content">
+                    <!-- Content will be populated based on parcel state -->
+                </div>
+            </div>
+        </div>
+        <div id="sidebar">
+            <div class="sidebar-section collapsible">
+                <div class="section-header" data-target="vitality">
+                    <span>VITALITY</span>
+                    <span class="collapse-icon"></span>
+                </div>
+                <div id="vitality" class="section-content">
+                    <!-- JEEFHH Supply & Demand Section -->
+                    <div class="vitality-group">
+                        <div class="vitality-group-title">JEEFHH (SUPPLY & DEMAND)</div>
+                        <div class="jeefhh-bars-container">
+                            <div class="jeefhh-bar-row metric-tooltip" data-metric="jobs" data-tooltip="Jobs supply vs demand. Green indicates surplus jobs available, red indicates job shortage.">
+                                <span class="jeefhh-label">JOBS</span>
+                                <div class="jeefhh-bar">
+                                    <div class="jeefhh-progress" id="jobs-bar"></div>
+                                </div>
+                            </div>
+                            <div class="jeefhh-bar-row metric-tooltip" data-metric="energy" data-tooltip="Energy supply vs demand. Green indicates sufficient power generation, red indicates power shortages.">
+                                <span class="jeefhh-label">ENERGY</span>
+                                <div class="jeefhh-bar">
+                                    <div class="jeefhh-progress" id="energy-bar"></div>
+                                </div>
+                            </div>
+                            <div class="jeefhh-bar-row metric-tooltip" data-metric="education" data-tooltip="Education supply vs demand. Green indicates adequate educational capacity, red indicates overcrowded schools.">
+                                <span class="jeefhh-label">EDUCATION</span>
+                                <div class="jeefhh-bar">
+                                    <div class="jeefhh-progress" id="education-bar"></div>
+                                </div>
+                            </div>
+                            <div class="jeefhh-bar-row metric-tooltip" data-metric="food" data-tooltip="Food supply vs demand. Green indicates food security, red indicates potential hunger or food scarcity.">
+                                <span class="jeefhh-label">FOOD</span>
+                                <div class="jeefhh-bar">
+                                    <div class="jeefhh-progress" id="food-bar"></div>
+                                </div>
+                            </div>
+                            <div class="jeefhh-bar-row metric-tooltip" data-metric="housing" data-tooltip="Housing supply vs demand. Green indicates adequate housing availability, red indicates housing shortage.">
+                                <span class="jeefhh-label">HOUSING</span>
+                                <div class="jeefhh-bar">
+                                    <div class="jeefhh-progress" id="housing-bar"></div>
+                                </div>
+                            </div>
+                            <div class="jeefhh-bar-row metric-tooltip" data-metric="healthcare" data-tooltip="Healthcare supply vs demand. Green indicates sufficient medical capacity, red indicates understaffed or overwhelmed healthcare system.">
+                                <span class="jeefhh-label">HEALTHCARE</span>
+                                <div class="jeefhh-bar">
+                                    <div class="jeefhh-progress" id="healthcare-bar"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- CARENS Livability Section -->
+                    <div class="vitality-group">
+                        <div class="vitality-group-title">CARENS (LIVABILITY)</div>
+                        <div class="carens-bars-container">
+                            <div class="carens-bar-row metric-tooltip" data-metric="safety" data-tooltip="Safety levels in the community. Higher scores indicate lower crime rates and better public safety measures.">
+                                <span class="carens-label">SAFETY</span>
+                                <div class="carens-bar">
+                                    <div class="carens-progress" id="safety-bar"></div>
+                                </div>
+                            </div>
+                            <div class="carens-bar-row metric-tooltip" data-metric="culture" data-tooltip="Cultural richness and community engagement. Higher scores indicate vibrant arts, events, and social activities.">
+                                <span class="carens-label">CULTURE</span>
+                                <div class="carens-bar">
+                                    <div class="carens-progress" id="culture-bar"></div>
+                                </div>
+                            </div>
+                            <div class="carens-bar-row metric-tooltip" data-metric="affordability" data-tooltip="Cost of living relative to income levels. Higher scores indicate more affordable housing, goods, and services.">
+                                <span class="carens-label">AFFORDABILITY</span>
+                                <div class="carens-bar">
+                                    <div class="carens-progress" id="affordability-bar"></div>
+                                </div>
+                            </div>
+                            <div class="carens-bar-row metric-tooltip" data-metric="resilience" data-tooltip="Community's ability to adapt and recover from challenges. Higher scores indicate better disaster preparedness and economic stability.">
+                                <span class="carens-label">RESILIENCE</span>
+                                <div class="carens-bar">
+                                    <div class="carens-progress" id="resilience-bar"></div>
+                                </div>
+                            </div>
+                            <div class="carens-bar-row metric-tooltip" data-metric="environment" data-tooltip="Environmental quality and sustainability. Higher scores indicate cleaner air, green spaces, and eco-friendly practices.">
+                                <span class="carens-label">ENVIRONMENT</span>
+                                <div class="carens-bar">
+                                    <div class="carens-progress" id="environment-bar"></div>
+                                </div>
+                            </div>
+                            <div class="carens-bar-row metric-tooltip" data-metric="noise" data-tooltip="Noise pollution levels in the area. Higher scores indicate quieter, more peaceful neighborhoods.">
+                                <span class="carens-label">NOISE</span>
+                                <div class="carens-bar">
+                                    <div class="carens-progress" id="noise-bar"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="sidebar-section collapsible collapsed">
+                <div class="section-header" data-target="mobility-panel">
+                    <span>MOBILITY</span>
+                    <span class="collapse-icon"></span>
+                </div>
+                <div id="mobility-panel" class="section-content">
+                    <div class="mobility-metrics">
+                        <!-- Mobility metrics will be populated by JavaScript -->
+                        <div class="metric-row metric-tooltip" data-tooltip="Percentage of the city connected by transportation networks. Higher scores indicate better mobility infrastructure.">
+                            <span class="metric-label">NETWORK CONNECTIVITY</span>
+                            <span class="metric-value" id="network-connectivity">0%</span>
+                        </div>
+                        <div class="metric-row metric-tooltip" data-tooltip="Average time residents spend commuting to work via available transportation options">
+                            <span class="metric-label">AVG COMMUTE TIME</span>
+                            <span class="metric-value" id="avg-commute-time">0 min</span>
+                        </div>
+                        <div class="metric-row metric-tooltip" data-tooltip="Transportation cost impact on residents' budgets. Lower scores indicate expensive transit options that burden low-income households">
+                            <span class="metric-label">AFFORDABILITY</span>
+                            <span class="metric-value" id="mobility-affordability">0</span>
+                        </div>
+                        <div class="metric-row metric-tooltip" data-tooltip="Health benefits from active transportation (walking, biking). Higher scores indicate more opportunities for physical activity during daily travel">
+                            <span class="metric-label">HEALTH SCORE</span>
+                            <span class="metric-value" id="mobility-health">0</span>
+                        </div>
+                        <div class="metric-row metric-tooltip" data-tooltip="Environmental impact of transportation choices. Higher scores indicate cleaner, more sustainable mobility options with lower emissions">
+                            <span class="metric-label">ENVIRONMENT</span>
+                            <span class="metric-value" id="mobility-environment">0</span>
+                        </div>
+                        <div class="metric-row metric-tooltip" data-tooltip="Total number of road segments built. Roads connect buildings and enable efficient transportation.">
+                            <span class="metric-label">TOTAL ROADS</span>
+                            <span class="metric-value" id="total-roads">0</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <!-- Route Configuration Panel -->
+            <div class="sidebar-section collapsible route-config-panel" id="route-config-sidebar" style="display: none;">
+                <div class="section-header" data-target="route-config-content">
+                    <span>🚌 CONFIGURE ROUTE</span>
+                    <span class="collapse-icon"></span>
+                </div>
+                <div id="route-config-content" class="section-content">
+                    <!-- Route Basic Info -->
+                    <div class="route-info-section">
+                        <h4>Route Information</h4>
+                        <div class="form-group">
+                            <label for="sidebar-route-name">Route Name:</label>
+                            <input type="text" id="sidebar-route-name" class="form-control" placeholder="Bus Route 1">
+                        </div>
+                        <div class="form-group">
+                            <label for="sidebar-service-level">Service Level:</label>
+                            <select id="sidebar-service-level" class="form-control">
+                                <option value="rush_hour">Rush Hour ($1/stop)</option>
+                                <option value="daytime" selected>Daytime ($2/stop)</option>
+                                <option value="24_hour">24 Hour ($3/stop)</option>
+                            </select>
+                        </div>
+                        <div class="route-stats">
+                            <div class="stat-item">
+                                <span class="stat-label">Stops:</span>
+                                <span class="stat-value" id="sidebar-route-stops-count">2</span>
+                            </div>
+                            <div class="stat-item">
+                                <span class="stat-label">Route Type:</span>
+                                <span class="stat-value" id="sidebar-route-type">Bus</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Pricing Section -->
+                    <div class="pricing-section">
+                        <h4>Pricing & Revenue</h4>
+                        <div class="form-group">
+                            <label for="sidebar-ticket-price">Ticket Price ($):</label>
+                            <input type="number" id="sidebar-ticket-price" class="form-control" step="0.25" min="0.50" max="10.00" value="2.50">
+                            <button id="sidebar-optimal-pricing" class="btn-secondary">Suggest Optimal Price</button>
+                        </div>
+
+                        <!-- Revenue Projections -->
+                        <div class="revenue-projections">
+                            <div class="projection-item">
+                                <span class="proj-label">Daily Ridership:</span>
+                                <span class="proj-value" id="sidebar-daily-ridership">
+                                    <span class="loading-indicator" style="display: none;">⟳</span>
+                                    <span class="proj-data">150</span>
+                                </span>
+                            </div>
+                            <div class="projection-item">
+                                <span class="proj-label">Daily Revenue:</span>
+                                <span class="proj-value" id="sidebar-daily-revenue">
+                                    <span class="loading-indicator" style="display: none;">⟳</span>
+                                    <span class="proj-data">$375</span>
+                                </span>
+                            </div>
+                            <div class="projection-item">
+                                <span class="proj-label">Daily Maintenance:</span>
+                                <span class="proj-value" id="sidebar-daily-maintenance">
+                                    <span class="loading-indicator" style="display: none;">⟳</span>
+                                    <span class="proj-data">-$180</span>
+                                </span>
+                            </div>
+                            <div class="projection-item">
+                                <span class="proj-label">Daily Net:</span>
+                                <span class="proj-value net-value" id="sidebar-daily-net">
+                                    <span class="loading-indicator" style="display: none;">⟳</span>
+                                    <span class="proj-data">+$195</span>
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Route Actions -->
+                    <div class="route-actions">
+                        <button class="btn-primary" id="sidebar-create-route">Create Route</button>
+                        <button class="btn-secondary" id="sidebar-cancel-route">Cancel</button>
+                    </div>
+                </div>
+            </div>
+            <div class="sidebar-section collapsible">
+                <div class="section-header" data-target="players-panel">
+                    <span>PLAYERS</span>
+                    <span class="collapse-icon"></span>
+                </div>
+                <div id="players-panel" class="section-content collapsed">
+                    <div class="players-legend">
+                        <div class="legend-header">
+                            <span>Player Ownership</span>
+                            <button id="clear-player-filter" class="clear-filter-btn">Clear Filter</button>
+                        </div>
+                        <div id="players-list" class="players-list">
+                            <!-- Players will be populated by JavaScript -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="sidebar-section collapsible">
+                <div class="section-header" data-target="info">
+                    <span>METRICS</span>
+                    <span class="collapse-icon"></span>
+                </div>
+                <div id="info" class="section-content">
+                    <div class="metric-row metric-tooltip" id="residents-row" data-tooltip="Total population living in your city. Higher numbers indicate successful urban development.">
+                        <span class="metric-label">RESIDENTS</span>
+                        <span class="metric-value" id="total-residents">0</span>
+                    </div>
+                    <div class="metric-row metric-tooltip" id="treasury-row" data-tooltip="Government funds available for public projects and infrastructure investments.">
+                        <span class="metric-label">CITY TREASURY</span>
+                        <span class="metric-value" id="city-treasury">$0</span>
+                    </div>
+                </div>
+            </div>
+            
+
+            <!-- Action Manager Section -->
+            <div class="sidebar-section collapsible action-manager">
+                <div class="section-header" data-target="action-manager-content">
+                    <span>ACTION MANAGER</span>
+                    <span class="collapse-icon"></span>
+                </div>
+                <div id="action-manager-content" class="section-content action-manager-content">
+                    <div class="action-stats">
+                        <div class="action-stat-row">
+                            <span class="action-label">Your Actions:</span>
+                            <span class="action-value" id="current-actions">10/10</span>
+                        </div>
+                        <div class="action-stat-row">
+                            <div class="month-progress-container metric-tooltip" id="month-progress-container">
+                                <div class="month-progress-bar" id="month-progress-bar"></div>
+                                <span class="month-progress-text" id="month-progress-text">--:--</span>
+                            </div>
+                        </div>
+                        <div class="action-stat-row">
+                            <span class="action-label">Market:</span>
+                            <span class="action-value" id="market-listings">0 listings</span>
+                        </div>
+                        <div class="action-stat-row">
+                            <span class="action-label">Avg Price:</span>
+                            <span class="action-value" id="action-avg-price">--</span>
+                        </div>
+                    </div>
+                    <button class="action-btn" id="open-action-marketplace">ACTION MARKET</button>
+                </div>
+            </div>
+            
+            <div id="building-info-panel" class="building-info-panel">
+                <div class="building-info-header">
+                    <h3 id="building-info-title">Building Info</h3>
+                </div>
+                <div class="building-info-content">
+                    <div class="building-info-image">
+                        <img id="building-info-img" src="" alt="Building">
+                    </div>
+                    <div class="building-description"></div>
+                    
+                    <!-- Supply & Demand Section -->
+                    <div class="building-supply-demand">
+                        <div class="vitality-group-title">SUPPLY & DEMAND</div>
+                        <div class="vitality-row">
+                            <span class="vitality-label">COST</span>
+                            <span class="info-value" id="building-cost">$0</span>
+                        </div>
+                        <div class="vitality-row">
+                            <span class="vitality-label">BUILD TIME</span>
+                            <span class="info-value" id="building-time">0 days</span>
+                        </div>
+                        <div class="vitality-row">
+                            <span class="vitality-label">BEDROOMS</span>
+                            <span class="info-value" id="building-bedrooms">0</span>
+                        </div>
+                        <div class="vitality-row">
+                            <span class="vitality-label">JOBS</span>
+                            <span class="info-value" id="building-jobs">0</span>
+                        </div>
+                    </div>
+                    
+                    <!-- Requirements Section -->
+                    <div class="building-requirements" style="display: none;">
+                        <div class="vitality-group-title">REQUIREMENTS</div>
+                        <div id="building-requirements-list"></div>
+                    </div>
+                    
+                    <!-- CARENS Livability Section -->
+                    <div class="building-impacts">
+                        <div class="vitality-group-title">CARENS (LIVABILITY)</div>
+                        <div id="building-impacts-list"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Custom tooltip -->
+    <div id="custom-tooltip" class="custom-tooltip"></div>
+    
+    <!-- Governance Modal -->
+    <div id="governance-modal" class="governance-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>City Gov</h3>
+                <div class="governance-info">
+                    <span class="voting-points">Points Available: <span id="player-voting-points">2</span></span>
+                </div>
+                <button class="close-btn" id="close-governance-modal">×</button>
+            </div>
+            <div class="modal-body">
+                <!-- Financial Overview Panel -->
+                <div class="financial-overview">
+                    <div class="financial-metrics">
+                        <div class="metric-item">
+                            <span class="metric-label">Monthly Collection</span>
+                            <span class="metric-value">$<span id="monthly-lvt-amount">0</span></span>
+                        </div>
+                        <div class="metric-item">
+                            <span class="metric-label">Current Funds</span>
+                            <span class="metric-value">$<span id="unallocated-funds-amount">0</span></span>
+                        </div>
+                        <div class="metric-item lvt-adjuster">
+                            <span class="metric-label">LVT Rate</span>
+                            <div class="lvt-controls">
+                                <button class="vote-btn decrease" id="lvt-decrease-btn">-</button>
+                                <div class="lvt-display">
+                                    <span class="current-rate" id="current-lvt-display">50%</span>
+                                    <span class="vote-points" id="lvt-vote-points">0</span>
+                                </div>
+                                <button class="vote-btn increase" id="lvt-increase-btn">+</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="governance-sections">
+                        <!-- Budget Allocation Section -->
+                        <div class="governance-section">
+                            <h4>Budget Allocation</h4>
+                            <p class="section-description">Allocate your voting points to fund public services.</p>
+                        <div class="budget-categories">
+                            <div class="budget-category" data-category="education">
+                                <div class="category-header">
+                                    <span class="category-name">Education</span>
+                                    <span class="category-allocation">0%</span>
+                                </div>
+                                <div class="category-voting">
+                                    <button class="vote-btn decrease" data-category="education" data-action="decrease">-</button>
+                                    <span class="vote-count">0</span>
+                                    <button class="vote-btn increase" data-category="education" data-action="increase">+</button>
+                                </div>
+                                <div class="category-coffers">Current funds: $<span>0</span></div>
+                                <button class="more-info-btn" data-category="education">more info >></button>
+                                <div class="player-allocation-indicators" data-category="education"></div>
+                            </div>
+                            <div class="budget-category" data-category="healthcare">
+                                <div class="category-header">
+                                    <span class="category-name">Healthcare</span>
+                                    <span class="category-allocation">0%</span>
+                                </div>
+                                <div class="category-voting">
+                                    <button class="vote-btn decrease" data-category="healthcare" data-action="decrease">-</button>
+                                    <span class="vote-count">0</span>
+                                    <button class="vote-btn increase" data-category="healthcare" data-action="increase">+</button>
+                                </div>
+                                <div class="category-coffers">Current funds: $<span>0</span></div>
+                                <button class="more-info-btn" data-category="healthcare">more info >></button>
+                                <div class="player-allocation-indicators" data-category="healthcare"></div>
+                            </div>
+                            <div class="budget-category" data-category="infrastructure">
+                                <div class="category-header">
+                                    <span class="category-name">Infrastructure</span>
+                                    <span class="category-allocation">0%</span>
+                                </div>
+                                <div class="category-voting">
+                                    <button class="vote-btn decrease" data-category="infrastructure" data-action="decrease">-</button>
+                                    <span class="vote-count">0</span>
+                                    <button class="vote-btn increase" data-category="infrastructure" data-action="increase">+</button>
+                                </div>
+                                <div class="category-coffers">Current funds: $<span>0</span></div>
+                                <button class="more-info-btn" data-category="infrastructure">more info >></button>
+                                <div class="player-allocation-indicators" data-category="infrastructure"></div>
+                            </div>
+                            <div class="budget-category" data-category="housing">
+                                <div class="category-header">
+                                    <span class="category-name">Housing</span>
+                                    <span class="category-allocation">0%</span>
+                                </div>
+                                <div class="category-voting">
+                                    <button class="vote-btn decrease" data-category="housing" data-action="decrease">-</button>
+                                    <span class="vote-count">0</span>
+                                    <button class="vote-btn increase" data-category="housing" data-action="increase">+</button>
+                                </div>
+                                <div class="category-coffers">Current funds: $<span>0</span></div>
+                                <button class="more-info-btn" data-category="housing">more info >></button>
+                                <div class="player-allocation-indicators" data-category="housing"></div>
+                            </div>
+                            <div class="budget-category" data-category="culture">
+                                <div class="category-header">
+                                    <span class="category-name">Culture</span>
+                                    <span class="category-allocation">0%</span>
+                                </div>
+                                <div class="category-voting">
+                                    <button class="vote-btn decrease" data-category="culture" data-action="decrease">-</button>
+                                    <span class="vote-count">0</span>
+                                    <button class="vote-btn increase" data-category="culture" data-action="increase">+</button>
+                                </div>
+                                <div class="category-coffers">Current funds: $<span>0</span></div>
+                                <button class="more-info-btn" data-category="culture">more info >></button>
+                                <div class="player-allocation-indicators" data-category="culture"></div>
+                            </div>
+                            <div class="budget-category" data-category="recreation">
+                                <div class="category-header">
+                                    <span class="category-name">Recreation</span>
+                                    <span class="category-allocation">0%</span>
+                                </div>
+                                <div class="category-voting">
+                                    <button class="vote-btn decrease" data-category="recreation" data-action="decrease">-</button>
+                                    <span class="vote-count">0</span>
+                                    <button class="vote-btn increase" data-category="recreation" data-action="increase">+</button>
+                                </div>
+                                <div class="category-coffers">Current funds: $<span>0</span></div>
+                                <button class="more-info-btn" data-category="recreation">more info >></button>
+                                <div class="player-allocation-indicators" data-category="recreation"></div>
+                            </div>
+                            <div class="budget-category" data-category="commercial">
+                                <div class="category-header">
+                                    <span class="category-name">Commercial</span>
+                                    <span class="category-allocation">0%</span>
+                                </div>
+                                <div class="category-voting">
+                                    <button class="vote-btn decrease" data-category="commercial" data-action="decrease">-</button>
+                                    <span class="vote-count">0</span>
+                                    <button class="vote-btn increase" data-category="commercial" data-action="increase">+</button>
+                                </div>
+                                <div class="category-coffers">Current funds: $<span>0</span></div>
+                                <button class="more-info-btn" data-category="commercial">more info >></button>
+                                <div class="player-allocation-indicators" data-category="commercial"></div>
+                            </div>
+                            <div class="budget-category" data-category="civic">
+                                <div class="category-header">
+                                    <span class="category-name">Civic</span>
+                                    <span class="category-allocation">0%</span>
+                                </div>
+                                <div class="category-voting">
+                                    <button class="vote-btn decrease" data-category="civic" data-action="decrease">-</button>
+                                    <span class="vote-count">0</span>
+                                    <button class="vote-btn increase" data-category="civic" data-action="increase">+</button>
+                                </div>
+                                <div class="category-coffers">Current funds: $<span>0</span></div>
+                                <button class="more-info-btn" data-category="civic">more info >></button>
+                                <div class="player-allocation-indicators" data-category="civic"></div>
+                            </div>
+                            <div class="budget-category" data-category="emergency">
+                                <div class="category-header">
+                                    <span class="category-name">Emergency</span>
+                                    <span class="category-allocation">0%</span>
+                                </div>
+                                <div class="category-voting">
+                                    <button class="vote-btn decrease" data-category="emergency" data-action="decrease">-</button>
+                                    <span class="vote-count">0</span>
+                                    <button class="vote-btn increase" data-category="emergency" data-action="increase">+</button>
+                                </div>
+                                <div class="category-coffers">Current funds: $<span>0</span></div>
+                                <button class="more-info-btn" data-category="emergency">more info >></button>
+                                <div class="player-allocation-indicators" data-category="emergency"></div>
+                            </div>
+                            <div class="budget-category special" data-category="ubi">
+                                <div class="category-header">
+                                    <span class="category-name">Universal Basic Income</span>
+                                    <span class="category-allocation">0%</span>
+                                </div>
+                                <div class="category-voting">
+                                    <button class="vote-btn decrease" data-category="ubi" data-action="decrease">-</button>
+                                    <span class="vote-count">0</span>
+                                    <button class="vote-btn increase" data-category="ubi" data-action="increase">+</button>
+                                </div>
+                                <div class="category-coffers">Monthly UBI: $<span>0</span>/citizen</div>
+                                <button class="more-info-btn" data-category="ubi">more info >></button>
+                                <div class="player-allocation-indicators" data-category="ubi"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <!-- Category Details Slide-out Panel -->
+            <div class="category-details-panel" id="category-details-panel">
+                <div class="panel-header">
+                    <h4 id="category-details-title">Category Details</h4>
+                    <button class="panel-close-btn" id="close-category-details">×</button>
+                </div>
+                <div class="panel-content" id="category-details-content">
+                    <div class="buildings-list">
+                        <div class="maintenance-note" id="maintenance-note"></div>
+                        <div class="buildings-grid" id="buildings-grid"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+    // Governance More Info Panel Handler
+    function setupGovernanceInfoPanels() {
+        const categoryData = {
+            education: {
+                title: "Education Budget",
+                description: "Fund schools, libraries, and educational programs to boost citizen learning and development.",
+                maintenance: "✓ Covers maintenance costs for education buildings",
+                buildings: ["Elementary School", "High School", "University", "Library", "Research Center"]
+            },
+            healthcare: {
+                title: "Healthcare Budget", 
+                description: "Support hospitals, clinics, and public health initiatives to keep citizens healthy.",
+                maintenance: "✓ Covers maintenance costs for healthcare buildings",
+                buildings: ["Clinic", "Hospital", "Medical Center", "Pharmacy", "Mental Health Center"]
+            },
+            infrastructure: {
+                title: "Infrastructure Budget",
+                description: "Build and maintain roads, utilities, and essential city infrastructure.",
+                maintenance: "✓ Covers maintenance costs for infrastructure buildings",
+                buildings: ["Power Plant", "Water Treatment", "Waste Management", "Road Network", "Bridge"]
+            },
+            housing: {
+                title: "Housing Budget",
+                description: "Support affordable housing projects and residential development programs.",
+                maintenance: "✗ Does not cover maintenance costs",
+                buildings: ["Apartment Complex", "Single Family Home", "Townhouse", "Senior Housing", "Student Housing"]
+            },
+            culture: {
+                title: "Culture Budget",
+                description: "Fund museums, art centers, and cultural events that enrich community life.",
+                maintenance: "✓ Covers maintenance costs for culture buildings",
+                buildings: ["Museum", "Art Gallery", "Theater", "Concert Hall", "Cultural Center"]
+            },
+            recreation: {
+                title: "Recreation Budget",
+                description: "Create parks, sports facilities, and entertainment venues for citizen wellbeing.",
+                maintenance: "✗ Does not cover maintenance costs",
+                buildings: ["Park", "Sports Complex", "Swimming Pool", "Playground", "Community Center"]
+            },
+            commercial: {
+                title: "Commercial Budget",
+                description: "Support business development, markets, and economic growth initiatives.",
+                maintenance: "✗ Does not cover maintenance costs",
+                buildings: ["Shopping Mall", "Office Building", "Restaurant", "Market", "Bank"]
+            },
+            civic: {
+                title: "Civic Budget",
+                description: "Fund government buildings, public services, and administrative operations.",
+                maintenance: "✓ Covers maintenance costs for civic buildings",
+                buildings: ["City Hall", "Police Station", "Fire Department", "Court House", "Post Office"]
+            },
+            emergency: {
+                title: "Emergency Budget",
+                description: "Maintain emergency services, disaster response, and public safety resources.",
+                maintenance: "✓ Covers maintenance costs for emergency buildings",
+                buildings: ["Fire Station", "Police Station", "Emergency Center", "Disaster Response Unit", "First Aid Station"]
+            },
+            ubi: {
+                title: "UBI Budget",
+                description: "Provide direct cash payments to all citizens as universal basic income.",
+                maintenance: "N/A - Direct cash payments",
+                buildings: ["Universal Basic Income is a direct cash payment system, not tied to specific buildings"]
+            }
+        };
+
+        // Track currently open category
+        let currentOpenCategory = null;
+
+        // Add click handlers to all more-info-btn buttons
+        document.addEventListener('click', function(e) {
+            if (e.target.classList.contains('more-info-btn')) {
+                const category = e.target.getAttribute('data-category');
+                if (category && categoryData[category]) {
+                    // If clicking the same category that's already open, close it
+                    if (currentOpenCategory === category) {
+                        closeCategoryDetails();
+                        currentOpenCategory = null;
+                    } else {
+                        // Otherwise show the new category details
+                        showCategoryDetails(categoryData[category]);
+                        currentOpenCategory = category;
+                    }
+                }
+            }
+        });
+
+        // Close panel handler
+        document.addEventListener('click', function(e) {
+            if (e.target.id === 'close-category-details') {
+                closeCategoryDetails();
+            }
+        });
+
+        // Close panel when clicking outside (on governance modal but not on slide-out panel)
+        document.addEventListener('click', function(e) {
+            const panel = document.getElementById('category-details-panel');
+            const governanceModal = document.getElementById('governance-modal');
+            
+            // Check if the panel is open and user clicked inside governance modal but outside the panel
+            if (currentOpenCategory && panel && governanceModal) {
+                const isClickInsideModal = governanceModal.contains(e.target);
+                const isClickInsidePanel = panel.contains(e.target);
+                const isMoreInfoButton = e.target.classList.contains('more-info-btn');
+                
+                // Close if clicked inside modal but outside panel (and not on a more info button)
+                if (isClickInsideModal && !isClickInsidePanel && !isMoreInfoButton) {
+                    closeCategoryDetails();
+                }
+            }
+        });
+
+        function showCategoryDetails(data) {
+            const panel = document.getElementById('category-details-panel');
+            const title = document.getElementById('category-details-title');
+            const content = document.getElementById('category-details-content');
+            
+            title.textContent = data.title;
+            
+            let buildingsHtml = '';
+            if (Array.isArray(data.buildings)) {
+                buildingsHtml = data.buildings.map(building => 
+                    `<div class="building-item">
+                        <div class="building-name">${building}</div>
+                    </div>`
+                ).join('');
+            } else {
+                buildingsHtml = `<div class="building-item">
+                    <div class="building-name">${data.buildings}</div>
+                </div>`;
+            }
+            
+            content.innerHTML = `
+                <div class="category-description">${data.description}</div>
+                <div class="maintenance-note ${data.maintenance.includes('✓') ? 'covered' : 'not-covered'}">
+                    ${data.maintenance}
+                </div>
+                <div class="buildings-section">
+                    <h5>Related Buildings:</h5>
+                    <div class="buildings-grid">${buildingsHtml}</div>
+                </div>
+            `;
+            
+            panel.classList.add('open');
+        }
+
+        function closeCategoryDetails() {
+            const panel = document.getElementById('category-details-panel');
+            panel.classList.remove('open');
+            currentOpenCategory = null;
+        }
+    }
+
+    // Initialize when DOM is loaded
+    document.addEventListener('DOMContentLoaded', setupGovernanceInfoPanels);
+    </script>
+    
+    </div> <!-- End of game-interface -->
+    
+    <!-- Transition Overlay -->
+    <div id="transition-overlay" class="transition-overlay">
+        <div class="transition-text" id="transition-text">
+            Welcome to The Commons
+            <div class="transition-progress"></div>
+        </div>
+    </div>
+    
+    <!-- Magic Link Welcome Screen -->
     <div id="welcome-screen" class="welcome-screen">
         <div class="welcome-content">
             <h1 style="font-size: 24px; color: #fff; margin: 0 0 5px 0; font-weight: 600;">The Commons</h1>
@@ -328,7 +1468,7 @@
                 </div>
             </div>
 
-            <button class="setup-complete-btn" id="main-action-btn">
+            <button class="setup-complete-btn" id="start-game-btn">
                 Enter Game
             </button>
         </div>
@@ -347,15 +1487,8 @@
             '#DDA0DD', '#98D8C8', '#F7DC6F', '#BB8FCE', '#85C1E9'
         ];
 
-        // DOM elements
-        const guestModeBtn = document.getElementById('guest-mode-btn');
-        const magicLinkBtn = document.getElementById('magic-link-btn');
-        const guestForm = document.getElementById('guest-form');
-        const magicLinkForm = document.getElementById('magic-link-form');
-        const emailInput = document.getElementById('email');
-        const magicLinkStatus = document.getElementById('magic-link-status');
-        const mainActionBtn = document.getElementById('main-action-btn');
-        const regenerateColorsBtn = document.getElementById('regenerate-colors-btn');
+        // DOM elements (will be initialized on DOMContentLoaded)
+        let guestModeBtn, magicLinkBtn, guestForm, magicLinkForm, emailInput, magicLinkStatus, startGameBtn, regenerateColorsBtn;
 
         // Authentication mode switching
         function switchAuthMode(mode) {
@@ -367,14 +1500,14 @@
                 magicLinkBtn.classList.remove('active');
                 guestForm.style.display = 'block';
                 magicLinkForm.style.display = 'none';
-                mainActionBtn.textContent = 'Enter Game';
+                startGameBtn.textContent = 'Enter Game';
                 magicLinkSent = false; // Reset magic link state
             } else {
                 guestModeBtn.classList.remove('active');
                 magicLinkBtn.classList.add('active');
                 guestForm.style.display = 'none';
                 magicLinkForm.style.display = 'block';
-                mainActionBtn.textContent = 'Send Magic Link';
+                startGameBtn.textContent = 'Send Magic Link';
                 magicLinkSent = false; // Reset magic link state
             }
 
@@ -400,8 +1533,8 @@
                 return;
             }
 
-            mainActionBtn.disabled = true;
-            mainActionBtn.textContent = 'Sending...';
+            startGameBtn.disabled = true;
+            startGameBtn.textContent = 'Sending...';
 
             try {
                 const response = await fetch('/api/auth/send-magic-link', {
@@ -415,7 +1548,7 @@
                 const result = await response.json();
 
                 if (result.success) {
-                    showMagicLinkStatus('🎉 Magic link sent! Check your email and click the link to sign in.', 'success');
+                    showMagicLinkStatus('Magic link sent! Check your email and click the link to sign in.', 'success');
                     magicLinkSent = true;
 
                     // Start polling for authentication
@@ -427,8 +1560,8 @@
                 console.error('Magic link error:', error);
                 showMagicLinkStatus('Network error. Please try again.', 'error');
             } finally {
-                mainActionBtn.disabled = false;
-                mainActionBtn.textContent = 'Send Magic Link';
+                startGameBtn.disabled = false;
+                startGameBtn.textContent = 'Send Magic Link';
             }
         }
 
@@ -445,7 +1578,7 @@
         // Authentication polling
         let authPollInterval;
         function startAuthPolling() {
-            showMagicLinkStatus('⏳ Waiting for you to click the magic link...', 'info');
+            showMagicLinkStatus('Waiting for you to click the magic link...', 'info');
 
             authPollInterval = setInterval(async () => {
                 try {
@@ -456,7 +1589,7 @@
 
                     if (data.success && data.user) {
                         clearInterval(authPollInterval);
-                        showMagicLinkStatus('✅ Successfully signed in! Welcome back.', 'success');
+                        showMagicLinkStatus('Successfully signed in! Welcome back.', 'success');
 
                         // Update UI for authenticated user
                         setTimeout(() => {
@@ -587,15 +1720,19 @@
             const welcomeScreen = document.getElementById('welcome-screen');
             welcomeScreen.classList.add('fade-out');
 
-            // Remove welcome screen after animation completes
+            // Remove welcome screen and show game interface after animation completes
             setTimeout(() => {
                 welcomeScreen.style.display = 'none';
 
-                // Initialize the game (this would typically be where the main game starts)
-                console.log(`🎮 Starting game for ${name} with color ${color}`);
+                // Show the main game interface
+                const gameInterface = document.getElementById('game-interface');
+                if (gameInterface) {
+                    gameInterface.classList.remove('hidden');
+                    gameInterface.classList.add('fade-in');
+                }
 
-                // The game should now be visible and playable
-                // (The rest of the game interface should already be loaded in the DOM)
+                // Initialize the game
+                console.log(`🎮 Starting game for ${name} with color ${color}`);
             }, 500);
         }
 
@@ -634,6 +1771,64 @@
 
         // Initialize
         document.addEventListener('DOMContentLoaded', async () => {
+            // Initialize DOM elements
+            guestModeBtn = document.getElementById('guest-mode-btn');
+            magicLinkBtn = document.getElementById('magic-link-btn');
+            guestForm = document.getElementById('guest-form');
+            magicLinkForm = document.getElementById('magic-link-form');
+            emailInput = document.getElementById('email');
+            magicLinkStatus = document.getElementById('magic-link-status');
+            startGameBtn = document.getElementById('start-game-btn');
+            regenerateColorsBtn = document.getElementById('regenerate-colors-btn');
+
+            // Check if required elements exist
+            if (!guestModeBtn || !magicLinkBtn || !guestForm || !magicLinkForm || !emailInput || !magicLinkStatus || !startGameBtn || !regenerateColorsBtn) {
+                console.error('Welcome Screen Setup Error\nRequired elements are missing:', {
+                    guestModeBtn: !!guestModeBtn,
+                    magicLinkBtn: !!magicLinkBtn,
+                    guestForm: !!guestForm,
+                    magicLinkForm: !!magicLinkForm,
+                    emailInput: !!emailInput,
+                    magicLinkStatus: !!magicLinkStatus,
+                    startGameBtn: !!startGameBtn,
+                    regenerateColorsBtn: !!regenerateColorsBtn
+                });
+                return;
+            }
+
+            console.log('✅ All welcome screen elements found successfully');
+
+            // Set up event listeners
+            if (guestModeBtn) guestModeBtn.addEventListener('click', () => switchAuthMode('guest'));
+            if (magicLinkBtn) magicLinkBtn.addEventListener('click', () => switchAuthMode('magic-link'));
+            if (startGameBtn) startGameBtn.addEventListener('click', handleMainAction);
+
+            if (regenerateColorsBtn) {
+                regenerateColorsBtn.addEventListener('click', async () => {
+                    // Add spinning animation to button
+                    regenerateColorsBtn.classList.add('spinning');
+                    regenerateColorsBtn.disabled = true;
+
+                    // Generate new colors with animation
+                    await populateColors(true, true);
+
+                    // Remove spinning animation after a delay
+                    setTimeout(() => {
+                        regenerateColorsBtn.classList.remove('spinning');
+                        regenerateColorsBtn.disabled = false;
+                    }, 600);
+                });
+            }
+
+            // Email input enter key support
+            if (emailInput) {
+                emailInput.addEventListener('keypress', (e) => {
+                    if (e.key === 'Enter') {
+                        handleMainAction();
+                    }
+                });
+            }
+
             await populateColors(true);
 
             // Check if user is already authenticated
@@ -659,6 +1854,380 @@
                 clearInterval(authPollInterval);
             }
         });
+    </script>
+
+    <!-- Solo game - no multiplayer lobby needed -->
+    
+    <!-- Action Marketplace Modal -->
+    <div id="action-marketplace-modal" class="modal">
+        <div class="modal-content action-marketplace">
+            <div class="modal-header">
+                <h2>Action Market</h2>
+                <button class="modal-close" onclick="window.game.closeActionMarketplace()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="marketplace-tabs">
+                    <button class="tab-btn active" data-tab="your-actions">Your Actions</button>
+                    <button class="tab-btn" data-tab="marketplace">Marketplace</button>
+                    <button class="tab-btn" data-tab="history">History</button>
+                </div>
+                
+                <div class="tab-content active" id="your-actions">
+                    <div class="action-balance">
+                        <h3>Current Balance</h3>
+                        <div class="balance-display">
+                            <span class="balance-number" id="modal-action-balance">10</span>
+                            <span class="balance-label">actions available</span>
+                        </div>
+                        <div class="balance-info">
+                            <p>Used this month: <span id="modal-actions-used">0</span></p>
+                            <p>Next refresh: <span id="modal-next-refresh">--</span></p>
+                            <p class="rollover-text">
+                                <strong>✓ Purchased actions never expire and rollover monthly until used</strong>
+                            </p>
+                        </div>
+                    </div>
+                    <div class="sell-actions">
+                        <h3>Sell Actions</h3>
+                        <div class="sell-form">
+                            <input type="number" id="sell-quantity" min="1" max="10" value="1" placeholder="Quantity">
+                            <input type="number" id="sell-reserve" min="1000" placeholder="Starting price per Action">
+                            <input type="number" id="sell-buynow" min="1000" placeholder="Buy now price (optional)">
+                            <button class="btn-primary" onclick="window.game.listActionsForSale()">List for Sale</button>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="tab-content" id="marketplace" style="display: none;">
+                    <div class="marketplace-header">
+                        <h3>Active Listings</h3>
+                        <div class="market-stats">
+                            <span>Avg Price: <span id="modal-avg-price">--</span></span>
+                            <span>Active Listings: <span id="modal-active-listings">0</span></span>
+                        </div>
+                    </div>
+                    <div style="background: #141414; padding: 10px; border-radius: 4px; margin-bottom: 15px; font-size: 12px; color: #888;">
+                        <strong style="color: #42B96E;">Note:</strong> Purchased actions are permanent assets that rollover each month until used. Buy now to build your action reserve!
+                    </div>
+                    <div class="listings-container" id="action-listings">
+                        <!-- Listings will be populated here -->
+                    </div>
+                </div>
+                
+                <div class="tab-content" id="history" style="display: none;">
+                    <h3>Transaction History</h3>
+                    <div class="history-container" id="transaction-history">
+                        <!-- History will be populated here -->
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Route Configuration Modal -->
+    <div id="route-config-modal" class="modal" style="display: none;">
+        <div class="modal-content route-config">
+            <div class="modal-header">
+                <h2>🚌 Configure Transit Route</h2>
+                <button class="modal-close" id="close-route-modal">&times;</button>
+            </div>
+            <div class="modal-body">
+                <!-- Route Basic Info -->
+                <div class="route-info-section">
+                    <h3>Route Information</h3>
+                    <div class="form-group">
+                        <label for="route-name">Route Name:</label>
+                        <input type="text" id="route-name" class="form-control" placeholder="Bus Route 1">
+                    </div>
+                    <div class="route-stats">
+                        <div class="stat-item">
+                            <span class="stat-label">Stops:</span>
+                            <span class="stat-value" id="route-stops-count">2</span>
+                        </div>
+                        <div class="stat-item">
+                            <span class="stat-label">Route Type:</span>
+                            <span class="stat-value" id="route-type">Bus</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Pricing Section -->
+                <div class="pricing-section">
+                    <h3>Pricing & Revenue</h3>
+                    <div class="form-group">
+                        <label for="ticket-price">Ticket Price ($):</label>
+                        <input type="number" id="ticket-price" class="form-control" step="0.25" min="0.50" max="10.00" value="2.50">
+                        <button id="optimal-pricing" class="btn-secondary">Suggest Optimal Price</button>
+                    </div>
+                    
+                    <!-- Revenue Projections -->
+                    <div class="revenue-projections">
+                        <div class="projection-item">
+                            <span class="proj-label">Daily Ridership:</span>
+                            <span class="proj-value" id="daily-ridership">150</span>
+                        </div>
+                        <div class="projection-item">
+                            <span class="proj-label">Daily Revenue:</span>
+                            <span class="proj-value" id="daily-revenue">$375</span>
+                        </div>
+                        <div class="projection-item">
+                            <span class="proj-label">Daily Costs:</span>
+                            <span class="proj-value" id="daily-costs">$25</span>
+                        </div>
+                        <div class="projection-item profit">
+                            <span class="proj-label">Daily Profit:</span>
+                            <span class="proj-value" id="daily-profit">$350</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Service Level -->
+                <div class="service-section">
+                    <h3>Service Level</h3>
+                    <div class="service-options">
+                        <label class="radio-option">
+                            <input type="radio" name="service-level" value="rush_hour">
+                            <span class="radio-label">Rush Hour Only</span>
+                            <span class="radio-desc">6AM-9AM, 5PM-7PM (Lower cost, reduced capacity)</span>
+                        </label>
+                        <label class="radio-option">
+                            <input type="radio" name="service-level" value="daytime" checked>
+                            <span class="radio-label">Daytime Service</span>
+                            <span class="radio-desc">6AM-10PM (Balanced cost and capacity)</span>
+                        </label>
+                        <label class="radio-option">
+                            <input type="radio" name="service-level" value="full_time">
+                            <span class="radio-label">24/7 Service</span>
+                            <span class="radio-desc">Round-the-clock (Higher cost, maximum capacity)</span>
+                        </label>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <div class="footer-summary">
+                    <span class="summary-text">Expected monthly profit: <strong id="monthly-profit">$10,500</strong></span>
+                </div>
+                <div class="footer-buttons">
+                    <button id="cancel-route" class="btn-secondary">Cancel</button>
+                    <button id="create-route" class="btn-primary">Create Route</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Market Dashboard Modal -->
+    <div id="market-dashboard-modal" class="modal" style="display: none;">
+        <div class="modal-content" style="max-width: 90%; width: 1200px; max-height: 90vh; overflow-y: auto;">
+            <div class="modal-header">
+                <h2>📊 Real-Time Market Dashboard</h2>
+                <button class="close-btn" onclick="document.getElementById('market-dashboard-modal').style.display='none'">×</button>
+            </div>
+            <div class="modal-body" style="padding: 20px;">
+                <!-- Live Market Stats -->
+                <div class="market-stats-grid" style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; margin-bottom: 30px;">
+                    <div class="market-stat-card" style="background: #2a2a2a; padding: 15px; border-radius: 8px;">
+                        <h4 style="color: #ffeb3b; margin: 0 0 10px 0;">⚡ Energy Market</h4>
+                        <div>Supply: <span id="energy-supply">0</span></div>
+                        <div>Demand: <span id="energy-demand">0</span></div>
+                        <div>Ratio: <span id="energy-ratio">0%</span></div>
+                        <div>Price: <span id="energy-price" style="color: #4CAF50">1.0x</span></div>
+                    </div>
+                    <div class="market-stat-card" style="background: #2a2a2a; padding: 15px; border-radius: 8px;">
+                        <h4 style="color: #8BC34A; margin: 0 0 10px 0;">🍎 Food Market</h4>
+                        <div>Supply: <span id="food-supply">0</span></div>
+                        <div>Demand: <span id="food-demand">0</span></div>
+                        <div>Ratio: <span id="food-ratio">0%</span></div>
+                        <div>Price: <span id="food-price" style="color: #4CAF50">1.0x</span></div>
+                    </div>
+                    <div class="market-stat-card" style="background: #2a2a2a; padding: 15px; border-radius: 8px;">
+                        <h4 style="color: #2196F3; margin: 0 0 10px 0;">🏠 Housing Market</h4>
+                        <div>Supply: <span id="housing-supply">0</span></div>
+                        <div>Demand: <span id="housing-demand">0</span></div>
+                        <div>Ratio: <span id="housing-ratio">0%</span></div>
+                        <div>Price: <span id="housing-price" style="color: #4CAF50">1.0x</span></div>
+                    </div>
+                    <div class="market-stat-card" style="background: #2a2a2a; padding: 15px; border-radius: 8px;">
+                        <h4 style="color: #9C27B0; margin: 0 0 10px 0;">💼 Jobs Market</h4>
+                        <div>Supply: <span id="jobs-supply">0</span></div>
+                        <div>Demand: <span id="jobs-demand">0</span></div>
+                        <div>Ratio: <span id="jobs-ratio">0%</span></div>
+                        <div>Price: <span id="jobs-price" style="color: #4CAF50">1.0x</span></div>
+                    </div>
+                </div>
+                
+                <!-- Market Curve Controls -->
+                <div class="market-controls" style="background: #2a2a2a; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
+                    <h3 style="margin-top: 0;">Market Elasticity Controls</h3>
+                    <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px;">
+                        <div>
+                            <label>Energy Elasticity: <span id="energy-elasticity-val">0.3</span></label>
+                            <input type="range" id="energy-elasticity" min="0.1" max="2.0" step="0.1" value="0.3" style="width: 100%;">
+                            <small style="color: #888;">Lower = price insensitive (essential), Higher = price sensitive (luxury)</small>
+                        </div>
+                        <div>
+                            <label>Food Elasticity: <span id="food-elasticity-val">0.5</span></label>
+                            <input type="range" id="food-elasticity" min="0.1" max="2.0" step="0.1" value="0.5" style="width: 100%;">
+                        </div>
+                        <div>
+                            <label>Housing Elasticity: <span id="housing-elasticity-val">0.7</span></label>
+                            <input type="range" id="housing-elasticity" min="0.1" max="2.0" step="0.1" value="0.7" style="width: 100%;">
+                        </div>
+                        <div>
+                            <label>Jobs Elasticity: <span id="jobs-elasticity-val">1.2</span></label>
+                            <input type="range" id="jobs-elasticity" min="0.1" max="2.0" step="0.1" value="1.2" style="width: 100%;">
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Market Radius Controls -->
+                <div class="market-controls" style="background: #2a2a2a; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
+                    <h3 style="margin-top: 0;">Market Locality (Tile Radius)</h3>
+                    <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px;">
+                        <div>
+                            <label>Energy Market Radius: <span id="energy-radius-val">999</span> (City-wide)</label>
+                            <input type="range" id="energy-radius" min="1" max="999" value="999" style="width: 100%;">
+                        </div>
+                        <div>
+                            <label>Food Market Radius: <span id="food-radius-val">5</span></label>
+                            <input type="range" id="food-radius" min="1" max="12" value="5" style="width: 100%;">
+                        </div>
+                        <div>
+                            <label>Housing Market Radius: <span id="housing-radius-val">3</span></label>
+                            <input type="range" id="housing-radius" min="1" max="12" value="3" style="width: 100%;">
+                        </div>
+                        <div>
+                            <label>Jobs Market Radius: <span id="jobs-radius-val">4</span></label>
+                            <input type="range" id="jobs-radius" min="1" max="12" value="4" style="width: 100%;">
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Price Bounds -->
+                <div class="market-controls" style="background: #2a2a2a; padding: 20px; border-radius: 8px;">
+                    <h3 style="margin-top: 0;">Price Multiplier Bounds</h3>
+                    <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px;">
+                        <div>
+                            <label>Minimum Price: <span id="min-price-val">0.25x</span></label>
+                            <input type="range" id="min-price" min="0.1" max="0.5" step="0.05" value="0.25" style="width: 100%;">
+                            <small style="color: #888;">Lowest price during extreme oversupply</small>
+                        </div>
+                        <div>
+                            <label>Maximum Price: <span id="max-price-val">4.0x</span></label>
+                            <input type="range" id="max-price" min="2.0" max="10.0" step="0.5" value="4.0" style="width: 100%;">
+                            <small style="color: #888;">Highest price during extreme shortage</small>
+                        </div>
+                    </div>
+                </div>
+                
+                <div style="margin-top: 20px; text-align: center;">
+                    <button onclick="applyMarketSettings()" class="btn-primary" style="margin-right: 10px;">Apply Market Settings</button>
+                    <button onclick="resetMarketDefaults()" class="btn-secondary">Reset to Defaults</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+
+    
+    <!-- Save Game Modal -->
+    <div id="save-game-modal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>💾 Save Game</h2>
+                <button class="modal-close" onclick="closeModal('save-game-modal')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="save-game-content">
+                    <div class="form-group">
+                        <label for="save-name">Save Name</label>
+                        <input type="text" id="save-name" placeholder="Enter save name" maxlength="50">
+                    </div>
+                    <div class="save-info">
+                        <p><strong>Game Info:</strong></p>
+                        <div class="save-details" id="save-details">
+                            <!-- Populated by JavaScript -->
+                        </div>
+                    </div>
+                    <div class="save-actions">
+                        <button class="btn-primary" id="confirm-save">Save Game</button>
+                        <button class="btn-secondary" onclick="closeModal('save-game-modal')">Cancel</button>
+                    </div>
+                    <div class="save-note">
+                        <small>Your game progress will be saved to local storage.</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script src="config.js"></script>
+    <script src="utils/csv-converter.js"></script>
+    <script src="csv-uploader.js"></script>
+    <script type="module" src="buildings.js"></script>
+    <!-- Utility Scripts -->
+    <script src="utils/player-utils.js"></script>
+
+    <!-- Initialize user session -->
+    <script>
+        // Fetch current user information on page load
+        async function initializeCurrentUser() {
+            try {
+                const response = await fetch('/api/auth/me', {
+                    credentials: 'include'
+                });
+                const data = await response.json();
+
+                if (data.success && data.user) {
+                    window.currentUser = data.user;
+                    console.log('👤 Current user initialized:', data.user.username || data.user.id);
+                } else {
+                    window.currentUser = null;
+                    console.log('👤 No authenticated user (playing as guest)');
+                }
+            } catch (error) {
+                console.warn('❌ Failed to fetch current user:', error);
+                window.currentUser = null;
+            }
+        }
+
+        // Initialize on page load
+        document.addEventListener('DOMContentLoaded', initializeCurrentUser);
+    </script>
+
+    <script src="utils/color-utils.js"></script>
+    <script src="utils/coordinate-utils.js"></script>
+
+    <!-- Cash Management System -->
+    <script src="cash-manager.js"></script>
+
+    <script src="transportation.js"></script>
+    <script src="building-system.js"></script>
+    <script src="economic-types.js"></script>
+    <script src="building-visual-feedback.js"></script>
+    <script src="smart-tooltip-system.js"></script>
+    <script src="client-economic-api.js"></script>
+    <script src="economic-engine.js"></script>
+    <script src="economic-performance.js"></script>
+    <script src="rendering-system.js"></script>
+    <script src="parcel-selector-manager.js"></script>
+    <script src="governance-system.js"></script>
+    <script src="auction-system.js"></script>
+    <script src="game-state.js"></script>
+    <script src="ui-manager.js"></script>
+    <script src="mobility-layer.js"></script>
+    <script src="transport-capacity.js"></script>
+    <script src="tooltip-manager.js"></script>
+    <script src="crisp-tooltip.js"></script>
+    <script src="context-menu-system.js"></script>
+    <script src="action-manager.js"></script>
+    <script src="action-marketplace.js"></script>
+    <script src="auth-manager.js"></script>
+    <script src="game.js"></script>
+
+    <script>
+        // Initialize positioning offset controls
+        window.tooltipOffsetX = -1;
+        window.tooltipOffsetY = -40;
     </script>
 </body>
 </html>

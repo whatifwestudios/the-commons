@@ -5,10 +5,36 @@
 
 class CSVUploader {
     constructor() {
+        // Disable CSV uploader in production for security
+        this.isProductionEnvironment = this.detectProductionEnvironment();
+        if (this.isProductionEnvironment) {
+            console.log('🚫 CSV uploader disabled in production environment');
+            return; // Don't initialize uploader in production
+        }
+
         this.isVisible = false;
         this.setupKeyboardShortcut();
         this.createUploadUI();
         this.converter = new CSVConverter();
+    }
+
+    /**
+     * Detect if running in production environment
+     */
+    detectProductionEnvironment() {
+        // Check for common production environment indicators
+        return (
+            // Railway, Vercel, Heroku production domains
+            location.hostname.includes('.railway.app') ||
+            location.hostname.includes('.vercel.app') ||
+            location.hostname.includes('.herokuapp.com') ||
+            // GitHub Pages
+            location.hostname.includes('.github.io') ||
+            // Custom production domains (not localhost)
+            (!location.hostname.includes('localhost') &&
+             !location.hostname.includes('127.0.0.1') &&
+             !location.hostname.includes('192.168.'))
+        );
     }
 
     /**
