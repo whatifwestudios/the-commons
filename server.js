@@ -12,7 +12,6 @@ const session = require('express-session');
 const ServerEconomicEngine = require('./server-economic-engine');
 const AuthService = require('./auth-service');
 const GameState = require('./game-state');
-const EmailService = require('./email-service');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -23,8 +22,21 @@ const authService = new AuthService();
 // Initialize game state
 const gameState = new GameState();
 
-// Initialize email service
-const emailService = new EmailService();
+// Initialize email service with error handling
+let emailService;
+try {
+    const EmailService = require('./email-service');
+    emailService = new EmailService();
+} catch (error) {
+    console.error('⚠️  Failed to initialize email service:', error.message);
+    console.log('🔧 Running without email service - magic links will be disabled');
+    // Create a fallback email service
+    emailService = {
+        sendMagicLink: async () => {
+            throw new Error('Email service not available - please check SendGrid configuration');
+        }
+    };
+}
 
 // Middleware
 app.use(cors());
