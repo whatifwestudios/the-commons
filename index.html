@@ -24,6 +24,10 @@
             overflow: hidden;
         }
 
+        .welcome-screen.fade-out {
+            opacity: 0 !important;
+        }
+
         .welcome-content {
             background: #1a1a1a;
             border-radius: 12px;
@@ -569,11 +573,30 @@
                 }
             }
 
-            // For demonstration, just show an alert
+            // Set player data for the game
             const name = window.currentUser ? window.currentUser.username || window.currentUser.email : window.playerName;
             const color = window.selectedColor || '#10AC84';
 
-            alert(`Welcome to The Commons, ${name}! Your color is ${color}.\n\nThis is the magic link development version. In the real game, this would redirect to the main game interface.`);
+            // Store player data for the game
+            window.playerColor = color;
+            if (window.currentUser) {
+                window.authenticatedUser = window.currentUser;
+            }
+
+            // Hide welcome screen with fade-out animation
+            const welcomeScreen = document.getElementById('welcome-screen');
+            welcomeScreen.classList.add('fade-out');
+
+            // Remove welcome screen after animation completes
+            setTimeout(() => {
+                welcomeScreen.style.display = 'none';
+
+                // Initialize the game (this would typically be where the main game starts)
+                console.log(`🎮 Starting game for ${name} with color ${color}`);
+
+                // The game should now be visible and playable
+                // (The rest of the game interface should already be loaded in the DOM)
+            }, 500);
         }
 
         // Main action button handler
