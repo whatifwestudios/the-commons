@@ -945,15 +945,8 @@ class EconomicEngine {
                         // Use transport capacity system if available, otherwise fall back to distance-based
                         let transportEfficiency = 1.0;
 
-                        if (this.game.transportCapacitySystem) {
-                            transportEfficiency = this.game.transportCapacitySystem.getTransportEfficiency(
-                                source.row, source.col,
-                                demand.row, demand.col
-                            );
-                        } else {
-                            // Fallback: Reduce efficiency based on distance
-                            transportEfficiency = Math.max(0.5, 1.0 - (source.distance - 1) * 0.1);
-                        }
+                        // Transport capacity system removed - using distance-based efficiency
+                        transportEfficiency = Math.max(0.5, 1.0 - (source.distance - 1) * 0.1);
 
                         allocatedAmount = Math.floor(allocatedAmount * transportEfficiency);
                     }

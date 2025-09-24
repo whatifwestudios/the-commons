@@ -430,7 +430,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Transport and mobility
         if (window.mobilityLayer) window.codeTracker.instrumentObject(window.mobilityLayer, 'mobility-layer.js');
-        if (window.transportCapacity) window.codeTracker.instrumentObject(window.transportCapacity, 'transport-capacity.js');
 
         // Economic systems
         if (window.economicPerformance) window.codeTracker.instrumentObject(window.economicPerformance, 'economic-performance.js');

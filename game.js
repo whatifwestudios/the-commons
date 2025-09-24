@@ -314,8 +314,7 @@ class IsometricGrid {
         // Transportation System - Clean slate
         this.transportationSystem = new TransportationSystem(this);
 
-        // Transport capacity modeling
-        this.transportCapacitySystem = new TransportCapacitySystem(this);
+        // Transport capacity system removed - was 75% dead code
 
         // Mobility Layer - New visualization system
         this.mobilityLayer = new MobilityLayer(this);
@@ -879,9 +878,7 @@ class IsometricGrid {
             this.updatePlayerStats();
 
             // Run commute simulation every 7 game days
-            if (this.currentDay % 7 === 0 && this.transportCapacitySystem) {
-                this.transportCapacitySystem.simulateCommutes();
-            }
+            // Weekly transport capacity simulation removed - was unused
 
             // Re-render to update building construction stages
             this.scheduleRender();
@@ -1646,9 +1643,7 @@ class IsometricGrid {
             this.updatePlayerStats();
 
             // Run commute simulation every 7 game days
-            if (this.currentDay % 7 === 0 && this.transportCapacitySystem) {
-                this.transportCapacitySystem.simulateCommutes();
-            }
+            // Weekly transport capacity simulation removed - was unused
 
             // Re-render to update building construction stages
             this.scheduleRender();
