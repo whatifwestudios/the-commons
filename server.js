@@ -8,9 +8,11 @@ const path = require('path');
 const cors = require('cors');
 const fs = require('fs');
 const cookieParser = require('cookie-parser');
+const session = require('express-session');
 const ServerEconomicEngine = require('./server-economic-engine');
 const AuthService = require('./auth-service');
 const GameState = require('./game-state');
+const EmailService = require('./email-service');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -21,10 +23,26 @@ const authService = new AuthService();
 // Initialize game state
 const gameState = new GameState();
 
+// Initialize email service
+const emailService = new EmailService();
+
 // Middleware
 app.use(cors());
 app.use(express.json({ limit: '10mb' })); // Increase limit for building data
 app.use(cookieParser());
+
+// Session middleware for magic link authentication
+app.use(session({
+    secret: process.env.SESSION_SECRET || 'the-commons-dev-secret-' + Math.random(),
+    resave: false,
+    saveUninitialized: false,
+    cookie: {
+        secure: false, // Set to true in production with HTTPS
+        maxAge: 24 * 60 * 60 * 1000, // 24 hours
+        httpOnly: true
+    }
+}));
+
 app.use(express.static('.'));
 
 // Authentication middleware
@@ -177,14 +195,6 @@ app.get('/auth/verify', async (req, res) => {
     }
 });
 
-// Get current user info
-app.get('/api/auth/me', authenticateUser, (req, res) => {
-    res.json({
-        success: true,
-        user: req.user
-    });
-});
-
 // Logout
 app.post('/api/auth/logout', (req, res) => {
     res.clearCookie('sessionToken');
@@ -210,10 +220,20 @@ app.post('/api/reset', (req, res) => {
     });
 });
 
-// Save building data JSON endpoint
+// Save building data JSON endpoint (development only)
 app.post('/api/buildings/save-json', (req, res) => {
+    // Disable CSV uploads in production for security
+    if (process.env.NODE_ENV === 'production') {
+        console.log('🚫 CSV upload disabled in production environment');
+        return res.status(403).json({
+            success: false,
+            error: 'File uploads are disabled in production for security reasons',
+            message: 'This feature is only available in development mode'
+        });
+    }
+
     try {
-        console.log('💾 Saving building data JSON from CSV upload');
+        console.log('💾 Saving building data JSON from CSV upload (development mode)');
         const { buildingData } = req.body;
 
         if (!buildingData) {
@@ -409,19 +429,225 @@ app.post('/api/player/color', optionalAuth, (req, res) => {
     }
 });
 
+// Magic link storage (in production, use Redis or similar)
+const magicLinks = new Map(); // email -> { token, userId, expires }
+const magicLinkSessions = new Map(); // token -> { userId, email, created }
+
+// Generate a secure magic link token
+function generateMagicLinkToken() {
+    return Math.random().toString(36).substring(2) + Math.random().toString(36).substring(2) + Date.now().toString(36);
+}
+
+// Send magic link endpoint
+app.post('/api/auth/send-magic-link', async (req, res) => {
+    try {
+        const { email } = req.body;
+
+        if (!email || !email.includes('@')) {
+            return res.status(400).json({
+                success: false,
+                error: 'Valid email address is required'
+            });
+        }
+
+        const token = generateMagicLinkToken();
+        const userId = email.split('@')[0] + '_' + Math.random().toString(36).substring(2, 7); // Simple user ID generation
+        const expires = Date.now() + (15 * 60 * 1000); // 15 minutes
+
+        // Store the magic link
+        magicLinks.set(email, { token, userId, expires });
+
+        // Generate the magic link URL with proper domain
+        const baseUrl = process.env.NODE_ENV === 'production'
+            ? 'https://playthecommons.net'
+            : `http://localhost:${PORT}`;
+        const magicLinkUrl = `${baseUrl}/api/auth/verify-magic-link?token=${token}`;
+
+        try {
+            // Send the magic link email
+            await emailService.sendMagicLink(email, magicLinkUrl);
+
+            res.json({
+                success: true,
+                message: 'Magic link sent successfully',
+                // In development, include the link for testing
+                ...(process.env.NODE_ENV !== 'production' && {
+                    devLink: magicLinkUrl,
+                    note: 'In development mode - check console for magic link'
+                })
+            });
+
+        } catch (emailError) {
+            console.error('❌ Failed to send magic link email:', emailError);
+            res.status(500).json({
+                success: false,
+                error: 'Failed to send magic link email. Please try again.'
+            });
+        }
+
+    } catch (error) {
+        console.error('❌ Send magic link failed:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Failed to send magic link',
+            message: error.message
+        });
+    }
+});
+
+// Verify magic link and establish session
+app.get('/api/auth/verify-magic-link', (req, res) => {
+    try {
+        const { token } = req.query;
+
+        if (!token) {
+            return res.status(400).send(`
+                <html>
+                    <body style="font-family: Arial, sans-serif; text-align: center; padding: 50px;">
+                        <h2>❌ Invalid Magic Link</h2>
+                        <p>This magic link is missing required parameters.</p>
+                    </body>
+                </html>
+            `);
+        }
+
+        // Find the magic link
+        let magicLinkData = null;
+        let email = null;
+
+        for (const [linkEmail, data] of magicLinks.entries()) {
+            if (data.token === token) {
+                magicLinkData = data;
+                email = linkEmail;
+                break;
+            }
+        }
+
+        if (!magicLinkData) {
+            return res.status(400).send(`
+                <html>
+                    <body style="font-family: Arial, sans-serif; text-align: center; padding: 50px;">
+                        <h2>❌ Invalid Magic Link</h2>
+                        <p>This magic link is not valid or has already been used.</p>
+                    </body>
+                </html>
+            `);
+        }
+
+        // Check if expired
+        if (Date.now() > magicLinkData.expires) {
+            magicLinks.delete(email);
+            return res.status(400).send(`
+                <html>
+                    <body style="font-family: Arial, sans-serif; text-align: center; padding: 50px;">
+                        <h2>⏰ Magic Link Expired</h2>
+                        <p>This magic link has expired. Please request a new one.</p>
+                    </body>
+                </html>
+            `);
+        }
+
+        // Establish session
+        req.session.userId = magicLinkData.userId;
+        req.session.email = email;
+        req.session.authenticated = true;
+
+        // Store in magic link sessions for polling
+        magicLinkSessions.set(token, {
+            userId: magicLinkData.userId,
+            email: email,
+            created: Date.now()
+        });
+
+        // Clean up the used magic link
+        magicLinks.delete(email);
+
+        console.log('✅ User authenticated via magic link:', email, '-> userId:', magicLinkData.userId);
+
+        res.send(`
+            <html>
+                <head>
+                    <title>Authentication Success</title>
+                </head>
+                <body style="font-family: Arial, sans-serif; text-align: center; padding: 50px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; min-height: 100vh; margin: 0; box-sizing: border-box;">
+                    <div style="background: rgba(255,255,255,0.1); border-radius: 16px; padding: 40px; max-width: 500px; margin: 0 auto; backdrop-filter: blur(10px);">
+                        <h1 style="font-size: 28px; margin-bottom: 20px;">🎉 Welcome to The Commons!</h1>
+                        <p style="font-size: 18px; margin-bottom: 30px;">You have successfully signed in as:</p>
+                        <div style="background: rgba(255,255,255,0.2); border-radius: 8px; padding: 20px; margin-bottom: 30px;">
+                            <strong style="font-size: 20px;">${email}</strong>
+                        </div>
+                        <p style="font-size: 16px; margin-bottom: 20px;">You can now close this tab and return to the game.</p>
+                        <script>
+                            // Auto-close after 3 seconds
+                            setTimeout(() => {
+                                window.close();
+                            }, 3000);
+                        </script>
+                    </div>
+                </body>
+            </html>
+        `);
+
+    } catch (error) {
+        console.error('❌ Verify magic link failed:', error);
+        res.status(500).send(`
+            <html>
+                <body style="font-family: Arial, sans-serif; text-align: center; padding: 50px;">
+                    <h2>❌ Authentication Error</h2>
+                    <p>An error occurred during authentication. Please try again.</p>
+                </body>
+            </html>
+        `);
+    }
+});
+
+// Clean up expired magic links periodically
+setInterval(() => {
+    const now = Date.now();
+    for (const [email, data] of magicLinks.entries()) {
+        if (now > data.expires) {
+            magicLinks.delete(email);
+        }
+    }
+
+    // Clean up old magic link sessions (after 1 hour)
+    for (const [token, data] of magicLinkSessions.entries()) {
+        if (now - data.created > 60 * 60 * 1000) {
+            magicLinkSessions.delete(token);
+        }
+    }
+}, 5 * 60 * 1000); // Run every 5 minutes
+
 // Get current authenticated user info
 app.get('/api/auth/me', optionalAuth, (req, res) => {
     try {
-        if (req.user && req.user.id) {
+        // Check session authentication (magic link)
+        if (req.session && req.session.authenticated && req.session.userId) {
+            res.json({
+                success: true,
+                user: {
+                    id: req.session.userId,
+                    email: req.session.email,
+                    username: req.session.email?.split('@')[0] || req.session.userId,
+                    authenticated: true,
+                    authMethod: 'magic-link'
+                }
+            });
+        }
+        // Check traditional auth middleware
+        else if (req.user && req.user.id) {
             res.json({
                 success: true,
                 user: {
                     id: req.user.id,
                     username: req.user.username,
-                    authenticated: true
+                    authenticated: true,
+                    authMethod: 'session'
                 }
             });
-        } else {
+        }
+        // Not authenticated
+        else {
             res.json({
                 success: true,
                 user: null,
