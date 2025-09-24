@@ -424,7 +424,7 @@ class IsometricGrid {
         // Transportation network starts empty - players build from scratch
         
         // Update countdown every second
-        setInterval(() => {
+        setInterval(async () => {
             this.updateMonthCountdown();
             // Update auction timers (with safety check for initialization order)
             if (this.actionMarketplace && this.actionMarketplace.updateAuctionCountdowns) {
@@ -871,11 +871,11 @@ class IsometricGrid {
     startGameTime() {
         // Solo game - client controls time advancement
         
-        setInterval(() => {
+        setInterval(async () => {
             this.currentDay++;
             this.lastDayStartTime = performance.now(); // Track when this day started
             this.updateGameDate();
-            this.processDailyCashflow();
+            await this.processDailyCashflow();
             this.updatePlayerStats();
 
             // Run commute simulation every 7 game days
@@ -1106,8 +1106,40 @@ class IsometricGrid {
         this.domCache.gameDate.textContent = `${this.gameDate.month} ${this.gameDate.day}`;
     }
 
-    processDailyCashflow() {
-        // Use economic engine's cashflow calculation
+    async processDailyCashflow() {
+        // Use server-side cashflow calculation via ClientEconomicAPI
+        if (this.economicAPI) {
+            try {
+                const cashflowData = await this.economicAPI.getPlayerCashflow(this);
+                if (cashflowData && cashflowData.success) {
+                    // Apply the server-calculated cashflow to player balance
+                    this.playerCash += cashflowData.netCashflow;
+
+                    // Ensure cash doesn't go below zero
+                    if (this.playerCash < 0) {
+                        this.playerCash = 0;
+                    }
+
+                    // Store cashflow totals for UI display
+                    this.dailyCashflowTotals = {
+                        revenue: cashflowData.totalRevenue,
+                        maintenance: cashflowData.totalMaintenance,
+                        lvt: cashflowData.totalLVT || 0,
+                        netCashflow: cashflowData.netCashflow
+                    };
+
+                    console.log(`💰 Daily cashflow applied: $${cashflowData.netCashflow.toFixed(2)} (Total: $${this.playerCash.toFixed(2)})`);
+                    return cashflowData;
+                } else {
+                    console.warn('⚠️ Server cashflow calculation failed or returned no data');
+                }
+            } catch (error) {
+                console.error('❌ Error processing daily cashflow:', error);
+            }
+        }
+
+        // Fallback to legacy client-side calculation
+        console.warn('⚠️ Falling back to client-side economic engine');
         if (this.economicEngine) {
             return this.economicEngine.processDailyCashflow();
         }
@@ -1606,11 +1638,11 @@ class IsometricGrid {
     startGameTime() {
         // Solo game - client controls time advancement
         
-        setInterval(() => {
+        setInterval(async () => {
             this.currentDay++;
             this.lastDayStartTime = performance.now(); // Track when this day started
             this.updateGameDate();
-            this.processDailyCashflow();
+            await this.processDailyCashflow();
             this.updatePlayerStats();
 
             // Run commute simulation every 7 game days
@@ -1860,7 +1892,7 @@ class IsometricGrid {
     // Construction animation manager - ensures smooth construction progress updates
     startConstructionAnimationManager() {
         // Check for buildings under construction and schedule regular updates
-        this.constructionAnimationInterval = setInterval(() => {
+        this.constructionAnimationInterval = setInterval(async () => {
             if (this.hasConstructionInProgress()) {
                 this.scheduleRender();
             }
@@ -1976,7 +2008,7 @@ class IsometricGrid {
     // Live tooltip updates for time-based content
     startLiveTooltipUpdates() {
         // Update time-based tooltips frequently for smooth construction progress
-        this.liveTooltipInterval = setInterval(() => {
+        this.liveTooltipInterval = setInterval(async () => {
             this.updateLiveTooltips();
         }, 250); // Update every 250ms for smooth construction progress
     }
@@ -5586,7 +5618,7 @@ class IsometricGrid {
         if (parcel) {
             parcel._completionPopStartTime = performance.now();
             // Schedule re-renders during animation
-            const animationInterval = setInterval(() => {
+            const animationInterval = setInterval(async () => {
                 this.redrawCanvas();
                 if (!parcel._completionPopStartTime) {
                     clearInterval(animationInterval);
@@ -7943,7 +7975,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 
                 // Set up real-time updates
                 if (!game.marketDashboardInterval) {
-                    game.marketDashboardInterval = setInterval(() => {
+                    game.marketDashboardInterval = setInterval(async () => {
                         game.updateMarketDashboard();
                     }, 1000); // Update every second
                 }

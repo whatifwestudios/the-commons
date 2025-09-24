@@ -189,9 +189,11 @@ class CrispTooltip {
         // Set flag to prevent legacy click handlers
         this.game.preventLegacyContextMenu = true;
 
-        // Use header position with slight offset for better UX alignment
-        const tooltipX = this.headerPosition ? this.headerPosition.x + 10 : (this.finalPosition ? this.finalPosition.x : mouseX + 20);
-        const tooltipY = this.headerPosition ? this.headerPosition.y + 8 : (this.finalPosition ? this.finalPosition.y : mouseY + 20);
+        // Use header position with fixed offset
+        const offsetX = window.tooltipOffsetX || -1;
+        const offsetY = window.tooltipOffsetY || -40;
+        const tooltipX = this.headerPosition ? this.headerPosition.x + offsetX : (this.finalPosition ? this.finalPosition.x : mouseX + 20);
+        const tooltipY = this.headerPosition ? this.headerPosition.y + offsetY : (this.finalPosition ? this.finalPosition.y : mouseY + 20);
 
         // Simple fade out tooltip
         this.element.style.transition = 'opacity 0.15s ease-out';

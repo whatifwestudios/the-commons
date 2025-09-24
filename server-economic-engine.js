@@ -958,6 +958,34 @@ class ServerEconomicEngine {
             }
         }
 
+        // Process LVT for empty parcels owned by the player
+        for (const [gridKey, parcel] of Object.entries(gameState.grid || {})) {
+            if (parcel.owner === playerId && (!parcel.building || parcel._isUnderConstruction)) {
+                const [row, col] = gridKey.split(',').map(Number);
+
+                // Calculate LVT using proper method (purchase price * LVT rate / 365)
+                const emptyParcelLVT = this.calculateLVT(parcel, gameState);
+
+                // Add to cashflow totals
+                cashflow.landValueTax += emptyParcelLVT;
+
+                // Add to detailed breakdown
+                breakdown.push({
+                    coordinates: `(${row}, ${col})`,
+                    buildingName: 'Empty Parcel',
+                    buildingAge: 0,
+                    decay: 0,
+                    landValue: parcel.landValue?.paidPrice || 1000,
+                    revenue: 0,
+                    maintenance: 0,
+                    lvt: emptyParcelLVT,
+                    netCashflow: -emptyParcelLVT, // Pure cost for empty parcels
+                    efficiency: 0,
+                    deficits: ['Empty parcel - no production']
+                });
+            }
+        }
+
         // Calculate road maintenance
         cashflow.roadMaintenance = this.calculateRoadMaintenance(gameState, playerId);
 
