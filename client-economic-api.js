@@ -346,6 +346,24 @@ class ClientEconomicAPI {
     }
 
     /**
+     * Get cached building performance without making a new request
+     * Returns null if not cached or cache is stale
+     */
+    getCachedBuildingPerformance(row, col) {
+        const cacheKey = `building:${row},${col}`;
+
+        if (this.cache.has(cacheKey)) {
+            const cached = this.cache.get(cacheKey);
+            // Use same 5 second TTL as getBuildingPerformance
+            if (Date.now() - cached.timestamp < 5000) {
+                return cached.data;
+            }
+        }
+
+        return null;
+    }
+
+    /**
      * Clear cache entries matching prefixes
      */
     clearCache(prefixes = []) {
@@ -379,6 +397,25 @@ class ClientEconomicAPI {
                 if (distance <= radius) {
                     this.cache.delete(key);
                 }
+            }
+        }
+    }
+
+    /**
+     * Invalidate cache for specific building coordinates
+     */
+    invalidateBuildingCache(row, col) {
+        const key = `building:${row},${col}`;
+        this.cache.delete(key);
+    }
+
+    /**
+     * Force clear all building performance cache
+     */
+    clearAllBuildingCache() {
+        for (const [key] of this.cache) {
+            if (key.startsWith('building:')) {
+                this.cache.delete(key);
             }
         }
     }

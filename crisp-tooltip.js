@@ -189,9 +189,9 @@ class CrispTooltip {
         // Set flag to prevent legacy click handlers
         this.game.preventLegacyContextMenu = true;
 
-        // Use exact header position for pixel-perfect alignment
-        const tooltipX = this.headerPosition ? this.headerPosition.x : (this.finalPosition ? this.finalPosition.x : mouseX + 20);
-        const tooltipY = this.headerPosition ? this.headerPosition.y : (this.finalPosition ? this.finalPosition.y : mouseY + 20);
+        // Use header position with slight offset for better UX alignment
+        const tooltipX = this.headerPosition ? this.headerPosition.x + 10 : (this.finalPosition ? this.finalPosition.x : mouseX + 20);
+        const tooltipY = this.headerPosition ? this.headerPosition.y + 8 : (this.finalPosition ? this.finalPosition.y : mouseY + 20);
 
         // Simple fade out tooltip
         this.element.style.transition = 'opacity 0.15s ease-out';
@@ -212,7 +212,7 @@ class CrispTooltip {
         }, 150);
     }
 
-    show(row, col, mouseX, mouseY) {
+    async show(row, col, mouseX, mouseY) {
         clearTimeout(this.hideTimer);
 
         // Get parcel data
@@ -222,9 +222,8 @@ class CrispTooltip {
             return;
         }
 
-
         // Generate tooltip content
-        const content = this.generateContent(row, col, parcel);
+        const content = await this.generateContent(row, col, parcel);
         if (!content) {
             this.hide();
             return;
@@ -244,7 +243,64 @@ class CrispTooltip {
         });
     }
 
-    generateContent(row, col, parcel) {
+    async generateContent(row, col, parcel) {
+        // Try smart tooltip system first if available
+        if (this.game.smartTooltipSystem) {
+            try {
+                const smartContent = await this.game.smartTooltipSystem.generateSmartContent(row, col);
+                if (smartContent) {
+                    return this.formatSmartContent(smartContent, row, col);
+                }
+            } catch (error) {
+                console.warn('Smart tooltip error, falling back to basic tooltip:', error);
+            }
+        }
+
+        // Fallback to existing tooltip system
+        return this.generateBasicContent(row, col, parcel);
+    }
+
+    formatSmartContent(content, row, col) {
+        const coord = this.game.getParcelCoordinate(row, col);
+
+        let html = `
+            <div style="padding: 12px 16px; border-bottom: 1px solid #2a2a2a; background: #0a0a0a; display: flex; justify-content: space-between; align-items: center;">
+                <div>
+                    <div style="font-size: 14px; font-weight: 600; color: #ffffff; margin-bottom: 2px;">${content.title}</div>
+                    <div style="font-size: 11px; color: #888888;">${content.subtitle}</div>
+                </div>
+                <div style="font-size: 12px; font-weight: 600; color: #4a9eff; letter-spacing: 0.5px;">
+                    ${coord}
+                </div>
+            </div>
+        `;
+
+        // Add sections
+        content.sections.forEach(section => {
+            html += `<div style="padding: 12px 16px; border-bottom: 1px solid #1a1a1a;">`;
+            html += `<div style="color: #ffffff; font-weight: 600; margin-bottom: 8px; font-size: 12px;">${section.title}</div>`;
+
+            section.items.forEach(item => {
+                const textColor = item.color || '#cccccc';
+                html += `
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
+                        <span style="color: #cccccc; font-size: 11px;">${item.label}</span>
+                        <span style="color: ${textColor}; font-weight: 600; font-size: 11px;">${item.value}</span>
+                    </div>
+                `;
+
+                if (item.action) {
+                    html += `<div style="color: #888; font-size: 10px; margin-top: 2px; font-style: italic;">Click to ${item.action.replace('_', ' ')}</div>`;
+                }
+            });
+
+            html += `</div>`;
+        });
+
+        return html;
+    }
+
+    generateBasicContent(row, col, parcel) {
         // Get coordinate in A-1 format
         const coord = this.game.getParcelCoordinate(row, col);
 
@@ -308,7 +364,7 @@ class CrispTooltip {
                 this.game.economicAPI.getBuildingPerformance(row, col).then(performanceInfo => {
                     if (performanceInfo && performanceInfo.success && performanceInfo.building) {
                         const performance = performanceInfo.building;
-                        const performancePercent = Math.round(performance.finalPerformance * 100);
+                        const performancePercent = Math.round(performance.performance * 100);
                         const decayPercent = Math.round((parcel.decay || 0) * 100);
 
                         // Find performance section and update

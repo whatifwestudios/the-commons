@@ -77,13 +77,13 @@ class EconomicEngine {
         const cashflow = this.calculatePlayerCashflow();
 
         // Apply cashflow via CashManager for transaction safety
-        if (cashflow && typeof cashflow.net === 'number' && !isNaN(cashflow.net)) {
+        if (cashflow && typeof cashflow.netCashflow === 'number' && !isNaN(cashflow.netCashflow)) {
             if (this.game.cashManager) {
                 // Use new CashManager system
                 this.game.cashManager.applyDailyCashflow(cashflow);
             } else {
                 // Fallback to legacy system with validation
-                this.game.playerCash += cashflow.net;
+                this.game.playerCash += cashflow.netCashflow;
             }
         } else {
             console.warn('Invalid cashflow data detected, skipping cash update:', cashflow);
@@ -137,9 +137,9 @@ class EconomicEngine {
                 if (building.resources?.foodProduction > 0) {
                     this.marketState.supply.food += building.resources.foodProduction;
                 }
-                if (building.population?.bedroomsAdded > 0) {
-                    this.marketState.supply.housing += building.population.bedroomsAdded;
-                    this.marketState.supply.residents += (parcel.population || 0);
+                if (building.resources?.housingProvided > 0) {
+                    this.marketState.supply.housing += building.resources.housingProvided;
+                    this.marketState.supply.residents += building.resources.housingProvided;
                 }
                 if (building.population?.jobsCreated > 0) {
                     this.marketState.supply.jobs += building.population.jobsCreated;
@@ -777,7 +777,7 @@ class EconomicEngine {
                 
                 // Create demand points for JEFH resources
                 if (this.game.buildingCategories.normalize(building.category) === 'housing') {
-                    const residents = building.population?.bedroomsAdded || building.population?.residents || building.residents || 0;
+                    const residents = building.resources?.housingProvided || 0;
                     if (residents > 0) {
                         // Housing demands jobs and food
                         buildingDemands.push({
@@ -1272,10 +1272,28 @@ class EconomicEngine {
             const [row, col] = key.split('-').map(Number);
             const parcel = this.game.grid[row][col];
 
-            // Get building information
-            const building = parcel.building ? this.game.buildingManager.getBuildingById(parcel.building) : null;
+            // Get building information - fallback to buildings data if buildingManager fails
+            let building = parcel.building ? this.game.buildingManager?.getBuildingById(parcel.building) : null;
+
+            // Fallback: search directly in the buildings data if buildingManager lookup fails
+            if (!building && parcel.building) {
+                // Try to find building in buildings-data.json structure
+                if (this.game.buildings) {
+                    for (const category of Object.values(this.game.buildings)) {
+                        if (Array.isArray(category)) {
+                            building = category.find(b => b.id === parcel.building);
+                            if (building) break;
+                        }
+                    }
+                }
+            }
+
             const buildingName = building?.name || 'Vacant Land';
             const category = building?.category || 'Land';
+
+            // Calculate efficiency percentage for display
+            const efficiency = stats.performance?.efficiency || stats.efficiency || 1.0;
+            const efficiencyPercent = Math.round(efficiency * 100);
 
             // Format for DCF table
             this.game.cashflowBreakdown.push({
@@ -1286,11 +1304,14 @@ class EconomicEngine {
                 maintenance: stats.maintenance || 0,
                 lvt: stats.lvt || 0,
                 net: (stats.revenue || 0) - (stats.maintenance || 0) - (stats.lvt || 0),
+                efficiency: `${efficiencyPercent}%`,
+                condition: Math.round((1 - (stats.decay || parcel.decay || 0)) * 100) + '%',
+                age: (stats.age || parcel.buildingAge || 0) + ' days',
                 // Additional details for tooltip or expanded view
                 details: building ? `${building.name} at (${row},${col})` : `Vacant land at (${row},${col})`,
                 performance: stats.performance,
                 decay: stats.decay,
-                age: stats.age
+                rawAge: stats.age
             });
         });
 
@@ -1443,49 +1464,6 @@ class EconomicEngine {
         });
     }
 
-    /**
-     * Build comprehensive cashflow breakdown for UI
-     * Moved from game.js for proper modularity
-     */
-    buildCashflowBreakdown() {
-        if (!this.game.economicCache.buildingStats || this.game.economicCache.buildingStats.size === 0) {
-            return;
-        }
-
-        const breakdown = {
-            revenue: {},
-            maintenance: {},
-            lvt: {}
-        };
-
-        // Group by building type and sum values
-        this.game.economicCache.buildingStats.forEach((stats, key) => {
-            const buildingType = stats.buildingType || 'Unknown';
-
-            // Revenue breakdown
-            if (!breakdown.revenue[buildingType]) {
-                breakdown.revenue[buildingType] = { total: 0, count: 0 };
-            }
-            breakdown.revenue[buildingType].total += stats.revenue;
-            breakdown.revenue[buildingType].count++;
-
-            // Maintenance breakdown
-            if (!breakdown.maintenance[buildingType]) {
-                breakdown.maintenance[buildingType] = { total: 0, count: 0 };
-            }
-            breakdown.maintenance[buildingType].total += stats.maintenance;
-            breakdown.maintenance[buildingType].count++;
-
-            // LVT breakdown
-            if (!breakdown.lvt[buildingType]) {
-                breakdown.lvt[buildingType] = { total: 0, count: 0 };
-            }
-            breakdown.lvt[buildingType].total += stats.lvt;
-            breakdown.lvt[buildingType].count++;
-        });
-
-        this.game.cashflowBreakdown = breakdown;
-    }
 
     /**
      * Calculate population with comprehensive demographics

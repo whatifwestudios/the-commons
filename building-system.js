@@ -196,6 +196,26 @@ class BuildingSystem {
     }
     
     /**
+     * Invalidate caches for buildings in affected area
+     */
+    invalidateBuildingCaches(centerRow, centerCol, radius = 3) {
+        // Invalidate economic API cache
+        if (this.game.economicAPI) {
+            this.game.economicAPI.clearBuildingCache(centerRow, centerCol, radius);
+        }
+
+        // Invalidate smart tooltip cache
+        if (this.game.smartTooltipSystem) {
+            this.game.smartTooltipSystem.clearCacheArea(centerRow, centerCol, radius);
+        }
+
+        // Clear any other building performance caches
+        if (this.game.performanceEngine) {
+            this.game.performanceEngine.clearCache();
+        }
+    }
+
+    /**
      * Check if a building can be placed at a location
      */
     canPlaceBuilding(row, col, buildingId) {
@@ -503,27 +523,132 @@ class BuildingSystem {
     getNeedSatisfaction(need, row, col) {
         switch(need.type) {
             case 'roads':
-                return this.game.transportationSystem.hasRoadAccess(row, col) ? 100 : 0;
-                
+                // Use enhanced accessibility score instead of binary road access
+                if (this.game.transportationSystem.calculateAccessibilityScore) {
+                    const score = this.game.transportationSystem.calculateAccessibilityScore(row, col);
+                    return typeof score === 'number' && !isNaN(score) ? score : 0;
+                } else {
+                    return this.game.transportationSystem.hasRoadAccess(row, col) ? 100 : 0;
+                }
+
             case 'energy':
-                const energyBalance = this.game.economicEngine.getLocalSupplyDemand('energy', row, col);
-                return Math.min(100, (energyBalance.supply / energyBalance.demand) * 100);
-                
+                // Try network-based resource calculation first, fall back to proximity
+                const energyBalance = this.getNetworkResourceBalance('energy', row, col) ||
+                                     this.game.economicEngine.getLocalSupplyDemand('energy', row, col);
+                if (!energyBalance || typeof energyBalance.supply !== 'number' || typeof energyBalance.demand !== 'number') {
+                    return 0; // No valid balance data
+                }
+                return Math.min(100, (energyBalance.supply / Math.max(1, energyBalance.demand)) * 100);
+
             case 'workers':
-                const workerBalance = this.game.economicEngine.getLocalSupplyDemand('workers', row, col);
+                const workerBalance = this.getNetworkResourceBalance('workers', row, col) ||
+                                     this.game.economicEngine.getLocalSupplyDemand('workers', row, col);
+                if (!workerBalance || typeof workerBalance.supply !== 'number' || typeof workerBalance.demand !== 'number') {
+                    return 0; // No valid balance data
+                }
                 return Math.min(100, (workerBalance.supply / Math.max(1, workerBalance.demand)) * 100);
-                
+
             case 'jobs':
-                const jobBalance = this.game.economicEngine.getLocalSupplyDemand('jobs', row, col);
+                const jobBalance = this.getNetworkResourceBalance('jobs', row, col) ||
+                                  this.game.economicEngine.getLocalSupplyDemand('jobs', row, col);
+                if (!jobBalance || typeof jobBalance.supply !== 'number' || typeof jobBalance.demand !== 'number') {
+                    return 0; // No valid balance data
+                }
                 return Math.min(100, (jobBalance.supply / Math.max(1, jobBalance.demand)) * 100);
-                
+
             case 'food':
-                const foodBalance = this.game.economicEngine.getLocalSupplyDemand('food', row, col);
+                const foodBalance = this.getNetworkResourceBalance('food', row, col) ||
+                                   this.game.economicEngine.getLocalSupplyDemand('food', row, col);
+                if (!foodBalance || typeof foodBalance.supply !== 'number' || typeof foodBalance.demand !== 'number') {
+                    return 0; // No valid balance data
+                }
                 return Math.min(100, (foodBalance.supply / Math.max(1, foodBalance.demand)) * 100);
-                
+
             default:
                 return 100;
         }
+    }
+
+    /**
+     * Get resource supply/demand balance using road network connectivity
+     */
+    getNetworkResourceBalance(resource, centerRow, centerCol) {
+        if (!this.game.transportationSystem || !this.game.transportationSystem.calculateResourceAccessibility) {
+            return null; // Fall back to legacy method
+        }
+
+        // Check if center location has road access
+        if (!this.game.transportationSystem.hasRoadAccess(centerRow, centerCol)) {
+            return { supply: 0, demand: 0, ratio: 0 };
+        }
+
+        // Get accessible resource providers through road network
+        const accessible = this.game.transportationSystem.calculateResourceAccessibility(
+            centerRow, centerCol, resource, 15 // Max 15 network distance
+        );
+
+        let totalSupply = 0;
+        let localDemand = 0;
+
+        // Calculate supply from network-accessible buildings with transport mode details
+        for (const provider of accessible) {
+            // Apply distance and efficiency penalties
+            const distancePenalty = Math.max(0.1, 1 - (provider.distance / 15));
+            const effectiveSupply = provider.supply * provider.efficiency * distancePenalty;
+            totalSupply += effectiveSupply;
+
+            const transportMode = provider.transportMode || 'road';
+            const transitInfo = provider.transitRoute ? ` via ${provider.transitRoute}` : '';
+
+            console.log(`📡 [${transportMode.toUpperCase()}] ${resource} from (${provider.row},${provider.col}): ${provider.supply} * ${provider.efficiency.toFixed(2)} * ${distancePenalty.toFixed(2)} = ${effectiveSupply.toFixed(1)}${transitInfo}`);
+        }
+
+        // Calculate local demand (buildings at this location still create local demand)
+        const centerParcel = this.game.grid[centerRow][centerCol];
+        if (centerParcel && centerParcel.building) {
+            const building = this.game.buildingManager?.getBuildingById(centerParcel.building);
+            if (building) {
+                switch(resource) {
+                    case 'energy':
+                        localDemand = building.resources?.energyDemand || 0;
+                        break;
+                    case 'food':
+                        localDemand = centerParcel.population * 0.5 || 0;
+                        break;
+                    case 'jobs':
+                        localDemand = centerParcel.population * 0.6 || 0;
+                        break;
+                    case 'workers':
+                        localDemand = building.population?.jobsCreated || 0;
+                        break;
+                }
+            }
+        }
+
+        const demand = Math.max(1, localDemand);
+        const ratio = totalSupply / demand;
+
+        // Calculate transport impact benefits for people-related resources
+        let healthBonus = 0;
+        let environmentBonus = 0;
+        if (resource === 'workers' || resource === 'jobs') {
+            const transportImpacts = this.game.transportationSystem.calculateTransportImpacts(centerRow, centerCol);
+            healthBonus = transportImpacts.health * 0.1; // 10% bonus for good health impacts
+            environmentBonus = transportImpacts.environment * 0.1; // 10% bonus for good environment
+            totalSupply *= (1 + healthBonus + environmentBonus);
+
+            console.log(`🌱 [HEALTH] Transport impacts at (${centerRow},${centerCol}): health=${transportImpacts.health.toFixed(2)}, environment=${transportImpacts.environment.toFixed(2)}, walkability=${transportImpacts.walkability.toFixed(2)}`);
+        }
+
+        console.log(`📡 [NETWORK] ${resource} balance at (${centerRow},${centerCol}): supply=${totalSupply.toFixed(1)}, demand=${demand.toFixed(1)}, ratio=${ratio.toFixed(2)}`);
+
+        return {
+            supply: totalSupply,
+            demand: demand,
+            ratio: ratio,
+            healthBonus: healthBonus,
+            environmentBonus: environmentBonus
+        };
     }
     
     /**
@@ -1000,9 +1125,12 @@ class BuildingSystem {
         this.markBuildingEconomicsDirty(row, col);
         this.game.markVitalityDirty(row, col);
         this.markPrereqDirty();
-        
+
         // Mark region as dirty for cache invalidation (performance optimization)
         this.game.markRegionDirty(row, col, 3);
+
+        // Invalidate tooltip and economic API caches for affected buildings
+        this.invalidateBuildingCaches(row, col, 3);
         
         // Update land values, vitality, cashflow and re-render
         this.game.updateAllLandValues();

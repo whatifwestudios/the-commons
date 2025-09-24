@@ -6,6 +6,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const { BuildingPerformance, PlayerCashflow, MarketState } = require('./economic-types');
 
 class ServerEconomicEngine {
     constructor() {
@@ -380,27 +381,37 @@ class ServerEconomicEngine {
             // Add supplies (using correct building definition fields)
             if (building.resources?.housingProvided > 0) {
                 totals.housing.supply += building.resources.housingProvided;
+                console.log(`🔍 [DEBUG] City supply - adding housing: ${building.resources.housingProvided}`);
             }
             if (building.resources?.jobsProvided > 0) {
                 totals.jobs.supply += building.resources.jobsProvided;
+                console.log(`🔍 [DEBUG] City supply - adding jobs: ${building.resources.jobsProvided}`);
             }
             if (building.resources?.energyProvided > 0) {
                 totals.energy.supply += building.resources.energyProvided;
+                console.log(`🔍 [DEBUG] City supply - adding energy: ${building.resources.energyProvided}`);
             }
             if (building.resources?.foodProvided > 0) {
                 totals.food.supply += building.resources.foodProvided;
+                console.log(`🔍 [DEBUG] City supply - adding food: ${building.resources.foodProvided}`);
             }
 
             // Add demands (using correct building definition fields)
-            if (building.resources?.housingProvided > 0) {
-                totals.jobs.demand += building.resources.housingProvided; // Residents need jobs
-                totals.food.demand += building.resources.housingProvided; // Residents need food
+            if (building.resources?.housingRequired > 0) {
+                totals.housing.demand += building.resources.housingRequired;
+                console.log(`🔍 [DEBUG] City demand - adding housing: ${building.resources.housingRequired}`);
             }
-            if (building.resources?.jobsProvided > 0) {
-                totals.housing.demand += building.resources.jobsProvided; // Jobs need workers (housing)
+            if (building.resources?.jobsRequired > 0) {
+                totals.jobs.demand += building.resources.jobsRequired;
+                console.log(`🔍 [DEBUG] City demand - adding jobs: ${building.resources.jobsRequired}`);
             }
             if (building.resources?.energyRequired > 0) {
                 totals.energy.demand += building.resources.energyRequired;
+                console.log(`🔍 [DEBUG] City demand - adding energy: ${building.resources.energyRequired}`);
+            }
+            if (building.resources?.foodRequired > 0) {
+                totals.food.demand += building.resources.foodRequired;
+                console.log(`🔍 [DEBUG] City demand - adding food: ${building.resources.foodRequired}`);
             }
         });
 
@@ -593,8 +604,8 @@ class ServerEconomicEngine {
         // Always include the parcel itself
         accessible.add(`${row},${col}`);
 
-        // Check adjacent parcels (4-directional)
-        const directions = [[-1, 0], [1, 0], [0, -1], [0, 1]];
+        // Check adjacent parcels (8-directional including diagonals)
+        const directions = [[-1, -1], [-1, 0], [-1, 1], [0, -1], [0, 1], [1, -1], [1, 0], [1, 1]];
         for (const [dRow, dCol] of directions) {
             const adjRow = row + dRow;
             const adjCol = col + dCol;
@@ -602,6 +613,7 @@ class ServerEconomicEngine {
 
             if (this.gameData.grid[adjKey]) {
                 accessible.add(adjKey);
+                console.log(`🔍 [DEBUG] Adding adjacent parcel ${adjKey} to accessibility for ${row},${col}`);
             }
         }
 
@@ -632,8 +644,8 @@ class ServerEconomicEngine {
             if (parcel && this.isRoadParcel(parcel)) {
                 connected.add(currentKey);
 
-                // Add adjacent parcels to exploration queue
-                const directions = [[-1, 0], [1, 0], [0, -1], [0, 1]];
+                // Add adjacent parcels to exploration queue (8-directional)
+                const directions = [[-1, -1], [-1, 0], [-1, 1], [0, -1], [0, 1], [1, -1], [1, 0], [1, 1]];
                 for (const [dRow, dCol] of directions) {
                     const neighborKey = `${currentRow + dRow},${currentCol + dCol}`;
                     if (!visited.has(neighborKey) && this.gameData.grid[neighborKey]) {
@@ -684,38 +696,49 @@ class ServerEconomicEngine {
                 continue;
             }
 
-            // Building data validated
+            console.log(`🔍 [DEBUG] Processing connected resources for ${parcel.building}:`, building.resources);
 
             // Skip buildings under construction - they provide no supply until complete
             if (parcel._isUnderConstruction) continue;
 
-            // Add supplies
-            if (building.population?.bedroomsAdded > 0) {
-                resources.housing.supply += building.population.bedroomsAdded;
+            // Add supplies - using correct field names from building definitions
+            if (building.resources?.housingProvided > 0) {
+                resources.housing.supply += building.resources.housingProvided;
+                console.log(`🔍 [DEBUG] Adding housing supply: ${building.resources.housingProvided}`);
             }
-            if (building.population?.jobsCreated > 0) {
-                resources.jobs.supply += building.population.jobsCreated;
+            if (building.resources?.jobsProvided > 0) {
+                resources.jobs.supply += building.resources.jobsProvided;
+                console.log(`🔍 [DEBUG] Adding jobs supply: ${building.resources.jobsProvided}`);
             }
-            if (building.resources?.energySupply > 0) {
-                resources.energy.supply += building.resources.energySupply;
+            if (building.resources?.energyProvided > 0) {
+                resources.energy.supply += building.resources.energyProvided;
+                console.log(`🔍 [DEBUG] Adding energy supply: ${building.resources.energyProvided}`);
             }
-            if (building.resources?.foodProduction > 0) {
-                resources.food.supply += building.resources.foodProduction;
+            if (building.resources?.foodProvided > 0) {
+                resources.food.supply += building.resources.foodProvided;
+                console.log(`🔍 [DEBUG] Adding food supply: ${building.resources.foodProvided}`);
             }
 
-            // Add demands
-            if (building.population?.bedroomsAdded > 0) {
-                resources.jobs.demand += building.population.bedroomsAdded; // Residents need jobs
-                resources.food.demand += building.population.bedroomsAdded; // Residents need food
+            // Add demands - using correct field names from building definitions
+            if (building.resources?.housingRequired > 0) {
+                resources.housing.demand += building.resources.housingRequired;
+                console.log(`🔍 [DEBUG] Adding housing demand: ${building.resources.housingRequired}`);
             }
-            if (building.population?.jobsCreated > 0) {
-                resources.housing.demand += building.population.jobsCreated; // Jobs need workers (housing)
+            if (building.resources?.jobsRequired > 0) {
+                resources.jobs.demand += building.resources.jobsRequired;
+                console.log(`🔍 [DEBUG] Adding jobs demand: ${building.resources.jobsRequired}`);
             }
-            if (building.resources?.energyDemand > 0) {
-                resources.energy.demand += building.resources.energyDemand;
+            if (building.resources?.energyRequired > 0) {
+                resources.energy.demand += building.resources.energyRequired;
+                console.log(`🔍 [DEBUG] Adding energy demand: ${building.resources.energyRequired}`);
+            }
+            if (building.resources?.foodRequired > 0) {
+                resources.food.demand += building.resources.foodRequired;
+                console.log(`🔍 [DEBUG] Adding food demand: ${building.resources.foodRequired}`);
             }
         }
 
+        console.log(`🔍 [DEBUG] Final connected resources:`, resources);
         return resources;
     }
 
@@ -890,13 +913,15 @@ class ServerEconomicEngine {
 
     /**
      * Calculate player cashflow breakdown
-     * Migrated from client economic-engine.js for server-authoritative economics
+     * Using unified PlayerCashflow data structure
      */
     calculatePlayerCashflow(gameState, playerId = 'player') {
-        let totalRevenue = 0;
-        let totalMaintenance = 0;
-        let totalLVT = 0;
-        let roadMaintenance = 0;
+        // Create new PlayerCashflow instance
+        const cashflow = new PlayerCashflow({
+            playerId: playerId,
+            timestamp: Date.now()
+        });
+
         const breakdown = [];
 
         // Process player's buildings from game state
@@ -908,13 +933,15 @@ class ServerEconomicEngine {
                 const building = this.buildingDefinitions.get(parcel.building);
                 if (!building) continue;
 
-                // Calculate building economics
+                // Calculate building economics with performance data
                 const economics = this.calculateBuildingEconomics(parcel, building, gameState);
 
-                totalRevenue += economics.revenue;
-                totalMaintenance += economics.maintenance;
-                totalLVT += economics.lvt;
+                // Update cashflow totals
+                cashflow.buildingRevenue += economics.revenue;
+                cashflow.buildingMaintenance += economics.maintenance;
+                cashflow.landValueTax += economics.lvt;
 
+                // Add to detailed breakdown
                 breakdown.push({
                     coordinates: `(${row}, ${col})`,
                     buildingName: building.name || parcel.building,
@@ -924,27 +951,33 @@ class ServerEconomicEngine {
                     revenue: economics.revenue,
                     maintenance: economics.maintenance,
                     lvt: economics.lvt,
-                    netCashflow: economics.revenue - economics.maintenance - economics.lvt
+                    netCashflow: economics.revenue - economics.maintenance - economics.lvt,
+                    efficiency: economics.efficiency || 1.0,
+                    deficits: economics.deficits || []
                 });
             }
         }
 
-        // Calculate road maintenance (simplified for server)
-        roadMaintenance = this.calculateRoadMaintenance(gameState, playerId);
-        totalMaintenance += roadMaintenance;
+        // Calculate road maintenance
+        cashflow.roadMaintenance = this.calculateRoadMaintenance(gameState, playerId);
 
-        const netCashflow = totalRevenue - totalMaintenance - totalLVT;
+        // Store breakdown
+        cashflow.buildingBreakdown = breakdown;
 
+        // Recalculate totals
+        cashflow.recalculate();
+
+        // Return in backwards-compatible format while using unified structure
         return {
             success: true,
-            cashflow: {
-                totalRevenue,
-                totalMaintenance,
-                totalLVT,
-                roadMaintenance,
-                netCashflow,
-                breakdown
-            }
+            totalRevenue: cashflow.totalRevenue,
+            totalMaintenance: cashflow.totalExpenses - cashflow.landValueTax,
+            totalLVT: cashflow.landValueTax,
+            roadMaintenance: cashflow.roadMaintenance,
+            netCashflow: cashflow.netCashflow,
+            breakdown: cashflow.buildingBreakdown,
+            // Include full unified structure for new consumers
+            unifiedCashflow: cashflow
         };
     }
 

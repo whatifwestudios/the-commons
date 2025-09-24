@@ -32,6 +32,12 @@ class IsometricGrid {
         // Initialize Rendering System
         this.renderingSystem = new RenderingSystem(this);
 
+        // Initialize Building Visual Feedback System
+        this.buildingVisualFeedback = new BuildingVisualFeedback(this);
+
+        // Initialize Smart Tooltip System
+        this.smartTooltipSystem = new SmartTooltipSystem(this);
+
         // Initialize Parcel Selection System
         this.parcelSelector = new ParcelSelectorManager(this);
 
@@ -1127,9 +1133,8 @@ class IsometricGrid {
                     const key = `${row}-${col}`;
                     this.economicCache.playerParcels.add(key);
                     
-                    // Age buildings and mark as dirty (all buildings age daily)
+                    // Mark buildings as dirty for economic recalculation (aging handled by building system)
                     if (parcel.building) {
-                        parcel.buildingAge++;
                         this.markBuildingEconomicsDirty(row, col);
                     }
                 }
@@ -6185,6 +6190,12 @@ class IsometricGrid {
     render() {
         // Delegate to rendering system
         this.renderingSystem.render();
+
+        // Update building visual feedback
+        if (this.buildingVisualFeedback) {
+            const deltaTime = 16; // Approximate 60fps frame time
+            this.buildingVisualFeedback.update(deltaTime);
+        }
     }
     
     // Keep drawScene for backward compatibility

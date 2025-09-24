@@ -228,23 +228,51 @@ class ParcelSelectorManager {
             }
         }
 
-        // Calculate road-connected parcels using actual game connectivity
-        if (this.game.hoverInfluenceRadius) {
-            console.log(`🛣️ [ROADS] Found ${this.game.hoverInfluenceRadius.size} road-connected parcels:`, this.game.hoverInfluenceRadius);
+        // Calculate road-connected parcels using enhanced transportation system
+        if (this.game.transportationSystem) {
+            // Get all parcels accessible through road network (simplified for visual connectivity)
+            const connectedParcels = this.getVisualNetworkConnectedParcels(row, col, 8); // Max 8 distance for visual clarity
+            console.log(`🛣️ [NETWORK] Found ${connectedParcels.length} road-connected parcels`);
+
+            for (const parcel of connectedParcels) {
+                const parcelKey = `${parcel.row},${parcel.col}`;
+                if (!this.proximityEffects.has(parcelKey)) {
+                    // Determine if it's directly adjacent vs network connected
+                    const isAdjacent = this.isAdjacent(row, col, parcel.row, parcel.col);
+                    const effectType = isAdjacent ? 'adjacent' : 'connected';
+
+                    // Distance-based intensity (closer = stronger effect, but more subtle)
+                    const intensity = isAdjacent ? 0.3 : Math.max(0.1, 0.25 - (parcel.distance / 8) * 0.15);
+
+                    this.proximityEffects.set(parcelKey, {
+                        type: effectType,
+                        intensity: intensity,
+                        color: isAdjacent ? adjacentColor : connectedColor,
+                        buildingTint: this.getVariantFromColor(playerColor),
+                        distance: parcel.distance,
+                        roadConnected: true
+                    });
+                    console.log(`🛣️ [NETWORK] Added ${effectType} effect for ${parcelKey}, distance: ${parcel.distance}`);
+                }
+            }
+        }
+
+        // Fallback to legacy system if new system isn't available
+        else if (this.game.hoverInfluenceRadius) {
+            console.log(`🛣️ [LEGACY] Using legacy hoverInfluenceRadius with ${this.game.hoverInfluenceRadius.size} parcels`);
             for (const parcelKey of this.game.hoverInfluenceRadius) {
                 if (!this.proximityEffects.has(parcelKey)) {
                     const isExtended = parcelKey.includes(':extended');
                     this.proximityEffects.set(parcelKey, {
                         type: isExtended ? 'connected' : 'adjacent',
-                        intensity: 0.2, // All connected parcels get 20% fill
+                        intensity: 0.2,
                         color: isExtended ? connectedColor : adjacentColor,
                         buildingTint: this.getVariantFromColor(playerColor)
                     });
-                    console.log(`🛣️ [ROADS] Added proximity effect for ${parcelKey}, color: ${isExtended ? connectedColor : adjacentColor}`);
                 }
             }
         } else {
-            console.log(`🛣️ [ROADS] No hoverInfluenceRadius found`);
+            console.log(`🛣️ [ROADS] No network connectivity system found`);
         }
 
         // Add mobility layer effects for road building
@@ -508,6 +536,147 @@ class ParcelSelectorManager {
                 }
             }
         }
+    }
+
+    /**
+     * Get all parcels connected to a location through the road network (visual indicator version)
+     */
+    getVisualNetworkConnectedParcels(fromRow, fromCol, maxDistance = 8) {
+        if (!this.game.transportationSystem) {
+            return [];
+        }
+
+        // Check if starting position has road access
+        if (!this.game.transportationSystem.hasRoadAccess(fromRow, fromCol)) {
+            return [];
+        }
+
+        const connectedParcels = [];
+        const network = this.game.transportationSystem.buildTransportNetwork();
+
+        if (!network || network.roads.size === 0) {
+            return [];
+        }
+
+        // Use breadth-first search to find all reachable parcels
+        const visited = new Set();
+        const queue = [{ row: fromRow, col: fromCol, distance: 0 }];
+        const fromKey = `${fromRow},${fromCol}`;
+        visited.add(fromKey);
+
+        while (queue.length > 0) {
+            const current = queue.shift();
+
+            // Skip if beyond max distance
+            if (current.distance > maxDistance) {
+                continue;
+            }
+
+            // Add all parcels (not just those with buildings) to show full connectivity
+            if (current.distance > 0) {
+                connectedParcels.push({
+                    row: current.row,
+                    col: current.col,
+                    distance: current.distance
+                });
+            }
+
+            // Explore neighbors through road network
+            const currentKey = `${current.row},${current.col}`;
+            const connections = network.roads.get(currentKey) || [];
+
+            for (const connection of connections) {
+                const neighborKey = `${connection.row},${connection.col}`;
+
+                if (!visited.has(neighborKey)) {
+                    visited.add(neighborKey);
+
+                    queue.push({
+                        row: connection.row,
+                        col: connection.col,
+                        distance: current.distance + 1
+                    });
+                }
+            }
+        }
+
+        return connectedParcels;
+    }
+
+    /**
+     * Get all parcels connected to a location through the road network (full resource version)
+     */
+    getNetworkConnectedParcels(fromRow, fromCol, maxDistance = 10) {
+        if (!this.game.transportationSystem) {
+            return [];
+        }
+
+        // Check if starting position has road access
+        if (!this.game.transportationSystem.hasRoadAccess(fromRow, fromCol)) {
+            return [];
+        }
+
+        const connectedParcels = [];
+        const network = this.game.transportationSystem.buildTransportNetwork();
+
+        if (!network || network.roads.size === 0) {
+            return [];
+        }
+
+        // Use breadth-first search to find all reachable parcels
+        const visited = new Set();
+        const queue = [{ row: fromRow, col: fromCol, distance: 0, efficiency: 1.0 }];
+        const fromKey = `${fromRow},${fromCol}`;
+        visited.add(fromKey);
+
+        while (queue.length > 0) {
+            const current = queue.shift();
+
+            // Skip if beyond max distance
+            if (current.distance > maxDistance) {
+                continue;
+            }
+
+            // Add this parcel if it's not the starting position and has interesting content
+            if (current.distance > 0) {
+                const parcel = this.game.grid[current.row] && this.game.grid[current.row][current.col];
+                if (parcel && (parcel.building || parcel.terrain)) {
+                    connectedParcels.push({
+                        row: current.row,
+                        col: current.col,
+                        distance: current.distance,
+                        efficiency: current.efficiency
+                    });
+                }
+            }
+
+            // Explore neighbors through road network
+            const currentKey = `${current.row},${current.col}`;
+            const connections = network.roads.get(currentKey) || [];
+
+            for (const connection of connections) {
+                const neighborKey = `${connection.row},${connection.col}`;
+
+                if (!visited.has(neighborKey)) {
+                    visited.add(neighborKey);
+
+                    // Calculate distance and efficiency for next step
+                    const stepDistance = 1; // Each network step is 1 unit
+                    const roadEfficiency = this.game.transportationSystem.getRoadEfficiency(connection.roadType || 'local');
+                    const newDistance = current.distance + stepDistance;
+                    const newEfficiency = current.efficiency * roadEfficiency;
+
+                    queue.push({
+                        row: connection.row,
+                        col: connection.col,
+                        distance: newDistance,
+                        efficiency: newEfficiency
+                    });
+                }
+            }
+        }
+
+        return connectedParcels;
     }
 
     /**

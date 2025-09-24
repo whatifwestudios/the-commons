@@ -761,8 +761,8 @@ class MobilityLayer {
         
         // Calculate road width based on available space between shrunken parcels
         const availableSpace = this.game.tileWidth * (1 - this.parcelShrinkFactor);
-        // Ensure built roads are always wider than unimproved streets (85%) for proper coverage
-        let roadWidth = availableSpace * Math.max(roadType.width, 0.9);
+        // Ensure built roads fully cover unimproved streets (85%) and extend into intersections
+        let roadWidth = availableSpace * Math.max(roadType.width, 1.0); // Full coverage
         
         // Adjust for infrastructure
         if (road.hasSidewalks) roadWidth *= 1.1;
@@ -1485,7 +1485,8 @@ class MobilityLayer {
         // Check if road already exists
         const hasRoad = this.roads.has(this.hoveredEdge);
         const roadType = this.roadTypes[this.selectedRoadType];
-        let roadWidth = this.game.tileWidth * roadType.width * (1 - this.parcelShrinkFactor);
+        const availableSpace = this.game.tileWidth * (1 - this.parcelShrinkFactor);
+        let roadWidth = availableSpace * Math.max(roadType.width, 1.0); // Match main road rendering
         
         // Adjust width based on selected infrastructure options
         if (this.infrastructureOptions.sidewalks.active) roadWidth += 4;
@@ -1621,7 +1622,8 @@ class MobilityLayer {
         if (!road) return;
         
         const roadType = this.roadTypes[road.type];
-        let roadWidth = this.game.tileWidth * roadType.width * (1 - this.parcelShrinkFactor);
+        const availableSpace = this.game.tileWidth * (1 - this.parcelShrinkFactor);
+        let roadWidth = availableSpace * Math.max(roadType.width, 1.0);
         
         if (road.infrastructure?.sidewalks) roadWidth += 4;
         if (road.infrastructure?.bikeLanes) roadWidth += 6;
@@ -1678,7 +1680,8 @@ class MobilityLayer {
         
         // Calculate road width
         const roadType = this.roadTypes[existingRoad.type];
-        let roadWidth = this.game.tileWidth * roadType.width * (1 - this.parcelShrinkFactor);
+        const availableSpace = this.game.tileWidth * (1 - this.parcelShrinkFactor);
+        let roadWidth = availableSpace * Math.max(roadType.width, 1.0);
         
         // Apply infrastructure options from existing road
         if (existingRoad.infrastructure?.sidewalks) roadWidth += 4;
@@ -3409,7 +3412,8 @@ class MobilityLayer {
         if (!road) return null;
         
         const roadType = this.roadTypes[road.type] || this.roadTypes.local;
-        let roadWidth = this.game.tileWidth * roadType.width * (1 - this.parcelShrinkFactor);
+        const availableSpace = this.game.tileWidth * (1 - this.parcelShrinkFactor);
+        let roadWidth = availableSpace * Math.max(roadType.width, 1.0);
         
         // Apply infrastructure options using same logic as preview
         if (road.infrastructure?.sidewalks) roadWidth += 4;
