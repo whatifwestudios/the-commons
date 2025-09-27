@@ -370,7 +370,7 @@ class IsometricGrid {
         this.initializeEdgeParcels();
         
         // Parcel selection and visualization
-        this.hoveredTile = null; // {row, col} of currently hovered tile
+        // REMOVED: Legacy hoveredTile - ParcelHoverV2 handles hover state
         this.selectedParcel = null; // Currently selected parcel for reach display
         this.parcelReach = null; // Cached reach calculation for selected parcel
         this.hoverInfluenceRadius = null; // Set of tiles influenced by hover
@@ -400,8 +400,8 @@ class IsometricGrid {
         this.mobilityV2 = null; // DISABLED: Testing without mobility
         
         // Parcel selector fade system
-        this.hoverStartTime = null; // When current hover began
-        this.selectorOpacity = 1.0; // Current opacity of white diamond selector
+        // REMOVED: Legacy hover timing - ParcelHoverV2 handles animations
+        // REMOVED: Legacy selectorOpacity - ParcelHoverV2 handles opacity
         this.completionAnimations = new Map(); // Map of "row,col" -> animation data
         
         // Simple hover with bouncing ball physics
@@ -5432,116 +5432,8 @@ class IsometricGrid {
     // Previously: drawConstructionWithFadeIn, drawConstructionWithGradientMask, calculateAverageOpacity, scheduleConstructionAnimation
 
     // Restore mouse movement debouncing for performance
-    debouncedMouseMove(screenX, screenY) {
-        this.lastMousePosition = { x: screenX, y: screenY };
-        
-        if (!this.pendingMouseUpdate) {
-            this.pendingMouseUpdate = true;
-            requestAnimationFrame(() => {
-                this.processMouseMove(this.lastMousePosition.x, this.lastMousePosition.y);
-                this.pendingMouseUpdate = false;
-            });
-        }
-    }
+    // REMOVED: Legacy mouse handling - ParcelHoverV2 handles all mouse events now
 
-    // Process mouse movement with all hover logic
-    processMouseMove(screenX, screenY) {
-
-        // Handle panning
-        if (this.isPanning) {
-            const deltaX = screenX - this.lastPanPoint.x;
-            const deltaY = screenY - this.lastPanPoint.y;
-            
-            this.panOffset.x += deltaX;
-            this.panOffset.y += deltaY;
-            
-            this.lastPanPoint = { x: screenX, y: screenY };
-            this.scheduleRender();
-            return; // Don't process tile selection while panning
-        }
-        
-        // Convert screen coordinates to world coordinates for tile detection
-        const worldCoords = this.screenToWorldCoords(screenX, screenY);
-        const tile = this.fromIsometric(worldCoords.x, worldCoords.y);
-
-        
-        // In mobility mode, use the mobility layer's mouse handling (legacy v1 - disabled for v2)
-        if (this.currentLayer === 'mobility') {
-            // V2 integration handles mobility mouse events - no need for direct calls
-            // const needsRender = this.mobilityLayer.handleMouseMove(worldCoords.x, worldCoords.y);
-            //
-            // // Update ParcelSelectorManager with mobility effects
-            // if (this.parcelSelector && this.mobilityLayer.hoveredEdge) {
-            //     // Clear previous effects and add new mobility effects
-            //     this.parcelSelector.clearProximityEffects();
-            //     this.parcelSelector.addMobilityEffects();
-            // } else if (this.parcelSelector) {
-            //     // Clear mobility effects when no edge is hovered
-            //     this.parcelSelector.clearProximityEffects();
-            // }
-            //
-            // if (needsRender) {
-            //     this.scheduleRender();
-            // }
-            //
-            // // Handle delayed tooltips in mobility mode
-            // const mockEvent = { clientX: screenX, clientY: screenY };
-            // this.handleMobilityTooltips(tile, mockEvent);
-            return; // Early return to prevent normal tooltip logic
-        }
-        
-        if (tile) {
-            this.selectedTile = tile;
-            const coord = this.getParcelCoordinate(tile.row, tile.col);
-            if (this.domCache.selectedTile) {
-                this.domCache.selectedTile.textContent = coord;
-            }
-            
-            // Force a render to show the highlight
-            this.scheduleRender();
-            
-            // Update parcel illumination for connected roads calculation
-            this.updateParcelIllumination(tile);
-
-            // ParcelHoverV2 handles its own mouse events - no manual updating needed
-
-            // Keep legacy hoveredTile for compatibility with other systems
-            this.hoveredTile = { row: tile.row, col: tile.col };
-
-            // Reset hover timing and selector opacity when moving to new tile
-            this.hoverStartTime = performance.now();
-            this.selectorOpacity = 1.0;
-
-            // Start hover lift for buildings
-            if (this.grid && this.grid[tile.row] && this.grid[tile.row][tile.col]) {
-                const parcel = this.grid[tile.row][tile.col];
-                if (parcel && parcel.building) {
-                    this.startContinuousBob(); // Direct lift, no bounce
-                }
-            }
-            // Tooltip now handled automatically by CrispTooltip system
-        } else {
-            this.selectedTile = null;
-            if (this.domCache.selectedTile) {
-                this.domCache.selectedTile.textContent = '--';
-            }
-            
-            // Clear hover state when not hovering any tile
-            if (this.hoveredTile) {
-                // ParcelHoverV2 handles clearing hover state automatically
-
-                // Clear legacy hoveredTile for compatibility
-                this.hoveredTile = null;
-
-                // Reset hover timing and selector opacity
-                this.hoverStartTime = null;
-                this.selectorOpacity = 1.0;
-                this.stopBounceAnimation();
-            }
-            
-            if (this.crispTooltip) this.crispTooltip.hide();
-        }
-    }
 
     // Draw tile highlight effect - delegates to rendering system
     drawTileHighlight(col, row, color, elevation = 0) {
@@ -5552,24 +5444,7 @@ class IsometricGrid {
     setupEventListeners() {
         console.log('🎯 setupEventListeners called');
 
-        // Debounced mouse move handler for optimal performance
-        const debouncedMouseMove = (e) => {
-            // Don't process mouse moves if context menu is open - preserve current selection
-            if (this.contextMenu && this.contextMenu.classList && this.contextMenu.classList.contains('visible')) {
-                return;
-            }
-
-            const rect = this.canvas.getBoundingClientRect();
-            const screenX = e.clientX - rect.left;
-            const screenY = e.clientY - rect.top;
-
-
-            // Store mouse event for tooltip positioning
-            this.lastMouseEvent = { clientX: e.clientX, clientY: e.clientY };
-
-            this.processMouseMove(screenX, screenY);
-        };
-        
+        // REMOVED: Legacy debouncedMouseMove - ParcelHoverV2 handles all mouse events
         // Mousemove handling delegated to ParcelHoverV2 - no duplicate handlers needed
 
         // Add mouse down handler for panning and 3D rotation
