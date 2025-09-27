@@ -54,30 +54,65 @@ class BuildingSystem {
     /**
      * Place a building on a parcel
      */
-    placeBuilding(row, col, buildingId, owner = 'player', fundingInfo = null) {
+    async placeBuilding(row, col, buildingId, owner = null, fundingInfo = null) {
         // Validate placement
         if (!this.canPlaceBuilding(row, col, buildingId)) {
             return false;
         }
-        
+
         const parcel = this.game.grid[row][col];
         const building = this.buildingManager.getBuildingById(buildingId);
-        
+
         if (!building) {
             console.error('Building not found:', buildingId);
             return false;
         }
-        
-        // Check affordability
+
+        // Check affordability (quick client-side check before server transaction)
         const cost = fundingInfo ? fundingInfo.playerCost : this.calculateBuildingCostWithFunding(building);
         if (this.game.isCurrentPlayer(owner) && this.game.playerCash < cost) {
             this.game.showNotification('Insufficient funds!', 'error');
             return false;
         }
+
+        // V2 ECONOMIC SYSTEM: Send transaction to server instead of client-side processing
+        const playerId = owner || this.game.currentPlayerId;
+
+        try {
+            console.log(`🏗️ Sending BUILD_START transaction: ${buildingId} at (${row},${col}) for ${playerId}`);
+
+            // Send build start transaction to server
+            const result = await this.game.economicClient.startConstruction(
+                buildingId,
+                [row, col],
+                playerId,
+                cost
+            );
+
+            if (!result.success) {
+                this.game.showNotification(result.error || 'Construction failed!', 'error');
+                return false;
+            }
+
+            console.log('✅ BUILD_START transaction successful:', result);
+
+            // Update local cash immediately (server has already deducted)
+            if (this.game.isCurrentPlayer(playerId)) {
+                this.game.playerCash = result.result.playerCash;
+                if (this.game.cashManager) {
+                    this.game.cashManager.updateBalance(result.result.playerCash);
+                }
+            }
+
+        } catch (error) {
+            console.error('❌ BUILD_START transaction failed:', error);
+            this.game.showNotification('Construction failed: ' + error.message, 'error');
+            return false;
+        }
         
         // Place the building
         parcel.building = buildingId;
-        parcel.owner = owner;
+        parcel.owner = owner || this.game.currentPlayerId;
         parcel.buildingAge = 0;
         parcel.decay = 0;
         parcel.population = 0;
@@ -94,104 +129,26 @@ class BuildingSystem {
                 });
         }
 
-        // Initialize construction if building has construction time
-        // Default construction days based on building cost if not specified
-        let constructionDays = building.economics?.constructionDays;
-        if (!constructionDays && building.economics?.buildCost) {
-            // Default: 1 day per $10,000 of cost, minimum 3 days, maximum 30 days
-            constructionDays = Math.max(3, Math.min(30, Math.ceil(building.economics.buildCost / 10000)));
-            console.log(`No constructionDays for ${buildingId}, using default based on cost: ${constructionDays} days`);
-        }
-
-        console.log(`Placing building ${buildingId} at (${row},${col}):`, {
-            hasEconomics: !!building.economics,
-            constructionDays: constructionDays,
-            willInitConstruction: !!(constructionDays > 0)
-        });
-
-        if (constructionDays > 0) {
-            // Initialize new construction system - SINGLE SOURCE OF TRUTH
-            parcel._isUnderConstruction = true;
-            parcel._constructionStartTime = Date.now();
-            parcel._constructionDays = constructionDays;
-            parcel._constructionProgress = 0;
-
-            console.log(`Initialized construction for ${buildingId}:`, {
-                startTime: parcel._constructionStartTime,
-                days: parcel._constructionDays
-            });
-
-            // Create legacy property proxies that delegate to new system
-            Object.defineProperty(parcel, 'constructionStartDay', {
-                get: function() {
-                    // Convert real-time to game-day equivalent
-                    return this._constructionStartTime ? this.game?.currentDay || 0 : null;
-                },
-                set: function(value) {
-                    console.warn('⚠️ Direct constructionStartDay assignment blocked - use new construction system');
-                    console.trace();
-                }
-            });
-
-            Object.defineProperty(parcel, 'constructionDays', {
-                get: function() {
-                    return this._constructionDays || 0;
-                },
-                set: function(value) {
-                    console.warn('⚠️ Direct constructionDays assignment blocked - use new construction system');
-                    console.trace();
-                }
-            });
-            
-            // Create dust cloud effect at construction start
-            if (this.game.createDustCloud) {
-                const worldPos = this.game.toIsometric(col, row);
-                this.game.createDustCloud(worldPos.x, worldPos.y, 'building');
-            } else {
-            }
-        } else {
-            // Instant construction
-            if (this.game.createDustCloud) {
-                const worldPos = this.game.toIsometric(col, row);
-                this.game.createDustCloud(worldPos.x, worldPos.y, 'building');
-            } else {
-            }
-            // Don't complete immediately - let construction progress over time
-            // this.completeConstruction(row, col);
-        }
+        // Server handles all construction state and timing - just update UI state
+        parcel._isUnderConstruction = true;
+        parcel._serverManaged = true; // Mark as server-managed construction
         
-        // Deduct cost and use action
+        // Track building ownership locally (UI only)
         if (this.game.isCurrentPlayer(owner)) {
-            this.game.playerCash -= cost;
             this.game.useAction('build');
             this.playerBuildings.add(`${row},${col}`);
-            
+
             // Track by type
             const typeCount = this.buildingsByType.get(buildingId) || 0;
             this.buildingsByType.set(buildingId, typeCount + 1);
         }
         
-        // Update various systems
+        // Update various systems for UI
         this.markBuildingEconomicsDirty(row, col);
         this.markPrereqDirty();
         this.game.scheduleRender();
 
-        // Call server API for building placement effects
-        const gameState = this.game.economicAPI.prepareGameState(this.game);
-        const buildingData = { row, col, buildingId, owner };
-        this.game.economicAPI.handleBuildingPlacement(gameState, buildingData).then(result => {
-            if (result && result.success && result.vitality) {
-                // Update client vitality data from server
-                this.game.cityStats.vitality = result.vitality;
-                this.game.vitalitySupply = result.vitality.supply || this.game.vitalitySupply;
-                this.game.vitalityDemand = result.vitality.demand || this.game.vitalityDemand;
-                this.game.updateVitalityUI(); // Will fetch fresh server data
-            }
-        }).catch(error => {
-            console.warn('Server building placement calculation failed, using local fallback:', error);
-            this.game.markVitalityDirty();
-        });
-        
+        console.log(`✅ Building placement complete: ${buildingId} at (${row},${col}) - server managing construction`);
         return true;
     }
     
@@ -204,10 +161,7 @@ class BuildingSystem {
             this.game.economicAPI.clearBuildingCache(centerRow, centerCol, radius);
         }
 
-        // Invalidate smart tooltip cache
-        if (this.game.smartTooltipSystem) {
-            this.game.smartTooltipSystem.clearCacheArea(centerRow, centerCol, radius);
-        }
+        // Cache invalidation handled by unified tooltip system
 
         // Clear any other building performance caches
         if (this.game.performanceEngine) {
@@ -290,63 +244,41 @@ class BuildingSystem {
      * 3. System-wide vitality recalculation
      * 4. Enable revenue generation for this building
      */
-    completeConstruction(row, col) {
+    async completeConstruction(row, col) {
         const parcel = this.game.grid[row][col];
-        const building = this.buildingManager.getBuildingById(parcel.building);
+        if (!parcel || !parcel.building || !parcel._serverManaged) return;
 
-        if (!building) return;
+        console.log(`🏗️ Sending BUILD_COMPLETE transaction: ${parcel.building} at (${row},${col})`);
 
+        try {
+            // Send build complete transaction to server
+            const result = await this.game.economicClient.completeConstruction(
+                parcel.building,
+                [row, col],
+                parcel.owner
+            );
 
-        // Step 1: Remove construction flags
-        parcel._isUnderConstruction = false;
-        delete parcel._constructionStartTime;
-        delete parcel._constructionDays;
-        delete parcel._constructionProgress;
-
-        // Clear legacy fields too
-        parcel.constructionStartDay = null;
-        parcel.constructionDays = 0;
-
-        // Step 2: Update CLV of all parcels (new building affects others)
-        this.game.updateAllLandValues();
-
-        // Step 3: Server-authoritative vitality calculation (Option A: Full Server Migration)
-        console.log('🏗️ Building construction completed - updating vitals via server');
-        this.game.calculateCityVitality(); // Server-authoritative calculation
-        this.game.updateVitalityUI(); // Will fetch fresh server data
-
-        // Then sync with server for authoritative data (non-blocking)
-        const gameState = this.game.economicAPI.prepareGameState(this.game);
-        const buildingData = { row, col, buildingId: building.id, owner: parcel.owner };
-        this.game.economicAPI.handleBuildingPlacement(gameState, buildingData).then(result => {
-            if (result && result.success && result.vitality) {
-                console.log('✅ Server vitality update received for construction completion');
-                // Update client vitality data from server
-                this.game.cityStats.vitality = result.vitality;
-                this.game.vitalitySupply = result.vitality.supply || this.game.vitalitySupply;
-                this.game.vitalityDemand = result.vitality.demand || this.game.vitalityDemand;
-                this.game.updateVitalityUI(); // Will fetch fresh server data
-            } else {
-                console.warn('⚠️ Server vitality calculation returned invalid data:', result);
+            if (!result.success) {
+                console.error('❌ BUILD_COMPLETE transaction failed:', result.error);
+                return;
             }
-        }).catch(error => {
-            console.warn('⚠️ Server construction completion calculation failed:', error);
-        });
 
-        // Step 4: Initialize building properties for revenue generation
-        if (building.population?.bedroomsAdded > 0) {
-            parcel.maxPopulation = building.population.bedroomsAdded * 2;
-            parcel.population = Math.floor(parcel.maxPopulation * 0.5); // Start at 50% occupancy
+            console.log('✅ BUILD_COMPLETE transaction successful:', result);
+
+            // Update local UI state (server handles all economic calculations)
+            parcel._isUnderConstruction = false;
+            parcel._serverManaged = false;
+            delete parcel._constructionStartTime;
+            delete parcel._constructionDays;
+            delete parcel._constructionProgress;
+
+            // Update various systems for UI
+            this.markBuildingEconomicsDirty(row, col);
+            this.game.scheduleRender();
+
+        } catch (error) {
+            console.error('❌ BUILD_COMPLETE transaction failed:', error);
         }
-
-        // Step 5: Mark building economics as dirty for revenue calculation
-        this.markBuildingEconomicsDirty(row, col);
-
-        // Step 6: Clear performance cache to force recalculation
-        if (this.game.performanceEngine) {
-            this.game.performanceEngine.clearCache();
-        }
-
     }
     
     /**
@@ -523,46 +455,29 @@ class BuildingSystem {
     getNeedSatisfaction(need, row, col) {
         switch(need.type) {
             case 'roads':
-                // Use enhanced accessibility score instead of binary road access
-                if (this.game.transportationSystem.calculateAccessibilityScore) {
-                    const score = this.game.transportationSystem.calculateAccessibilityScore(row, col);
-                    return typeof score === 'number' && !isNaN(score) ? score : 0;
-                } else {
-                    return this.game.transportationSystem.hasRoadAccess(row, col) ? 100 : 0;
-                }
+                // Simple adjacency check - look at the 8 neighboring cells
+                return this.getAdjacentResourceScore('roads', row, col);
 
             case 'energy':
-                // Try network-based resource calculation first, fall back to proximity
-                const energyBalance = this.getNetworkResourceBalance('energy', row, col) ||
-                                     this.game.economicEngine.getLocalSupplyDemand('energy', row, col);
-                if (!energyBalance || typeof energyBalance.supply !== 'number' || typeof energyBalance.demand !== 'number') {
-                    return 0; // No valid balance data
-                }
-                return Math.min(100, (energyBalance.supply / Math.max(1, energyBalance.demand)) * 100);
+                return this.getAdjacentResourceScore('energy', row, col);
 
             case 'workers':
-                const workerBalance = this.getNetworkResourceBalance('workers', row, col) ||
-                                     this.game.economicEngine.getLocalSupplyDemand('workers', row, col);
-                if (!workerBalance || typeof workerBalance.supply !== 'number' || typeof workerBalance.demand !== 'number') {
-                    return 0; // No valid balance data
-                }
-                return Math.min(100, (workerBalance.supply / Math.max(1, workerBalance.demand)) * 100);
+                return this.getAdjacentResourceScore('workers', row, col);
 
             case 'jobs':
-                const jobBalance = this.getNetworkResourceBalance('jobs', row, col) ||
-                                  this.game.economicEngine.getLocalSupplyDemand('jobs', row, col);
-                if (!jobBalance || typeof jobBalance.supply !== 'number' || typeof jobBalance.demand !== 'number') {
-                    return 0; // No valid balance data
-                }
-                return Math.min(100, (jobBalance.supply / Math.max(1, jobBalance.demand)) * 100);
+                return this.getAdjacentResourceScore('jobs', row, col);
 
             case 'food':
-                const foodBalance = this.getNetworkResourceBalance('food', row, col) ||
-                                   this.game.economicEngine.getLocalSupplyDemand('food', row, col);
-                if (!foodBalance || typeof foodBalance.supply !== 'number' || typeof foodBalance.demand !== 'number') {
-                    return 0; // No valid balance data
-                }
-                return Math.min(100, (foodBalance.supply / Math.max(1, foodBalance.demand)) * 100);
+                return this.getAdjacentResourceScore('food', row, col);
+
+            case 'housing':
+                return this.getAdjacentResourceScore('housing', row, col);
+
+            case 'education':
+                return this.getAdjacentResourceScore('education', row, col);
+
+            case 'healthcare':
+                return this.getAdjacentResourceScore('healthcare', row, col);
 
             default:
                 return 100;
@@ -650,7 +565,108 @@ class BuildingSystem {
             environmentBonus: environmentBonus
         };
     }
-    
+
+    /**
+     * Get resource access score from adjacent 8 cells (puzzle-like gameplay)
+     */
+    getAdjacentResourceScore(resourceType, row, col) {
+        let totalSupply = 0;
+        let adjacentCount = 0;
+        const missingResources = [];
+
+        // Check all 8 adjacent cells
+        const directions = [
+            [-1, -1], [-1, 0], [-1, 1],
+            [0, -1],           [0, 1],
+            [1, -1],  [1, 0],  [1, 1]
+        ];
+
+        for (const [dRow, dCol] of directions) {
+            const adjRow = row + dRow;
+            const adjCol = col + dCol;
+
+            // Skip if out of bounds
+            if (adjRow < 0 || adjRow >= this.game.gridSize || adjCol < 0 || adjCol >= this.game.gridSize) {
+                continue;
+            }
+
+            adjacentCount++;
+            const parcel = this.game.grid[adjRow][adjCol];
+
+            if (!parcel || !parcel.building) {
+                missingResources.push({ row: adjRow, col: adjCol, reason: 'empty' });
+                continue;
+            }
+
+            // Only consider completed buildings (OOO: Only Operational Order)
+            const isUnderConstruction = parcel._constructionProgress < 1.0;
+            if (isUnderConstruction) {
+                missingResources.push({ row: adjRow, col: adjCol, reason: 'under_construction' });
+                continue;
+            }
+
+            const building = this.game.buildingManager?.getBuildingById(parcel.building);
+            if (!building) {
+                continue;
+            }
+
+            // Calculate resource supply from this adjacent building
+            const resourceSupply = this.getBuildingResourceSupply(building, resourceType);
+            if (resourceSupply > 0) {
+                totalSupply += resourceSupply;
+            } else {
+                missingResources.push({ row: adjRow, col: adjCol, reason: 'no_resource' });
+            }
+        }
+
+        // Convert to percentage score (0-100)
+        // Perfect score = 100 when all adjacent cells provide the resource
+        const maxPossibleSupply = adjacentCount * 10; // Assuming 10 as max supply per cell
+        const score = Math.min(100, (totalSupply / Math.max(1, maxPossibleSupply)) * 100);
+
+        // Store missing resources for UI display
+        this.lastResourceCheck = {
+            resourceType,
+            row,
+            col,
+            score,
+            totalSupply,
+            adjacentCount,
+            missingResources
+        };
+
+        return score;
+    }
+
+    /**
+     * Get resource supply from a building for specific JEEFHH resource
+     */
+    getBuildingResourceSupply(building, resourceType) {
+        if (!building) return 0;
+
+        switch(resourceType) {
+            case 'roads':
+                return building.category === 'infrastructure' ? 10 : 0;
+            case 'energy':
+                return building.resources?.energyProvided || 0;
+            case 'jobs':
+                return building.resources?.jobsProvided || building.population?.jobsCreated || 0;
+            case 'food':
+                return building.resources?.foodProvided || 0;
+            case 'housing':
+                return building.resources?.housingProvided || building.population?.bedroomsProvided || 0;
+            case 'education':
+                return building.resources?.educationProvided || (building.category === 'education' ? 10 : 0);
+            case 'healthcare':
+                return building.resources?.healthcareProvided || (building.category === 'healthcare' ? 10 : 0);
+            case 'workers':
+                // Buildings with housing provide workers (people living there)
+                return building.resources?.housingProvided || building.population?.workersLiving || 0;
+            default:
+                return 0;
+        }
+    }
+
     /**
      * Get supply/demand multiplier for building revenue
      */
@@ -751,24 +767,19 @@ class BuildingSystem {
      * Called from the game loop to gradually advance construction over time
      */
     updateConstructionProgress() {
-        const now = Date.now();
-        const GAME_DAY_MS = 9860; // 1 day = 9.86 seconds (hardcoded: 1 year = 1 hour = 3600s, so 1 day = 3600/365 = 9.86s)
+        // Server-managed construction - client just handles UI state
+        // Construction timing and completion is handled by server via economic updates
+        // This method is kept for compatibility but does minimal work
 
         for (let row = 0; row < this.game.gridSize; row++) {
             for (let col = 0; col < this.game.gridSize; col++) {
                 const parcel = this.game.grid[row][col];
 
-                if (parcel && parcel._isUnderConstruction && parcel._constructionStartTime) {
-                    const elapsedTime = now - parcel._constructionStartTime;
-                    const constructionDuration = parcel._constructionDays * GAME_DAY_MS;
-                    const progress = Math.min(1.0, elapsedTime / constructionDuration);
-
-                    parcel._constructionProgress = progress;
-
-                    // Complete construction when progress reaches 100%
-                    if (progress >= 1.0) {
-                        console.log(`🏗️ Construction completed at (${row},${col}): ${parcel.building}`);
-                        this.completeConstruction(row, col);
+                // Only handle visual progress for server-managed construction
+                if (parcel && parcel._isUnderConstruction && parcel._serverManaged) {
+                    // Set a default progress value for UI (actual progress managed by server)
+                    if (!parcel._constructionProgress) {
+                        parcel._constructionProgress = 0.1; // Show some progress for UI
                     }
                 }
             }
@@ -935,10 +946,8 @@ class BuildingSystem {
             this.game.governanceSystem.addFunds(price, 'land sales');
         }
 
-        // Use actual player ID if multiplayer is active, otherwise 'player'
-        this.game.grid[row][col].owner = (this.game.multiplayerManager && this.game.multiplayerManager.playerId)
-            ? this.game.multiplayerManager.playerId
-            : 'player';
+        // Use current player ID from PlayerUtils (supports both single and multiplayer)
+        this.game.grid[row][col].owner = this.game.currentPlayerId;
         this.game.grid[row][col].landValue.paidPrice = price;
         this.game.grid[row][col].landValue.lastAuctionDay = this.game.currentDay;
         
@@ -969,8 +978,9 @@ class BuildingSystem {
         
         // Update calculated land values for all parcels
         this.game.updateAllLandValues();
-        
-        this.game.updateVitalityDisplay();
+
+        // Use server-authoritative calculation instead of direct vitality display
+        this.game.calculateCityVitality();
         this.game.updateDemographicsDisplay();
         this.game.calculateCurrentCashflow();
         this.game.updatePlayerStats();
@@ -985,7 +995,9 @@ class BuildingSystem {
      */
     async constructBuilding(row, col, buildingId) {
         const coord = this.game.getParcelCoordinate(row, col);
+        console.log('🔧 Attempting to get building cost for:', buildingId);
         const buildingCost = this.game.getBuildingCost(buildingId);
+        console.log('🔧 Building cost result:', buildingCost);
         
         // Check if player has enough actions
         if (!this.game.useAction('constructBuilding', this.game.actionManager.actionCosts.constructBuilding)) {
@@ -1059,6 +1071,27 @@ class BuildingSystem {
                     coordinates: `${row},${col}`,
                     publicFunding: publicFunding
                 });
+
+                // Send BUILD_START transaction to economic engine
+                try {
+                    console.log(`🏗️ Sending BUILD_START transaction: ${buildingId} at (${row},${col})`);
+                    const buildStartResult = await this.game.economicClient.startConstruction(
+                        buildingId,
+                        [row, col],
+                        this.game.currentPlayerId,
+                        playerCostRequired
+                    );
+
+                    if (!buildStartResult.success) {
+                        console.error('❌ BUILD_START transaction failed:', buildStartResult.error);
+                        // Note: Cash has already been spent, but building won't be tracked by economic engine
+                    } else {
+                        console.log('✅ BUILD_START transaction successful');
+                    }
+                } catch (buildStartError) {
+                    console.error('❌ BUILD_START transaction failed:', buildStartError);
+                    // Note: Cash has already been spent, but building won't be tracked by economic engine
+                }
             } catch (error) {
                 console.warn('Building construction payment failed:', error.message);
                 return false;
@@ -1106,9 +1139,7 @@ class BuildingSystem {
             if (!success) {
                 // Server rejected - rollback optimistic changes
                 // Note: CashManager handles cash rollback automatically
-                if (!this.game.cashManager) {
-                    this.game.playerCash = originalCash; // Only for legacy fallback
-                }
+                // CashManager always handles rollback automatically
                 this.game.grid[row][col].building = originalBuilding;
                 this.game.grid[row][col].amenities = originalAmenities;
                 this.game.grid[row][col].constructionStartDay = originalConstructionStartDay;
@@ -1129,12 +1160,12 @@ class BuildingSystem {
         // Mark region as dirty for cache invalidation (performance optimization)
         this.game.markRegionDirty(row, col, 3);
 
-        // Invalidate tooltip and economic API caches for affected buildings
+        // Invalidate economic API caches for affected buildings
         this.invalidateBuildingCaches(row, col, 3);
         
         // Update land values, vitality, cashflow and re-render
         this.game.updateAllLandValues();
-        this.game.updateVitalityDisplay();
+        this.game.calculateCityVitality(); // Server-authoritative
         this.game.updateDemographicsDisplay();
         this.game.calculateCurrentCashflow();
         this.game.updatePlayerStats();
@@ -1147,7 +1178,7 @@ class BuildingSystem {
     /**
      * Demolish/destroy a building and handle demolition fees
      */
-    demolishBuilding(row, col) {
+    async demolishBuilding(row, col) {
         const coord = this.game.getParcelCoordinate(row, col);
         const parcel = this.game.grid[row][col];
         const buildingId = parcel.building;
@@ -1167,7 +1198,15 @@ class BuildingSystem {
         }
         
         // Deduct demolition fee from player
-        this.game.playerCash -= demolitionFee;
+        if (this.game.cashManager) {
+            await this.game.cashManager.spend(demolitionFee, 'Building demolition fee', {
+                building: buildingId,
+                location: `${row},${col}`
+            });
+        } else {
+            // Legacy fallback only if CashManager unavailable
+            this.game.playerCash -= demolitionFee;
+        }
         
         // Add demolition fee to city treasury
         if (this.game.governanceSystem) {
@@ -1205,7 +1244,7 @@ class BuildingSystem {
         this.game.markRegionDirty(row, col, 3);
         
         // Update vitality, cashflow and re-render
-        this.game.updateVitalityDisplay();
+        this.game.calculateCityVitality(); // Server-authoritative
         this.game.calculateCurrentCashflow();
         this.game.updatePlayerStats();
         this.game.scheduleRender();
@@ -1236,7 +1275,7 @@ class BuildingSystem {
         this.markBuildingEconomicsDirty(row, col);
         
         // Update vitality and re-render
-        this.game.updateVitalityDisplay();
+        this.game.calculateCityVitality(); // Server-authoritative
         this.game.scheduleRender();
         this.game.hideContextMenu();
         
@@ -1264,7 +1303,7 @@ class BuildingSystem {
         }
         
         // Update vitality and re-render
-        this.game.updateVitalityDisplay();
+        this.game.calculateCityVitality(); // Server-authoritative
         this.game.scheduleRender();
         this.game.hideContextMenu();
         
@@ -1274,7 +1313,7 @@ class BuildingSystem {
     /**
      * Repair a building to reset decay
      */
-    repairBuilding(row, col) {
+    async repairBuilding(row, col) {
         const parcel = this.game.grid[row][col];
         if (!parcel || !parcel.building) return false;
         
@@ -1286,7 +1325,15 @@ class BuildingSystem {
         }
         
         // Deduct repair cost
-        this.game.playerCash -= repairCost;
+        if (this.game.cashManager) {
+            await this.game.cashManager.spend(repairCost, 'Building repair', {
+                building: parcel.building,
+                location: `${row},${col}`
+            });
+        } else {
+            // Legacy fallback only if CashManager unavailable
+            this.game.playerCash -= repairCost;
+        }
         
         // Reset decay to 0 (fully repaired) but keep building age for history
         const oldDecay = parcel.decay;

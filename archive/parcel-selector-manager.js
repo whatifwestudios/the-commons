@@ -54,8 +54,17 @@ class ParcelSelectorManager {
                         this.playerColors.set(player.id, player.color || '#10AC84');
                     });
                     console.log('🎨 Loaded player colors from array:', this.playerColors);
+                } else if (players.players && typeof players.players === 'object') {
+                    // Handle {success: true, players: {player: {color: '...'}}} format
+                    console.log('🎨 Processing players object format');
+                    Object.entries(players.players).forEach(([playerId, playerData]) => {
+                        if (playerData && playerData.color) {
+                            this.playerColors.set(playerId, playerData.color);
+                            console.log(`🎨 Set ${playerId} color to ${playerData.color}`);
+                        }
+                    });
                 } else {
-                    console.warn('🎨 Players data is not an array, using fallback colors');
+                    console.warn('🎨 Players data format not recognized, using fallback colors');
                     this.setDefaultPlayerColors();
                 }
             } else {
@@ -203,10 +212,18 @@ class ParcelSelectorManager {
     updateProximityEffects(row, col, playerId = 1) {
         this.clearProximityEffects();
 
-        // Get player color for effects
-        const playerColor = this.playerColors.get(playerId) || '#10AC84';
+        // Get player color for effects - check game.playerSettings first for current player
+        let playerColor = '#10AC84';
+        if (playerId === 'player' && this.game.playerSettings && this.game.playerSettings.color) {
+            playerColor = this.game.playerSettings.color;
+            // console.log(`🎨 Using player color from playerSettings: ${playerColor}`); // Removed debug noise
+        } else {
+            playerColor = this.playerColors.get(playerId) || '#10AC84';
+            // console.log(`🎨 Using player color from map for ${playerId}: ${playerColor}`); // Removed debug noise
+        }
         const adjacentColor = this.hexToRgba(playerColor, 0.2); // 20% for connected parcels
         const connectedColor = this.hexToRgba(playerColor, 0.2); // 20% for road-connected parcels
+
 
         // Calculate adjacent parcels (player color effect)
         for (let dr = -1; dr <= 1; dr++) {
@@ -259,7 +276,7 @@ class ParcelSelectorManager {
 
         // Fallback to legacy system if new system isn't available
         else if (this.game.hoverInfluenceRadius) {
-            console.log(`🛣️ [LEGACY] Using legacy hoverInfluenceRadius with ${this.game.hoverInfluenceRadius.size} parcels`);
+            // console.log(`🛣️ [LEGACY] Using legacy hoverInfluenceRadius with ${this.game.hoverInfluenceRadius.size} parcels`); // Removed debug noise
             for (const parcelKey of this.game.hoverInfluenceRadius) {
                 if (!this.proximityEffects.has(parcelKey)) {
                     const isExtended = parcelKey.includes(':extended');
@@ -317,9 +334,9 @@ class ParcelSelectorManager {
      * Render all selection states for a specific parcel
      */
     renderParcelSelection(row, col, ctx, isoX, isoY, tileWidth, tileHeight) {
+
         // 1. Render proximity effects first (behind everything)
         this.renderProximityEffect(row, col, ctx, isoX, isoY, tileWidth, tileHeight);
-
 
         // 2. Render hover state (only if not actively selected)
         if (!this.isParcelSelected(row, col)) {
@@ -338,6 +355,7 @@ class ParcelSelectorManager {
         const effect = this.proximityEffects.get(key);
 
         if (!effect) return;
+
 
         ctx.save();
 
@@ -442,6 +460,7 @@ class ParcelSelectorManager {
         const key = `${row},${col}`;
         const hasProximityEffect = this.proximityEffects.has(key);
 
+
         // Only render if this is the hovered center or has proximity effect
         if (!isHoveredCenter && !hasProximityEffect) {
             return;
@@ -456,24 +475,32 @@ class ParcelSelectorManager {
         // Lift selector 1px above grid plane
         const liftedY = isoY - 1;
 
-        // Determine fill alpha based on whether this is center or connected
-        let fillAlpha;
         if (isHoveredCenter) {
-            fillAlpha = 0.4; // 40% for center parcel
-        } else {
-            fillAlpha = 0.2; // 20% for connected parcels
+            // Center parcel hover effect
+            ctx.fillStyle = this.hexToRgba(playerColor, 0.3);
+            this.game.renderingSystem.drawDiamond(isoX, liftedY, tileWidth, tileHeight);
+            ctx.fill();
+
+            // Border for center
+            ctx.strokeStyle = playerColor;
+            ctx.lineWidth = this.hoverBorderWidth;
+            this.game.renderingSystem.drawDiamond(isoX, liftedY, tileWidth, tileHeight);
+            ctx.stroke();
+        } else if (hasProximityEffect) {
+            // Subtle proximity effects
+            const effect = this.proximityEffects.get(key);
+            if (effect && effect.color) {
+                ctx.fillStyle = effect.color;
+                this.game.renderingSystem.drawDiamond(isoX, liftedY, tileWidth, tileHeight);
+                ctx.fill();
+
+                // Subtle border for proximity
+                ctx.strokeStyle = this.hexToRgba(playerColor, 0.6);
+                ctx.lineWidth = 1;
+                this.game.renderingSystem.drawDiamond(isoX, liftedY, tileWidth, tileHeight);
+                ctx.stroke();
+            }
         }
-
-        // Fill with appropriate translucent color
-        ctx.fillStyle = this.hexToRgba(playerColor, fillAlpha);
-        this.game.renderingSystem.drawDiamond(isoX, liftedY, tileWidth, tileHeight);
-        ctx.fill();
-
-        // Draw border
-        ctx.strokeStyle = playerColor;
-        ctx.lineWidth = this.hoverBorderWidth;
-        this.game.renderingSystem.drawDiamond(isoX, liftedY, tileWidth, tileHeight);
-        ctx.stroke();
 
         ctx.restore();
     }

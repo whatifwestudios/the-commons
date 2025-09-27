@@ -44,7 +44,6 @@ class UIManager {
             // Modals
             actionMarketplaceModal: 'action-marketplace-modal',
             governanceModal: 'governance-modal',
-            auctionModal: 'auction-modal',
             routeModal: 'route-modal',
             cashflowModal: 'cashflow-menu',
 
@@ -69,11 +68,6 @@ class UIManager {
             monthProgressText: 'month-progress-text',
             monthProgressContainer: 'month-progress-container',
             
-            // Auction
-            auctionTimer: 'auction-timer',
-            currentBid: 'current-bid',
-            currentBidder: 'current-bidder',
-            auctionParcel: 'auction-parcel',
             
             // Governance
             votingPoints: 'voting-points',
@@ -98,7 +92,6 @@ class UIManager {
             createListing: 'create-listing',
             showGovernance: 'show-governance',
             closeGovernance: 'close-governance',
-            startAuction: 'start-auction',
             placeBid: 'place-bid',
             buyNow: 'buy-now',
             
@@ -925,7 +918,7 @@ class UIManager {
         }
 
         // Building details section
-        const age = parcel.buildingAge || 0;
+        const age = Math.floor(parcel.buildingAge || 0);
         const decayPercent = Math.round((parcel.decay || 0) * 100);
         const repairCost = game.calculateRepairCost(parcel, building);
 
@@ -1146,7 +1139,7 @@ class UIManager {
     generatePlayerStats(game) {
         const netWorth = game.calculatePlayerNetWorth();
         const population = game.calculatePopulation();
-        const totalWealth = game.calculateTotalWealth();
+        const totalWealth = 0; // ELIMINATED: Client-side wealth calculation blocked
 
         // Count player-owned parcels and buildings
         let ownedParcels = 0;
@@ -1293,7 +1286,7 @@ class UIManager {
             dailyCashflowTotals: game.dailyCashflowTotals,
             topBarElement: document.getElementById('player-cashflow')?.textContent,
             cache: game.cache?.cashflowBreakdown,
-            economicEngine: game.economicEngine?.cache?.cashflowBreakdown
+            economicClient: game.economicClient?.isConnected || false
         });
 
         // Use the same exact check as the top bar
@@ -1431,7 +1424,7 @@ class UIManager {
             row.innerHTML = `
                 <td>${item.coordinates || 'N/A'}</td>
                 <td>${item.buildingName || 'Unknown'}</td>
-                <td>${item.buildingAge || 0} days</td>
+                <td>${Math.floor(item.buildingAge || 0)} days</td>
                 <td>${item.decay ? item.decay.toFixed(1) + '%' : 'N/A'}</td>
                 <td>$${Math.round(item.landValue || 0).toLocaleString()}</td>
                 <td class="${getValueClass(item.revenue || 0)}">${formatCurrency(item.revenue || 0)}</td>

@@ -50,8 +50,8 @@ class EconomicEngine {
      * Initialize the economic engine
      */
     initialize() {
-        this.updateSupplyDemandBalance();
-        this.calculatePlayerCashflow();
+        // ELIMINATED: Client-side initialization of economic calculations disabled
+        console.warn('🚫 Economic engine initialization: Client-side calculations disabled - server provides all data');
 
         // Cache DOM elements for market dashboard
         const resources = ['energy', 'food', 'housing', 'jobs'];
@@ -87,11 +87,7 @@ class EconomicEngine {
             }
         } else {
             console.warn('Invalid cashflow data detected, skipping cash update:', cashflow);
-            // Ensure playerCash remains a valid number
-            if (isNaN(this.game.playerCash)) {
-                this.game.playerCash = 0;
-                console.warn('Reset playerCash to 0 due to NaN value');
-            }
+            // Note: Cash validation now handled by CashManager
         }
 
         // Update market multipliers
@@ -99,7 +95,10 @@ class EconomicEngine {
 
         // Age buildings and decay
         if (this.game.buildingSystem) {
-            this.game.buildingSystem.ageBuildings(1);
+            // Game time: 1 day = 9.86 seconds real time
+            // Economic cycle runs every 5 seconds = 5/9.86 game days
+            const gameTimeDeltaDays = 5 / 9.86;
+            this.game.buildingSystem.ageBuildings(gameTimeDeltaDays);
         }
 
         // Update road maintenance costs
@@ -112,103 +111,37 @@ class EconomicEngine {
      * Calculate comprehensive supply and demand balance
      */
     updateSupplyDemandBalance() {
-        // Reset balances
+        // ELIMINATED: All client-side economic calculations have been removed
+        // Supply/demand must be calculated server-side for multiplayer consistency
+        console.error('🚫 CLIENT-SIDE CALCULATION BLOCKED: updateSupplyDemandBalance() - Use server-side calculation only');
+        // Reset to empty state - server should provide all data
         Object.keys(this.marketState.supply).forEach(key => {
             this.marketState.supply[key] = 0;
             this.marketState.demand[key] = 0;
             this.marketState.balance[key] = 0;
         });
-        
-        if (!this.game.grid) return;
-        
-        // Iterate through all parcels
-        for (let row = 0; row < this.game.gridSize; row++) {
-            for (let col = 0; col < this.game.gridSize; col++) {
-                const parcel = this.game.grid[row][col];
-                if (!parcel || !parcel.building) continue;
-                
-                const building = this.game.buildingManager?.getBuildingById(parcel.building);
-                if (!building) continue;
-                
-                // Supply calculations
-                if (building.resources?.energySupply > 0) {
-                    this.marketState.supply.energy += building.resources.energySupply;
-                }
-                if (building.resources?.foodProduction > 0) {
-                    this.marketState.supply.food += building.resources.foodProduction;
-                }
-                if (building.resources?.housingProvided > 0) {
-                    this.marketState.supply.housing += building.resources.housingProvided;
-                    this.marketState.supply.residents += building.resources.housingProvided;
-                }
-                if (building.population?.jobsCreated > 0) {
-                    this.marketState.supply.jobs += building.population.jobsCreated;
-                }
-                
-                // Demand calculations
-                if (building.resources?.energyDemand > 0) {
-                    this.marketState.demand.energy += building.resources.energyDemand;
-                }
-                if (building.population?.bedroomsAdded > 0) {
-                    // Residents need food
-                    const residents = parcel.population || 0;
-                    this.marketState.demand.food += residents * 0.5; // 0.5 food per resident
-                    this.marketState.demand.jobs += residents * 0.6; // 60% employment rate
-                }
-                if (building.population?.jobsCreated > 0) {
-                    // Jobs need workers
-                    this.marketState.demand.workers += building.population.jobsCreated;
-                }
-            }
-        }
-        
-        // Calculate balances
-        Object.keys(this.marketState.supply).forEach(key => {
-            this.marketState.balance[key] = this.marketState.supply[key] - this.marketState.demand[key];
-        });
-        
-        this.cache.lastCacheUpdate = Date.now();
     }
     
     /**
      * Update market multipliers based on supply/demand
      */
     updateMarketMultipliers() {
-        Object.keys(this.marketState.supply).forEach(resource => {
-            const supply = this.marketState.supply[resource];
-            const demand = Math.max(1, this.marketState.demand[resource]); // Avoid division by zero
-            const supplyRatio = supply / demand;
-            const elasticity = this.elasticity[resource] || 0.5;
-            
-            // Calculate smooth multiplier using the new system
-            this.marketState.multipliers[resource] = this.calculateSmoothMultiplier(supplyRatio, elasticity);
+        // ELIMINATED: All client-side economic calculations have been removed
+        // Market multipliers must be calculated server-side for multiplayer consistency
+        console.error('🚫 CLIENT-SIDE CALCULATION BLOCKED: updateMarketMultipliers() - Use server-side calculation only');
+        // Reset to neutral multipliers - server should provide all data
+        Object.keys(this.marketState.multipliers).forEach(resource => {
+            this.marketState.multipliers[resource] = 1.0;
         });
-        
-        // Update state management system if available
-        if (this.game.gameState) {
-            Object.entries(this.marketState.multipliers).forEach(([resource, value]) => {
-                this.game.gameState.dispatch({
-                    type: 'UPDATE_MULTIPLIER',
-                    resource,
-                    value
-                });
-            });
-        }
     }
     
     /**
      * Calculate smooth price multiplier (from previous optimization)
      */
     calculateSmoothMultiplier(supplyRatio, elasticity) {
-        if (supplyRatio >= 1.0) {
-            // Oversupply: prices drop (0.5x to 1x)
-            const excess = Math.min(supplyRatio - 1.0, 2.0);
-            return Math.max(0.5, 1.0 - (excess * elasticity * 0.5));
-        } else {
-            // Undersupply: prices rise (1x to 2.5x)
-            const shortage = Math.min(1.0 - supplyRatio, 1.0); // Allow full range of shortage
-            return Math.min(2.5, 1.0 + (shortage * elasticity * 1.88));
-        }
+        // ELIMINATED: All client-side economic calculations have been removed
+        console.error('🚫 CLIENT-SIDE CALCULATION BLOCKED: calculateSmoothMultiplier() - Use server-side calculation only');
+        return 1.0; // Neutral multiplier
     }
     
     /**
@@ -216,7 +149,7 @@ class EconomicEngine {
      */
     async calculatePlayerCashflow() {
         // Delegate to server-side calculation
-        const currentPlayerId = this.game.multiplayerManager?.playerId || 'player';
+        const currentPlayerId = PlayerUtils.getCurrentPlayerId();
 
         if (this.game.economicAPI) {
             try {
@@ -248,62 +181,10 @@ class EconomicEngine {
     }
 
     calculatePlayerCashflowLocal() {
-        let totalRevenue = 0;
-        let totalMaintenance = 0;
-        let totalLVT = 0;
-        const breakdown = [];
-
-        // Calculate building economics for current player's buildings
-        const currentPlayerId = this.game.multiplayerManager?.playerId || 'player';
-        const playerBuildings = this.game.buildingSystem?.getBuildingsByOwner(currentPlayerId) || [];
-
-        playerBuildings.forEach(({ row, col, parcel }) => {
-            const economics = this.game.buildingSystem.calculateBuildingEconomics(parcel, row, col);
-
-            totalRevenue += economics.revenue;
-            totalMaintenance += economics.maintenance;
-            totalLVT += economics.lvt;
-
-            breakdown.push({
-                coordinates: this.game.getParcelCoordinate(row, col),
-                buildingName: economics.buildingName,
-                buildingAge: parcel.buildingAge || 0,
-                decay: parcel.decay || 0,
-                landValue: parcel.landValue?.paidPrice || 0,
-                revenue: economics.revenue,
-                maintenance: economics.maintenance,
-                lvt: economics.lvt,
-                netCashflow: economics.netIncome
-            });
-        });
-
-        // Calculate road maintenance
-        const roadMaintenance = this.calculateRoadMaintenance();
-        totalMaintenance += roadMaintenance;
-
-        const netCashflow = totalRevenue - totalMaintenance - totalLVT;
-
-        // Update player economy state
-        this.playerEconomy = {
-            dailyCashflow: netCashflow,
-            buildingRevenue: totalRevenue,
-            buildingMaintenance: totalMaintenance,
-            landValueTax: totalLVT,
-            roadMaintenance: roadMaintenance,
-            lastUpdate: Date.now()
-        };
-
-        // Cache breakdown for display
-        this.cache.cashflowBreakdown = {
-            totalRevenue,
-            totalMaintenance,
-            totalLVT,
-            roadMaintenance,
-            netCashflow,
-            breakdown
-        };
-
-        return this.cache.cashflowBreakdown;
+        // ELIMINATED: All client-side economic calculations have been removed
+        // All economics must be calculated server-side for multiplayer consistency
+        console.error('🚫 CLIENT-SIDE CALCULATION BLOCKED: calculatePlayerCashflowLocal() - Use server-side calculation only');
+        throw new Error('Client-side cashflow calculation has been eliminated - use server API');
     }
     
     /**
@@ -326,130 +207,20 @@ class EconomicEngine {
      * Calculate total player wealth (cash + assets)
      */
     calculateTotalWealth() {
-        let assetValue = 0;
-        
-        // Building asset values (depreciated)
-        const playerBuildings = this.game.buildingSystem?.getBuildingsByOwner('player') || [];
-        
-        playerBuildings.forEach(({ row, col, parcel }) => {
-            if (parcel.building) {
-                const building = this.game.buildingManager?.getBuildingById(parcel.building);
-                if (building) {
-                    const age = parcel.buildingAge || 0;
-                    const condition = 1 - (parcel.decay || 0);
-                    const depreciation = Math.max(0.2, 1 - (age * 0.01)); // Min 20% value retained
-                    
-                    assetValue += (building.cost || 0) * condition * depreciation;
-                }
-            }
-            
-            // Add land value
-            if (parcel.landValue?.paidPrice) {
-                assetValue += parcel.landValue.paidPrice;
-            }
-        });
-        
-        // Get cash balance from CashManager if available, fallback to legacy
-        let cashBalance = 0;
-        if (this.game.cashManager) {
-            cashBalance = this.game.cashManager.getBalance();
-        } else {
-            cashBalance = isNaN(this.game.playerCash) || this.game.playerCash === null || this.game.playerCash === undefined ? 0 : this.game.playerCash;
-        }
-
-        const safeAssetValue = isNaN(assetValue) || assetValue === null || assetValue === undefined ? 0 : assetValue;
-
-        return cashBalance + safeAssetValue;
+        // ELIMINATED: All client-side economic calculations have been removed
+        // Wealth must be calculated server-side for multiplayer consistency
+        console.error('🚫 CLIENT-SIDE CALCULATION BLOCKED: calculateTotalWealth() - Use server-side calculation only');
+        throw new Error('Client-side wealth calculation has been eliminated - use server API');
     }
     
     /**
      * Get local supply/demand for a specific resource around a location
      */
     getLocalSupplyDemand(resource, centerRow, centerCol, radius = 3) {
-        let localSupply = 0;
-        let localDemand = 0;
-        
-        const startRow = Math.max(0, centerRow - radius);
-        const endRow = Math.min(this.game.gridSize - 1, centerRow + radius);
-        const startCol = Math.max(0, centerCol - radius);
-        const endCol = Math.min(this.game.gridSize - 1, centerCol + radius);
-        
-        for (let row = startRow; row <= endRow; row++) {
-            for (let col = startCol; col <= endCol; col++) {
-                const parcel = this.game.grid[row][col];
-                if (!parcel || !parcel.building) continue;
-                
-                const building = this.game.buildingManager?.getBuildingById(parcel.building);
-                if (!building) continue;
-                
-                // Distance weighting (closer = more impact)
-                const distance = Math.sqrt((row - centerRow) ** 2 + (col - centerCol) ** 2);
-                const weight = Math.max(0.1, 1 - (distance / radius));
-                
-                // Supply
-                switch(resource) {
-                    case 'energy':
-                        if (building.resources?.energySupply > 0) {
-                            localSupply += building.resources.energySupply * weight;
-                        }
-                        break;
-                    case 'food':
-                        if (building.resources?.foodProduction > 0) {
-                            localSupply += building.resources.foodProduction * weight;
-                        }
-                        break;
-                    case 'housing':
-                        if (building.population?.bedroomsAdded > 0) {
-                            localSupply += building.population.bedroomsAdded * weight;
-                        }
-                        break;
-                    case 'jobs':
-                        if (building.population?.jobsCreated > 0) {
-                            localSupply += building.population.jobsCreated * weight;
-                        }
-                        break;
-                    case 'workers':
-                        if (parcel.population > 0) {
-                            localSupply += parcel.population * 0.6 * weight; // 60% work
-                        }
-                        break;
-                }
-                
-                // Demand
-                switch(resource) {
-                    case 'energy':
-                        if (building.resources?.energyDemand > 0) {
-                            localDemand += building.resources.energyDemand * weight;
-                        }
-                        break;
-                    case 'food':
-                        if (parcel.population > 0) {
-                            localDemand += parcel.population * 0.5 * weight;
-                        }
-                        break;
-                    case 'jobs':
-                        if (parcel.population > 0) {
-                            localDemand += parcel.population * 0.6 * weight;
-                        }
-                        break;
-                    case 'workers':
-                        if (building.population?.jobsCreated > 0) {
-                            localDemand += building.population.jobsCreated * weight;
-                        }
-                        break;
-                }
-            }
-        }
-        
-        const demand = Math.max(0, localDemand);
-        const ratio = (demand > 0) ? localSupply / demand : (localSupply > 0 ? Infinity : 1);
-
-        return {
-            supply: localSupply,
-            demand: demand,
-            balance: localSupply - demand,
-            ratio: ratio
-        };
+        // ELIMINATED: All client-side economic calculations have been removed
+        // Local supply/demand must be calculated server-side for multiplayer consistency
+        console.error('🚫 CLIENT-SIDE CALCULATION BLOCKED: getLocalSupplyDemand() - Use server-side calculation only');
+        return { supply: 0, demand: 0, balance: 0, ratio: 1 };
     }
     
     /**
@@ -469,8 +240,9 @@ class EconomicEngine {
             }
         }
 
-        // Fallback to local calculation
-        return this.calculateDemographicsLocal(totalPopulation);
+        // CLIENT-SIDE FALLBACK ELIMINATED - Server-only economics enforced
+        console.error('🚫 CLIENT-SIDE FALLBACK BLOCKED: No local demographics calculation allowed');
+        throw new Error('Server demographics calculation failed and client fallback disabled - server must be fixed');
     }
 
     calculateDemographicsLocal(totalPopulation) {
@@ -498,7 +270,7 @@ class EconomicEngine {
         return {
             playerEconomy: this.playerEconomy,
             marketState: this.marketState,
-            totalWealth: this.calculateTotalWealth(),
+            totalWealth: 0, // ELIMINATED: Client-side wealth calculation blocked
             cashflowBreakdown: this.cache.cashflowBreakdown
         };
     }
@@ -583,9 +355,11 @@ class EconomicEngine {
     /**
      * Calculate comprehensive city vitality including JEFH supply/demand
      */
-    calculateCityVitality() {
-        // Debug: Log vitality calculation
-        
+    calculateCityVitalityLegacy() {
+        // DEPRECATED: This legacy client-side calculation has been replaced
+        // by server-side authoritative calculation in game.js calculateCityVitality()
+        console.warn('⚠️ DEPRECATED: Legacy client-side vitality calculation called - should use server');
+
         // Check if we can use cached values
         const now = performance.now();
         const cacheAge = now - this.game.vitalityCache.lastCalculated;
@@ -601,15 +375,12 @@ class EconomicEngine {
         }
         
         
-        // Initialize supply and demand tracking
-        this.game.vitalitySupply = {};
-        this.game.vitalityDemand = {};
-        
-        Object.keys(this.game.vitality).forEach(domain => {
-            this.game.vitalitySupply[domain] = 0;
-            this.game.vitalityDemand[domain] = 0;
-            this.game.vitality[domain] = 0; // Net will be supply - demand
-        });
+        // ELIMINATED: Direct game state modification blocked
+        console.error('🚫 CLIENT-SIDE STATE MODIFICATION BLOCKED: Cannot modify game.vitalitySupply/vitalityDemand/vitality');
+        throw new Error('Client-side vitality calculation has been eliminated - use server API');
+
+        // Block all client-side game state modifications
+        return;
         
         // First pass: count completed buildings only
         let totalBedrooms = 0;
@@ -1071,8 +842,9 @@ class EconomicEngine {
             }
         }
 
-        // Fallback to local calculation
-        return this.calculateLandValueLocal(row, col);
+        // CLIENT-SIDE FALLBACK ELIMINATED - Server-only economics enforced
+        console.error('🚫 CLIENT-SIDE FALLBACK BLOCKED: No local land value calculation allowed');
+        throw new Error('Server land value calculation failed and client fallback disabled - server must be fixed');
     }
 
     calculateLandValueLocal(row, col) {
@@ -1299,7 +1071,7 @@ class EconomicEngine {
                 net: (stats.revenue || 0) - (stats.maintenance || 0) - (stats.lvt || 0),
                 efficiency: `${efficiencyPercent}%`,
                 condition: Math.round((1 - (stats.decay || parcel.decay || 0)) * 100) + '%',
-                age: (stats.age || parcel.buildingAge || 0) + ' days',
+                age: Math.floor(stats.age || parcel.buildingAge || 0) + ' days',
                 // Additional details for tooltip or expanded view
                 details: building ? `${building.name} at (${row},${col})` : `Vacant land at (${row},${col})`,
                 performance: stats.performance,
@@ -1383,10 +1155,7 @@ class EconomicEngine {
         };
 
 
-        // Ensure cash doesn't go below zero
-        if (this.game.playerCash < 0) {
-            this.game.playerCash = 0;
-        }
+        // Note: Cash bounds checking now handled by CashManager
 
         // Clear dirty flags after processing
         this.game.economicCache.dirty.clear();
@@ -1638,8 +1407,9 @@ class EconomicEngine {
             }
         }
 
-        // Fallback to local calculation
-        return this.calculateAccessibilityScoresLocal(row, col);
+        // CLIENT-SIDE FALLBACK ELIMINATED - Server-only economics enforced
+        console.error('🚫 CLIENT-SIDE FALLBACK BLOCKED: No local accessibility calculation allowed');
+        throw new Error('Server accessibility calculation failed and client fallback disabled - server must be fixed');
     }
 
     calculateAccessibilityScoresLocal(row, col) {

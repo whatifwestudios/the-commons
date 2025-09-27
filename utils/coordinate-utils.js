@@ -19,7 +19,7 @@ window.CoordinateUtils = {
     /**
      * Convert isometric screen coordinates to grid coordinates
      */
-    fromIsometric(x, y, tileWidth = 64, tileHeight = 32, offsetX = 0, offsetY = 0, gridSize = 14) {
+    fromIsometric(x, y, tileWidth = 64, tileHeight = 32, offsetX = 0, offsetY = 0, gridSize = 12) {
         // Remove offsets first
         const adjustedX = x - offsetX;
         const adjustedY = y - offsetY;

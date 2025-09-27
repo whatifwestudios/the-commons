@@ -27,7 +27,7 @@ class GameState {
             world: {
                 grid: null, // Will be initialized with game grid
                 currentMonth: 'SEPT',
-                currentDay: 2,
+                currentDay: 1,
                 gameSpeed: 1,
                 isPaused: false
             },
@@ -605,6 +605,20 @@ class GameState {
             payload: { playerId, requestedColor }
         };
 
+        // Ensure player exists before updating color
+        if (!this.state.players[playerId]) {
+            this.state.players[playerId] = {
+                cash: 6000,
+                actions: 20,
+                votingPoints: 0,
+                ownedParcels: [],
+                emoji: '🏠',
+                name: 'Player',
+                color: requestedColor,
+                settings: {}
+            };
+        }
+
         // Check for color conflicts
         const conflictingPlayer = this.findPlayerByColor(requestedColor);
         if (conflictingPlayer && conflictingPlayer !== playerId) {
@@ -625,7 +639,7 @@ class GameState {
         this.state.players[playerId].color = requestedColor;
         this.notifySubscribers(action, { success: true, assignedColor: requestedColor });
 
-        return { success: true, assignedColor: requestedColor };
+        return requestedColor;
     }
 
     /**

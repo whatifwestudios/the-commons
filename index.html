@@ -5,8 +5,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>THE COMMONS</title>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect fill='%231a1a1a' width='100' height='100'/><path fill='%234CAF50' d='M20 70 L50 30 L80 70 Z M35 70 L50 50 L65 70 Z'/></svg>" type="image/svg+xml">
-    <link rel="stylesheet" href="style.css">
-    <link rel="stylesheet" href="auth-styles.css">
+    <link rel="stylesheet" href="style.css?v=2">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
     <style>
         /* Clean welcome screen for future matchmaking integration */
         .welcome-screen {
@@ -560,6 +562,560 @@
             margin-bottom: 0;
             padding: 0;
         }
+
+        /* 🍺 Beer Hall Lobby Styles */
+        .beer-hall-lobby {
+            background: #1a1a1a;
+            border-radius: 16px;
+            padding: 32px;
+            width: 420px;
+            max-height: 90vh;
+            overflow-y: auto;
+            text-align: center;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.8);
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            font-family: 'SF Mono', Monaco, Inconsolata, 'Roboto Mono', 'Source Code Pro', monospace;
+        }
+
+        .lobby-header h1 {
+            background: linear-gradient(135deg, #ff6b6b, #ff8a80);
+            background-clip: text;
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .lobby-player-setup {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+
+        .table-preferences {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .table-preferences label {
+            color: #fff;
+            font-size: 14px;
+            font-weight: 600;
+        }
+
+        .size-selector {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .size-btn {
+            flex: 1;
+            padding: 10px 12px;
+            background: #2a2a2a;
+            border: 2px solid #444;
+            border-radius: 8px;
+            color: #ccc;
+            font-size: 11px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            min-width: 0;
+            text-align: center;
+            line-height: 1.4;
+        }
+
+        .size-btn:hover {
+            border-color: #666;
+            background: #333;
+        }
+
+        .size-btn.active {
+            border-color: #ff6b6b;
+            background: rgba(255, 107, 107, 0.1);
+            color: #ff6b6b;
+        }
+
+        .find-table-btn {
+            padding: 16px 28px;
+            background: linear-gradient(145deg, #1a1a1a, #0d0d0d);
+            border: 1px solid #333;
+            border-radius: 10px;
+            color: #ffffff;
+            font-size: 15px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.28s cubic-bezier(0.4, 0, 0.2, 1);
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.4);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .find-table-btn:hover {
+            transform: translateY(-1px);
+            background: linear-gradient(145deg, #2a2a2a, #1a1a1a);
+            border-color: #444;
+            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.6);
+        }
+
+        .find-table-btn:active {
+            transform: translateY(0);
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
+        }
+
+
+        .table-entry {
+            background: #333;
+            border-radius: 6px;
+            padding: 10px;
+            border: 1px solid #555;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .table-name {
+            color: #fff;
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        .table-players {
+            color: #888;
+            font-size: 11px;
+        }
+
+        /* Ready Check Modal */
+        .ready-check-modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: rgba(0, 0, 0, 0.9);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 99999;
+        }
+
+        .ready-check-content {
+            background: #1a1a1a;
+            border-radius: 16px;
+            padding: 32px;
+            width: 450px;
+            text-align: center;
+            box-shadow: 0 15px 50px rgba(0, 0, 0, 0.9);
+            border: 2px solid #ff6b6b;
+        }
+
+        .ready-check-header h2 {
+            color: #fff;
+            margin: 0 0 16px 0;
+            font-size: 24px;
+        }
+
+        .table-info {
+            background: #2a2a2a;
+            border-radius: 8px;
+            padding: 12px;
+            margin-bottom: 20px;
+            color: #ccc;
+            font-size: 14px;
+        }
+
+        .players-at-table {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+            gap: 8px;
+            margin-bottom: 24px;
+        }
+
+        .player-card {
+            background: #333;
+            border-radius: 8px;
+            padding: 10px 8px;
+            border: 2px solid #555;
+            transition: all 0.2s ease;
+        }
+
+        .player-card.ready {
+            border-color: #4ECDC4;
+            background: rgba(78, 205, 196, 0.1);
+        }
+
+        .player-name {
+            color: #fff;
+            font-size: 11px;
+            font-weight: 600;
+            margin-bottom: 4px;
+        }
+
+        .player-color {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            margin: 0 auto;
+            border: 2px solid #666;
+        }
+
+        .ready-check-actions {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 16px;
+        }
+
+        .ready-btn, .leave-table-btn {
+            flex: 1;
+            padding: 14px;
+            border: none;
+            border-radius: 10px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .ready-btn {
+            background: linear-gradient(135deg, #4ECDC4, #45B7D1);
+            color: white;
+        }
+
+        .leave-table-btn {
+            background: #666;
+            color: #ccc;
+        }
+
+        .ready-status {
+            color: #888;
+            font-size: 12px;
+            font-style: italic;
+        }
+
+        /* Game Intro Cinematic */
+        .game-intro-cinematic {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: linear-gradient(135deg, #0a0a0a, #1a1a2e);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 99999;
+            animation: cinematicFadeIn 1s ease-out;
+        }
+
+        .cinematic-content {
+            text-align: center;
+            max-width: 600px;
+            padding: 40px;
+        }
+
+        .commons-logo h1 {
+            font-size: 48px;
+            color: #fff;
+            margin: 0 0 12px 0;
+            font-weight: 700;
+            background: linear-gradient(135deg, #ff6b6b, #4ECDC4);
+            background-clip: text;
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            animation: logoGlow 2s ease-in-out infinite alternate;
+        }
+
+        .tagline {
+            color: #888;
+            font-size: 16px;
+            margin-bottom: 40px;
+            font-style: italic;
+        }
+
+        .date-money {
+            display: flex;
+            justify-content: center;
+            gap: 40px;
+            margin-bottom: 32px;
+        }
+
+        .game-date, .starting-cash {
+            background: #2a2a2a;
+            padding: 12px 20px;
+            border-radius: 8px;
+            border: 1px solid #444;
+            color: #fff;
+            font-size: 14px;
+            font-weight: 600;
+        }
+
+        .players-display {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(80px, 1fr));
+            gap: 12px;
+            margin: 32px 0;
+            max-width: 480px;
+            margin-left: auto;
+            margin-right: auto;
+        }
+
+        .cinematic-player {
+            background: #2a2a2a;
+            border-radius: 8px;
+            padding: 12px 8px;
+            border: 2px solid #444;
+            animation: playerSlideIn 0.5s ease-out;
+            animation-fill-mode: both;
+        }
+
+        .cinematic-player-name {
+            color: #fff;
+            font-size: 11px;
+            font-weight: 600;
+            margin-bottom: 6px;
+        }
+
+        .cinematic-player-color {
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            margin: 0 auto;
+            border: 2px solid #666;
+        }
+
+        .game-begin-text {
+            color: #ccc;
+            font-size: 18px;
+            margin-top: 32px;
+        }
+
+        #countdown {
+            color: #ff6b6b;
+            font-weight: 700;
+            font-size: 24px;
+        }
+
+        /* Animations */
+        @keyframes cinematicFadeIn {
+            from { opacity: 0; transform: scale(0.95); }
+            to { opacity: 1; transform: scale(1); }
+        }
+
+        @keyframes logoGlow {
+            from { filter: drop-shadow(0 0 10px rgba(255, 107, 107, 0.3)); }
+            to { filter: drop-shadow(0 0 20px rgba(78, 205, 196, 0.4)); }
+        }
+
+        @keyframes playerSlideIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        /* Multiplayer Chat Overlay */
+        #multiplayer-chat-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 1000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .chat-backdrop {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.7);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+        }
+
+        .chat-container {
+            position: relative;
+            background: #1a1a1a;
+            border: 2px solid #444;
+            border-radius: 12px;
+            width: 500px;
+            max-width: 90vw;
+            max-height: 80vh;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+        }
+
+        .chat-header {
+            padding: 20px;
+            border-bottom: 1px solid #333;
+            text-align: center;
+        }
+
+        .chat-header h2 {
+            color: #fff;
+            margin: 0 0 10px 0;
+            font-size: 24px;
+        }
+
+        .player-status {
+            color: #888;
+            font-size: 14px;
+        }
+
+        .player-count {
+            color: #4ECDC4;
+            font-weight: 600;
+        }
+
+        .waiting-status {
+            margin-top: 5px;
+            font-style: italic;
+        }
+
+        .chat-messages {
+            height: 300px;
+            overflow-y: auto;
+            padding: 15px;
+            background: #222;
+            border-top: 1px solid #333;
+            border-bottom: 1px solid #333;
+        }
+
+        .system-message {
+            margin-bottom: 10px;
+            opacity: 0.8;
+        }
+
+        .player-message {
+            margin-bottom: 10px;
+        }
+
+        .message-time {
+            color: #666;
+            font-size: 11px;
+            margin-right: 8px;
+        }
+
+        .message-player {
+            color: #4ECDC4;
+            font-weight: 600;
+            margin-right: 8px;
+        }
+
+        .message-text {
+            color: #ddd;
+        }
+
+        .chat-input-area {
+            padding: 15px;
+            display: flex;
+            gap: 10px;
+            background: #1a1a1a;
+        }
+
+        #chat-input {
+            flex: 1;
+            background: #333;
+            border: 1px solid #555;
+            border-radius: 6px;
+            padding: 10px;
+            color: #fff;
+            font-size: 14px;
+        }
+
+        #chat-input:focus {
+            outline: none;
+            border-color: #4ECDC4;
+        }
+
+        #chat-send {
+            background: #4ECDC4;
+            color: #fff;
+            border: none;
+            border-radius: 6px;
+            padding: 10px 20px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: background 0.2s;
+        }
+
+        #chat-send:hover {
+            background: #45B7D1;
+        }
+
+        .chat-actions {
+            padding: 15px;
+            text-align: center;
+            border-top: 1px solid #333;
+            background: #1a1a1a;
+        }
+
+        .start-game-btn {
+            background: #FF6B6B;
+            color: #fff;
+            border: none;
+            border-radius: 8px;
+            padding: 12px 30px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            margin-bottom: 8px;
+        }
+
+        .start-game-btn:hover {
+            background: #FF5252;
+            transform: translateY(-2px);
+        }
+
+        .start-info {
+            color: #888;
+            font-size: 12px;
+        }
+
+        .chat-players {
+            padding: 15px;
+            border-top: 1px solid #333;
+            background: #1a1a1a;
+            border-radius: 0 0 12px 12px;
+        }
+
+        .chat-players h3 {
+            color: #fff;
+            margin: 0 0 10px 0;
+            font-size: 14px;
+        }
+
+        .chat-player {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 5px;
+        }
+
+        .chat-player-color {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            border: 1px solid #555;
+        }
+
+        .chat-player-name {
+            color: #ddd;
+            font-size: 13px;
+        }
+
+        /* Game UI blur effect when chat is open */
+        .game-blurred #main-area,
+        .game-blurred #sidebar {
+            filter: blur(5px);
+            pointer-events: none;
+        }
+
     </style>
 </head>
 <body>
@@ -575,19 +1131,7 @@
                     <span class="indicator">⌄</span>
                 </button>
                 <div class="dropdown-menu" id="player-menu">
-                    <button class="dropdown-item" id="show-leaderboard">
-                        🏆 Leaderboard
-                    </button>
-                    <button class="dropdown-item" id="show-player-stats">
-                        📊 Player Stats
-                    </button>
-                    <button class="dropdown-item" id="reset-game" style="color: #ff6b6b;">
-                        🔄 Reset Game
-                    </button>
-                    <div class="dropdown-divider"></div>
-                    <button class="dropdown-item" id="toggle-attenuation-overlay">
-                        🌿 Attenuation Overlay: <span id="attenuation-status">OFF</span>
-                    </button>
+                    <!-- Menu items removed: leaderboard, player stats, reset game, attenuation overlay -->
                 </div>
             </div>
         </div>
@@ -609,18 +1153,6 @@
                     <button class="dropdown-item layer-option active" id="layer-normal" data-layer="normal">
                         🗺️ Normal View
                     </button>
-                    <button class="dropdown-item layer-option" id="layer-landvalue" data-layer="landvalue">
-                        🔥 Land Values Heatmap
-                    </button>
-                    <button class="dropdown-item layer-option" id="layer-cashflow" data-layer="cashflow">
-                        📊 Cashflow View
-                    </button>
-                    <button class="dropdown-item layer-option" id="layer-mobility" data-layer="mobility">
-                        🚶 Mobility View
-                    </button>
-                    <button class="dropdown-item layer-option" id="layer-players" data-layer="players">
-                        👥 Players View
-                    </button>
                 </div>
             </div>
             <div class="top-bar-section">
@@ -633,11 +1165,11 @@
                     <div class="info-item finances-row">
                         <div class="finance-item">
                             <span class="info-label">CASH:</span>
-                            <span class="info-value" id="player-cash">$5,000</span>
+                            <span class="info-value" id="player-cash">$6,000</span>
                         </div>
                         <div class="finance-item">
                             <span class="info-label">WEALTH:</span>
-                            <span class="info-value" id="player-wealth">$5,000</span>
+                            <span class="info-value" id="player-wealth">$6,000</span>
                         </div>
                         <div class="finance-item clickable" id="cashflow-item">
                             <span class="info-label">DAILY:</span>
@@ -721,6 +1253,46 @@
                 </div>
             </div>
         </div>
+
+        <!-- Multiplayer Chat Overlay -->
+        <div id="multiplayer-chat-overlay" style="display: none;">
+            <div class="chat-backdrop"></div>
+            <div class="chat-container">
+                <div class="chat-header">
+                    <h2>🌊 Welcome to The Commons</h2>
+                    <div class="player-status">
+                        <span class="player-count">
+                            <span id="current-players">1</span> / <span id="max-players">6</span> players
+                        </span>
+                        <div class="waiting-status">Waiting for more players...</div>
+                    </div>
+                </div>
+
+                <div class="chat-messages" id="chat-messages">
+                    <div class="system-message">
+                        <span class="message-time">Now</span>
+                        <span class="message-text">Welcome! Chat while waiting for others to join.</span>
+                    </div>
+                </div>
+
+                <div class="chat-input-area">
+                    <input type="text" id="chat-input" placeholder="Type a message..." maxlength="200">
+                    <button id="chat-send">Send</button>
+                </div>
+
+                <div class="chat-actions" id="chat-actions" style="display: none;">
+                    <button id="start-game-btn" class="start-game-btn">🚀 Start Game</button>
+                    <div class="start-info">Anyone can start when ready!</div>
+                </div>
+
+                <div class="chat-players">
+                    <h3>Players in this game:</h3>
+                    <div id="chat-player-list">
+                        <!-- Players will be populated here -->
+                    </div>
+                </div>
+            </div>
+        </div>
         <div id="sidebar">
             <div class="sidebar-section collapsible">
                 <div class="section-header" data-target="vitality">
@@ -732,37 +1304,37 @@
                     <div class="vitality-group">
                         <div class="vitality-group-title">JEEFHH (SUPPLY & DEMAND)</div>
                         <div class="jeefhh-bars-container">
-                            <div class="jeefhh-bar-row metric-tooltip" data-metric="jobs" data-tooltip="Jobs supply vs demand. Green indicates surplus jobs available, red indicates job shortage.">
-                                <span class="jeefhh-label">JOBS</span>
-                                <div class="jeefhh-bar">
-                                    <div class="jeefhh-progress" id="jobs-bar"></div>
-                                </div>
-                            </div>
-                            <div class="jeefhh-bar-row metric-tooltip" data-metric="energy" data-tooltip="Energy supply vs demand. Green indicates sufficient power generation, red indicates power shortages.">
-                                <span class="jeefhh-label">ENERGY</span>
-                                <div class="jeefhh-bar">
-                                    <div class="jeefhh-progress" id="energy-bar"></div>
-                                </div>
-                            </div>
-                            <div class="jeefhh-bar-row metric-tooltip" data-metric="education" data-tooltip="Education supply vs demand. Green indicates adequate educational capacity, red indicates overcrowded schools.">
-                                <span class="jeefhh-label">EDUCATION</span>
-                                <div class="jeefhh-bar">
-                                    <div class="jeefhh-progress" id="education-bar"></div>
-                                </div>
-                            </div>
-                            <div class="jeefhh-bar-row metric-tooltip" data-metric="food" data-tooltip="Food supply vs demand. Green indicates food security, red indicates potential hunger or food scarcity.">
-                                <span class="jeefhh-label">FOOD</span>
-                                <div class="jeefhh-bar">
-                                    <div class="jeefhh-progress" id="food-bar"></div>
-                                </div>
-                            </div>
-                            <div class="jeefhh-bar-row metric-tooltip" data-metric="housing" data-tooltip="Housing supply vs demand. Green indicates adequate housing availability, red indicates housing shortage.">
+                            <div class="jeefhh-bar-row metric-tooltip" data-metric="housing" data-tooltip="Housing supply vs demand. Surpluses increase affordability but lower residential building revenue. Deficits decrease affordability but increase residential building revenue.">
                                 <span class="jeefhh-label">HOUSING</span>
                                 <div class="jeefhh-bar">
                                     <div class="jeefhh-progress" id="housing-bar"></div>
                                 </div>
                             </div>
-                            <div class="jeefhh-bar-row metric-tooltip" data-metric="healthcare" data-tooltip="Healthcare supply vs demand. Green indicates sufficient medical capacity, red indicates understaffed or overwhelmed healthcare system.">
+                            <div class="jeefhh-bar-row metric-tooltip" data-metric="food" data-tooltip="Food supply vs demand. Surpluses decrease revenue for certain commercial buildings. Deficits cause population loss, job crises and increased healthcare costs.">
+                                <span class="jeefhh-label">FOOD</span>
+                                <div class="jeefhh-bar">
+                                    <div class="jeefhh-progress" id="food-bar"></div>
+                                </div>
+                            </div>
+                            <div class="jeefhh-bar-row metric-tooltip" data-metric="energy" data-tooltip="Energy supply vs demand. Surpluses increase affordability scores but lower revenues for energy producing buildings. Deficits decrease affordability but increase revenue for energy producing buildings.">
+                                <span class="jeefhh-label">ENERGY</span>
+                                <div class="jeefhh-bar">
+                                    <div class="jeefhh-progress" id="energy-bar"></div>
+                                </div>
+                            </div>
+                            <div class="jeefhh-bar-row metric-tooltip" data-metric="jobs" data-tooltip="Jobs supply vs demand. Surpluses decrease revenue for certain commercial buildings. Deficits cause population loss and unemployment.">
+                                <span class="jeefhh-label">JOBS</span>
+                                <div class="jeefhh-bar">
+                                    <div class="jeefhh-progress" id="jobs-bar"></div>
+                                </div>
+                            </div>
+                            <div class="jeefhh-bar-row metric-tooltip" data-metric="education" data-tooltip="Education supply vs demand. Surpluses increase educational outcomes and deficits limit worker availability and skills advancement.">
+                                <span class="jeefhh-label">EDUCATION</span>
+                                <div class="jeefhh-bar">
+                                    <div class="jeefhh-progress" id="education-bar"></div>
+                                </div>
+                            </div>
+                            <div class="jeefhh-bar-row metric-tooltip" data-metric="healthcare" data-tooltip="Healthcare supply vs demand. Surpluses boost health outcomes and affordability, and deficits impair affordability, safety and resilience.">
                                 <span class="jeefhh-label">HEALTHCARE</span>
                                 <div class="jeefhh-bar">
                                     <div class="jeefhh-progress" id="healthcare-bar"></div>
@@ -781,6 +1353,12 @@
                                     <div class="carens-progress" id="safety-bar"></div>
                                 </div>
                             </div>
+                            <div class="carens-bar-row metric-tooltip" data-metric="environment" data-tooltip="Environmental quality and sustainability. Higher scores indicate cleaner air, green spaces, and eco-friendly practices.">
+                                <span class="carens-label">ENVIRONMENT</span>
+                                <div class="carens-bar">
+                                    <div class="carens-progress" id="environment-bar"></div>
+                                </div>
+                            </div>
                             <div class="carens-bar-row metric-tooltip" data-metric="culture" data-tooltip="Cultural richness and community engagement. Higher scores indicate vibrant arts, events, and social activities.">
                                 <span class="carens-label">CULTURE</span>
                                 <div class="carens-bar">
@@ -793,159 +1371,18 @@
                                     <div class="carens-progress" id="affordability-bar"></div>
                                 </div>
                             </div>
-                            <div class="carens-bar-row metric-tooltip" data-metric="resilience" data-tooltip="Community's ability to adapt and recover from challenges. Higher scores indicate better disaster preparedness and economic stability.">
-                                <span class="carens-label">RESILIENCE</span>
-                                <div class="carens-bar">
-                                    <div class="carens-progress" id="resilience-bar"></div>
-                                </div>
-                            </div>
-                            <div class="carens-bar-row metric-tooltip" data-metric="environment" data-tooltip="Environmental quality and sustainability. Higher scores indicate cleaner air, green spaces, and eco-friendly practices.">
-                                <span class="carens-label">ENVIRONMENT</span>
-                                <div class="carens-bar">
-                                    <div class="carens-progress" id="environment-bar"></div>
-                                </div>
-                            </div>
                             <div class="carens-bar-row metric-tooltip" data-metric="noise" data-tooltip="Noise pollution levels in the area. Higher scores indicate quieter, more peaceful neighborhoods.">
                                 <span class="carens-label">NOISE</span>
                                 <div class="carens-bar">
                                     <div class="carens-progress" id="noise-bar"></div>
                                 </div>
                             </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-            <div class="sidebar-section collapsible collapsed">
-                <div class="section-header" data-target="mobility-panel">
-                    <span>MOBILITY</span>
-                    <span class="collapse-icon"></span>
-                </div>
-                <div id="mobility-panel" class="section-content">
-                    <div class="mobility-metrics">
-                        <!-- Mobility metrics will be populated by JavaScript -->
-                        <div class="metric-row metric-tooltip" data-tooltip="Percentage of the city connected by transportation networks. Higher scores indicate better mobility infrastructure.">
-                            <span class="metric-label">NETWORK CONNECTIVITY</span>
-                            <span class="metric-value" id="network-connectivity">0%</span>
-                        </div>
-                        <div class="metric-row metric-tooltip" data-tooltip="Average time residents spend commuting to work via available transportation options">
-                            <span class="metric-label">AVG COMMUTE TIME</span>
-                            <span class="metric-value" id="avg-commute-time">0 min</span>
-                        </div>
-                        <div class="metric-row metric-tooltip" data-tooltip="Transportation cost impact on residents' budgets. Lower scores indicate expensive transit options that burden low-income households">
-                            <span class="metric-label">AFFORDABILITY</span>
-                            <span class="metric-value" id="mobility-affordability">0</span>
-                        </div>
-                        <div class="metric-row metric-tooltip" data-tooltip="Health benefits from active transportation (walking, biking). Higher scores indicate more opportunities for physical activity during daily travel">
-                            <span class="metric-label">HEALTH SCORE</span>
-                            <span class="metric-value" id="mobility-health">0</span>
-                        </div>
-                        <div class="metric-row metric-tooltip" data-tooltip="Environmental impact of transportation choices. Higher scores indicate cleaner, more sustainable mobility options with lower emissions">
-                            <span class="metric-label">ENVIRONMENT</span>
-                            <span class="metric-value" id="mobility-environment">0</span>
-                        </div>
-                        <div class="metric-row metric-tooltip" data-tooltip="Total number of road segments built. Roads connect buildings and enable efficient transportation.">
-                            <span class="metric-label">TOTAL ROADS</span>
-                            <span class="metric-value" id="total-roads">0</span>
-                        </div>
-                    </div>
-                </div>
-            </div>
-            <!-- Route Configuration Panel -->
-            <div class="sidebar-section collapsible route-config-panel" id="route-config-sidebar" style="display: none;">
-                <div class="section-header" data-target="route-config-content">
-                    <span>🚌 CONFIGURE ROUTE</span>
-                    <span class="collapse-icon"></span>
-                </div>
-                <div id="route-config-content" class="section-content">
-                    <!-- Route Basic Info -->
-                    <div class="route-info-section">
-                        <h4>Route Information</h4>
-                        <div class="form-group">
-                            <label for="sidebar-route-name">Route Name:</label>
-                            <input type="text" id="sidebar-route-name" class="form-control" placeholder="Bus Route 1">
-                        </div>
-                        <div class="form-group">
-                            <label for="sidebar-service-level">Service Level:</label>
-                            <select id="sidebar-service-level" class="form-control">
-                                <option value="rush_hour">Rush Hour ($1/stop)</option>
-                                <option value="daytime" selected>Daytime ($2/stop)</option>
-                                <option value="24_hour">24 Hour ($3/stop)</option>
-                            </select>
-                        </div>
-                        <div class="route-stats">
-                            <div class="stat-item">
-                                <span class="stat-label">Stops:</span>
-                                <span class="stat-value" id="sidebar-route-stops-count">2</span>
+                            <div class="carens-bar-row metric-tooltip" data-metric="resilience" data-tooltip="Community's ability to adapt and recover from challenges. Higher scores indicate better disaster preparedness and economic stability.">
+                                <span class="carens-label">RESILIENCE</span>
+                                <div class="carens-bar">
+                                    <div class="carens-progress" id="resilience-bar"></div>
+                                </div>
                             </div>
-                            <div class="stat-item">
-                                <span class="stat-label">Route Type:</span>
-                                <span class="stat-value" id="sidebar-route-type">Bus</span>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Pricing Section -->
-                    <div class="pricing-section">
-                        <h4>Pricing & Revenue</h4>
-                        <div class="form-group">
-                            <label for="sidebar-ticket-price">Ticket Price ($):</label>
-                            <input type="number" id="sidebar-ticket-price" class="form-control" step="0.25" min="0.50" max="10.00" value="2.50">
-                            <button id="sidebar-optimal-pricing" class="btn-secondary">Suggest Optimal Price</button>
-                        </div>
-
-                        <!-- Revenue Projections -->
-                        <div class="revenue-projections">
-                            <div class="projection-item">
-                                <span class="proj-label">Daily Ridership:</span>
-                                <span class="proj-value" id="sidebar-daily-ridership">
-                                    <span class="loading-indicator" style="display: none;">⟳</span>
-                                    <span class="proj-data">150</span>
-                                </span>
-                            </div>
-                            <div class="projection-item">
-                                <span class="proj-label">Daily Revenue:</span>
-                                <span class="proj-value" id="sidebar-daily-revenue">
-                                    <span class="loading-indicator" style="display: none;">⟳</span>
-                                    <span class="proj-data">$375</span>
-                                </span>
-                            </div>
-                            <div class="projection-item">
-                                <span class="proj-label">Daily Maintenance:</span>
-                                <span class="proj-value" id="sidebar-daily-maintenance">
-                                    <span class="loading-indicator" style="display: none;">⟳</span>
-                                    <span class="proj-data">-$180</span>
-                                </span>
-                            </div>
-                            <div class="projection-item">
-                                <span class="proj-label">Daily Net:</span>
-                                <span class="proj-value net-value" id="sidebar-daily-net">
-                                    <span class="loading-indicator" style="display: none;">⟳</span>
-                                    <span class="proj-data">+$195</span>
-                                </span>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Route Actions -->
-                    <div class="route-actions">
-                        <button class="btn-primary" id="sidebar-create-route">Create Route</button>
-                        <button class="btn-secondary" id="sidebar-cancel-route">Cancel</button>
-                    </div>
-                </div>
-            </div>
-            <div class="sidebar-section collapsible">
-                <div class="section-header" data-target="players-panel">
-                    <span>PLAYERS</span>
-                    <span class="collapse-icon"></span>
-                </div>
-                <div id="players-panel" class="section-content collapsed">
-                    <div class="players-legend">
-                        <div class="legend-header">
-                            <span>Player Ownership</span>
-                            <button id="clear-player-filter" class="clear-filter-btn">Clear Filter</button>
-                        </div>
-                        <div id="players-list" class="players-list">
-                            <!-- Players will be populated by JavaScript -->
                         </div>
                     </div>
                 </div>
@@ -1404,8 +1841,6 @@
         }
     }
 
-    // Initialize when DOM is loaded
-    document.addEventListener('DOMContentLoaded', setupGovernanceInfoPanels);
     </script>
     
     </div> <!-- End of game-interface -->
@@ -1418,443 +1853,100 @@
         </div>
     </div>
     
-    <!-- Magic Link Welcome Screen -->
+    <!-- Clean Welcome Screen -->
     <div id="welcome-screen" class="welcome-screen">
-        <div class="welcome-content">
-            <h1 style="font-size: 24px; color: #fff; margin: 0 0 5px 0; font-weight: 600;">The Commons</h1>
-            <p style="font-size: 12px; color: #888; margin: 0 0 20px 0; line-height: 1.4;">A game about property, taxes, community and winning</p>
+        <!-- 🍺 Beer Hall Lobby -->
+        <div class="beer-hall-lobby" id="beer-hall-lobby">
+            <div class="lobby-header">
+                <h1 style="font-size: 28px; color: #fff; margin: 0 0 8px 0; font-weight: 600;">The Commons</h1>
+                <p style="font-size: 14px; color: #888; margin: 0 0 24px 0; line-height: 1.4;">A game about property, taxes, community and winning.</p>
+            </div>
 
-            <!-- Authentication Section -->
-            <div class="auth-section">
-                <div class="auth-toggle">
-                    <button id="guest-mode-btn" class="active">Play as Guest</button>
-                    <button id="magic-link-btn">Sign In</button>
+            <!-- Player Setup -->
+            <div class="lobby-player-setup">
+                <div class="input-group">
+                    <label for="player-name">Your Name</label>
+                    <input type="text" id="player-name" placeholder="Enter your name" maxlength="20" value="Player">
                 </div>
 
-                <!-- Guest Mode Form -->
-                <div id="guest-form" class="auth-form">
-                    <div class="input-group">
-                        <label for="player-name">Name</label>
-                        <input type="text" id="player-name" placeholder="Enter your name" maxlength="20" value="Player">
+                <div class="input-group">
+                    <label for="color-selector" class="color-label">Your Color</label>
+                    <div class="color-controls">
+                        <div class="color-selector" id="color-selector">
+                            <!-- Colors will be generated by JavaScript -->
+                        </div>
+                        <button class="regenerate-colors-btn" id="regenerate-colors-btn" title="Generate new color options">↻</button>
                     </div>
-                    <div class="guest-note">
-                        Playing as guest - your progress won't be saved across sessions
-                    </div>
-                </div>
-
-                <!-- Magic Link Form -->
-                <div id="magic-link-form" class="auth-form" style="display: none;">
-                    <div class="input-group">
-                        <label for="email">Email Address</label>
-                        <input type="email" id="email" placeholder="Enter your email address">
-                    </div>
-                    <div class="magic-link-note">
-                        Sign in to save progress and access your persistent identity across sessions
-                    </div>
-                    <div id="magic-link-status" class="magic-link-status"></div>
                 </div>
             </div>
 
-            <!-- Color Selection -->
-            <div class="color-section">
-                <label for="color-selector" class="color-label">Choose your parcel color</label>
-                <div class="color-controls">
-                    <div class="color-selector" id="color-selector">
-                        <!-- Colors will be generated by JavaScript -->
-                    </div>
-                    <button class="regenerate-colors-btn" id="regenerate-colors-btn" title="Generate new color options">
-                        ↻
-                    </button>
+            <!-- Table Preferences -->
+            <div class="table-preferences">
+                <label>Game Size Preference</label>
+                <div class="size-selector">
+                    <button class="size-btn active" data-size="1">SOLO<br>1 player</button>
+                    <button class="size-btn" data-size="2+">Small<br>2+ players</button>
+                    <button class="size-btn" data-size="6+">Medium<br>6+ players</button>
+                    <button class="size-btn" data-size="12">Large<br>12 players</button>
                 </div>
             </div>
 
-            <button class="setup-complete-btn" id="start-game-btn">
-                Enter Game
+            <!-- Find Table Button -->
+            <button class="find-table-btn" id="find-table-btn">
+                Enter The Commons
             </button>
+
+        </div>
+
+        <!-- Ready Check Modal -->
+        <div class="ready-check-modal" id="ready-check-modal" style="display: none;">
+            <div class="ready-check-content">
+                <div class="ready-check-header">
+                    <h2>🍻 Your Table is Ready!</h2>
+                    <div class="table-info" id="table-info">
+                        <!-- Table info will be populated -->
+                    </div>
+                </div>
+
+                <div class="players-at-table" id="players-at-table">
+                    <!-- Player list will be populated -->
+                </div>
+
+                <div class="ready-check-actions">
+                    <button class="ready-btn" id="ready-btn">✅ Ready to Play!</button>
+                    <button class="leave-table-btn" id="leave-table-btn">❌ Leave Table</button>
+                </div>
+
+                <div class="ready-status" id="ready-status">
+                    Waiting for all players to be ready...
+                </div>
+            </div>
+        </div>
+
+        <!-- Game Intro Cinematic -->
+        <div class="game-intro-cinematic" id="game-intro-cinematic" style="display: none;">
+            <div class="cinematic-content">
+                <div class="commons-logo">
+                    <h1>The Commons</h1>
+                    <div class="tagline">A game about property, taxes, community and winning</div>
+                </div>
+
+                <div class="game-start-info">
+                    <div class="date-money">
+                        <div class="game-date">📅 September 2nd</div>
+                        <div class="starting-cash">💰 $6,000 each</div>
+                    </div>
+                </div>
+
+                <div class="players-display" id="cinematic-players">
+                    <!-- Player blocks will be populated -->
+                </div>
+
+                <div class="game-begin-text">Game begins in <span id="countdown">3</span>...</div>
+            </div>
         </div>
     </div>
 
-    <script>
-        // Authentication mode management
-        let currentAuthMode = 'guest';
-        let magicLinkSent = false;
-
-        // Smart color generation system
-        let assignedColors = new Set();
-        let availableColorPool = [
-            '#10AC84', '#EE5A6F', '#F8B500', '#6C5CE7', '#74B9FF',
-            '#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7',
-            '#DDA0DD', '#98D8C8', '#F7DC6F', '#BB8FCE', '#85C1E9'
-        ];
-
-        // DOM elements (will be initialized on DOMContentLoaded)
-        let guestModeBtn, magicLinkBtn, guestForm, magicLinkForm, emailInput, magicLinkStatus, startGameBtn, regenerateColorsBtn;
-
-        // Authentication mode switching
-        function switchAuthMode(mode) {
-            currentAuthMode = mode;
-
-            // Update button states and forms
-            if (mode === 'guest') {
-                guestModeBtn.classList.add('active');
-                magicLinkBtn.classList.remove('active');
-                guestForm.style.display = 'block';
-                magicLinkForm.style.display = 'none';
-                startGameBtn.textContent = 'Enter Game';
-                magicLinkSent = false; // Reset magic link state
-            } else {
-                guestModeBtn.classList.remove('active');
-                magicLinkBtn.classList.add('active');
-                guestForm.style.display = 'none';
-                magicLinkForm.style.display = 'block';
-                startGameBtn.textContent = 'Send Magic Link';
-                magicLinkSent = false; // Reset magic link state
-            }
-
-            // Clear any previous status messages
-            magicLinkStatus.style.display = 'none';
-        }
-
-        // Event listeners for auth mode switching
-        guestModeBtn.addEventListener('click', () => switchAuthMode('guest'));
-        magicLinkBtn.addEventListener('click', () => switchAuthMode('magic-link'));
-
-        // Magic link functionality
-        async function sendMagicLink() {
-            const email = emailInput.value.trim();
-
-            if (!email) {
-                showMagicLinkStatus('Please enter your email address', 'error');
-                return;
-            }
-
-            if (!isValidEmail(email)) {
-                showMagicLinkStatus('Please enter a valid email address', 'error');
-                return;
-            }
-
-            startGameBtn.disabled = true;
-            startGameBtn.textContent = 'Sending...';
-
-            try {
-                const response = await fetch('/api/auth/send-magic-link', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({ email })
-                });
-
-                const result = await response.json();
-
-                if (result.success) {
-                    showMagicLinkStatus('Magic link sent! Check your email and click the link to sign in.', 'success');
-                    magicLinkSent = true;
-
-                    // Start polling for authentication
-                    startAuthPolling();
-                } else {
-                    showMagicLinkStatus(result.error || 'Failed to send magic link', 'error');
-                }
-            } catch (error) {
-                console.error('Magic link error:', error);
-                showMagicLinkStatus('Network error. Please try again.', 'error');
-            } finally {
-                startGameBtn.disabled = false;
-                startGameBtn.textContent = 'Send Magic Link';
-            }
-        }
-
-        function showMagicLinkStatus(message, type) {
-            magicLinkStatus.textContent = message;
-            magicLinkStatus.className = `magic-link-status ${type}`;
-            magicLinkStatus.style.display = 'block';
-        }
-
-        function isValidEmail(email) {
-            return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
-        }
-
-        // Authentication polling
-        let authPollInterval;
-        function startAuthPolling() {
-            showMagicLinkStatus('Waiting for you to click the magic link...', 'info');
-
-            authPollInterval = setInterval(async () => {
-                try {
-                    const response = await fetch('/api/auth/me', {
-                        credentials: 'include'
-                    });
-                    const data = await response.json();
-
-                    if (data.success && data.user) {
-                        clearInterval(authPollInterval);
-                        showMagicLinkStatus('Successfully signed in! Welcome back.', 'success');
-
-                        // Update UI for authenticated user
-                        setTimeout(() => {
-                            window.currentUser = data.user;
-                            enterGame();
-                        }, 1500);
-                    }
-                } catch (error) {
-                    console.error('Auth polling error:', error);
-                }
-            }, 2000); // Check every 2 seconds
-        }
-
-        // Color management functions
-        async function fetchAssignedColors() {
-            try {
-                const response = await fetch('/api/players');
-                if (response.ok) {
-                    const players = await response.json();
-                    if (Array.isArray(players)) {
-                        assignedColors = new Set(players.map(player => player.color).filter(Boolean));
-                        console.log('🎨 Fetched assigned colors:', assignedColors);
-                    }
-                }
-            } catch (error) {
-                console.warn('Could not fetch assigned colors:', error);
-            }
-        }
-
-        function generateSmartColors(count = 5) {
-            const available = availableColorPool.filter(color => !assignedColors.has(color));
-            const shuffled = [...available].sort(() => Math.random() - 0.5);
-
-            if (shuffled.length < count) {
-                const assigned = availableColorPool.filter(color => assignedColors.has(color));
-                const shuffledAssigned = [...assigned].sort(() => Math.random() - 0.5);
-                return [...shuffled, ...shuffledAssigned.slice(0, count - shuffled.length)];
-            }
-
-            return shuffled.slice(0, count);
-        }
-
-        async function populateColors(regenerate = false, animate = false) {
-            if (regenerate) {
-                await fetchAssignedColors();
-            }
-
-            const colors = generateSmartColors(5);
-            const colorSelector = document.getElementById('color-selector');
-
-            if (colorSelector) {
-                if (animate) {
-                    // Add animation class to existing color options
-                    const existingOptions = colorSelector.querySelectorAll('.color-option');
-                    existingOptions.forEach(option => option.classList.add('changing'));
-
-                    // Wait for animation to reach middle point, then update colors
-                    setTimeout(() => {
-                        updateColorOptions(colorSelector, colors);
-                        setupColorSelectionHandlers();
-                    }, 300); // Half of animation duration
-
-                    // Remove animation class after animation completes
-                    setTimeout(() => {
-                        const newOptions = colorSelector.querySelectorAll('.color-option');
-                        newOptions.forEach(option => option.classList.remove('changing'));
-                    }, 600);
-                } else {
-                    // Direct update without animation
-                    updateColorOptions(colorSelector, colors);
-                    setupColorSelectionHandlers();
-                }
-            }
-        }
-
-        function updateColorOptions(container, colors) {
-            container.innerHTML = '';
-            colors.forEach((color, index) => {
-                const colorOption = document.createElement('div');
-                colorOption.className = 'color-option';
-                colorOption.style.backgroundColor = color;
-                colorOption.dataset.color = color;
-
-                if (index === 0) {
-                    colorOption.classList.add('selected');
-                    window.selectedColor = color;
-                }
-
-                container.appendChild(colorOption);
-            });
-        }
-
-        function setupColorSelectionHandlers() {
-            const colorOptions = document.querySelectorAll('.color-option');
-            colorOptions.forEach(option => {
-                option.addEventListener('click', () => {
-                    colorOptions.forEach(opt => opt.classList.remove('selected'));
-                    option.classList.add('selected');
-                    window.selectedColor = option.dataset.color;
-                });
-            });
-        }
-
-        // Game entry
-        function enterGame() {
-            if (currentAuthMode === 'guest') {
-                const playerName = document.getElementById('player-name').value.trim() || 'Player';
-                window.playerName = playerName;
-
-                // Generate guest player ID if needed
-                if (!localStorage.getItem('anonymousPlayerId')) {
-                    const anonymousId = 'guest_' + Math.random().toString(36).substr(2, 9);
-                    localStorage.setItem('anonymousPlayerId', anonymousId);
-                }
-            }
-
-            // Set player data for the game
-            const name = window.currentUser ? window.currentUser.username || window.currentUser.email : window.playerName;
-            const color = window.selectedColor || '#10AC84';
-
-            // Store player data for the game
-            window.playerColor = color;
-            if (window.currentUser) {
-                window.authenticatedUser = window.currentUser;
-            }
-
-            // Hide welcome screen with fade-out animation
-            const welcomeScreen = document.getElementById('welcome-screen');
-            welcomeScreen.classList.add('fade-out');
-
-            // Remove welcome screen and show game interface after animation completes
-            setTimeout(() => {
-                welcomeScreen.style.display = 'none';
-
-                // Show the main game interface
-                const gameInterface = document.getElementById('game-interface');
-                if (gameInterface) {
-                    gameInterface.classList.remove('hidden');
-                    gameInterface.classList.add('fade-in');
-                }
-
-                // Initialize the game
-                console.log(`🎮 Starting game for ${name} with color ${color}`);
-            }, 500);
-        }
-
-        // Main action button handler
-        function handleMainAction() {
-            if (currentAuthMode === 'guest') {
-                enterGame();
-            } else {
-                sendMagicLink();
-            }
-        }
-
-        // Event listeners
-        mainActionBtn.addEventListener('click', handleMainAction);
-        regenerateColorsBtn.addEventListener('click', async () => {
-            // Add spinning animation to button
-            regenerateColorsBtn.classList.add('spinning');
-            regenerateColorsBtn.disabled = true;
-
-            // Generate new colors with animation
-            await populateColors(true, true);
-
-            // Remove spinning animation after a delay
-            setTimeout(() => {
-                regenerateColorsBtn.classList.remove('spinning');
-                regenerateColorsBtn.disabled = false;
-            }, 600);
-        });
-
-        // Email input enter key support
-        emailInput.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') {
-                handleMainAction();
-            }
-        });
-
-        // Initialize
-        document.addEventListener('DOMContentLoaded', async () => {
-            // Initialize DOM elements
-            guestModeBtn = document.getElementById('guest-mode-btn');
-            magicLinkBtn = document.getElementById('magic-link-btn');
-            guestForm = document.getElementById('guest-form');
-            magicLinkForm = document.getElementById('magic-link-form');
-            emailInput = document.getElementById('email');
-            magicLinkStatus = document.getElementById('magic-link-status');
-            startGameBtn = document.getElementById('start-game-btn');
-            regenerateColorsBtn = document.getElementById('regenerate-colors-btn');
-
-            // Check if required elements exist
-            if (!guestModeBtn || !magicLinkBtn || !guestForm || !magicLinkForm || !emailInput || !magicLinkStatus || !startGameBtn || !regenerateColorsBtn) {
-                console.error('Welcome Screen Setup Error\nRequired elements are missing:', {
-                    guestModeBtn: !!guestModeBtn,
-                    magicLinkBtn: !!magicLinkBtn,
-                    guestForm: !!guestForm,
-                    magicLinkForm: !!magicLinkForm,
-                    emailInput: !!emailInput,
-                    magicLinkStatus: !!magicLinkStatus,
-                    startGameBtn: !!startGameBtn,
-                    regenerateColorsBtn: !!regenerateColorsBtn
-                });
-                return;
-            }
-
-            console.log('✅ All welcome screen elements found successfully');
-
-            // Set up event listeners
-            if (guestModeBtn) guestModeBtn.addEventListener('click', () => switchAuthMode('guest'));
-            if (magicLinkBtn) magicLinkBtn.addEventListener('click', () => switchAuthMode('magic-link'));
-            if (startGameBtn) startGameBtn.addEventListener('click', handleMainAction);
-
-            if (regenerateColorsBtn) {
-                regenerateColorsBtn.addEventListener('click', async () => {
-                    // Add spinning animation to button
-                    regenerateColorsBtn.classList.add('spinning');
-                    regenerateColorsBtn.disabled = true;
-
-                    // Generate new colors with animation
-                    await populateColors(true, true);
-
-                    // Remove spinning animation after a delay
-                    setTimeout(() => {
-                        regenerateColorsBtn.classList.remove('spinning');
-                        regenerateColorsBtn.disabled = false;
-                    }, 600);
-                });
-            }
-
-            // Email input enter key support
-            if (emailInput) {
-                emailInput.addEventListener('keypress', (e) => {
-                    if (e.key === 'Enter') {
-                        handleMainAction();
-                    }
-                });
-            }
-
-            await populateColors(true);
-
-            // Check if user is already authenticated
-            try {
-                const response = await fetch('/api/auth/me', {
-                    credentials: 'include'
-                });
-                const data = await response.json();
-
-                if (data.success && data.user) {
-                    window.currentUser = data.user;
-                    showMagicLinkStatus(`Already signed in as ${data.user.username || data.user.email}`, 'success');
-                    switchAuthMode('magic-link');
-                }
-            } catch (error) {
-                console.log('Not authenticated, starting as guest');
-            }
-        });
-
-        // Clean up polling on page unload
-        window.addEventListener('beforeunload', () => {
-            if (authPollInterval) {
-                clearInterval(authPollInterval);
-            }
-        });
-    </script>
 
     <!-- Solo game - no multiplayer lobby needed -->
     
@@ -2160,6 +2252,9 @@
         </div>
     </div>
 
+    <!-- Independent Onboarding System -->
+    <script src="beer-hall-lobby.js"></script>
+
     <script src="config.js"></script>
     <script src="utils/csv-converter.js"></script>
     <script src="csv-uploader.js"></script>
@@ -2167,66 +2262,98 @@
     <!-- Utility Scripts -->
     <script src="utils/player-utils.js"></script>
 
-    <!-- Initialize user session -->
-    <script>
-        // Fetch current user information on page load
-        async function initializeCurrentUser() {
-            try {
-                const response = await fetch('/api/auth/me', {
-                    credentials: 'include'
-                });
-                const data = await response.json();
-
-                if (data.success && data.user) {
-                    window.currentUser = data.user;
-                    console.log('👤 Current user initialized:', data.user.username || data.user.id);
-                } else {
-                    window.currentUser = null;
-                    console.log('👤 No authenticated user (playing as guest)');
-                }
-            } catch (error) {
-                console.warn('❌ Failed to fetch current user:', error);
-                window.currentUser = null;
-            }
-        }
-
-        // Initialize on page load
-        document.addEventListener('DOMContentLoaded', initializeCurrentUser);
-    </script>
 
     <script src="utils/color-utils.js"></script>
     <script src="utils/coordinate-utils.js"></script>
 
     <!-- Cash Management System -->
-    <script src="cash-manager.js"></script>
 
-    <script src="transportation.js"></script>
     <script src="building-system.js"></script>
-    <script src="economic-types.js"></script>
-    <script src="building-visual-feedback.js"></script>
-    <script src="smart-tooltip-system.js"></script>
-    <script src="client-economic-api.js"></script>
-    <script src="economic-engine.js"></script>
-    <script src="economic-performance.js"></script>
-    <script src="rendering-system.js"></script>
-    <script src="parcel-selector-manager.js"></script>
-    <script src="governance-system.js"></script>
-    <script src="auction-system.js"></script>
+    <!-- Legacy smart-tooltip-system.js archived -->
+    <!-- V2 Economic System - Clean Client-Server Communication -->
+    <script src="economic-client-v2.js?v=4"></script>
+
+    <!-- Legacy economic files removed - replaced by v2 economic system -->
+    <script src="parcel-hover-v2.js"></script>
+    <script src="governance-system.js?v=3"></script>
     <script src="game-state.js"></script>
     <script src="ui-manager.js"></script>
-    <script src="mobility-layer.js"></script>
-    <script src="tooltip-manager.js"></script>
-    <script src="crisp-tooltip.js"></script>
+    <script src="tooltip-system-v2.js"></script>
+    <script src="rendering-system-v2.js"></script>
+    <!-- Legacy tooltip systems archived -->
     <script src="context-menu-system.js"></script>
     <script src="action-manager.js"></script>
     <script src="action-marketplace.js"></script>
-    <script src="auth-manager.js"></script>
-    <script src="game.js"></script>
+    <script src="game.js?v=13"></script>
 
     <script>
         // Initialize positioning offset controls
         window.tooltipOffsetX = -1;
         window.tooltipOffsetY = -40;
+
+        // 🍺 V2: Server-first player ID architecture
+        let beerHallLobby;
+        let gameEconomicClient;
+        let serverAssignedPlayerId = null;
+
+        document.addEventListener('DOMContentLoaded', async () => {
+            console.log('🍺 Starting beer hall system for all players...');
+            console.log('🔍 DOM Check - welcome-screen:', !!document.getElementById('welcome-screen'));
+            console.log('🔍 DOM Check - beer-hall-lobby:', !!document.getElementById('beer-hall-lobby'));
+            console.log('🔍 DOM Check - player-name:', !!document.getElementById('player-name'));
+            console.log('🔍 DOM Check - BeerHallLobby class:', typeof BeerHallLobby);
+
+            // ALL PLAYERS go through beer hall system
+            beerHallLobby = new BeerHallLobby();
+            console.log('🍺 Beer Hall Lobby instance created');
+            try {
+                console.log('🍺 Attempting beer hall initialization...');
+                await beerHallLobby.initialize((playerConfig) => {
+                    console.log('🎮 Beer Hall complete, starting game with config:', playerConfig);
+                    // Pass clean config to game
+                    window.playerConfig = playerConfig;
+
+                    // Show the main game interface
+                    const gameInterface = document.getElementById('game-interface');
+                    if (gameInterface) {
+                        gameInterface.classList.remove('hidden');
+                        gameInterface.classList.add('fade-in');
+                    }
+
+                    // Wait for interface to be visible before initializing canvas
+                    setTimeout(async () => {
+                        // Create and initialize the game instance
+                        console.log('🎮 Creating multiplayer game instance - timestamp:', Date.now());
+                        const canvas = document.getElementById('gameCanvas');
+                        if (!window.IsometricGrid) {
+                            console.error('❌ IsometricGrid class not found! Available classes:', Object.keys(window));
+                            return;
+                        }
+
+                        // Initialize multiplayer game with table data
+                        window.game = new IsometricGrid(canvas, 12);
+                        try {
+                            await window.game.initializeWithPlayerConfig(playerConfig);
+                            console.log('🍻 Multiplayer game started successfully!');
+                        } catch (error) {
+                            console.error('❌ Game initialization failed:', error);
+                            // Restore city name even on error
+                            const storedCityName = localStorage.getItem(`cityName_${playerConfig.id}`);
+                            if (storedCityName) {
+                                const cityNameEl = document.getElementById('city-name');
+                                if (cityNameEl) cityNameEl.textContent = storedCityName;
+                            }
+                        }
+                    }, 100); // Small delay to ensure interface is visible
+                });
+            } catch (error) {
+                console.error('❌ CLEAN MULTIPLAYER: Failed to initialize Beer Hall Lobby system:', error);
+                console.error('❌ Error details:', error.message, error.stack);
+                alert('Failed to initialize beer hall: ' + error.message);
+            }
+        });
+
+
     </script>
 </body>
 </html>

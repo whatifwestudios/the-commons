@@ -9,8 +9,9 @@ class CashManager {
     constructor(game) {
         this.game = game;
 
-        // ALWAYS start with $6,000 - this ensures fresh balance on every page load
+        // FRESH START: Always begin with $6,000 (board game philosophy)
         this._balance = 6000;
+        this.initialized = true;
 
         // Add balance setter trap to catch unauthorized changes
         Object.defineProperty(this, 'balance', {
@@ -24,13 +25,11 @@ class CashManager {
                 this._balance = value;
             }
         });
-        console.log('💰 CashManager initialized with $6,000');
 
         // Check for reset flag and clear it
         const forceReset = localStorage.getItem('theCommons_forceReset');
         if (forceReset === 'true') {
             localStorage.removeItem('theCommons_forceReset');
-            console.log('🔄 Reset flag cleared');
         }
 
         this.pendingTransactions = new Map(); // Track pending operations
@@ -38,14 +37,13 @@ class CashManager {
         this.lastSyncTime = 0;
         this.syncInterval = 5000; // Sync with server every 5 seconds
 
-        // Setup periodic sync
+        // Setup periodic sync and force immediate UI update
         this.setupSync();
-
-        // Force immediate UI update to show correct cash amount
         setTimeout(() => {
             this.notifyBalanceChange();
-        }, 100); // Small delay to ensure game UI is ready
+        }, 100);
     }
+
 
     /**
      * Get current cash balance (cached from server)
@@ -96,7 +94,7 @@ class CashManager {
                 amount: amount,
                 reason: reason,
                 context: context,
-                playerId: this.game.multiplayerManager?.playerId || 'player'
+                playerId: this.game.currentPlayerId || this.game.multiplayerManager?.playerId || 'player'
             });
 
             // Remove from pending
@@ -171,7 +169,7 @@ class CashManager {
                 amount: amount,
                 reason: reason,
                 context: context,
-                playerId: this.game.multiplayerManager?.playerId || 'player'
+                playerId: this.game.currentPlayerId || this.game.multiplayerManager?.playerId || 'player'
             });
 
             // Remove from pending
@@ -230,7 +228,7 @@ class CashManager {
                     lvt: cashflowData.totalLVT,
                     breakdown: cashflowData.breakdown
                 },
-                playerId: this.game.multiplayerManager?.playerId || 'player'
+                playerId: this.game.currentPlayerId || this.game.multiplayerManager?.playerId || 'player'
             });
 
             if (result.success) {
@@ -247,30 +245,36 @@ class CashManager {
      * Sync balance with server (periodic and on-demand)
      */
     async syncBalance() {
+        const playerId = this.game.currentPlayerId || this.game.multiplayerManager?.playerId || null;
+
+        // Skip sync if no player ID is available
+        if (!playerId) {
+            return;
+        }
+
         try {
-            console.log('🔄 CashManager syncBalance: Starting sync, current balance:', this.balance);
+            // console.log('🔄 CashManager syncBalance: Starting sync, current balance:', this.balance); // Reduced debug noise
 
             const response = await fetch('/api/player/balance', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    playerId: this.game.multiplayerManager?.playerId || 'player'
+                    playerId: playerId
                 })
             });
 
             const result = await response.json();
-            console.log('🔄 CashManager syncBalance: Server response:', result);
+            // console.log('🔄 CashManager syncBalance: Server response:', result); // Reduced debug noise
 
             if (result.success) {
                 const serverBalance = result.balance;
 
                 // Only update if significantly different (avoid unnecessary UI updates)
                 if (Math.abs(this.balance - serverBalance) > 0.01) {
-                    console.log('🔄 CashManager syncBalance: Updating balance from', this.balance, 'to', serverBalance);
                     this.balance = serverBalance;
                     this.notifyBalanceChange();
                 } else {
-                    console.log('🔄 CashManager syncBalance: No update needed, values are close:', this.balance, 'vs', serverBalance);
+                    // console.log('🔄 CashManager syncBalance: No update needed, values are close:', this.balance, 'vs', serverBalance); // Reduced debug noise
                 }
 
                 this.lastSyncTime = Date.now();
@@ -317,8 +321,14 @@ class CashManager {
             }
         }, this.syncInterval);
 
-        // Initial sync
-        this.syncBalance();
+        // Delay initial sync until player ID is available
+        setTimeout(() => {
+            if (this.game.currentPlayerId) {
+                this.syncBalance();
+            } else {
+                console.log('🔄 CashManager: Waiting for player ID before initial sync');
+            }
+        }, 500); // Give time for player config to be set
     }
 
     /**
@@ -334,7 +344,7 @@ class CashManager {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                playerId: this.game.multiplayerManager?.playerId || 'player'
+                playerId: this.game.currentPlayerId || this.game.multiplayerManager?.playerId || 'player'
             })
         }).catch(error => console.error('Failed to reset server balance:', error));
     }
@@ -343,6 +353,11 @@ class CashManager {
      * Notify game of balance changes for UI updates
      */
     notifyBalanceChange() {
+        // Update game's playerCash property to maintain consistency
+        if (this.game) {
+            this.game.playerCash = this.balance;
+        }
+
         // Direct DOM update safeguard - ensure UI displays correct value immediately
         if (this.game && this.game.domCache && this.game.domCache.playerCash) {
             const expectedText = `$${Math.round(this.balance).toLocaleString()}`;

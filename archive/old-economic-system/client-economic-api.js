@@ -14,7 +14,7 @@ class ClientEconomicAPI {
      * FINE-GRAINED: Get individual building performance
      * Used for tooltips and UI updates with caching
      */
-    async getBuildingPerformance(row, col) {
+    async getBuildingPerformance(row, col, gameState = null) {
         const cacheKey = `building:${row},${col}`;
 
         // Check cache first (5 second TTL)
@@ -31,7 +31,18 @@ class ClientEconomicAPI {
         }
 
         try {
-            const requestPromise = fetch(`${this.baseUrl}/api/economics/building/${row}/${col}`)
+            // Send gameState with POST request for server to calculate performance
+            const requestPromise = fetch(`${this.baseUrl}/api/economics/building/${row}/${col}`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    gameState: gameState ? this.prepareGameState(gameState) : null,
+                    row: parseInt(row),
+                    col: parseInt(col)
+                })
+            })
                 .then(response => {
                     if (!response.ok) {
                         throw new Error(`HTTP ${response.status}: ${response.statusText}`);

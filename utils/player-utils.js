@@ -45,6 +45,13 @@ window.PlayerUtils = {
             return 'Guest Player';
         }
 
+        // Handle server-assigned dynamic player IDs (e.g., "player_5yxmn3g1o")
+        if (playerId && playerId.startsWith('player_')) {
+            // Extract the unique part of the ID for a friendlier name
+            const uniquePart = playerId.substring(7); // Remove "player_" prefix
+            return `Player ${uniquePart.substring(0, 4).toUpperCase()}`;
+        }
+
         return playerNames[playerId] || 'Unknown Player';
     },
 

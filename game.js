@@ -1,6 +1,7 @@
 
 class IsometricGrid {
     constructor(canvas, gridSize = 12) {
+        console.log('🎯 🎯 🎯 CONSTRUCTOR CALLED WITH CANVAS:', canvas);
         this.canvas = canvas;
         this.ctx = canvas.getContext('2d');
         this.gridSize = gridSize;
@@ -19,27 +20,17 @@ class IsometricGrid {
         // Initialize Building System
         this.buildingSystem = new BuildingSystem(this);
         
-        // Initialize Economic Engine (needed for client-side wealth calculation)
-        this.economicEngine = new EconomicEngine(this);
-        this.performanceEngine = new EconomicPerformanceEngine(this);
+        // Initialize V2 Economic System (server-authoritative)
+        // Enable WebSocket for real-time multiplayer state synchronization
+        this.economicClient = new EconomicClient(this, true);
 
-        // Initialize Server-Side Economic API
-        this.economicAPI = new ClientEconomicAPI();
+        // Economic engines replaced by v2 server-authoritative system
 
         // Initialize economic data structures with safe defaults
         this.initializeEconomicDefaults();
         
-        // Initialize Rendering System
-        this.renderingSystem = new RenderingSystem(this);
-
-        // Initialize Building Visual Feedback System
-        this.buildingVisualFeedback = new BuildingVisualFeedback(this);
-
-        // Initialize Smart Tooltip System
-        this.smartTooltipSystem = new SmartTooltipSystem(this);
-
-        // Initialize Parcel Selection System
-        this.parcelSelector = new ParcelSelectorManager(this);
+        // Initialize V2 Rendering System (now the standard)
+        this.renderingSystem = new RenderingSystemV2(this);
 
         // Initialize Governance System - SINGLE SOURCE OF TRUTH
         this.governanceSystem = new GovernanceSystem(this);
@@ -65,17 +56,27 @@ class IsometricGrid {
             }
         });
 
-        // Initialize Auction System
-        this.auctionSystem = new AuctionSystem(this);
 
-        // Initialize crisp tooltip system
-        this.crispTooltip = new CrispTooltip(this);
+        // Initialize unified tooltip system
+        this.tooltipSystemV2 = new TooltipSystemV2(this);
 
-        // Initialize unified tooltip manager
-        this.tooltipManager = new TooltipManager(this);
+        // Connect V2 systems to data sources
+        if (this.economicClient) {
+            this.economicClient.onUpdate((update) => {
+                // Send updates to rendering system
+                if (this.renderingSystem) {
+                    this.renderingSystem.handleServerUpdate(update);
+                }
+            });
+        }
+
+        // V2 system is now the standard
 
         // Initialize context menu system
         this.contextMenuSystem = new ContextMenuSystem(this);
+
+        // Initialize parcel selector manager for hover effects
+        this.parcelHover = new ParcelHoverV2(this);
 
         // Mobility tooltip timer
         this.mobilityTooltipTimer = null;
@@ -213,22 +214,87 @@ class IsometricGrid {
         // Game time and player stats
         this.gameStartTime = Date.now();
 
-        // Initialize cash management system - SINGLE SOURCE OF TRUTH
-        this.cashManager = new CashManager(this);
+        // V2: Simple client-side balance tracking (server-authoritative)
+        this._playerCash = 6000;
+        this._playerWealth = 6000;
 
         // Legacy cityTreasury removed - now using governanceSystem.totalBudget
-        console.log('💰 CashManager initialized');
+        console.log('💰 Client cash tracking initialized (server-authoritative)');
 
-        // Define playerCash as getter/setter that delegates to CashManager
+        // Define playerCash as getter/setter for compatibility
         Object.defineProperty(this, 'playerCash', {
             get: function() {
-                return this.cashManager ? this.cashManager.getBalance() : 0;
+                return this._playerCash;
             },
             set: function(value) {
-                console.warn('⚠️ Direct playerCash assignment blocked - use CashManager instead');
-                console.trace(); // Show where this is being called from
+                this._playerCash = value;
             }
         });
+
+        // V2: Simple compatibility methods
+        this.cashManager = {
+            getBalance: () => this._playerCash,
+            updateBalance: (newBalance) => { this._playerCash = newBalance; },
+            forceReset6k: () => { this._playerCash = 6000; },
+            notifyBalanceChange: () => { /* No-op for v2 */ },
+            applyDailyCashflow: async (cashflowData) => {
+                this._playerCash += cashflowData.netCashflow;
+                console.log(`💰 V2: Applied daily cashflow: ${cashflowData.netCashflow}, new balance: ${this._playerCash}`);
+            },
+            spend: (amount, description = 'Purchase') => {
+                // V2: Use economicClient for server-side transaction
+                const gameInstance = this;
+                if (gameInstance.economicClient && gameInstance.currentPlayerId) {
+                    return gameInstance.economicClient.spendCash(gameInstance.currentPlayerId, amount, description)
+                        .then(result => {
+                            console.log('🔍 DEBUG: Transaction result:', result);
+                            if (result.success && result.result && result.result.success) {
+                                console.log('🔍 DEBUG: newBalance from server:', result.result.newBalance);
+                                gameInstance._playerCash = result.result.newBalance;
+                                if (result.result.wealth !== undefined) {
+                                    gameInstance._playerWealth = result.result.wealth;
+                                    console.log('🔍 DEBUG: Updated wealth:', gameInstance._playerWealth);
+                                }
+                                console.log('🔍 DEBUG: gameInstance._playerCash after update:', gameInstance._playerCash);
+                                // Update cash display
+                                if (gameInstance.updateCashDisplay) {
+                                    gameInstance.updateCashDisplay();
+                                } else if (gameInstance.domCache && gameInstance.domCache.playerCash) {
+                                    if (gameInstance._playerCash !== undefined && gameInstance._playerCash !== null) {
+                                        gameInstance.domCache.playerCash.textContent = `$${gameInstance._playerCash.toLocaleString()}`;
+                                    } else {
+                                        console.error('🔍 ERROR: _playerCash is undefined/null:', gameInstance._playerCash);
+                                        gameInstance.domCache.playerCash.textContent = '$0';
+                                    }
+                                }
+                                return true;
+                            } else {
+                                const errorMsg = result.error || (result.result && result.result.error) || 'Unknown transaction error';
+                                console.warn('Server transaction failed:', errorMsg);
+                                return false;
+                            }
+                        })
+                        .catch(error => {
+                            console.error('Cash spend transaction failed:', error);
+                            return false;
+                        });
+                } else {
+                    // Fallback: client-side only (for compatibility)
+                    if (gameInstance._playerCash >= amount) {
+                        gameInstance._playerCash -= amount;
+                        // Update cash display
+                        if (gameInstance.updateCashDisplay) {
+                            gameInstance.updateCashDisplay();
+                        } else if (gameInstance.domCache && gameInstance.domCache.playerCash) {
+                            gameInstance.domCache.playerCash.textContent = `$${gameInstance._playerCash.toLocaleString()}`;
+                        }
+                        return Promise.resolve(true);
+                    }
+                    return Promise.resolve(false);
+                }
+            }
+        };
+
         this.gameDate = { month: 'SEPT', day: 2 }; // September 2nd start date
         
         // Start game time updates (1 year = 1 hour = 3600 seconds)
@@ -291,10 +357,8 @@ class IsometricGrid {
                     decay: 0, // Decay level (0-1, where 1 is fully decayed)
                     amenities: [], // Array of amenity objects
                     landValue: {
-                        paidPrice: 0, // Amount paid in purchase/auction
-                        calculatedValue: 0, // Game state calculated value
-                        lastAuctionDay: 0, // Day of last auction
-                        auctionThreshold: 0.3 // Trigger auction when calc value differs by this much
+                        paidPrice: 0, // Amount paid in purchase
+                        calculatedValue: 0 // Game state calculated value
                     }
                 };
             }
@@ -312,12 +376,28 @@ class IsometricGrid {
         this.hoverInfluenceRadius = null; // Set of tiles influenced by hover
         
         // Transportation System - Clean slate
-        this.transportationSystem = new TransportationSystem(this);
+        // this.transportationSystem = new TransportationSystem(this); // Disabled: Replaced by mobility-layer-v2.js
+        this.transportationSystem = null; // Will be replaced by v2 integration
 
         // Transport capacity system removed - was 75% dead code
 
-        // Mobility Layer - New visualization system
-        this.mobilityLayer = new MobilityLayer(this);
+        // Mobility Layer - Legacy system (being replaced by v2)
+        // this.mobilityLayer = new MobilityLayer(this); // Disabled: Replaced by v2
+        this.mobilityLayer = null; // Will be replaced by v2 integration
+
+        // Initialize Mobility Layer v2 - Clean Replacement System
+        // DISABLED: Testing without any mobility systems
+        // this.mobilityV2 = new MobilityV2Integration(this);
+        // this.mobilityV2.initialize().then(success => {
+        //     if (success) {
+        //         console.log('🚀 Mobility Layer v2 initialized successfully!');
+        //         console.log('🎯 Ready to replace legacy transportation.js system');
+        //         console.log('📋 Use mobilityV2.replaceLegacySystems() to fully replace legacy');
+        //     } else {
+        //         console.error('❌ Mobility v2 initialization failed - keeping legacy systems');
+        //     }
+        // });
+        this.mobilityV2 = null; // DISABLED: Testing without mobility
         
         // Parcel selector fade system
         this.hoverStartTime = null; // When current hover began
@@ -339,15 +419,13 @@ class IsometricGrid {
         this.lastDayStartTime = performance.now(); // Track when current day started
         this.pixelRowTimestamps = new Map(); // Track when each pixel row was revealed: "row,col" -> [timestamps]
         
-        // Dust cloud effects for construction starts
-        this.dustClouds = new Map(); // Track active dust clouds: key -> {startTime, duration, x, y, type}
         
         // Sub-menu hover management
         this.currentSubmenu = null; // Currently visible submenu element
         this.submenuTimer = null; // Timer for submenu hide delay
         
         // Map layer system
-        this.currentLayer = 'normal'; // 'normal', 'landvalue', 'cashflow'
+        this.currentLayer = 'normal'; // 'normal', 'transportation'
         this.landValueMode = 'estimated'; // 'estimated' or 'paid' - toggle for LV view
         
         // Auction system - now handled by AuctionSystem module
@@ -400,10 +478,14 @@ class IsometricGrid {
         // Initialize unified Action Manager
         this.actionManager = new ActionManager(this);
         
-        this.setupCanvas();
+        this.renderingSystem.setupCanvas();
         this.initDOMCache();
         this.populateBuildingCategories();
+
+        console.log('🎯 About to call setupEventListeners from constructor');
         this.setupEventListeners();
+        console.log('🎯 setupEventListeners completed from constructor');
+
         this.setupZoomControls();
         this.setupLayerControls();
         
@@ -417,7 +499,11 @@ class IsometricGrid {
         this.updateVitalityDisplay();
         this.updateDemographicsDisplay();
         this.calculateCurrentCashflow(); // Initialize cashflow data
-        this.updatePlayerStats();
+
+        // Initialize V2 Economic System
+        this.initializeEconomicClientV2();
+
+        this.updatePlayerStats(); // Async call - don't await to avoid blocking initialization
         this.updateActionDisplay(); // Initialize action display
         this.updateMonthCountdown(); // Initialize countdown
         // Transportation network starts empty - players build from scratch
@@ -425,13 +511,15 @@ class IsometricGrid {
         // Update countdown every second
         setInterval(async () => {
             this.updateMonthCountdown();
-            // Update auction timers (with safety check for initialization order)
             if (this.actionMarketplace && this.actionMarketplace.updateAuctionCountdowns) {
                 this.actionMarketplace.updateAuctionCountdowns();
             }
             // Update building construction progress
             if (this.buildingSystem) {
-                this.buildingSystem.ageBuildings();
+                // Game time: 1 day = 9.86 seconds real time = 9860ms
+                // This runs every 1000ms (1 second) = 1/9.86 game days
+                const gameTimeDeltaDays = 1 / 9.86;
+                this.buildingSystem.ageBuildings(gameTimeDeltaDays);
                 this.buildingSystem.updateConstructionProgress();
             }
         }, 1000);
@@ -445,8 +533,8 @@ class IsometricGrid {
     }
     
     isCurrentPlayer(owner) {
-        // Solo game - player always owns their own parcels
-        return owner === 'player';
+        // Use PlayerUtils to check if owner matches current player ID
+        return PlayerUtils.isCurrentPlayer(owner);
     }
 
     resetGameState() {
@@ -462,6 +550,10 @@ class IsometricGrid {
                             col: col,
                             owner: null,
                             building: null,
+                            buildingAge: 0,
+                            decay: 0,
+                            population: 0,
+                            maxPopulation: 0,
                             landValue: {
                                 paidPrice: 0,
                                 calculatedValue: 100,
@@ -470,7 +562,9 @@ class IsometricGrid {
                             constructionStartDay: null,
                             constructionDays: 0,
                             _constructionProgress: 1.0,
-                            _isUnderConstruction: false
+                            _isUnderConstruction: false,
+                            _constructionStartTime: null,
+                            _constructionDays: 0
                         };
                     }
                 }
@@ -479,7 +573,8 @@ class IsometricGrid {
         
         // Reset player state
         this.currentPlayer = 1;
-        this.playerSettings = null;
+        // Preserve playerSettings if they were set during initialization (don't reset to null)
+        // This prevents the color from being wiped out when startGame() is called after initializeWithPlayerConfig()
         
         // Clear any ongoing timers or animations
         if (this.gameTimeInterval) {
@@ -499,11 +594,11 @@ class IsometricGrid {
         this.buildingEfficiencies?.clear();
         this.pixelRowTimestamps?.clear();
         
-        // Clear mobility layer if it exists
-        if (this.mobilityLayer) {
-            this.mobilityLayer.roads?.clear();
-            this.mobilityLayer.reset?.();
-        }
+        // Clear mobility layer if it exists (legacy v1 - disabled for v2)
+        // if (this.mobilityLayer) {
+        //     this.mobilityLayer.roads?.clear();
+        //     this.mobilityLayer.reset?.();
+        // }
         
         // Reset zoom and pan to default clean state
         this.zoomLevel = 0.4;
@@ -535,18 +630,21 @@ class IsometricGrid {
         this.governanceSystem.reset();
         this.governanceSystem.initialize();
         
-        // Reset and initialize auction system for new game
-        this.auctionSystem.reset();
-        this.auctionSystem.initialize();
         
         this.startGameTime();
         this.scheduleRender();
-        
+
         // Start construction animation manager
         this.startConstructionAnimationManager();
-        
+
         // Start live tooltip updates for time-based tooltips
         this.startLiveTooltipUpdates();
+
+        // Initialize real-time synchronization for multiplayer reliability
+        this.initializeRealtimeSync();
+
+        // Initialize game loop for construction progress and cash accrual
+        this.initializeGameLoop();
         
         // Load existing player settings if available
         await this.loadPlayerSettings();
@@ -558,9 +656,150 @@ class IsometricGrid {
         this.initializePanelStates();
 
         // Initialize UI displays with current values
-        this.updatePlayerStats();
+        this.updatePlayerStats(); // Async call - don't await to avoid blocking
         this.updateActionDisplay();
         this.updateMonthCountdown();
+    }
+
+    /**
+     * Initialize game with clean player configuration from onboarding system
+     * @param {Object} playerConfig - Clean player configuration from onboarding
+     */
+    async initializeWithPlayerConfig(playerConfig) {
+        console.log('🎮 🎮 🎮 INITIALIZING WITH PLAYER CONFIG 🎮 🎮 🎮');
+        console.log('🎮 Initializing game with player config:', playerConfig);
+        console.log('🎨 DEBUG: Player config color:', playerConfig.color);
+
+
+        // Store clean player config
+        this.playerConfig = playerConfig;
+
+        // All modes (solo and multiplayer) use server-based economic system
+        // Solo mode gets its own isolated table with one player
+        console.log('🔌 Initializing server connection for isolated game state');
+
+        // WebSocket should already be connected via V2 server-first player ID system
+        if (playerConfig.waitingForPlayers) {
+            console.log('🔌 Multiplayer mode - WebSocket managed by beer hall system');
+        } else if (playerConfig.mode === 'solo') {
+            console.log('🎮 Solo mode - isolated table with own economic engine');
+        } else {
+            console.log('🔌 V2: WebSocket already managed by server-first player ID system');
+        }
+
+        // Force economic WebSocket initialization for all modes
+        // Solo and multiplayer both need server-side economic calculations
+        console.log('🔌 FORCE: Initializing economic WebSocket for building performance data');
+        this.economicClient.initializeWebSocket();
+
+        // Set currentPlayerId for cash manager and transactions
+        this.currentPlayerId = playerConfig.id;
+        console.log('🆔 Set currentPlayerId to:', this.currentPlayerId);
+
+        // Convert to legacy playerSettings format for compatibility
+        this.playerSettings = {
+            name: playerConfig.name,
+            color: playerConfig.color,
+            emoji: '🏛️', // Default emoji
+            id: playerConfig.id
+        };
+
+        // Set CSS custom property for UI elements
+        document.documentElement.style.setProperty('--player-color', playerConfig.color);
+
+        // Save to localStorage for consistency
+        localStorage.setItem('theCommons_playerSettings', JSON.stringify(this.playerSettings));
+        // Also save individual color for governance system
+        localStorage.setItem('playerColor', playerConfig.color);
+
+        // V2: Onboarding complete
+        if (playerConfig.mode === 'solo') {
+            console.log('🎮 V2: Solo mode onboarding complete - isolated table ready');
+        } else {
+            console.log('🍺 V2: Multiplayer mode onboarding complete - no legacy server reset needed');
+        }
+
+        // Update ParcelSelectorManager with player color (after playerSettings is set)
+        console.log('🎨 DEBUG: About to set parcelHover color. parcelHover exists:', !!this.parcelHover);
+        console.log('🎨 DEBUG: playerSettings:', this.playerSettings);
+        console.log('🎨 DEBUG: playerSettings.color:', this.playerSettings?.color);
+        if (this.parcelHover) {
+            this.parcelHover.playerColor = this.playerSettings?.color || '#10AC84';
+            console.log('🎨 DEBUG: Set parcelHover.playerColor to:', this.parcelHover.playerColor);
+        } else {
+            console.warn('🎨 DEBUG: parcelHover is null/undefined!');
+        }
+
+        // Force re-render to show updated player colors
+        this.scheduleRender();
+
+        // Sync player color with server (essential for multiplayer consistency)
+        try {
+            await fetch('/api/player/color', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    playerId: 'player', // Solo game always uses 'player' as ID
+                    color: playerConfig.color
+                })
+            });
+        } catch (error) {
+            console.warn('Could not sync player color with server:', error);
+        }
+
+        // Force cash reset to ensure clean start
+        localStorage.setItem('theCommons_forceReset', 'true');
+
+        // Update UI with player info
+        this.updatePlayerNameInUI();
+
+        // Generate and set city name - make it persistent per player ID
+        let cityName = localStorage.getItem(`cityName_${playerConfig.id}`);
+        if (!cityName) {
+            cityName = generateCityName().toUpperCase();
+            localStorage.setItem(`cityName_${playerConfig.id}`, cityName);
+        }
+
+        const cityNameElement = document.getElementById('city-name');
+        if (cityNameElement) {
+            cityNameElement.textContent = cityName;
+        }
+
+        // Start the game
+        await this.startGame();
+
+        // Start the game timer now that the game has truly begun (not during lobby/chat)
+        if (this.economicClient) {
+            this.economicClient.startClientClock();
+        }
+
+        // Explicit canvas setup and render (ensures proper initialization)
+        if (this.renderingSystem) {
+            this.renderingSystem.setupCanvas();
+            // Use scheduleRender instead of direct render to respect V1/V2 routing
+        }
+
+        // Schedule initial render with new player color
+        this.scheduleRender();
+
+        // Force correct cash display after initialization
+        setTimeout(() => {
+            if (this.cashManager) {
+                this.cashManager.forceReset6k();
+            }
+        }, 100);
+
+        // Set up testing helpers for development
+        if (!window.resetCash) {
+            window.resetCash = () => {
+                if (this.cashManager) {
+                    this.cashManager.forceReset6k();
+                } else {
+                    console.error('CashManager not available');
+                }
+            };
+        }
+
     }
     
     initializePanelStates() {
@@ -584,83 +823,26 @@ class IsometricGrid {
     }
     
     
-    async resetServerState() {
-        if (!confirm('Reset server state? This will clear all multiplayer data including players, parcels, and marketplace listings.')) {
-            return;
-        }
-        
-        try {
-            const response = await fetch('/api/reset', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                }
-            });
-            
-            const result = await response.json();
-            
-            if (result.success) {
-                this.showNotification('Server state reset successfully', 'success');
-                
-                // Solo game - no multiplayer state to reset
-                
-                // Clear mobility layer roads
-                if (this.mobilityLayer) {
-                    this.mobilityLayer.roads.clear();
-                    this.mobilityLayer.transitStops.clear();
-                    this.mobilityLayer.transitRoutes.clear();
-                }
-                
-                // Clear local marketplace
-                this.actionManager.marketplace = {
-                    listings: [],
-                    priceHistory: [],
-                    avgPrice: 0,
-                    nextListingId: 1
-                };
-                
-                this.actionMarketplace.refreshListings();
-                this.actionMarketplace.updateModal();
-            } else {
-                this.showNotification('Failed to reset server state', 'error');
-            }
-        } catch (error) {
-            console.error('Reset server state error:', error);
-            this.showNotification('Error resetting server state', 'error');
-        }
+
+    async resetServerForOnboarding() {
+        // V2: Multiplayer mode - no legacy server resets
+        console.log('🍺 V2: resetServerForOnboarding() disabled in multiplayer mode');
+        return; // Early return - no legacy reset in multiplayer
+
     }
-    
+
     async loadPlayerSettings() {
         try {
-            const savedSettings = localStorage.getItem('theCommons_playerSettings');
-            if (savedSettings && !this.playerSettings) {
-                this.playerSettings = JSON.parse(savedSettings);
-            }
-
-            // Fetch player color from server to override local settings
-            try {
-                const response = await fetch('/api/players');
-                if (response.ok) {
-                    const data = await response.json();
-                    const serverPlayer = data.players?.player || data.players?.[Object.keys(data.players)[0]];
-                    if (serverPlayer && serverPlayer.color) {
-                        // Update player settings with server color
-                        if (!this.playerSettings) {
-                            this.playerSettings = { name: 'Player', emoji: '🏛️' };
-                        }
-                        this.playerSettings.color = serverPlayer.color;
-                        // Set CSS custom property for welcome underline
-                        document.documentElement.style.setProperty('--player-color', serverPlayer.color);
-                        // Update ParcelSelectorManager with new color
-                        if (this.parcelSelector) {
-                            this.parcelSelector.updatePlayerColor();
-                        }
-                        // Also save to localStorage for consistency
-                        localStorage.setItem('theCommons_playerSettings', JSON.stringify(this.playerSettings));
-                    }
+            // Only load from localStorage as fallback if no playerSettings exist
+            // (Modern initialization via initializeWithPlayerConfig() takes precedence)
+            if (!this.playerSettings) {
+                const savedSettings = localStorage.getItem('theCommons_playerSettings');
+                if (savedSettings) {
+                    this.playerSettings = JSON.parse(savedSettings);
+                    console.log('🔄 Loaded fallback playerSettings from localStorage');
                 }
-            } catch (serverError) {
-                console.warn('Could not fetch player color from server:', serverError);
+            } else {
+                console.log('✅ PlayerSettings already set via modern initialization, skipping legacy load');
             }
 
             if (this.playerSettings) {
@@ -873,7 +1055,7 @@ class IsometricGrid {
         setInterval(async () => {
             this.currentDay++;
             this.lastDayStartTime = performance.now(); // Track when this day started
-            this.updateGameDate();
+            await this.updateGameDate();
             await this.processDailyCashflow();
             this.updatePlayerStats();
 
@@ -1067,7 +1249,7 @@ class IsometricGrid {
             `💼 Actions refresh when month ends`);
     }
     
-    updateGameDate() {
+    async updateGameDate() {
         const monthLengths = {
             'SEPT': 30, 'OCT': 31, 'NOV': 30, 'DEC': 31,
             'JAN': 31, 'FEB': 28, 'MAR': 31, 'APR': 30,
@@ -1092,7 +1274,11 @@ class IsometricGrid {
             this.governanceSystem.distributeMonthlyBudget();
 
             // Process expired auctions at month end
-            this.actionMarketplace.processExpiredAuctions();
+            try {
+                await this.actionMarketplace.processExpiredAuctions();
+            } catch (error) {
+                console.warn('Failed to process expired auctions:', error);
+            }
 
             // Award voting points and trigger governance button animation
             this.governanceSystem.processMonthlyGovernance();
@@ -1104,43 +1290,11 @@ class IsometricGrid {
     }
 
     async processDailyCashflow() {
-        // Use server-side cashflow calculation via ClientEconomicAPI
-        if (this.economicAPI) {
-            try {
-                const cashflowData = await this.economicAPI.getPlayerCashflow(this);
-                if (cashflowData && cashflowData.success) {
-                    // Apply the server-calculated cashflow to player balance
-                    this.playerCash += cashflowData.netCashflow;
+        // V2: Daily cashflow is handled automatically by the server economic engine
+        // The server processes DAILY_TICK events and updates player balances automatically
+        // No client-side daily processing needed
 
-                    // Ensure cash doesn't go below zero
-                    if (this.playerCash < 0) {
-                        this.playerCash = 0;
-                    }
-
-                    // Store cashflow totals for UI display
-                    this.dailyCashflowTotals = {
-                        revenue: cashflowData.totalRevenue,
-                        maintenance: cashflowData.totalMaintenance,
-                        lvt: cashflowData.totalLVT || 0,
-                        netCashflow: cashflowData.netCashflow
-                    };
-
-                    console.log(`💰 Daily cashflow applied: $${cashflowData.netCashflow.toFixed(2)} (Total: $${this.playerCash.toFixed(2)})`);
-                    return cashflowData;
-                } else {
-                    console.warn('⚠️ Server cashflow calculation failed or returned no data');
-                }
-            } catch (error) {
-                console.error('❌ Error processing daily cashflow:', error);
-            }
-        }
-
-        // Fallback to legacy client-side calculation
-        console.warn('⚠️ Falling back to client-side economic engine');
-        if (this.economicEngine) {
-            return this.economicEngine.processDailyCashflow();
-        }
-        console.warn('⚠️ No economic engine available for cashflow calculation');
+        console.log('💰 V2: Daily cashflow handled by server economic engine');
         return { totalRevenue: 0, totalMaintenance: 0, netCashflow: 0 };
     }
     
@@ -1174,7 +1328,6 @@ class IsometricGrid {
     // Helper method: Update economic cache for dirty buildings only
     updateEconomicCache() {
         // DISABLED: Legacy client-side economic cache - using server-authoritative system
-        console.log('⚠️ Legacy updateEconomicCache disabled - using server-authoritative system');
         return Promise.resolve();
     }
     
@@ -1255,12 +1408,17 @@ class IsometricGrid {
     
     // Delegation method for demographic calculation
     async calculateDemographics(totalPopulation) {
-        // Use server-side calculation for demographics (consolidated economic flow)
+        // V2: Demographics are calculated automatically by the server
+        // and included in economic state updates
         try {
-            return await this.economicAPI.getDemographics(totalPopulation);
+            const economicState = await this.economicClient.getEconomicState();
+            return {
+                totalResidents: economicState.totalResidents || 0,
+                totalPopulation: economicState.totalResidents || 0
+            };
         } catch (error) {
             console.error('Server demographics calculation failed:', error);
-            return null;
+            return { totalResidents: 0, totalPopulation: 0 };
         }
     }
     
@@ -1301,7 +1459,6 @@ class IsometricGrid {
     // Helper method: Build cashflow breakdown from cached stats for UI
     buildCashflowBreakdown() {
         // DISABLED: Legacy client-side cashflow breakdown - using server-authoritative system
-        console.log('⚠️ Legacy buildCashflowBreakdown disabled - using server-authoritative system');
         return { breakdown: [], totalRevenue: 0, totalMaintenance: 0, totalLVT: 0, netCashflow: 0 };
     }
     
@@ -1399,10 +1556,15 @@ class IsometricGrid {
     }
 
     async updateCashflowAsync() {
+        // Skip cashflow calculation if no player ID is available
+        if (!this.currentPlayerId) {
+            console.log('🔄 Cashflow: Skipping calculation, no player ID available');
+            return;
+        }
+
         try {
             // Use server-side cashflow calculation (consolidated economic flow)
-            const gameState = this.economicAPI.prepareGameState(this);
-            const cashflow = await this.economicAPI.getPlayerCashflow(gameState);
+            const cashflow = this.economicClient.getPlayerCashflow(this.currentPlayerId);
 
             if (cashflow && cashflow.totalRevenue !== undefined) {
                 // Update local cache
@@ -1422,7 +1584,11 @@ class IsometricGrid {
                 // Update UI displays with fresh cashflow data
                 this.updateCashflowDisplay();
             } else {
-                console.warn('Server cashflow calculation returned null or invalid data');
+                // Cashflow data not yet available - this is normal during initial loading
+                // Use cached values if available
+                if (this.currentCashflowPreview) {
+                    this.dailyCashflowTotals = this.currentCashflowPreview;
+                }
             }
         } catch (error) {
             console.error('Async cashflow update failed:', error);
@@ -1449,7 +1615,7 @@ class IsometricGrid {
     async calculatePlayerCashflow(playerId) {
         try {
             // Use economic engine to calculate cashflow for specific player
-            const result = await fetch('/api/calculate-player-cashflow', {
+            const result = await fetch('/api/economics/player-cashflow', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
@@ -1483,106 +1649,15 @@ class IsometricGrid {
         }
     }
 
-    async updateDemographicsAsync(population) {
-        try {
-            const demographics = await this.calculateDemographics(population);
-
-            if (demographics) {
-                // Update demographic tooltip
-                const residentsRow = document.getElementById('residents-row');
-                if (residentsRow) {
-                    residentsRow.setAttribute('data-tooltip',
-                        `<strong>Population Breakdown</strong><br><br>` +
-                        `<strong>Children:</strong> ${demographics.children.toLocaleString()}<br>` +
-                        `<strong>Adults:</strong> ${demographics.adults.toLocaleString()}<br>` +
-                        `<strong>Seniors:</strong> ${demographics.seniors.toLocaleString()}<br><br>` +
-                        `<strong>Available Workers:</strong> ${demographics.laborForce.toLocaleString()}`);
-                }
-
-                // Store demographics for other systems
-                this.demographics = demographics;
-                console.log('📊 Demographics updated:', demographics);
-            }
-        } catch (error) {
-            console.error('Async demographics update failed:', error);
-            // Fallback: provide basic population info
-            const residentsRow = document.getElementById('residents-row');
-            if (residentsRow) {
-                residentsRow.setAttribute('data-tooltip',
-                    `<strong>Population:</strong> ${population.toLocaleString()}<br>` +
-                    `<em>Detailed breakdown unavailable</em>`);
-            }
-        }
-    }
-
-    checkForAuctions() {
-        // Delegate to auction system
-        this.auctionSystem.checkForAuctions();
-    }
-
-    // Auction system methods - now delegated to AuctionSystem
-    showAuctionUI() {
-        // Delegate to auction system
-        this.auctionSystem.showAuctionUI();
-    }
-    
-    startAuction(row, col) {
-        // Delegate to auction system
-        return this.auctionSystem.startAuction(row, col);
-    }
-    
-    startAuctionTimer() {
-        // Delegate to auction system
-        this.auctionSystem.startAuctionTimer();
-    }
-    
-    placeBid(increment) {
-        // Delegate to auction system
-        this.auctionSystem.placeBid(increment);
-    }
-    
-    endAuction() {
-        // Delegate to auction system
-        this.auctionSystem.endAuction();
-    }
-    
-    updateAuctionActions() {
-        // Delegate to auction system
-        this.auctionSystem.updateAuctionActions();
-    }
-
-    getCustomBuildings() {
-        try {
-            return JSON.parse(localStorage.getItem('theCommons_customBuildings') || '[]');
-        } catch (error) {
-            console.error('Failed to load custom buildings:', error);
-            return [];
-        }
-    }
-
-    getCustomAmenities() {
-        try {
-            return JSON.parse(localStorage.getItem('theCommons_customAmenities') || '[]');
-        } catch (error) {
-            console.error('Failed to load custom amenities:', error);
-            return [];
-        }
-    }
 
 
-    getBuildingCost(buildingId) {
-        // Delegate to building manager
-        return this.buildingManager.getBuildingCost(buildingId);
-    }
 
-    getBuildingValue(buildingId) {
-        return this.buildingManager.getBuildingCost(buildingId);
-    }
+
+
 
 
     calculatePopulation() {
         // DISABLED: Legacy client-side population calculation - using server-authoritative system
-        console.log('⚠️ Legacy calculatePopulation disabled - using server-authoritative system');
         return 0;
     }
     
@@ -1602,11 +1677,8 @@ class IsometricGrid {
     }
 
     calculateTotalWealth() {
-        // Use economic engine's wealth calculation
-        if (this.economicEngine) {
-            return this.economicEngine.calculateTotalWealth();
-        }
-        console.warn('⚠️ No economic engine available for wealth calculation');
+        // ELIMINATED: Client-side wealth calculation has been blocked
+        console.error('🚫 CLIENT-SIDE CALCULATION BLOCKED: calculateTotalWealth() - Use server-side calculation only');
         return 0;
     }
 
@@ -1630,24 +1702,6 @@ class IsometricGrid {
     populateBuildingCategories() {
         // Delegate to building system
         this.buildingSystem.populateBuildingCategories();
-    }
-
-    startGameTime() {
-        // Solo game - client controls time advancement
-        
-        setInterval(async () => {
-            this.currentDay++;
-            this.lastDayStartTime = performance.now(); // Track when this day started
-            this.updateGameDate();
-            await this.processDailyCashflow();
-            this.updatePlayerStats();
-
-            // Run commute simulation every 7 game days
-            // Weekly transport capacity simulation removed - was unused
-
-            // Re-render to update building construction stages
-            this.scheduleRender();
-        }, this.dayLength);
     }
     
     showNotification(message, type = 'info') {
@@ -1679,62 +1733,7 @@ class IsometricGrid {
         }
     }
     
-    // Show leaderboard modal
-    showLeaderboardModal() {
-        const playerNetWorth = this.calculatePlayerNetWorth();
-        const playerName = this.playerSettings?.name || 'You';
-        
-        // Simulated leaderboard data - in real multiplayer this would come from server
-        const leaderboardData = [
-            { name: playerName, wealth: playerNetWorth, isPlayer: true },
-            { name: 'CityBuilder42', wealth: 12500 },
-            { name: 'UrbanPlanner', wealth: 9800 },
-            { name: 'MetroMaster', wealth: 7200 },
-            { name: 'GridGuru', wealth: 6100 },
-            { name: 'TownDesigner', wealth: 4900 },
-            { name: 'ZoneKing', wealth: 3800 }
-        ];
-        
-        // Sort by wealth (descending)
-        leaderboardData.sort((a, b) => b.wealth - a.wealth);
-        
-        // Take top 10 for modal
-        const topPlayers = leaderboardData.slice(0, 10);
-        
-        // Update modal content
-        const modalList = document.getElementById('modal-leaderboard-list');
-        if (modalList) {
-            modalList.innerHTML = topPlayers.map((player, index) => `
-                <div class="leaderboard-item ${player.isPlayer ? 'player-item' : ''}">
-                    <span class="rank">#${index + 1}</span>
-                    <span class="player-name">${player.name}</span>
-                    <span class="player-wealth">$${player.wealth.toLocaleString()}</span>
-                </div>
-            `).join('');
-        }
-        
-        // Show modal via UI Manager
-        this.uiManager.showModal('leaderboard-modal');
-    }
     
-    // Show player stats modal
-    showPlayerStatsModal() {
-        const stats = this.generatePlayerStats();
-        const statsContent = document.getElementById('player-stats-content');
-        
-        if (statsContent) {
-            statsContent.innerHTML = Object.entries(stats).map(([category, data]) => `
-                <div class="stat-card">
-                    <div class="stat-title">${data.title}</div>
-                    <div class="stat-value">${data.value}</div>
-                    <div class="stat-subtitle">${data.subtitle}</div>
-                </div>
-            `).join('');
-        }
-        
-        // Show modal via UI Manager
-        this.uiManager.showModal('player-stats-modal');
-    }
     
     // Show save game modal
     showSaveGameModal() {
@@ -1756,46 +1755,7 @@ class IsometricGrid {
         this.uiManager.showModal('save-game-modal');
     }
 
-    async resetGame() {
-        console.log('🔄 Resetting game...');
 
-        try {
-            // Clear ALL game-related localStorage data to prevent restored state
-            const keys = Object.keys(localStorage);
-            keys.forEach(key => {
-                if (key.startsWith('theCommons_') && key !== 'theCommons_playerSettings') {
-                    localStorage.removeItem(key);
-                }
-            });
-
-            // Set a flag to force cash reset on next load
-            localStorage.setItem('theCommons_forceReset', 'true');
-
-            // Reset player balance on server first
-            if (this.economicAPI) {
-                await this.economicAPI.resetPlayerBalance();
-            }
-
-            // Reload the page to completely reset client state
-            window.location.reload();
-        } catch (error) {
-            console.error('❌ Reset failed:', error);
-            // Fallback: clear localStorage and reload anyway
-            const keys = Object.keys(localStorage);
-            keys.forEach(key => {
-                if (key.startsWith('theCommons_') && key !== 'theCommons_playerSettings') {
-                    localStorage.removeItem(key);
-                }
-            });
-            localStorage.setItem('theCommons_forceReset', 'true');
-            window.location.reload();
-        }
-    }
-
-    // Generate comprehensive player statistics
-    generatePlayerStats() {
-        return this.uiManager.generatePlayerStats(this);
-    }
     
     // Get formatted play time
     getPlayTimeString() {
@@ -1858,30 +1818,91 @@ class IsometricGrid {
     
     // Calculate player's total net worth (cash + asset value)
     calculatePlayerNetWorth() {
+        console.log('=== DEBUG: calculatePlayerNetWorth() ===');
+
+        // Get current player ID for debugging
+        const currentPlayerId = window.PlayerUtils?.getCurrentPlayerId();
+        console.log('Current Player ID:', currentPlayerId);
+        console.log('Player Cash:', this.playerCash);
+
         let assetValue = 0;
-        
+        let ownedParcelsCount = 0;
+        let totalLandValue = 0;
+        let totalBuildingValue = 0;
+        let debugParcels = [];
+
         // Calculate value of owned parcels and buildings
         for (let row = 0; row < this.gridSize; row++) {
             for (let col = 0; col < this.gridSize; col++) {
                 const parcel = this.grid[row][col];
-                if (parcel && this.isCurrentPlayer(parcel.owner)) {
-                    // Add land value
-                    if (parcel.landValue && parcel.landValue.current) {
-                        assetValue += parcel.landValue.current;
+                if (parcel) {
+                    // Debug: Log parcel owner vs current player
+                    const isOwned = this.isCurrentPlayer(parcel.owner);
+                    if (parcel.owner) {
+                        console.log(`Parcel [${row},${col}] owner: "${parcel.owner}", isCurrentPlayer: ${isOwned}`);
                     }
-                    
-                    // Add building value
-                    if (parcel.building) {
-                        const building = this.buildingManager?.getBuildingById(parcel.building);
-                        if (building) {
-                            assetValue += this.calculateCurrentBuildingValue(parcel, building);
+
+                    if (isOwned) {
+                        ownedParcelsCount++;
+                        let parcelLandValue = 0;
+                        let parcelBuildingValue = 0;
+
+                        // Add land value
+                        if (parcel.landValue && parcel.landValue.current) {
+                            parcelLandValue = parcel.landValue.current;
+                            assetValue += parcelLandValue;
+                            totalLandValue += parcelLandValue;
+                        } else {
+                            console.log(`Parcel [${row},${col}] - Missing land value:`, parcel.landValue);
                         }
+
+                        // Add building value
+                        if (parcel.building) {
+                            const building = this.buildingManager?.getBuildingById(parcel.building);
+                            if (building) {
+                                parcelBuildingValue = this.calculateCurrentBuildingValue(parcel, building);
+                                assetValue += parcelBuildingValue;
+                                totalBuildingValue += parcelBuildingValue;
+                            } else {
+                                console.log(`Parcel [${row},${col}] - Building not found:`, parcel.building);
+                            }
+                        }
+
+                        // Store debug info for this parcel
+                        debugParcels.push({
+                            position: `[${row},${col}]`,
+                            landValue: parcelLandValue,
+                            buildingValue: parcelBuildingValue,
+                            building: parcel.building || 'none'
+                        });
                     }
                 }
             }
         }
-        
-        return Math.round(this.playerCash + assetValue);
+
+        const totalNetWorth = Math.round(this.playerCash + assetValue);
+
+        // Comprehensive debug output
+        console.log('=== NET WORTH CALCULATION BREAKDOWN ===');
+        console.log('Owned Parcels Found:', ownedParcelsCount);
+        console.log('Total Land Value:', totalLandValue);
+        console.log('Total Building Value:', totalBuildingValue);
+        console.log('Total Asset Value:', assetValue);
+        console.log('Player Cash:', this.playerCash);
+        console.log('Final Net Worth:', totalNetWorth);
+
+        if (debugParcels.length > 0) {
+            console.log('Owned Parcels Details:');
+            debugParcels.forEach(p => {
+                console.log(`  ${p.position}: Land=$${p.landValue}, Building=$${p.buildingValue} (${p.building})`);
+            });
+        } else {
+            console.log('No owned parcels found!');
+        }
+
+        console.log('=== END DEBUG ===');
+
+        return totalNetWorth;
     }
     
     // Construction animation manager - ensures smooth construction progress updates
@@ -1920,85 +1941,6 @@ class IsometricGrid {
         return false;
     }
     
-    // Create dust cloud effect at construction start
-    createDustCloud(x, y, type = 'building') {
-        const key = `${x}-${y}-${Date.now()}`;
-        const duration = 800 + Math.random() * 400; // 800-1200ms randomized
-        
-        this.dustClouds.set(key, {
-            startTime: performance.now(),
-            duration: duration,
-            x: x,
-            y: y,
-            type: type,
-            particles: this.generateDustParticles(6 + Math.floor(Math.random() * 4)) // 6-9 particles
-        });
-        
-        
-        // Schedule render to show the effect
-        this.scheduleRender();
-        
-        // Clean up after effect completes
-        setTimeout(() => {
-            this.dustClouds.delete(key);
-        }, duration + 100);
-    }
-    
-    // Generate randomized dust particles
-    generateDustParticles(count) {
-        const particles = [];
-        for (let i = 0; i < count; i++) {
-            particles.push({
-                offsetX: (Math.random() - 0.5) * 30, // Spread over 30 pixels
-                offsetY: (Math.random() - 0.5) * 20, // Spread over 20 pixels
-                size: 2 + Math.random() * 3, // 2-5 pixel size
-                opacity: 0.3 + Math.random() * 0.4, // 0.3-0.7 initial opacity
-                velocityX: (Math.random() - 0.5) * 0.5, // Slow horizontal drift
-                velocityY: -0.5 - Math.random() * 0.3 // Upward movement
-            });
-        }
-        return particles;
-    }
-    
-    // Render all active dust clouds
-    renderDustClouds() {
-        const currentTime = performance.now();
-        
-        if (this.dustClouds.size > 0) {
-        }
-        
-        this.dustClouds.forEach((cloud, key) => {
-            const elapsed = currentTime - cloud.startTime;
-            const progress = Math.min(elapsed / cloud.duration, 1);
-            
-            // Fade out over time
-            const cloudOpacity = 1 - progress;
-            if (cloudOpacity <= 0) return;
-            
-            // Convert world coordinates to screen coordinates
-            const screenPos = this.worldToScreenCoords(cloud.x, cloud.y);
-            
-            this.ctx.save();
-            this.ctx.globalAlpha = cloudOpacity;
-            
-            // Render each particle
-            cloud.particles.forEach(particle => {
-                const particleProgress = progress;
-                const particleX = screenPos.x + particle.offsetX + (particle.velocityX * elapsed * 0.05);
-                const particleY = screenPos.y + particle.offsetY + (particle.velocityY * elapsed * 0.05);
-                const particleOpacity = particle.opacity * cloudOpacity;
-                const particleSize = particle.size * (1 - particleProgress * 0.3); // Shrink slightly
-                
-                this.ctx.globalAlpha = particleOpacity;
-                this.ctx.fillStyle = '#8B7355'; // Dusty brown color
-                this.ctx.beginPath();
-                this.ctx.arc(particleX, particleY, particleSize, 0, Math.PI * 2);
-                this.ctx.fill();
-            });
-            
-            this.ctx.restore();
-        });
-    }
     
     // Live tooltip updates for time-based content
     startLiveTooltipUpdates() {
@@ -2065,13 +2007,21 @@ class IsometricGrid {
         return defaultBedrooms[buildingId] || 0;
     }
 
-    getBuildingValue(buildingId) {
-        return this.buildingManager.getBuildingCost(buildingId);
-    }
 
-    updatePlayerStats() {
-        const population = this.calculatePopulation();
-        const totalWealth = this.calculateTotalWealth();
+    async updatePlayerStats() {
+        // Fetch population from server instead of using disabled calculatePopulation
+        let population = 0;
+        try {
+            const serverState = await this.economicClient.getEconomicState();
+            if (serverState && serverState.statistics && serverState.statistics.totalPopulation !== undefined) {
+                population = serverState.statistics.totalPopulation;
+            }
+        } catch (error) {
+            console.warn('Failed to fetch population from server, using fallback:', error);
+            // Keep population as 0 (fallback)
+        }
+
+        const totalWealth = this._playerWealth || 0;
 
         // Cash is now guaranteed valid by CashManager
         // Force immediate cash sync to fix display timing issues
@@ -2124,13 +2074,17 @@ class IsometricGrid {
             }
         }
         
-        // Update residents count (demographics will be calculated async)
+        // Update residents count using both methods for consistency
         if (this.domCache.totalResidents) {
             this.domCache.totalResidents.textContent = population.toLocaleString();
         }
 
-        // Calculate demographics breakdown asynchronously
-        this.updateDemographicsAsync(population);
+        // Also use UIManager's updateCityStats method for consistency
+        if (this.uiManager && population !== undefined) {
+            this.uiManager.updateCityStats({ residents: population });
+        }
+
+        // Demographics are now calculated by server and included in population update
         
         // Use treasury balance directly from governance system
         let totalTreasury = 0;
@@ -2183,69 +2137,10 @@ class IsometricGrid {
         
     }
 
-    async completeGameReset() {
-        console.log('🔄 Performing complete game reset - clearing all state');
-
-        try {
-            // Step 1: Reset server state (cash balance and any server-side data)
-            const resetResponse = await fetch('/api/reset', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' }
-            });
-
-            if (!resetResponse.ok) {
-                console.error('Failed to reset server state');
-            } else {
-                console.log('✅ Server state reset complete');
-            }
-
-            // Step 2: Clear all localStorage
-            localStorage.clear();
-            console.log('✅ localStorage cleared');
-
-            // Step 3: Reset all client-side game state
-            // Grid initialization now handled by server state
-            this.buildings = {};
-            this.buildingEfficiencies.clear();
-            this.currentDay = 1;
-            this.currentMonth = 1;
-            this.currentYear = 2025;
-            this.isGameActive = false;
-
-            // Step 4: Reset cash manager to $6,000
-            if (this.cashManager) {
-                this.cashManager.balance = 6000;
-                this.cashManager.notifyBalanceChange();
-                console.log('✅ Cash reset to $6,000');
-            }
-
-            // Step 5: Reset governance system
-            if (this.governanceSystem) {
-                this.governanceSystem.reset();
-                console.log('✅ Governance system reset');
-            }
-
-            // Step 6: Clear and reinitialize all UI displays
-            this.initializePanelStates();
-            this.updatePlayerStats();
-            this.updateActionDisplay();
-            this.updateMonthCountdown();
-            this.updateVitalityDisplay();
-            this.updateDemographicsDisplay();
-
-            // Step 7: Redraw empty grid
-            this.renderingSystem.render();
-
-            console.log('🎉 Complete game reset finished - fresh start ready!');
-
-        } catch (error) {
-            console.error('❌ Game reset failed:', error);
-        }
-    }
 
     getParcelCoordinate(row, col) {
-        const letter = String.fromCharCode(65 + col); // A-N (0-13)
-        const number = row + 1; // 1-14 (0-13)
+        const letter = String.fromCharCode(65 + col); // A-L (0-11)
+        const number = row + 1; // 1-12 (0-11)
         return `${letter}-${number}`;
     }
     
@@ -2315,25 +2210,25 @@ class IsometricGrid {
                 const supplyType = this.getMobilitySupplyType(building.category);
                 content += `🚛 Supply: ${supplyType}<br>`;
                 
-                // Connectivity info
+                // Connectivity info (legacy v1 - disabled for v2)
                 try {
-                    const connectivity = this.mobilityLayer.getParcelConnectivity(row, col);
-                    const connectStatus = connectivity.connected ? '✅ Connected' : '❌ Isolated';
-                    content += `🛣️ Road Access: ${connectStatus}<br>`;
-                    
-                    if (connectivity.connected && connectivity.networkDistance) {
-                        content += `📏 Network Distance: ${connectivity.networkDistance}<br>`;
-                    }
+                    // const connectivity = this.mobilityLayer.getParcelConnectivity(row, col);
+                    // const connectStatus = connectivity.connected ? '✅ Connected' : '❌ Isolated';
+                    // content += `🛣️ Road Access: ${connectStatus}<br>`;
+                    //
+                    // if (connectivity.connected && connectivity.networkDistance) {
+                    //     content += `📏 Network Distance: ${connectivity.networkDistance}<br>`;
+                    // }
                 } catch (e) {
                     content += `🛣️ Road Access: Checking...<br>`;
                 }
                 
-                // Transportation info
+                // Transportation info (legacy v1 - disabled for v2)
                 try {
-                    const nearbyRoads = this.mobilityLayer.getNearbyRoads(row, col);
-                    if (nearbyRoads.length > 0) {
-                        content += `🔗 Adjacent Roads: ${nearbyRoads.length}<br>`;
-                    }
+                    // const nearbyRoads = this.mobilityLayer.getNearbyRoads(row, col);
+                    // if (nearbyRoads.length > 0) {
+                    //     content += `🔗 Adjacent Roads: ${nearbyRoads.length}<br>`;
+                    // }
                 } catch (e) {
                     // Skip if error
                 }
@@ -2352,13 +2247,13 @@ class IsometricGrid {
             content += `<strong>Empty Parcel</strong> (${coord})<br>`;
             content += `💰 Price: $${price}<br>`;
             
-            // Add connectivity info for empty parcels
+            // Add connectivity info for empty parcels (legacy v1 - disabled for v2)
             try {
-                const connectivity = this.mobilityLayer.getParcelConnectivity(row, col);
-                const connectStatus = connectivity.connected ? '✅ Connected to road network' : '❌ No road access';
-                content += `🛣️ ${connectStatus}`;
+                // const connectivity = this.mobilityLayer.getParcelConnectivity(row, col);
+                // const connectStatus = connectivity.connected ? '✅ Connected to road network' : '❌ No road access';
+                // content += `🛣️ ${connectStatus}`;
             } catch (e) {
-                content += `🛣️ Checking connectivity...`;
+                // content += `🛣️ Checking connectivity...`;
             }
         }
         
@@ -2390,7 +2285,7 @@ class IsometricGrid {
                 this.domCache.selectedTile.textContent = coord;
             }
             
-            // Set timer to show tooltip after mouse stops for 500ms
+            // Set timer to show tooltip after mouse stops for 1000ms
             this.mobilityTooltipTimer = setTimeout(() => {
                 // Double-check we're still in mobility mode and on the same tile
                 if (this.currentLayer === 'mobility' && 
@@ -2400,7 +2295,7 @@ class IsometricGrid {
                     
                     this.showMobilityTooltip(tile.row, tile.col, mouseEvent.clientX, mouseEvent.clientY);
                 }
-            }, 500); // 500ms delay
+            }, 1000); // 1000ms delay
             
         } else {
             this.selectedTile = null;
@@ -2796,82 +2691,10 @@ class IsometricGrid {
     
     // Moved to BuildingSystem.purchaseParcel()
     
-    async startAuction(row, col) {
-        const coord = this.getParcelCoordinate(row, col);
-        const parcel = this.grid[row][col];
 
-        // Check if there's already an active auction
-        if (this.activeAuction) {
-            this.showNotification('An auction is already in progress', 'error');
-            this.hideContextMenu();
-            return;
-        }
-
-        // Calculate starting bid based on calculated land value (server-side)
-        const gameState = this.economicAPI.prepareGameState(this);
-        const landValueResult = await this.economicAPI.getLandValue(gameState, row, col);
-        const calculatedValue = landValueResult?.landValue || 100; // fallback value
-        const initialLandValue = this.getParcelPrice(row, col);
-        
-        // Get building value if present (building value - decay)
-        let buildingValue = 0;
-        if (parcel.building) {
-            const building = this.buildingManager.getBuildingById(parcel.building);
-            if (building) {
-                const decayFactor = 1 - parcel.decay;
-                buildingValue = Math.floor(building.economics.buildCost * decayFactor);
-            }
-        }
-        
-        // Initialize auction
-        this.activeAuction = {
-            row,
-            col,
-            coord,
-            startTime: Date.now(),
-            endTime: Date.now() + 60000, // 60 seconds
-            currentOwner: parcel.owner,
-            calculatedLandValue: calculatedValue,
-            initialLandValue: initialLandValue,
-            buildingValue: buildingValue,
-            currentBid: calculatedValue, // Starts at calculated value
-            currentBidder: null,
-            bidHistory: [],
-            dutchPhase: true, // Start with Dutch auction phase
-            dutchDecrement: 0.01, // 1% decrements
-            lastDutchUpdate: Date.now()
-        };
-        
-        
-        this.hideContextMenu();
-        this.showAuctionUI();
-        this.startAuctionTimer();
-    }
-
-    getCustomBuildings() {
-        try {
-            return JSON.parse(localStorage.getItem('theCommons_customBuildings') || '[]');
-        } catch (error) {
-            console.error('Failed to load custom buildings:', error);
-            return [];
-        }
-    }
-
-    getCustomAmenities() {
-        try {
-            return JSON.parse(localStorage.getItem('theCommons_customAmenities') || '[]');
-        } catch (error) {
-            console.error('Failed to load custom amenities:', error);
-            return [];
-        }
-    }
 
     // Moved to BuildingSystem.constructBuilding()
 
-    getBuildingCost(buildingId) {
-        return this.buildingManager.getBuildingCost(buildingId);
-    }
-    
     checkBuildingRequirements(buildingId, row, col) {
         const building = this.buildingManager.getBuildingById(buildingId);
         if (!building) return { canBuild: false, reasons: ['Building not found'] };
@@ -2896,9 +2719,9 @@ class IsometricGrid {
         }
         
         // Check cash requirement - now use governance system discounts
-        const baseBuildingCost = this.getBuildingCost(buildingId);
+        const baseBuildingCost = this.buildingManager.getBuildingCost(buildingId);
         const discountedCost = this.governanceSystem ?
-            this.governanceSystem.getBuildingCostWithFunding(building) :
+            this.governanceSystem.getBuildingCostWithFunding(building, baseBuildingCost) :
             baseBuildingCost;
 
         const playerCostRequired = discountedCost;
@@ -2928,6 +2751,51 @@ class IsometricGrid {
         };
     }
 
+    /**
+     * Get building cost with governance discounts
+     */
+    getBuildingCost(buildingId) {
+        const building = this.buildingManager.getBuildingById(buildingId);
+        if (!building) {
+            console.warn('Building not found:', buildingId);
+            return 0;
+        }
+
+        const baseCost = this.buildingManager.getBuildingCost(buildingId);
+        const finalCost = this.governanceSystem ?
+            this.governanceSystem.getBuildingCostWithFunding(building, baseCost) :
+            baseCost;
+
+        console.log('💰 Building cost calculation:', { buildingId, baseCost, finalCost });
+        return finalCost;
+    }
+
+    /**
+     * Update building description in UI (placeholder for now)
+     */
+    updateBuildingDescription(buildingName) {
+        // This could update a UI element showing building info
+        // For now, it's a no-op to prevent the error
+        console.log('Building selected:', buildingName);
+    }
+
+    /**
+     * Update building requirements display (placeholder for now)
+     */
+    updateBuildingRequirements(buildingData) {
+        // This could update a UI element showing building requirements
+        // For now, it's a no-op to prevent the error
+        if (buildingData) {
+            console.log('🏗️ Building requirements for', buildingData.name || buildingData.id, ':', {
+                cost: buildingData.cost || 'unknown',
+                population: buildingData.population || 'none',
+                prerequisites: buildingData.prerequisites || 'none'
+            });
+        } else {
+            console.log('Building requirements: no data provided');
+        }
+    }
+
     // Moved to BuildingSystem.demolishBuilding()
 
     getPotentialUpgrades(currentBuildingId) {
@@ -2952,28 +2820,6 @@ class IsometricGrid {
 
     // Moved to BuildingSystem.upgradeBuilding()
 
-    getAvailableAmenities(parcel) {
-        // Get default amenities plus custom ones
-        const defaultAmenities = [
-            { id: 'solar_panels', name: 'Solar Panels', cost: 15000 },
-            { id: 'garden', name: 'Garden', cost: 5000 },
-            { id: 'security_system', name: 'Security System', cost: 8000 },
-            { id: 'parking_garage', name: 'Parking Garage', cost: 25000 }
-        ];
-        
-        const customAmenities = this.getCustomAmenities().map(a => ({
-            id: a.id,
-            name: a.name,
-            cost: a.economics.installCost
-        }));
-        
-        const allAmenities = [...defaultAmenities, ...customAmenities];
-        
-        // Filter out amenities already installed
-        return allAmenities.filter(amenity => 
-            !parcel.amenities.includes(amenity.id)
-        );
-    }
 
     // Moved to BuildingSystem.addAmenityToBuilding()
 
@@ -2988,14 +2834,10 @@ class IsometricGrid {
         // Update panel content
         document.getElementById('building-info-title').textContent = buildingData.name;
         
-        // Add building description
-        this.updateBuildingDescription(buildingData.name);
-        
+        // Building description and requirements now handled by dedicated building modules
+
         // Update supply/demand displays (includes cost and time)
         this.updateSupplyDemandDisplay(buildingData);
-        
-        // Update requirements display
-        this.updateBuildingRequirements(buildingData.name);
 
         // Set building image
         const img = document.getElementById('building-info-img');
@@ -3184,115 +3026,11 @@ class IsometricGrid {
         return null;
     }
     
-    updateBuildingDescription(buildingName) {
-        const descriptions = {
-            // Housing
-            'Cottage': 'A cozy starter home with a white picket fence and room for dreams to grow. Perfect for young families taking their first steps into homeownership.',
-            'Apartments': 'Efficient urban living stacked toward the sky. Where neighbors become friends and every square foot counts.',
-            
-            // Commercial
-            'Farmers Market': 'Fresh produce and friendly faces gather here every weekend. The heartbeat of local commerce where tomatoes come with stories.',
-            'Cornerstore': 'Open late when you need milk at midnight. The neighborhood\'s reliable friend, always there with essentials and a smile.',
-            'Bakery': 'Wake up to the aroma of fresh bread and possibility. Where flour becomes art and mornings become special.',
-            'Barbershop': 'More than just haircuts—it\'s the community\'s living room. Where local news travels faster than scissors.',
-            'Brewery': 'Craft beer and conversation flow freely here. A gathering place where hops meet hopes and stories get better with each pint.',
-            
-            // Education
-            'Schoolhouse': 'One room, endless possibilities. Where ABC\'s meet 123\'s and every child\'s potential begins to shine.',
-            'High School': 'Lockers, learning, and life lessons collide. The forge where teenagers transform into tomorrow\'s leaders.',
-            
-            // Civic
-            'Library': 'A temple of free knowledge and quiet contemplation. Where adventures live on shelves and WiFi is always free.',
-            
-            // Recreation
-            'Playground': 'Swings reach for clouds while imaginations run wild. The embassy of childhood where scraped knees are badges of honor.',
-            'Public Pool': 'Summer\'s favorite destination and winter\'s fondest memory. Where the community goes to make a splash together.',
-            
-            // Utilities
-            'Solar Farm': 'Panels catch sunlight like mechanical sunflowers. Clean energy for a brighter tomorrow, one photon at a time.',
-            'Coal Plant': 'Industrial might powers progress at a cost. Black smoke writes checks that future generations must cash.'
-        };
-        
-        const description = descriptions[buildingName] || 'A vital piece of community infrastructure.';
-        
-        // Check if description element exists, if not create it
-        let descElement = document.querySelector('.building-description');
-        if (!descElement) {
-            descElement = document.createElement('div');
-            descElement.className = 'building-description';
-            const infoContent = document.querySelector('.building-info-content');
-            const firstChild = infoContent.firstChild;
-            infoContent.insertBefore(descElement, firstChild);
-        }
-        
-        descElement.textContent = description;
-    }
+    // Building descriptions removed - handled by dedicated building modules
     
-    updateBuildingRequirements(buildingName) {
-        const building = this.buildingManager.getAllBuildings().find(b => b.name === buildingName);
-        if (!building) return;
-        
-        const requirementsContainer = document.querySelector('.building-requirements');
-        const requirementsList = document.getElementById('building-requirements-list');
-        
-        // Check requirements (use row=0, col=0 as placeholder for general checking)
-        const requirements = this.checkBuildingRequirements(building.id, 0, 0);
-        
-        if (requirements.reasons.length > 0) {
-            requirementsContainer.style.display = 'block';
-            requirementsList.innerHTML = '';
-            
-            requirements.reasons.forEach(reason => {
-                const reasonDiv = document.createElement('div');
-                reasonDiv.style.cssText = `
-                    padding: 6px 10px;
-                    background: #1a1a1a;
-                    border-radius: 4px;
-                    margin-bottom: 4px;
-                    font-size: 11px;
-                    color: #ff6b6b;
-                    border-left: 3px solid #ff6b6b;
-                `;
-                reasonDiv.textContent = reason;
-                requirementsList.appendChild(reasonDiv);
-            });
-        } else {
-            // Building is buildable, hide requirements section entirely
-            requirementsContainer.style.display = 'none';
-        }
-    }
+    // Building requirements UI removed - handled by dedicated building modules
 
-    getDefaultBuildingJobs(buildingId) {
-        const defaultJobs = {
-            'elementary_school': 15,
-            'high_school': 25,
-            'university': 100,
-            'library': 8,
-            'clinic': 12,
-            'hospital': 80,
-            'pharmacy': 6,
-            'power_plant': 40,
-            'water_treatment': 20,
-            'waste_management': 15,
-            'apartment_building': 2,
-            'single_family': 0,
-            'townhouse': 0,
-            'art_gallery': 5,
-            'theater': 20,
-            'museum': 15,
-            'park': 3,
-            'gym': 8,
-            'sports_complex': 25,
-            'grocery_store': 20,
-            'shopping_mall': 60,
-            'restaurant': 15,
-            'city_hall': 30,
-            'police_station': 25,
-            'fire_station': 20
-        };
-        
-        return defaultJobs[buildingId] || 0;
-    }
+    // Default building jobs removed - job data should come from building configuration files
 
     updateSupplyDemandDisplay(buildingData) {
         const container = document.querySelector('.building-supply-demand');
@@ -3560,8 +3298,7 @@ class IsometricGrid {
     async calculateAccessibilityScores(row, col) {
         // Use server-side accessibility calculation (consolidated economic flow)
         try {
-            const gameState = this.economicAPI.prepareGameState(this);
-            return await this.economicAPI.getAccessibilityScores(gameState, row, col);
+            return await this.economicClient.getAccessibilityScores(row, col);
         } catch (error) {
             console.error('Server accessibility calculation failed:', error);
             return null;
@@ -3570,7 +3307,6 @@ class IsometricGrid {
 
     calculateAccessibilityScoresLocal(row, col) {
         // DISABLED: Legacy client-side accessibility calculation - using server-authoritative system
-        console.log('⚠️ Legacy calculateAccessibilityScoresLocal disabled - using server-authoritative system');
         return { accessibility: 0, transport: 0, commerce: 0, entertainment: 0 };
     }
     
@@ -3628,7 +3364,7 @@ class IsometricGrid {
                 if (distance <= maxDistance) {
                     const parcel = this.grid[r][c];
                     if (parcel.building) {
-                        const buildingCategory = this.getBuildingCategory(parcel.building);
+                        const buildingCategory = this.buildingManager.getBuildingCategory(parcel.building);
                         if (buildingCategory === category) {
                             count++;
                         }
@@ -3640,9 +3376,6 @@ class IsometricGrid {
         return count;
     }
 
-    getBuildingCategory(buildingId) {
-        return this.buildingManager.getBuildingCategory(buildingId);
-    }
     
     
     getBuildingEfficiencyInfo(row, col) {
@@ -3732,15 +3465,16 @@ class IsometricGrid {
     }
     
 
-    // Delegation method for supply/demand calculation
-    calculateSupplyDemandBalance() {
-        // DISABLED: Legacy client-side supply/demand calculation - using server-authoritative system
-        console.log('⚠️ Legacy calculateSupplyDemandBalance disabled - using server-authoritative system');
-        return { energy: { supply: 0, demand: 0 }, food: { supply: 0, demand: 0 }, housing: { supply: 0, demand: 0 }, jobs: { supply: 0, demand: 0 } };
-    }
+    // Legacy supply/demand calculation removed - using server-authoritative economic engine
     
     buildTransportNetwork() {
-        return this.transportationSystem.buildTransportNetwork();
+        // Legacy transportation system disabled - using mobility v2 instead
+        // Return empty network for compatibility
+        return {
+            nodes: [],
+            roads: new Map(),
+            connections: new Map()
+        };
     }
     
     // NEW: Calculate how much population can access a building through transport
@@ -3864,7 +3598,8 @@ class IsometricGrid {
         let minDist1 = Infinity;
         let minDist2 = Infinity;
         
-        transportNetwork.nodes.forEach(node => {
+        if (transportNetwork.nodes && transportNetwork.nodes.length > 0) {
+            transportNetwork.nodes.forEach(node => {
             const dist1 = Math.max(Math.abs(row1 - node.row), Math.abs(col1 - node.col));
             const dist2 = Math.max(Math.abs(row2 - node.row), Math.abs(col2 - node.col));
             
@@ -3878,7 +3613,8 @@ class IsometricGrid {
                 nearestToPoint2 = node;
             }
         });
-        
+        }
+
         // If both points are near transport and the nodes are connected
         if (nearestToPoint1 && nearestToPoint2) {
             const key1 = `${nearestToPoint1.row},${nearestToPoint1.col}`;
@@ -3957,91 +3693,29 @@ class IsometricGrid {
     // Server-only vitality calculation system (as per architecture requirements)
     async calculateCityVitality() {
         try {
-            // Get authoritative server calculation only
-            const gameState = this.economicAPI.prepareGameState(this);
-            const result = await this.economicAPI.calculateCityEconomics(gameState);
+            // V2: Get authoritative server state through economic client
+            const result = await this.economicClient.getEconomicState();
 
-            if (result && result.success && result.vitality) {
-                // Update with server data
-                this.cityStats.vitality = result.vitality;
-                this.vitalitySupply = result.vitality.supply || {};
-                this.vitalityDemand = result.vitality.demand || {};
+            if (result && result.success && result.jeefhh) {
+                // Update JEEFHH data (vitality) from server
+                this.cityStats.vitality = result.jeefhh;
+                this.vitalitySupply = result.jeefhh.supply || {};
+                this.vitalityDemand = result.jeefhh.demand || {};
 
-                // Clear legacy building efficiency data to ensure fresh server data
-                this.buildingEfficiencies.clear();
-                console.log('🔍 [DEBUG] Cleared legacy buildingEfficiencies data');
-
-                // Process building performance data from server
-                if (result.affectedBuildings && Array.isArray(result.affectedBuildings)) {
-                    console.log('🔍 [DEBUG] Processing affectedBuildings from server:', result.affectedBuildings.length, 'buildings');
-
-                    result.affectedBuildings.forEach(building => {
-                        const key = `${building.row},${building.col}`;
-                        console.log(`🔍 [DEBUG] Server building performance for ${key}:`, building);
-
-                        // Convert server building performance to client buildingEfficiencies format
-                        const efficiencyData = {
-                            row: building.row,
-                            col: building.col,
-                            building: building.buildingId,
-                            category: building.category || 'unknown',
-                            overallEfficiency: building.performance || 1.0, // Add overall performance
-                            needs: {}
-                        };
-
-                        // Convert needs to format expected by UI
-                        if (building.needs && Array.isArray(building.needs)) {
-                            building.needs.forEach(need => {
-                                efficiencyData.needs[need.type] = {
-                                    satisfaction: need.satisfaction,
-                                    demand: need.required,
-                                    fulfilled: need.required * need.satisfaction,
-                                    accessibleSources: need.satisfaction > 0 ? 1 : 0,
-                                    connectivityIssue: need.satisfaction === 0,
-                                    supplyShortage: need.satisfaction < 1.0
-                                };
-                            });
-                        }
-
-                        this.buildingEfficiencies.set(key, efficiencyData);
-                        console.log(`🔍 [DEBUG] Updated buildingEfficiencies for ${key}:`, efficiencyData);
-                    });
-                } else {
-                    console.log('🔍 [DEBUG] No affectedBuildings data from server');
+                // Update CARENS data from server
+                if (result.carens) {
+                    this.cityStats.carens = result.carens;
+                    console.log('🔍 [DEBUG] Updated CARENS scores from server:', result.carens);
                 }
 
-                // Ensure all buildings have efficiency data - add defaults for buildings not in server response
-                for (let row = 0; row < this.gridSize; row++) {
-                    for (let col = 0; col < this.gridSize; col++) {
-                        const key = `${row},${col}`;
-                        const parcel = this.grid[row][col];
+                console.log('✅ V2 Economic state updated from server');
 
-                        if (parcel && parcel.building && !this.buildingEfficiencies.has(key)) {
-                            // Add default high-efficiency data for buildings not reported by server
-                            const building = this.buildingManager.getBuildingById(parcel.building);
-                            if (building) {
-                                const defaultEfficiencyData = {
-                                    row, col,
-                                    building: building.id,
-                                    category: building.category || 'unknown',
-                                    overallEfficiency: 1.0, // Default to full efficiency
-                                    needs: {
-                                        jobs: { satisfaction: 1.0, demand: 0, fulfilled: 0, connectivityIssue: false, supplyShortage: false },
-                                        education: { satisfaction: 1.0, demand: 0, fulfilled: 0, connectivityIssue: false, supplyShortage: false },
-                                        food: { satisfaction: 1.0, demand: 0, fulfilled: 0, connectivityIssue: false, supplyShortage: false },
-                                        housing: { satisfaction: 1.0, demand: 0, fulfilled: 0, connectivityIssue: false, supplyShortage: false }
-                                    }
-                                };
-                                this.buildingEfficiencies.set(key, defaultEfficiencyData);
-                                console.log(`🔍 [DEBUG] Added default efficiency data for ${key} (${building.name})`);
-                            }
-                        }
-                    }
-                }
-
-                // Update UI with server data
+                // Update UI displays
+                this.updateVitalityDisplay();
+                this.updateDemographicsDisplay();
                 await this.updateVitalityUI();
-                return result.vitality;
+
+                return result.jeefhh;
             } else {
                 console.warn('Server vitality calculation failed or returned invalid data');
                 return null;
@@ -4158,18 +3832,6 @@ class IsometricGrid {
         // Layer controls now handled by UI Manager
     }
     
-    toggleLandValueMode() {
-        if (this.currentLayer === 'landvalue') {
-            this.landValueMode = this.landValueMode === 'estimated' ? 'paid' : 'estimated';
-
-            // Show notification to user
-            const modeText = this.landValueMode === 'estimated' ? 'Estimated Land Value' : 'Last Paid Price';
-            this.showNotification(`LV View: ${modeText}`, 'info');
-
-            // Re-render to show the change
-            this.scheduleRender();
-        }
-    }
 
     switchToLayer(layerName) {
         // Update current layer
@@ -4187,7 +3849,12 @@ class IsometricGrid {
         
         // Update active states in dropdown
         document.querySelectorAll('.layer-option').forEach(option => option.classList.remove('active'));
-        document.getElementById(`layer-${layerName}`).classList.add('active');
+        const layerElement = document.getElementById(`layer-${layerName}`);
+        if (layerElement) {
+            layerElement.classList.add('active');
+        } else {
+            console.warn(`Layer button not found: layer-${layerName}`);
+        }
         
         // Handle panel visibility based on layer
         this.handlePanelTransitions(layerName);
@@ -4200,45 +3867,24 @@ class IsometricGrid {
     }
     
     handlePanelTransitions(layerName) {
-        const vitalitySection = document.querySelector('[data-target="vitality"]').parentElement;
-        const mobilitySection = document.querySelector('[data-target="mobility-panel"]').parentElement;
-        const playersSection = document.querySelector('[data-target="players-panel"]').parentElement;
-        
+        const vitalityElement = document.querySelector('[data-target="vitality"]');
+        const playersElement = document.querySelector('[data-target="players-panel"]');
+
+        const vitalitySection = vitalityElement?.parentElement;
+        const playersSection = playersElement?.parentElement;
+
+        // DISABLED: Mobility layer completely removed
         if (layerName === 'mobility') {
-            // Entering mobility view - open mobility panel, optionally close vitality
-            this.openSidebarSection(mobilitySection);
-            
-            // Auto-close vitality panel when entering mobility (can be reopened manually)
-            if (!vitalitySection.classList.contains('collapsed')) {
-                this.closeSidebarSection(vitalitySection);
-            }
-            
-            // Remove players panel completely (not just hide)
-            if (playersSection) {
-                playersSection.style.display = 'none';
-            }
-        } else if (layerName === 'players') {
-            // Entering players view - show and open players panel, update player list
-            if (playersSection) {
-                playersSection.style.display = 'block';
-                this.openSidebarSection(playersSection);
-                this.updatePlayersList();
-            }
-            
-            // Auto-close vitality and mobility panels when entering players view
-            if (!vitalitySection.classList.contains('collapsed')) {
-                this.closeSidebarSection(vitalitySection);
-            }
-            if (!mobilitySection.classList.contains('collapsed')) {
-                this.closeSidebarSection(mobilitySection);
-            }
-        } else {
-            // Leaving special views - open vitality panel, close special panels
-            this.openSidebarSection(vitalitySection);
-            
-            // Auto-close mobility panel when leaving mobility view
-            if (!mobilitySection.classList.contains('collapsed')) {
-                this.closeSidebarSection(mobilitySection);
+            console.log('⚠️ Mobility layer completely disabled - redirecting to normal mode');
+            layerName = 'normal'; // Override to normal mode
+            this.currentLayer = 'normal'; // Ensure currentLayer is also updated
+        }
+
+        // Standard panel handling (mobility code completely removed)
+        if (layerName === 'normal') {
+            // In normal view - open vitality panel
+            if (vitalitySection) {
+                this.openSidebarSection(vitalitySection);
             }
             
             // Remove players panel completely (not just hide)
@@ -4374,6 +4020,11 @@ class IsometricGrid {
 
     // Convert screen coordinates to world coordinates accounting for zoom and pan
     screenToWorldCoords(screenX, screenY) {
+        // Safety check to prevent errors during initialization
+        if (!this.panOffset || !this.zoomScale) {
+            return { x: screenX, y: screenY };
+        }
+
         return {
             x: (screenX - this.panOffset.x) / this.zoomScale,
             y: (screenY - this.panOffset.y) / this.zoomScale
@@ -4382,6 +4033,11 @@ class IsometricGrid {
     
     // Convert world coordinates to screen coordinates accounting for zoom and pan
     worldToScreenCoords(worldX, worldY) {
+        // Safety check to prevent errors during initialization
+        if (!this.panOffset || !this.zoomScale) {
+            return { x: worldX, y: worldY };
+        }
+
         return {
             x: worldX * this.zoomScale + this.panOffset.x,
             y: worldY * this.zoomScale + this.panOffset.y
@@ -4397,32 +4053,29 @@ class IsometricGrid {
     }
 
     async updateVitalityUI() {
-        // First sync game state with server, then fetch supply/demand data
+        // V2: Get server state through economic client
         try {
-            // Sync complete game state with server first
-            const gameState = this.economicAPI.prepareGameState(this);
-            await this.economicAPI.calculateCityEconomics(gameState);
+            // Get current server economic state
+            const serverState = await this.economicClient.getEconomicState();
 
-            // Now fetch fresh supply/demand data from server
-            const supplyDemandData = await this.economicAPI.getSupplyDemand();
-            if (supplyDemandData && typeof supplyDemandData === 'object') {
+            if (serverState && serverState.success && serverState.jeefhh) {
                 // Update vitality properties with server data
                 this.vitalitySupply = {
-                    JOBS: supplyDemandData.jobs?.supply || 0,
-                    ENERGY: supplyDemandData.energy?.supply || 0,
-                    EDUCATION: 0, // TODO: Add to server calculation
-                    FOOD: supplyDemandData.food?.supply || 0,
-                    HOUSING: supplyDemandData.housing?.supply || 0,
-                    HEALTHCARE: 0 // TODO: Add to server calculation
+                    JOBS: serverState.jeefhh.jobs?.supply || 0,
+                    ENERGY: serverState.jeefhh.energy?.supply || 0,
+                    EDUCATION: serverState.jeefhh.education?.supply || 0,
+                    FOOD: serverState.jeefhh.food?.supply || 0,
+                    HOUSING: serverState.jeefhh.housing?.supply || 0,
+                    HEALTHCARE: serverState.jeefhh.healthcare?.supply || 0
                 };
 
                 this.vitalityDemand = {
-                    JOBS: supplyDemandData.jobs?.demand || 0,
-                    ENERGY: supplyDemandData.energy?.demand || 0,
-                    EDUCATION: 0, // TODO: Add to server calculation
-                    FOOD: supplyDemandData.food?.demand || 0,
-                    HOUSING: supplyDemandData.housing?.demand || 0,
-                    HEALTHCARE: 0 // TODO: Add to server calculation
+                    JOBS: serverState.jeefhh.jobs?.demand || 0,
+                    ENERGY: serverState.jeefhh.energy?.demand || 0,
+                    EDUCATION: serverState.jeefhh.education?.demand || 0,
+                    FOOD: serverState.jeefhh.food?.demand || 0,
+                    HOUSING: serverState.jeefhh.housing?.demand || 0,
+                    HEALTHCARE: serverState.jeefhh.healthcare?.demand || 0
                 };
 
                 console.log('📊 Updated vitality from server:', { supply: this.vitalitySupply, demand: this.vitalityDemand });
@@ -4464,8 +4117,10 @@ class IsometricGrid {
         // CARENS livability bars (Culture, Affordability, Resilience, Environment, Noise, Safety)
         const carensMetrics = ['SAFETY', 'CULTURE', 'AFFORDABILITY', 'RESILIENCE', 'ENVIRONMENT', 'NOISE'];
 
-        // Calculate city-wide CARENS net scores
-        const carensScores = this.calculateCityWideCarensScores();
+        // Use server-calculated CARENS scores (no fallback)
+        const carensScores = this.cityStats.carens || {
+            safety: 0, culture: 0, affordability: 0, resilience: 0, environment: 0, noise: 0
+        };
 
         carensMetrics.forEach(domain => {
             const progressBar = document.getElementById(`${domain.toLowerCase()}-bar`);
@@ -4476,45 +4131,6 @@ class IsometricGrid {
         });
     }
 
-    calculateCityWideCarensScores() {
-        // Initialize scores for all CARENS domains
-        const carensScores = {
-            safety: 0,
-            culture: 0,
-            affordability: 0,
-            resilience: 0,
-            environment: 0,
-            noise: 0
-        };
-
-        // Sum up impacts from all completed buildings across the city
-        if (!this.grid) {
-            console.warn('Grid not initialized yet for CARENS calculation');
-            return carensScores;
-        }
-
-        // Iterate through the grid to find all buildings
-        for (let row = 0; row < this.gridSize; row++) {
-            for (let col = 0; col < this.gridSize; col++) {
-                const parcel = this.grid[row][col];
-                // Check if parcel has a building that's not under construction
-                if (parcel && parcel.building && !parcel._isUnderConstruction) {
-                    const buildingData = this.getBuildingDataByName(parcel.building);
-                    if (buildingData && buildingData.livability) {
-                        // Add impacts from each CARENS domain
-                        Object.keys(carensScores).forEach(domain => {
-                            const livabilityData = buildingData.livability[domain];
-                            if (livabilityData && typeof livabilityData.impact === 'number') {
-                                carensScores[domain] += livabilityData.impact;
-                            }
-                        });
-                    }
-                }
-            }
-        }
-
-        return carensScores;
-    }
 
     updateSupplyDemandBar(progressBar, ratio, supply, demand, domain) {
         // Clear ALL existing positioning and styling
@@ -4991,238 +4607,15 @@ class IsometricGrid {
         }
     }
     
-    setupCanvas() {
-        const container = document.getElementById('main-area');
-        if (!container) {
-            console.warn('Main-area container not found, using default canvas size');
-            this.canvas.width = 800;
-            this.canvas.height = 600;
-            return;
-        }
-        const rect = container.getBoundingClientRect();
-        
-        this.canvas.width = rect.width - 40;
-        this.canvas.height = rect.height - 40;
-        
-        
-        
-        // Calculate diamond dimensions for a rotated square
-        // In isometric view, a tile appears as a diamond with 2:1 width:height ratio
-        const diamondWidth = Math.min(this.canvas.width, this.canvas.height * 2) / this.gridSize * 0.80; // 5% smaller grid for better layout
-        const diamondHeight = diamondWidth * 0.5;
-        
-        this.tileWidth = diamondWidth;
-        this.tileHeight = diamondHeight;
-        
-        // Center the grid on the intersection of the middle 4 parcels
-        // For a 14x14 grid, the center is between parcels (6,6), (6,7), (7,6), (7,7)
-        // The center point in grid coordinates is (6.5, 6.5)
-        const centerGridX = (this.gridSize - 1) / 2;
-        const centerGridY = (this.gridSize - 1) / 2;
-        
-        // Convert center grid position to isometric coordinates
-        const centerIsoX = (centerGridX - centerGridY) * (this.tileWidth / 2);
-        const centerIsoY = (centerGridX + centerGridY) * (this.tileHeight / 2);
-        
-        // Position the grid so this center point is at the canvas center
-        this.offsetX = this.canvas.width / 2 - centerIsoX;
-        this.offsetY = this.canvas.height / 2 - centerIsoY;
-    }
     
-    toIsometric(col, row) {
-        // True isometric projection: rotate square 45° and apply 2:1 foreshortening
-        const isoX = (col - row) * (this.tileWidth / 2);
-        const isoY = (col + row) * (this.tileHeight / 2);
-        return {
-            x: isoX + this.offsetX,
-            y: isoY + this.offsetY
-        };
-    }
-    
-    fromIsometric(screenX, screenY) {
-        const x = screenX - this.offsetX;
-        const y = screenY - this.offsetY;
-        
-        // Reverse the isometric transformation
-        const col = Math.round((x / (this.tileWidth / 2) + y / (this.tileHeight / 2)) / 2);
-        const row = Math.round((y / (this.tileHeight / 2) - x / (this.tileWidth / 2)) / 2);
-        
-        if (row < 0 || row >= this.gridSize || col < 0 || col >= this.gridSize) {
-            return null;
-        }
-        
-        return { row: row, col: col };
-    }
-
-    fromIsometricToEdge(screenX, screenY) {
-        // Convert screen coordinates to detect edge parcels
-        const x = screenX - this.offsetX;
-        const y = screenY - this.offsetY;
-        
-        // Calculate precise position without rounding
-        const preciseCol = (x / (this.tileWidth / 2) + y / (this.tileHeight / 2)) / 2;
-        const preciseRow = (y / (this.tileHeight / 2) - x / (this.tileWidth / 2)) / 2;
-        
-        // Check if we're close to a grid line (edge)
-        const tolerance = 0.15; // How close to a grid line to detect edge
-        
-        // Check for horizontal edges (between rows)
-        const nearHorizontalEdge = Math.abs(preciseRow - Math.floor(preciseRow + 0.5)) > (0.5 - tolerance);
-        const nearVerticalEdge = Math.abs(preciseCol - Math.floor(preciseCol + 0.5)) > (0.5 - tolerance);
-        
-        if (nearHorizontalEdge || nearVerticalEdge) {
-            const baseRow = Math.floor(preciseRow);
-            const baseCol = Math.floor(preciseCol);
-            
-            if (nearHorizontalEdge && nearVerticalEdge) {
-                // Intersection
-                const intersectionRow = Math.floor(preciseRow + 0.5);
-                const intersectionCol = Math.floor(preciseCol + 0.5);
-                
-                if (intersectionRow >= 0 && intersectionRow < this.gridSize - 1 && 
-                    intersectionCol >= 0 && intersectionCol < this.gridSize - 1) {
-                    return {
-                        type: 'intersection',
-                        row: intersectionRow,
-                        col: intersectionCol
-                    };
-                }
-            } else if (nearHorizontalEdge) {
-                // Horizontal edge
-                const edgeRow = Math.round(preciseRow - 0.5);
-                const edgeCol = Math.round(preciseCol);
-                
-                if (edgeRow >= 0 && edgeRow < this.gridSize - 1 && 
-                    edgeCol >= 0 && edgeCol < this.gridSize) {
-                    return {
-                        type: 'horizontal',
-                        row: edgeRow,
-                        col: edgeCol
-                    };
-                }
-            } else if (nearVerticalEdge) {
-                // Vertical edge
-                const edgeRow = Math.round(preciseRow);
-                const edgeCol = Math.round(preciseCol - 0.5);
-                
-                if (edgeRow >= 0 && edgeRow < this.gridSize && 
-                    edgeCol >= 0 && edgeCol < this.gridSize - 1) {
-                    return {
-                        type: 'vertical',
-                        row: edgeRow,
-                        col: edgeCol
-                    };
-                }
-            }
-        }
-        
-        return null; // Not on an edge
-    }
+    // Legacy coordinate methods removed - all coordinate conversion now handled by V2 rendering system
     
     // drawTile method removed - now delegated to rendering system
     
-    drawParcelBorders(row, col, tileWidth, tileHeight) {
-        // Draw white lines where roads exist instead of black parcel borders
-        if (!this.mobilityLayer || !this.mobilityLayer.roads) return;
-        
-        this.ctx.save();
-        
-        // Check each edge of the parcel for roads
-        const edges = [
-            { name: 'north', from: `${row},${col}`, to: `${row},${col+1}` },
-            { name: 'east', from: `${row},${col+1}`, to: `${row+1},${col+1}` },
-            { name: 'south', from: `${row+1},${col+1}`, to: `${row+1},${col}` },
-            { name: 'west', from: `${row+1},${col}`, to: `${row},${col}` }
-        ];
-        
-        edges.forEach(edge => {
-            const edgeKey = `${edge.from}-${edge.to}`;
-            const reverseEdgeKey = `${edge.to}-${edge.from}`;
-            
-            // Check if there's a road on this edge
-            if (this.mobilityLayer.roads.has(edgeKey) || this.mobilityLayer.roads.has(reverseEdgeKey)) {
-                // Draw white line for this edge
-                this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.8)';
-                this.ctx.lineWidth = 1.5;
-                this.ctx.beginPath();
-                
-                // Draw the specific edge with white
-                switch(edge.name) {
-                    case 'north':
-                        this.ctx.moveTo(0, -tileHeight / 2);
-                        this.ctx.lineTo(tileWidth / 2, 0);
-                        break;
-                    case 'east':
-                        this.ctx.moveTo(tileWidth / 2, 0);
-                        this.ctx.lineTo(0, tileHeight / 2);
-                        break;
-                    case 'south':
-                        this.ctx.moveTo(0, tileHeight / 2);
-                        this.ctx.lineTo(-tileWidth / 2, 0);
-                        break;
-                    case 'west':
-                        this.ctx.moveTo(-tileWidth / 2, 0);
-                        this.ctx.lineTo(0, -tileHeight / 2);
-                        break;
-                }
-                this.ctx.stroke();
-            }
-        });
-        
-        this.ctx.restore();
-    }
 
-    // Draw only the elevated building portion (no ground tile)
+    // Draw only the elevated building portion (no ground tile) - delegates to rendering system
     drawBuildingOnly(col, row, elevation) {
-        const parcel = this.grid[row][col];
-        if (!parcel || !parcel.building) return;
-        
-        const iso = this.toIsometric(col, row);
-        const elevationHeight = elevation * 8;
-        const adjustedY = iso.y - elevationHeight;
-        
-        this.ctx.save();
-        this.ctx.translate(iso.x, adjustedY);
-        
-        // Draw elevation sides if elevated
-        if (elevation > 0) {
-            // Left side
-            this.ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
-            this.ctx.beginPath();
-            this.ctx.moveTo(-this.tileWidth / 2, 0);
-            this.ctx.lineTo(-this.tileWidth / 2, elevationHeight);
-            this.ctx.lineTo(0, this.tileHeight / 2 + elevationHeight);
-            this.ctx.lineTo(0, this.tileHeight / 2);
-            this.ctx.closePath();
-            this.ctx.fill();
-            
-            // Right side
-            this.ctx.fillStyle = 'rgba(0, 0, 0, 0.15)';
-            this.ctx.beginPath();
-            this.ctx.moveTo(this.tileWidth / 2, 0);
-            this.ctx.lineTo(this.tileWidth / 2, elevationHeight);
-            this.ctx.lineTo(0, this.tileHeight / 2 + elevationHeight);
-            this.ctx.lineTo(0, this.tileHeight / 2);
-            this.ctx.closePath();
-            this.ctx.fill();
-            
-            // Top face
-            this.ctx.fillStyle = this.getTileColor(row, col);
-            this.ctx.beginPath();
-            this.ctx.moveTo(0, -this.tileHeight / 2);
-            this.ctx.lineTo(this.tileWidth / 2, 0);
-            this.ctx.lineTo(0, this.tileHeight / 2);
-            this.ctx.lineTo(-this.tileWidth / 2, 0);
-            this.ctx.closePath();
-            this.ctx.fill();
-        }
-        
-        // Draw building
-        if (this.currentLayer === 'normal') {
-            this.renderingSystem.drawBuilding(parcel.building, 0, -this.tileHeight / 4, row, col);
-        }
-        
-        this.ctx.restore();
+        return this.renderingSystem.drawBuildingOnly(col, row, elevation);
     }
 
 
@@ -5380,6 +4773,9 @@ class IsometricGrid {
             // Trigger the completion pop animation
             this.triggerCompletionPop(row, col);
             parcel._completionTriggered = true;
+
+            // Server autonomously completes buildings based on deterministic construction time
+            // No need to send BUILD_COMPLETE transaction - server handles this automatically
         }
 
         // Clear construction data
@@ -5392,423 +4788,12 @@ class IsometricGrid {
         // Clean up pixel row timestamps
         this.pixelRowTimestamps.delete(`${row},${col}`);
 
-        // Update economic balance after construction completion (server-side)
+        // Server will broadcast economic updates automatically when construction completes
         this.calculateCityVitality().catch(error => {
             console.error('Failed to update vitality after construction completion:', error);
         });
     }
 
-    drawBuilding(buildingId, offsetX = 0, offsetY = 0, row = 0, col = 0) {
-        // DISABLED: Legacy hover elevation - replaced by ParcelSelectorManager
-        // const isHovered = this.hoveredTile && this.hoveredTile.row === row && this.hoveredTile.col === col;
-        // let elevation = isHovered ? this.currentElevation : 0;
-        let elevation = 0; // No elevation for buildings
-        let scale = 1.0;
-        
-        // No completion animations in simplified system
-        
-        // Get parcel to check construction status
-        const parcel = this.grid[row][col];
-        
-        // Check if building has custom image
-        const building = this.buildingManager.getBuildingById(buildingId);
-
-        // Use unified building state from buildings.js
-        const buildingState = this.buildingManager.getBuildingState(row, col);
-        const constructionProgress = buildingState ? buildingState.construction.progress : 1.0;
-        const isUnderConstruction = buildingState ? !buildingState.construction.isComplete : false;
-
-        // Schedule frequent re-renders during construction for smooth animation
-        if (isUnderConstruction && parcel && !parcel._constructionAnimating) {
-            parcel._constructionAnimating = true;
-            this.scheduleConstructionAnimation(row, col);
-        }
-        
-        // Apply scale transformation if needed
-        if (scale !== 1.0) {
-            this.ctx.save();
-            this.ctx.translate(offsetX, offsetY - elevation);
-            this.ctx.scale(scale, scale);
-            this.ctx.translate(-offsetX, -(offsetY - elevation));
-        }
-        
-        // No per-building filters - using overlay approach
-        
-        if (building && building.images && building.images.built) {
-            // Draw custom building image with elevation
-            this.drawBuildingImage(building.images.built, offsetX, offsetY - elevation, constructionProgress, row, col);
-        } else {
-            // Draw simple building representation with elevation
-            if (building && Math.random() < 0.01) { // Debug log 1% of the time
-            }
-            this.drawSimpleBuilding(buildingId, offsetX, offsetY - elevation, constructionProgress, 0);
-        }
-        
-        
-        // Add visual indicators for buildings with unsatisfied JEFH needs
-        this.drawJEFHWarningIndicators(buildingId, offsetX, offsetY - elevation, row, col);
-        
-        // Force cache refresh
-        
-        // Restore transformation
-        if (scale !== 1.0) {
-            this.ctx.restore();
-        }
-    }
-
-    drawBuildingImage(imageSrc, offsetX, offsetY, constructionProgress = 1.0, row = 0, col = 0) {
-        // Create image if not cached
-        if (!this.buildingImageCache) {
-            this.buildingImageCache = new Map();
-        }
-        
-        let img = this.buildingImageCache.get(imageSrc);
-        
-        if (!img) {
-            img = new Image();
-            img.onload = () => {
-                // Re-render when image loads
-                this.scheduleRender();
-            };
-            img.onerror = () => {
-                console.warn(`Failed to load building image: ${imageSrc}`);
-                // Mark image as broken to avoid repeated attempts
-                img.broken = true;
-            };
-            img.src = imageSrc;
-            this.buildingImageCache.set(imageSrc, img);
-            return; // Skip drawing until image loads
-        }
-        
-        if (img.complete && !img.broken && img.naturalWidth > 0) {
-            // Get adjustable building parameters (same as simple buildings)
-            const yOffset = window.buildingPositionControls?.yOffset || 22;
-            const heightMultiplier = window.buildingPositionControls?.heightMultiplier || 1.0;
-            const widthMultiplier = window.buildingPositionControls?.widthMultiplier || 1.0;
-            
-            // Fill diamond width completely (left point to right point)
-            const baseDrawWidth = this.tileWidth * widthMultiplier;
-            const baseDrawHeight = (baseDrawWidth / (img.width / img.height)) * heightMultiplier;
-            
-            const imageY = offsetY + this.tileHeight/2 - baseDrawHeight + yOffset;
-            
-            // Apply construction animation - progressive opacity with desaturation  
-            if (constructionProgress < 1.0) {
-                // Progressive opacity from 10% to 100%
-                const opacity = 0.1 + (constructionProgress * 0.9);
-                
-                this.ctx.save();
-                this.ctx.globalAlpha = opacity;
-                
-                // Apply desaturation for under-construction look
-                this.ctx.filter = 'brightness(0.6) saturate(0.3) sepia(0.4)';
-                
-                this.ctx.drawImage(img, 
-                    offsetX - baseDrawWidth/2, 
-                    offsetY + imageY, 
-                    baseDrawWidth, 
-                    baseDrawHeight
-                );
-                
-                this.ctx.restore();
-            } else {
-                // Draw at full height (construction complete)
-                
-                // Get efficiency data for desaturation effect
-                const efficiencyKey = `${row},${col}`;
-                const efficiencyData = this.buildingEfficiencies?.get(efficiencyKey);
-                let overallEfficiency = 1.0; // Default to full efficiency
-                
-                if (efficiencyData && efficiencyData.needs) {
-                    // Calculate overall efficiency from JEFH satisfaction levels
-                    const jefhCategories = ['jobs', 'education', 'food', 'housing'];
-                    let totalSatisfaction = 0;
-                    let countCategories = 0;
-                    
-                    jefhCategories.forEach(category => {
-                        const need = efficiencyData.needs[category];
-                        if (need && need.satisfaction !== undefined) {
-                            totalSatisfaction += need.satisfaction;
-                            countCategories++;
-                        }
-                    });
-                    
-                    if (countCategories > 0) {
-                        overallEfficiency = totalSatisfaction / countCategories;
-                        // Clamp between 0.0 (completely desaturated) and 1.0 (full color)
-                        overallEfficiency = Math.max(0.0, Math.min(1.0, overallEfficiency));
-                    }
-                }
-                
-                // Apply 2D visual effects: brightness for efficiency, color tint for decay
-                // Get decay data for this building
-                const parcelKey = `${row}-${col}`;
-                const parcel = this.grid[row] && this.grid[row][col];
-                const decayLevel = parcel?.decay || 0; // 0 = new, 1 = fully decayed
-                
-                // Calculate visual effects
-                const brightness = 0.5 + (overallEfficiency * 0.5); // Range: 0.5 to 1.0 (50% to 100%)
-                const redTint = decayLevel * 0.3; // Range: 0 to 0.3 red tint for high decay
-                const saturation = 1.0 - (decayLevel * 0.4); // Range: 1.0 to 0.6 (less saturated = more decayed)
-                
-                // Apply CSS-style filters using canvas
-                this.ctx.filter = `brightness(${brightness}) saturate(${saturation}) sepia(${redTint}) hue-rotate(350deg)`;
-                
-                // Check for completion pop animation
-                const completionPopScale = this.getCompletionPopScale(row, col);
-                
-                if (completionPopScale > 1.0) {
-                    // Apply completion pop effect (5% size increase)
-                    this.ctx.save();
-                    const centerX = offsetX;
-                    const centerY = imageY + baseDrawHeight/2;
-                    this.ctx.translate(centerX, centerY);
-                    this.ctx.scale(completionPopScale, completionPopScale);
-                    this.ctx.translate(-centerX, -centerY);
-                }
-                
-                // Draw building with visual effects
-                this.ctx.drawImage(
-                    img, 
-                    offsetX - baseDrawWidth/2, 
-                    imageY, 
-                    baseDrawWidth, 
-                    baseDrawHeight
-                );
-                
-                if (completionPopScale > 1.0) {
-                    this.ctx.restore();
-                }
-                
-                // Reset filter for subsequent drawing operations
-                this.ctx.filter = 'none';
-            }
-        }
-    }
-
-    getCompletionPopScale(row, col) {
-        const parcel = this.grid[row][col];
-        if (!parcel || !parcel._completionPopStartTime) {
-            return 1.0; // No pop animation
-        }
-        
-        const currentTime = performance.now();
-        const elapsed = currentTime - parcel._completionPopStartTime;
-        const popDuration = 300; // 300ms pop animation
-        
-        if (elapsed > popDuration) {
-            // Animation complete - clean up
-            delete parcel._completionPopStartTime;
-            return 1.0;
-        }
-        
-        // Create a quick bounce effect: scale up 5% then back down
-        const progress = elapsed / popDuration;
-        const bounceScale = Math.sin(progress * Math.PI) * 0.05; // 0 to 0.05 to 0
-        return 1.0 + bounceScale;
-    }
-    
-    triggerCompletionPop(row, col) {
-        const parcel = this.grid[row][col];
-        if (parcel) {
-            parcel._completionPopStartTime = performance.now();
-            // Schedule re-renders during animation
-            const animationInterval = setInterval(async () => {
-                this.redrawCanvas();
-                if (!parcel._completionPopStartTime) {
-                    clearInterval(animationInterval);
-                }
-            }, 16); // ~60fps
-        }
-    }
-
-    
-    adjustColorBrightness(color, brightness) {
-        if (brightness >= 1.0) return color;
-        
-        // Parse hex color
-        const hex = color.replace('#', '');
-        const r = parseInt(hex.substr(0, 2), 16);
-        const g = parseInt(hex.substr(2, 2), 16);
-        const b = parseInt(hex.substr(4, 2), 16);
-        
-        // Apply brightness
-        const newR = Math.floor(r * brightness);
-        const newG = Math.floor(g * brightness);
-        const newB = Math.floor(b * brightness);
-        
-        return `rgb(${newR}, ${newG}, ${newB})`;
-    }
-    
-    drawSimpleBuilding(buildingId, offsetX, offsetY, constructionProgress = 1.0, brightness = 1.0) {
-        // Simple colored rectangle for default buildings
-        const buildingColors = {
-            'education': '#3b82f6',
-            'healthcare': '#ef4444', 
-            'infrastructure': '#6b7280',
-            'housing': '#8b5cf6',
-            'culture': '#ec4899',
-            'recreation': '#22c55e',
-            'commercial': '#f59e0b',
-            'civic': '#14b8a6'
-        };
-        
-        // Get building category
-        const category = this.buildingManager.getBuildingCategory(buildingId) || 'civic';
-        
-        const color = buildingColors[category] || '#6b7280';
-        
-        // Get adjustable building parameters (with defaults)
-        const yOffset = window.buildingPositionControls?.yOffset || 22;
-        const heightMultiplier = window.buildingPositionControls?.heightMultiplier || 1.0;
-        const widthMultiplier = window.buildingPositionControls?.widthMultiplier || 1.0;
-        
-        // Rectangle dimensions with multipliers
-        const width = this.tileWidth * widthMultiplier;
-        const height = this.tileHeight * heightMultiplier;
-        
-        // Position rectangle so bottom edge touches diamond's bottom point (with Y offset)
-        // Diamond bottom point is at offsetY + tileHeight/2
-        // Rectangle top-left Y coordinate should be: bottom point - building height + yOffset
-        const buildingY = offsetY + this.tileHeight/2 - height + yOffset;
-        
-        // Apply construction animation - bottom-up reveal with brightness
-        const adjustedColor = this.adjustColorBrightness(color, brightness);
-        this.ctx.fillStyle = adjustedColor;
-        
-        if (constructionProgress < 1.0) {
-            // Progressive opacity from 10% to 100%
-            const opacity = 0.1 + (constructionProgress * 0.9);
-            
-            this.ctx.save();
-            this.ctx.globalAlpha = opacity;
-            
-            // Apply desaturation for under-construction look
-            this.ctx.filter = 'brightness(0.6) saturate(0.3) sepia(0.4)';
-            
-            this.ctx.fillRect(offsetX - width/2, buildingY, width, height);
-
-            // Reset filter before restoring context
-            this.ctx.filter = 'none';
-            this.ctx.restore();
-        } else {
-            // Draw full building (construction complete)
-            this.ctx.fillRect(offsetX - width/2, buildingY, width, height);
-        }
-        
-        // Add border (white for normal, gray for under construction)
-        this.ctx.strokeStyle = constructionProgress < 1.0 ? '#666666' : '#ffffff';
-        this.ctx.lineWidth = 1;
-        this.ctx.strokeRect(offsetX - width/2, buildingY, width, height);
-    }
-    
-    drawJEFHWarningIndicators(buildingId, offsetX, offsetY, row, col) {
-        // DISABLED: Duplicate warning system - rendering-system.js handles warnings
-        // Legacy warning system replaced by server-side needs satisfaction
-        return;
-
-        // Don't show indicators for buildings under construction
-        const parcel = this.grid[row][col];
-        if (parcel?._isUnderConstruction) {
-            return; // Hide indicators during construction
-        }
-        
-        // Get building efficiency data
-        const key = `${row},${col}`;
-        const efficiencyData = this.buildingEfficiencies?.get(key);
-        
-        if (!efficiencyData || !efficiencyData.needs) {
-            return; // No efficiency data available
-        }
-        
-        // Check satisfaction levels for JEFH categories
-        const jefhCategories = ['jobs', 'education', 'food', 'housing'];
-        const warningThreshold = 0.6; // Show warnings when satisfaction < 60%
-        const criticalThreshold = 0.3; // Critical level < 30%
-        
-        const warnings = [];
-        jefhCategories.forEach(category => {
-            const need = efficiencyData.needs[category];
-            if (need && need.satisfaction < warningThreshold) {
-                warnings.push({
-                    category,
-                    satisfaction: need.satisfaction,
-                    critical: need.satisfaction < criticalThreshold
-                });
-            }
-        });
-        
-        
-        if (warnings.length === 0) {
-            return; // No warnings to display
-        }
-        
-        // Show only the MOST critical indicator - find worst satisfaction level
-        let mostCritical = warnings[0];
-        for (let i = 1; i < warnings.length; i++) {
-            if (warnings[i].satisfaction < mostCritical.satisfaction) {
-                mostCritical = warnings[i];
-            }
-        }
-        
-        // Check if this is a workplace building for worker indicator display
-        const building = this.buildingManager.getBuildingById(buildingId);
-        const isWorkplace = building && (this.buildingCategories.normalize(building.category) === 'commercial' || building.category === 'education');
-        
-        // Draw single warning indicator (most critical)
-        this.ctx.save();
-        
-        const indicatorSize = 8;
-        const x = offsetX - indicatorSize / 2; // Center horizontally
-        
-        // Static Y position based on severity
-        const severityOffset = mostCritical.critical ? -8 : 0; // Critical issues higher up
-        const y = offsetY - 25 + severityOffset;
-        
-        // Choose color based on severity
-        const color = mostCritical.critical ? '#ff4444' : '#ffaa00';
-        this.ctx.fillStyle = color;
-        this.ctx.strokeStyle = '#ffffff';
-        this.ctx.lineWidth = 1;
-        
-        if (mostCritical.critical) {
-            // Draw triangle for critical warnings
-            this.ctx.beginPath();
-            this.ctx.moveTo(x + indicatorSize / 2, y);
-            this.ctx.lineTo(x, y + indicatorSize);
-            this.ctx.lineTo(x + indicatorSize, y + indicatorSize);
-            this.ctx.closePath();
-            this.ctx.fill();
-            this.ctx.stroke();
-            
-            // Add exclamation mark
-            this.ctx.fillStyle = '#ffffff';
-            this.ctx.font = '6px Arial';
-            this.ctx.textAlign = 'center';
-            this.ctx.fillText('!', x + indicatorSize / 2, y + indicatorSize - 2);
-        } else {
-            // Draw circle for regular warnings
-            this.ctx.beginPath();
-            this.ctx.arc(x + indicatorSize / 2, y + indicatorSize / 2, indicatorSize / 2, 0, Math.PI * 2);
-            this.ctx.fill();
-            this.ctx.stroke();
-            
-            // Add letter based on category
-            this.ctx.fillStyle = '#ffffff';
-            this.ctx.font = '5px Arial';
-            this.ctx.textAlign = 'center';
-            
-            // Show 'W' for workers when housing represents worker need
-            let displayLetter = mostCritical.category[0].toUpperCase();
-            if (mostCritical.category === 'housing' && isWorkplace) {
-                displayLetter = 'W'; // Workers
-            }
-            
-            this.ctx.fillText(displayLetter, x + indicatorSize / 2, y + indicatorSize / 2 + 2);
-        }
-        
-        this.ctx.restore();
-    }
     
     getJEFHAnalysis(row, col) {
         const key = `${row},${col}`;
@@ -5938,7 +4923,8 @@ class IsometricGrid {
             case 'cashflow':
                 return this.getCashflowHeatmapColor(row, col);
             case 'mobility':
-                return this.getMobilityLayerColor(row, col);
+                // DISABLED: Mobility layer disabled for testing
+                return '#2a2a2a'; // Default ground color instead
             case 'normal':
             default:
                 // Original logic for normal view
@@ -6140,47 +5126,6 @@ class IsometricGrid {
     
     
     
-    drawParcelLandValues() {
-        // Draw land values on each parcel in transportation mode
-        for (let row = 0; row < this.gridSize; row++) {
-            for (let col = 0; col < this.gridSize; col++) {
-                const parcel = this.grid[row][col];
-                const landValue = Math.max(parcel.landValue.paidPrice, parcel.landValue.calculatedValue);
-                
-                if (landValue > 0) {
-                    const iso = this.toIsometric(col, row);
-                    this.drawParcelLandValue(iso.x, iso.y, landValue);
-                }
-            }
-        }
-    }
-    
-    drawParcelLandValue(x, y, landValue) {
-        this.ctx.save();
-        this.ctx.translate(x, y);
-        
-        // Format the land value
-        const formatted = landValue >= 1000 ? `$${(landValue/1000).toFixed(0)}k` : `$${landValue.toFixed(0)}`;
-        
-        // Set text properties - smaller font for transportation mode
-        this.ctx.font = '8px SF Mono, Monaco, monospace';
-        this.ctx.textAlign = 'center';
-        this.ctx.textBaseline = 'middle';
-        
-        // White text with dark shadow for readability
-        this.ctx.fillStyle = '#ffffff';
-        
-        // Add text shadow for better readability
-        this.ctx.shadowColor = 'rgba(0, 0, 0, 0.8)';
-        this.ctx.shadowBlur = 2;
-        this.ctx.shadowOffsetX = 1;
-        this.ctx.shadowOffsetY = 1;
-        
-        // Draw the land value
-        this.ctx.fillText(formatted, 0, 0);
-        
-        this.ctx.restore();
-    }
     
     getCompetitorColor(ownerId) {
         const competitorColors = {
@@ -6194,44 +5139,17 @@ class IsometricGrid {
         return competitorColors[ownerId] || '#3a1a1a'; // Default dark brown
     }
     
-    // Optimized render with frame rate limiting
-    scheduleRender() {
-        if (this.isRenderScheduled) return;
-        
-        this.isRenderScheduled = true;
-        requestAnimationFrame((timestamp) => {
-            // Frame rate limiting
-            if (timestamp - this.lastRenderTime >= this.frameInterval) {
-                this.render();
-                this.lastRenderTime = timestamp;
-            } else {
-                // Re-schedule for next frame
-                this.isRenderScheduled = false;
-                this.scheduleRender();
-                return;
-            }
-            this.isRenderScheduled = false;
-        });
-    }
 
     render() {
-        // Delegate to rendering system
         this.renderingSystem.render();
+    }
 
-        // Update building visual feedback
-        if (this.buildingVisualFeedback) {
-            const deltaTime = 16; // Approximate 60fps frame time
-            this.buildingVisualFeedback.update(deltaTime);
-        }
-    }
-    
-    // Keep drawScene for backward compatibility
+    // Main rendering method - now V2 only
     drawScene() {
-        // Delegate to rendering system
-        this.renderingSystem.drawScene();
+        this.renderingSystem.render();
     }
-    
-    // Keep scheduleRender for backward compatibility  
+
+    // Schedule render - now V2 only
     scheduleRender() {
         this.renderingSystem.scheduleRender();
     }
@@ -6278,62 +5196,9 @@ class IsometricGrid {
     // Legacy drawScene method removed - now handled by rendering system delegation
     
     
-    // Optimized tile drawing with reduced save/restore calls
+    // Optimized tile drawing with reduced save/restore calls - delegates to rendering system
     drawTileOptimized(col, row, color, elevation = 0) {
-        const iso = this.toIsometric(col, row);
-        const elevationHeight = elevation * 8;
-        const adjustedY = iso.y - elevationHeight;
-        
-        // Cache the current transform state instead of save/restore
-        const currentTransform = this.ctx.getTransform();
-        this.ctx.translate(iso.x, adjustedY);
-        
-        // Draw diamond-shaped tile (rotated square)
-        this.ctx.beginPath();
-        this.ctx.moveTo(0, -this.tileHeight / 2);  // top
-        this.ctx.lineTo(this.tileWidth / 2, 0);    // right
-        this.ctx.lineTo(0, this.tileHeight / 2);   // bottom
-        this.ctx.lineTo(-this.tileWidth / 2, 0);   // left
-        this.ctx.closePath();
-        
-        this.ctx.fillStyle = color;
-        this.ctx.fill();
-        
-        // this.ctx.strokeStyle = '#1a1a1a';
-        // this.ctx.lineWidth = 0.5;
-        // this.ctx.stroke();
-        
-        // Draw elevation sides if elevated
-        if (elevation > 0) {
-            // Left side
-            this.ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
-            this.ctx.beginPath();
-            this.ctx.moveTo(-this.tileWidth / 2, 0);
-            this.ctx.lineTo(-this.tileWidth / 2, elevationHeight);
-            this.ctx.lineTo(0, this.tileHeight / 2 + elevationHeight);
-            this.ctx.lineTo(0, this.tileHeight / 2);
-            this.ctx.closePath();
-            this.ctx.fill();
-            
-            // Right side
-            this.ctx.fillStyle = 'rgba(0, 0, 0, 0.15)';
-            this.ctx.beginPath();
-            this.ctx.moveTo(this.tileWidth / 2, 0);
-            this.ctx.lineTo(this.tileWidth / 2, elevationHeight);
-            this.ctx.lineTo(0, this.tileHeight / 2 + elevationHeight);
-            this.ctx.lineTo(0, this.tileHeight / 2);
-            this.ctx.closePath();
-            this.ctx.fill();
-        }
-        
-        // Draw building if present (only on normal layer)
-        const parcel = this.grid[row][col];
-        if (parcel && parcel.building && this.currentLayer === 'normal') {
-            this.renderingSystem.drawBuilding(parcel.building, 0, -this.tileHeight / 4, row, col);
-        }
-        
-        // Restore transform
-        this.ctx.setTransform(currentTransform);
+        return this.renderingSystem.drawTileOptimized(col, row, color, elevation);
     }
     
     // Update parcel illumination to show building influence radius
@@ -6436,197 +5301,11 @@ class IsometricGrid {
     }
     
 
-    // Draw green attenuation visualization for Data Insights
+    // Draw green attenuation visualization for Data Insights - delegates to rendering system
     drawAttenuationVisualization() {
-        if (!this.attenuationCenter) return;
-
-        const { row: centerRow, col: centerCol } = this.attenuationCenter;
-        const parcel = this.grid[centerRow][centerCol];
-        if (!parcel || !parcel.building) return;
-
-        // Get building data to get attenuation info
-        const buildingData = this.getBuildingDataByName(parcel.building);
-        if (!buildingData || !buildingData.livability) return;
-
-        this.ctx.save();
-
-        // Calculate maximum attenuation distance from all CARENS impacts
-        let maxAttenuation = 1;
-        Object.values(buildingData.livability).forEach(livabilityData => {
-            if (livabilityData && typeof livabilityData.attenuation === 'number') {
-                maxAttenuation = Math.max(maxAttenuation, livabilityData.attenuation);
-            }
-        });
-
-        // Draw 6-step gradient around the building
-        for (let step = 6; step >= 1; step--) {
-            const distance = (step / 6) * maxAttenuation;
-            const alpha = (7 - step) * 0.08; // Fade from 0.48 to 0.08
-
-            // Draw all tiles within this distance
-            for (let row = 0; row < this.gridSize; row++) {
-                for (let col = 0; col < this.gridSize; col++) {
-                    const dr = row - centerRow;
-                    const dc = col - centerCol;
-                    const tileDistance = Math.sqrt(dr * dr + dc * dc);
-
-                    if (tileDistance <= distance && tileDistance > distance - (maxAttenuation / 6)) {
-                        this.drawTileHighlight(col, row, `rgba(76, 175, 80, ${alpha})`, 0);
-                    }
-                }
-            }
-        }
-
-        // Highlight the center building with a bright green outline
-        this.drawTileHighlight(centerCol, centerRow, `rgba(76, 175, 80, 0.8)`, 0);
-
-        this.ctx.restore();
+        return this.renderingSystem.drawAttenuationVisualization();
     }
 
-    // Depth-of-field rendering with tilt-shift blur
-    // REMOVED - No longer using blur for performance
-    /*
-    renderWithDepthOfField() {
-        if (!this.hoveredTile) {
-            // No hover - render normally without blur effect
-            for (let row = 0; row < this.gridSize; row++) {
-                for (let col = 0; col < this.gridSize; col++) {
-                    const tile = this.grid[row][col];
-                    if (tile) {
-                        this.drawTile(col, row, this.getTileColor(row, col), tile.elevation);
-                    }
-                }
-            }
-            return;
-        }
-
-        // Fast approach: pre-rendered blur + depth-ordered sharp focused building
-        const focusRow = this.hoveredTile.row;
-        const focusCol = this.hoveredTile.col;
-        
-        // Step 1: Draw the pre-rendered blurred background with blur
-        if (this.blurredBackgroundReady) {
-            this.ctx.save();
-            this.ctx.filter = `blur(2.5px)`;
-            this.ctx.drawImage(this.backgroundBlurCanvas, 0, 0);
-            this.ctx.filter = 'none';
-            this.ctx.restore();
-        }
-        
-        // Step 2: Render focused building at correct depth without breaking layer order
-        // First pass: render all tiles up to (but not including) the focused tile depth
-        const focusDepth = focusRow + focusCol;
-        
-        for (let depth = 0; depth < focusDepth; depth++) {
-            for (let row = 0; row < this.gridSize; row++) {
-                for (let col = 0; col < this.gridSize; col++) {
-                    if (row + col !== depth) continue;
-                    
-                    const tile = this.grid[row][col];
-                    if (!tile) continue;
-                    
-                    // Draw any non-focused buildings at this depth that aren't in background
-                    if (!(row === focusRow && col === focusCol)) {
-                        // These should already be in blurred background, skip
-                    }
-                }
-            }
-        }
-        
-        // Second pass: render the focused building at its exact depth
-        const focusedTile = this.grid[focusRow][focusCol];
-        if (focusedTile) {
-            this.drawTile(focusCol, focusRow, this.getTileColor(focusRow, focusCol), focusedTile.elevation);
-        }
-        
-        // Third pass: render all tiles that should appear in front of the focused tile
-        for (let depth = focusDepth + 1; depth < this.gridSize * 2; depth++) {
-            for (let row = 0; row < this.gridSize; row++) {
-                for (let col = 0; col < this.gridSize; col++) {
-                    if (row + col !== depth) continue;
-                    
-                    const tile = this.grid[row][col];
-                    if (!tile || !tile.building) continue;
-                    
-                    // Draw buildings that should appear in front, blurred and without hover effects
-                    this.ctx.save();
-                    this.ctx.filter = `blur(2.5px)`;
-                    
-                    // Temporarily disable hover effects for buildings in front
-                    const originalHovered = this.hoveredTile;
-                    this.hoveredTile = null;
-                    
-                    this.drawTile(col, row, this.getTileColor(row, col), tile.elevation);
-                    
-                    // Restore hover state
-                    this.hoveredTile = originalHovered;
-                    this.ctx.filter = 'none';
-                    this.ctx.restore();
-                }
-            }
-        }
-    }
-    */
-    
-    // Pre-render the entire scene to blur canvas (without the currently hovered building)
-    // REMOVED - No longer using blur for performance
-    /*
-    prerenderBlurredBackground() {
-        if (!this.hoveredTile) {
-            this.blurredBackgroundReady = false;
-            return;
-        }
-        
-        this.backgroundBlurCanvas.width = this.canvas.width;
-        this.backgroundBlurCanvas.height = this.canvas.height;
-        
-        this.backgroundBlurCtx.clearRect(0, 0, this.backgroundBlurCanvas.width, this.backgroundBlurCanvas.height);
-        
-        // Temporarily switch to blur canvas context
-        const originalCtx = this.ctx;
-        this.ctx = this.backgroundBlurCtx;
-        
-        // First render ground spaces except under the hovered building
-        for (let row = 0; row < this.gridSize; row++) {
-            for (let col = 0; col < this.gridSize; col++) {
-                // Skip ground space under hovered building
-                if (row === this.hoveredTile.row && col === this.hoveredTile.col) continue;
-                
-                // Draw ground space only
-                this.drawTile(col, row, this.getTileColor(row, col), 0);
-            }
-        }
-        
-        // Then render buildings except the hovered one (blur will be applied when drawing to main canvas)
-        for (let depth = 0; depth < this.gridSize * 2; depth++) {
-            for (let row = 0; row < this.gridSize; row++) {
-                for (let col = 0; col < this.gridSize; col++) {
-                    if (row + col !== depth) continue;
-                    
-                    const tile = this.grid[row][col];
-                    if (tile && !(row === this.hoveredTile.row && col === this.hoveredTile.col)) {
-                        // Draw building with elevation but no ground
-                        if (tile.elevation > 0) {
-                            this.drawBuildingOnly(col, row, tile.elevation);
-                        }
-                    }
-                }
-            }
-        }
-        
-        // Switch back to original context
-        this.ctx = originalCtx;
-        this.blurredBackgroundReady = true;
-    }
-    
-    // Update the blurred background when hover changes
-    updateBlurredBackground() {
-        this.prerenderBlurredBackground();
-    }
-    */
-    
-    
-    
     // Simple bouncing ball physics for hover elevation
     startBounceAnimation() {
         if (this.bounceAnimation) {
@@ -6748,178 +5427,9 @@ class IsometricGrid {
             }
         }
     }
-    
-    // Draw construction with fade-in effect for individual pixel rows
-    drawConstructionWithFadeIn(img, offsetX, offsetY, baseDrawWidth, baseDrawHeight, imageY, pixelRowsToShow, totalPixelRows, brightness, row, col) {
-        const key = `${row},${col}`;
-        const timestamps = this.pixelRowTimestamps.get(key);
-        
-        if (!timestamps) {
-            // Fallback to normal drawing if no timestamps
-            this.ctx.drawImage(img, offsetX - baseDrawWidth/2, imageY, baseDrawWidth, baseDrawHeight);
-            return;
-        }
-        
-        const currentTime = performance.now();
-        const fadeInDuration = 3000; // 3 seconds fade-in
-        
-        // Draw each pixel row with individual opacity based on age
-        const pixelRowHeight = baseDrawHeight / totalPixelRows;
-        
-        for (let pixelRow = 0; pixelRow < pixelRowsToShow; pixelRow++) {
-            const timestamp = timestamps[pixelRow];
-            if (timestamp === null) continue;
-            
-            // Calculate opacity based on how long this row has been visible
-            const age = currentTime - timestamp;
-            const opacity = Math.min(1.0, age / fadeInDuration);
-            
-            // Calculate source and destination for this pixel row
-            const srcY = img.height - (pixelRow + 1) * (img.height / totalPixelRows);
-            const srcHeight = img.height / totalPixelRows;
-            const destY = imageY + baseDrawHeight - (pixelRow + 1) * pixelRowHeight;
-            const destHeight = pixelRowHeight;
-            
-            // Apply combined brightness and fade-in opacity
-            this.ctx.save();
-            this.ctx.globalAlpha = opacity;
-            this.ctx.filter = `brightness(${brightness})`;
-            
-            this.ctx.drawImage(
-                img,
-                0, srcY, img.width, srcHeight,
-                offsetX - baseDrawWidth/2, destY, baseDrawWidth, destHeight
-            );
 
-            // Reset filter before restoring context
-            this.ctx.filter = 'none';
-            this.ctx.restore();
-        }
-    }
-    
-    // Lightweight construction animation using gradient mask (much more performant)
-    drawConstructionWithGradientMask(img, offsetX, offsetY, baseDrawWidth, baseDrawHeight, imageY, constructionProgress, row, col) {
-        const key = `${row},${col}`;
-        const timestamps = this.pixelRowTimestamps.get(key);
-        
-        if (!timestamps) {
-            // Fallback to normal drawing if no timestamps
-            this.ctx.drawImage(img, offsetX - baseDrawWidth/2, imageY, baseDrawWidth, baseDrawHeight);
-            return;
-        }
-        
-        const currentTime = performance.now();
-        const fadeInDuration = 3000; // 3 seconds fade-in
-        const revealHeight = baseDrawHeight * constructionProgress;
-        
-        // Create gradient for fade-in effect based on construction progress
-        this.ctx.save();
-        
-        // Set up clipping region for the revealed portion
-        this.ctx.beginPath();
-        this.ctx.rect(offsetX - baseDrawWidth/2, imageY + baseDrawHeight - revealHeight, baseDrawWidth, revealHeight);
-        this.ctx.clip();
-        
-        // Create gradient mask for fade-in effect - validate parameters
-        const gradientStart = imageY + baseDrawHeight - revealHeight;
-        const gradientEnd = imageY + baseDrawHeight;
-        
-        // Check for invalid values that would cause createLinearGradient to fail
-        if (!isFinite(gradientStart) || !isFinite(gradientEnd)) {
-            // Fallback to normal drawing if gradient parameters are invalid
-            this.ctx.drawImage(img, offsetX - baseDrawWidth/2, imageY, baseDrawWidth, baseDrawHeight);
-            return;
-        }
-        
-        const gradient = this.ctx.createLinearGradient(0, gradientStart, 0, gradientEnd);
-        
-        // Calculate how much of the revealed area should have fade effect
-        const totalPixelRows = img.height;
-        const pixelRowsToShow = Math.floor(totalPixelRows * constructionProgress);
-        const fadeRows = Math.min(20, pixelRowsToShow); // Limit fade effect to last 20 rows for performance
-        
-        // Add gradient stops based on pixel row ages
-        const rowHeight = revealHeight / pixelRowsToShow;
-        for (let i = 0; i < pixelRowsToShow; i++) {
-            const timestamp = timestamps[i];
-            if (timestamp === null) continue;
-            
-            const age = currentTime - timestamp;
-            const opacity = Math.min(1.0, age / fadeInDuration);
-            const position = i / pixelRowsToShow;
-            
-            // Only add fade effect to recent rows for better performance
-            if (i >= pixelRowsToShow - fadeRows) {
-                gradient.addColorStop(position, `rgba(255,255,255,${opacity})`);
-            }
-        }
-        
-        // Apply alpha-based fade effect for construction
-        const avgOpacity = this.calculateAverageOpacity(timestamps, pixelRowsToShow, currentTime, fadeInDuration);
-        this.ctx.globalAlpha = avgOpacity;
-        
-        this.ctx.drawImage(img, offsetX - baseDrawWidth/2, imageY, baseDrawWidth, baseDrawHeight);
-        
-        this.ctx.restore();
-    }
-    
-    // Calculate average opacity for fade-in effect
-    calculateAverageOpacity(timestamps, pixelRowsToShow, currentTime, fadeInDuration) {
-        if (!timestamps || pixelRowsToShow === 0) return 1.0;
-        
-        let totalOpacity = 0;
-        let validRows = 0;
-        
-        // Calculate opacity for recent rows (fade effect)
-        const fadeRows = Math.min(20, pixelRowsToShow);
-        const startRow = Math.max(0, pixelRowsToShow - fadeRows);
-        
-        for (let i = startRow; i < pixelRowsToShow; i++) {
-            const timestamp = timestamps[i];
-            if (timestamp !== null) {
-                const age = currentTime - timestamp;
-                const opacity = Math.min(1.0, age / fadeInDuration);
-                totalOpacity += opacity;
-                validRows++;
-            }
-        }
-        
-        // Older rows are fully opaque
-        const olderRows = startRow;
-        totalOpacity += olderRows;
-        validRows += olderRows;
-        
-        return validRows > 0 ? totalOpacity / validRows : 1.0;
-    }
-    
-    // Schedule frequent re-renders for construction animation
-    scheduleConstructionAnimation(row, col) {
-        const key = `${row},${col}`;
-        
-        if (this.constructionAnimations.has(key)) {
-            return; // Already animating
-        }
-        
-        this.constructionAnimations.add(key);
-        
-        const animate = () => {
-            const parcel = this.grid[row][col];
-            
-            // Check if construction is still ongoing
-            if (!parcel || !parcel._constructionAnimating || !parcel.constructionStartDay) {
-                this.constructionAnimations.delete(key);
-                return;
-            }
-            
-            // Re-render for smooth pixel animation
-            this.scheduleRender();
-            
-            // Continue animation at 60fps for smooth pixel reveal
-            requestAnimationFrame(animate);
-        };
-        
-        requestAnimationFrame(animate);
-    }
+    // Construction animation methods removed - keeping core game lean until everything works properly
+    // Previously: drawConstructionWithFadeIn, drawConstructionWithGradientMask, calculateAverageOpacity, scheduleConstructionAnimation
 
     // Restore mouse movement debouncing for performance
     debouncedMouseMove(screenX, screenY) {
@@ -6936,6 +5446,7 @@ class IsometricGrid {
 
     // Process mouse movement with all hover logic
     processMouseMove(screenX, screenY) {
+
         // Handle panning
         if (this.isPanning) {
             const deltaX = screenX - this.lastPanPoint.x;
@@ -6952,29 +5463,30 @@ class IsometricGrid {
         // Convert screen coordinates to world coordinates for tile detection
         const worldCoords = this.screenToWorldCoords(screenX, screenY);
         const tile = this.fromIsometric(worldCoords.x, worldCoords.y);
+
         
-        // In mobility mode, use the mobility layer's mouse handling
+        // In mobility mode, use the mobility layer's mouse handling (legacy v1 - disabled for v2)
         if (this.currentLayer === 'mobility') {
-            // Delegate to mobility layer for road building
-            const needsRender = this.mobilityLayer.handleMouseMove(worldCoords.x, worldCoords.y);
-
-            // Update ParcelSelectorManager with mobility effects
-            if (this.parcelSelector && this.mobilityLayer.hoveredEdge) {
-                // Clear previous effects and add new mobility effects
-                this.parcelSelector.clearProximityEffects();
-                this.parcelSelector.addMobilityEffects();
-            } else if (this.parcelSelector) {
-                // Clear mobility effects when no edge is hovered
-                this.parcelSelector.clearProximityEffects();
-            }
-
-            if (needsRender) {
-                this.scheduleRender();
-            }
-
-            // Handle delayed tooltips in mobility mode
-            const mockEvent = { clientX: screenX, clientY: screenY };
-            this.handleMobilityTooltips(tile, mockEvent);
+            // V2 integration handles mobility mouse events - no need for direct calls
+            // const needsRender = this.mobilityLayer.handleMouseMove(worldCoords.x, worldCoords.y);
+            //
+            // // Update ParcelSelectorManager with mobility effects
+            // if (this.parcelSelector && this.mobilityLayer.hoveredEdge) {
+            //     // Clear previous effects and add new mobility effects
+            //     this.parcelSelector.clearProximityEffects();
+            //     this.parcelSelector.addMobilityEffects();
+            // } else if (this.parcelSelector) {
+            //     // Clear mobility effects when no edge is hovered
+            //     this.parcelSelector.clearProximityEffects();
+            // }
+            //
+            // if (needsRender) {
+            //     this.scheduleRender();
+            // }
+            //
+            // // Handle delayed tooltips in mobility mode
+            // const mockEvent = { clientX: screenX, clientY: screenY };
+            // this.handleMobilityTooltips(tile, mockEvent);
             return; // Early return to prevent normal tooltip logic
         }
         
@@ -6991,10 +5503,7 @@ class IsometricGrid {
             // Update parcel illumination for connected roads calculation
             this.updateParcelIllumination(tile);
 
-            // Update cursor-based hover state using new parcel selector
-            if (this.parcelSelector) {
-                this.parcelSelector.setHoveredParcel(tile.row, tile.col);
-            }
+            // ParcelHoverV2 handles its own mouse events - no manual updating needed
 
             // Keep legacy hoveredTile for compatibility with other systems
             this.hoveredTile = { row: tile.row, col: tile.col };
@@ -7019,10 +5528,7 @@ class IsometricGrid {
             
             // Clear hover state when not hovering any tile
             if (this.hoveredTile) {
-                // Clear hover state in new parcel selector
-                if (this.parcelSelector) {
-                    this.parcelSelector.setHoveredParcel(null, null);
-                }
+                // ParcelHoverV2 handles clearing hover state automatically
 
                 // Clear legacy hoveredTile for compatibility
                 this.hoveredTile = null;
@@ -7037,52 +5543,34 @@ class IsometricGrid {
         }
     }
 
+    // Draw tile highlight effect - delegates to rendering system
     drawTileHighlight(col, row, color, elevation = 0) {
-        console.log(`🚨 [DEBUG] drawTileHighlight called for ${row},${col} with color ${color}`);
-        const iso = this.toIsometric(col, row);
-        const elevationHeight = elevation * 8;
-        const adjustedY = iso.y - elevationHeight;
-
-        this.ctx.save();
-        this.ctx.translate(iso.x, adjustedY);
-        
-        // Draw diamond-shaped highlight with white glow only
-        this.ctx.beginPath();
-        this.ctx.moveTo(0, -this.tileHeight / 2);
-        this.ctx.lineTo(this.tileWidth / 2, 0);
-        this.ctx.lineTo(0, this.tileHeight / 2);
-        this.ctx.lineTo(-this.tileWidth / 2, 0);
-        this.ctx.closePath();
-        
-        // Subtle white glow effect with fading alpha
-        this.ctx.strokeStyle = color; // Use the color parameter which includes the alpha
-        this.ctx.lineWidth = 2;
-        this.ctx.stroke();
-        
-        this.ctx.restore();
+        return this.renderingSystem.drawTileHighlight(col, row, color, elevation);
     }
     
     
     setupEventListeners() {
-        // Debounced mouse move handler for optimal performance  
+        console.log('🎯 setupEventListeners called');
+
+        // Debounced mouse move handler for optimal performance
         const debouncedMouseMove = (e) => {
             // Don't process mouse moves if context menu is open - preserve current selection
             if (this.contextMenu && this.contextMenu.classList && this.contextMenu.classList.contains('visible')) {
                 return;
             }
-            
+
             const rect = this.canvas.getBoundingClientRect();
             const screenX = e.clientX - rect.left;
             const screenY = e.clientY - rect.top;
-            
+
+
             // Store mouse event for tooltip positioning
             this.lastMouseEvent = { clientX: e.clientX, clientY: e.clientY };
-            
+
             this.processMouseMove(screenX, screenY);
         };
         
-        // Re-enabled with new parcel selector system
-        this.canvas.addEventListener('mousemove', debouncedMouseMove, { passive: true });
+        // Mousemove handling delegated to ParcelHoverV2 - no duplicate handlers needed
 
         // Add mouse down handler for panning and 3D rotation
         this.canvas.addEventListener('mousedown', (e) => {
@@ -7112,17 +5600,27 @@ class IsometricGrid {
             }
         });
 
+        // Removed conflicting mousemove handler - using debouncedMouseMove instead
+
+        // SOLUTION: Use mouseenter/mouseleave with position tracking
+        let mouseOverCanvas = false;
+        let lastMouseX = 0;
+        let lastMouseY = 0;
+
+        // Legacy mouse enter handler removed
+
+        // Removed temporary debug click test
+
         // Add mouse leave handler to stop panning when mouse leaves canvas
         this.canvas.addEventListener('mouseleave', () => {
+
             if (this.isPanning) {
                 this.isPanning = false;
                 this.canvas.style.cursor = this.zoomScale > 1.1 ? 'grab' : 'default';
             }
 
-            // Clear hover state and auto-deselect when cursor leaves canvas
-            if (this.parcelSelector) {
-                this.parcelSelector.setHoveredParcel(null, null);
-            }
+            // Clear hover state when cursor leaves canvas
+            // ParcelHoverV2 handles mouseleave automatically
         });
         
         this.canvas.addEventListener('click', (e) => {
@@ -7133,25 +5631,23 @@ class IsometricGrid {
             const rect = this.canvas.getBoundingClientRect();
             const screenX = e.clientX - rect.left;
             const screenY = e.clientY - rect.top;
-            
+
             // Convert to world coordinates
             const worldCoords = this.screenToWorldCoords(screenX, screenY);
             const tile = this.fromIsometric(worldCoords.x, worldCoords.y);
             
             // Handle mobility layer clicks first (including UI areas)
-            if (this.currentLayer === 'mobility') {
-                const handled = this.mobilityLayer.handleClickEnhanced(worldCoords.x, worldCoords.y, screenX, screenY);
-                if (handled) {
-                    this.scheduleRender(); // Update the display
-                }
-                return; // Don't process other clicks in mobility mode
-            }
+            // DISABLED: Testing without mobility
+            // if (this.currentLayer === 'mobility') {
+            //     const handled = this.mobilityLayer.handleClickEnhanced(worldCoords.x, worldCoords.y, screenX, screenY);
+            //     if (handled) {
+            //         this.scheduleRender(); // Update the display
+            //         return; // Only return early if mobility layer actually handled the click
+            //     }
+            //     // If mobility layer didn't handle the click, fall through to normal canvas click processing
+            // }
 
-            // Handle parcel selection via ParcelSelectorManager
-            if (tile && this.parcelSelector) {
-                this.parcelSelector.handleParcelClick(tile.row, tile.col, this.currentPlayerId || 1);
-                this.scheduleRender();
-            }
+            // ParcelHoverV2 doesn't handle clicks - preserve context menu functionality
 
             if (tile && tile.row >= 0 && tile.row < this.gridSize &&
                 tile.col >= 0 && tile.col < this.gridSize) {
@@ -7196,7 +5692,7 @@ class IsometricGrid {
         });
         
         window.addEventListener('resize', () => {
-            this.setupCanvas();
+            this.renderingSystem.setupCanvas();
             this.scheduleRender();
         });
         
@@ -7212,14 +5708,15 @@ class IsometricGrid {
             }
 
             // Handle mobility layer shortcuts
-            if (this.currentLayer === 'mobility') {
-                const handled = this.mobilityLayer.handleKeyPress(e.key);
-                if (handled) {
-                    e.preventDefault();
-                    this.scheduleRender();
-                }
-                return;
-            }
+            // DISABLED: Testing without mobility
+            // if (this.currentLayer === 'mobility') {
+            //     const handled = this.mobilityLayer.handleKeyPress(e.key);
+            //     if (handled) {
+            //         e.preventDefault();
+            //         this.scheduleRender();
+            //     }
+            //     return;
+            // }
             
             switch(e.key) {
                 case 'Escape':
@@ -7291,8 +5788,449 @@ class IsometricGrid {
             }
         });
     }
-    
-    
+
+    // DISABLED: Legacy multiplayer synchronization - replaced by economicClient v2
+    initializeRealtimeSync() {
+        console.log('💡 Real-time sync disabled - using economicClient v2 for state management');
+        // No longer needed - economicClient handles all server communication
+    }
+
+    async performFastSync() {
+        // DISABLED: Legacy multiplayer sync system - replaced by economicClient v2
+        // Fast sync is no longer needed in the v2 architecture
+        // All state management is handled through economicClient.getEconomicState()
+    }
+
+    async performMediumSync() {
+        try {
+            // Update building performance for all built parcels
+            const promises = [];
+
+            for (let row = 0; row < this.rows; row++) {
+                for (let col = 0; col < this.cols; col++) {
+                    const parcel = this.gameState.parcels[row][col];
+                    if (parcel && parcel.building && parcel._constructionProgress >= 1.0) {
+                        // Use economicClient v2 for building performance
+                        promises.push(
+                            this.economicClient.getBuildingPerformance(row, col)
+                                .then(performance => {
+                                    if (performance && performance.efficiency !== undefined) {
+                                        parcel._efficiency = performance.efficiency;
+                                        parcel._revenue = performance.revenue || 0;
+                                    }
+                                })
+                                .catch(err => console.warn(`Building sync failed for ${row},${col}:`, err))
+                        );
+                    }
+                }
+            }
+
+            await Promise.all(promises);
+
+            // Update displays after sync
+            this.calculateCityVitality(); // This updates the display automatically
+
+        } catch (error) {
+            console.warn('Medium sync failed:', error);
+        }
+    }
+
+    destroyRealtimeSync() {
+        if (this.fastSyncInterval) {
+            clearInterval(this.fastSyncInterval);
+            this.fastSyncInterval = null;
+        }
+
+        if (this.mediumSyncInterval) {
+            clearInterval(this.mediumSyncInterval);
+            this.mediumSyncInterval = null;
+        }
+
+        console.log('Real-time synchronization system destroyed');
+    }
+
+    // Game loop system for construction and cash accrual
+    initializeGameLoop() {
+        console.log('Initializing game loop for construction and cash accrual...');
+
+        // Construction progress update (every 1 second)
+        this.constructionInterval = setInterval(() => {
+            this.updateConstructionProgress();
+        }, 1000);
+
+        // Cash accrual from completed buildings (every 5 seconds)
+        this.cashAccrualInterval = setInterval(() => {
+            this.applyCashAccrual();
+        }, 5000);
+    }
+
+    updateConstructionProgress() {
+        let constructionUpdated = false;
+
+        for (let row = 0; row < this.rows; row++) {
+            for (let col = 0; col < this.cols; col++) {
+                const parcel = this.gameState.parcels[row][col];
+                if (parcel && parcel.building && parcel._constructionProgress < 1.0) {
+                    // Progress construction by 2% per second (50 seconds total)
+                    const progressIncrement = 0.02;
+                    parcel._constructionProgress = Math.min(1.0, parcel._constructionProgress + progressIncrement);
+
+                    if (parcel._constructionProgress >= 1.0) {
+                        console.log(`🏗️ Construction completed for ${parcel.building} at ${row},${col}`);
+                        constructionUpdated = true;
+
+                        // CRITICAL FIX: Call construction completion handler to send BUILD_COMPLETE transaction
+                        this.handleConstructionCompletion(row, col, parcel);
+                    }
+                }
+            }
+        }
+
+        // Refresh displays if construction was completed
+        if (constructionUpdated) {
+            this.render();
+            this.calculateCityVitality(); // This updates the display automatically
+        }
+    }
+
+    async applyCashAccrual() {
+        try {
+            // Get current cashflow from server
+            const cashflowResponse = this.economicClient.getPlayerCashflow(this.currentPlayerId);
+
+            if (cashflowResponse.success && cashflowResponse.netCashflow > 0) {
+                console.log(`💰 Applying cashflow: +$${cashflowResponse.netCashflow.toFixed(2)}`);
+
+                // Add cash to player balance
+                this.cash += cashflowResponse.netCashflow;
+                this.updateCashDisplay();
+
+                // Update server balance
+                try {
+                    await fetch('/api/cash', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            action: 'earn',
+                            amount: cashflowResponse.netCashflow,
+                            playerId: this.playerId,
+                            description: 'Building revenue'
+                        })
+                    });
+                } catch (error) {
+                    console.warn('Failed to sync cash with server:', error);
+                }
+            }
+        } catch (error) {
+            console.warn('Cash accrual failed:', error);
+        }
+    }
+
+    destroyGameLoop() {
+        if (this.constructionInterval) {
+            clearInterval(this.constructionInterval);
+            this.constructionInterval = null;
+        }
+
+        if (this.cashAccrualInterval) {
+            clearInterval(this.cashAccrualInterval);
+            this.cashAccrualInterval = null;
+        }
+
+        console.log('Game loop destroyed');
+    }
+
+    /**
+     * Initialize V2 Economic Client with server communication
+     */
+    initializeEconomicClientV2() {
+        console.log('🔄 Initializing Economic Client v2...');
+
+        // Initialize the client
+        this.economicClient.initialize()
+            .then(() => {
+                console.log('✅ Economic Client v2 initialized successfully');
+
+                // Set up update callbacks for real-time economic updates
+                this.economicClient.onUpdate((update) => {
+                    this.handleEconomicUpdate(update);
+                });
+            })
+            .catch((error) => {
+                console.error('❌ Failed to initialize Economic Client v2:', error);
+            });
+    }
+
+    /**
+     * Handle economic updates from the server
+     */
+    handleEconomicUpdate(update) {
+        console.log('📥 Economic update received:', update.type);
+
+        // Update UI based on the update type
+        switch (update.type) {
+            case 'ECONOMIC_UPDATE':
+                // Handle building transactions from other players
+                if (update.transaction) {
+                    const tx = update.transaction;
+                    if (tx.type === 'BUILD_START' && tx.location) {
+                        const [row, col] = tx.location;
+
+                        // Ensure parcel and building exist for other players' constructions
+                        if (!this.grid[row]) this.grid[row] = {};
+                        if (!this.grid[row][col]) {
+                            this.grid[row][col] = {
+                                id: `${row}-${col}`,
+                                owner: tx.playerId,
+                                isOwned: true
+                            };
+                        }
+
+                        const parcel = this.grid[row][col];
+                        if (!parcel.building || parcel.building.owner !== this.currentPlayerId) {
+                            // Add building from another player
+                            const buildingDef = this.buildingDefinitions[tx.buildingId];
+                            if (buildingDef) {
+                                parcel.building = {
+                                    type: tx.buildingId,
+                                    health: 100,
+                                    age: 0,
+                                    underConstruction: true,
+                                    constructionProgress: 0,
+                                    performance: 0,
+                                    owner: tx.playerId
+                                };
+                                parcel.owner = tx.playerId;
+
+                                // Render the new building
+                                this.renderingSystem.renderParcel(row, col, parcel);
+                                console.log(`🏗️ Player ${tx.playerId} started ${tx.buildingId} at [${row}, ${col}]`);
+                            }
+                        }
+                    }
+                }
+
+                // Update JEEFHH vitality displays
+                if (update.jeefhh) {
+                    this.updateVitalityDisplay();
+                }
+                // Update demographics
+                if (update.totalResidents !== undefined) {
+                    this.updateDemographicsDisplay();
+                }
+                // Refresh all building performances after economic changes
+                this.refreshAllBuildingPerformances();
+                break;
+
+            case 'DAILY_UPDATE':
+                this.calculateCurrentCashflow();
+                this.updatePlayerStats();
+                // Refresh building performances daily
+                this.refreshAllBuildingPerformances();
+                break;
+
+            case 'DAILY_TICK':
+                // Sync economic data from server on daily tick
+                this.economicClient.getEconomicState().then(() => {
+                    console.log('🔄 Economic state synced from server on DAILY_TICK');
+                    this.updateVitalityDisplay();
+                    this.updateDemographicsDisplay();
+                    this.calculateCurrentCashflow();
+                    this.updatePlayerStats();
+                    this.refreshAllBuildingPerformances();
+                }).catch(error => {
+                    console.error('❌ Failed to sync economic state on DAILY_TICK:', error);
+                });
+                break;
+
+            case 'ROOM_STATE_SYNC':
+                // Sync existing buildings when joining a room
+                if (update.data.buildings) {
+                    update.data.buildings.forEach(building => {
+                        const locationKey = building.locationKey;
+                        const [row, col] = locationKey.split(',').map(Number);
+
+                        // Ensure parcel exists
+                        if (!this.grid[row]) this.grid[row] = {};
+                        if (!this.grid[row][col]) {
+                            this.grid[row][col] = {
+                                id: `${row}-${col}`,
+                                owner: building.ownerId,
+                                isOwned: true
+                            };
+                        }
+
+                        const parcel = this.grid[row][col];
+
+                        // Create building from server data
+                        const buildingDef = this.buildingDefinitions[building.id];
+                        if (buildingDef) {
+                            parcel.building = {
+                                type: building.id,
+                                health: building.condition * 100 || 100,
+                                age: building.age || 0,
+                                underConstruction: building.underConstruction || false,
+                                performance: 100, // Will be fetched
+                                owner: building.ownerId
+                            };
+                            parcel.owner = building.ownerId;
+
+                            // Render the building
+                            this.renderingSystem.renderParcel(row, col, parcel);
+
+                            console.log(`🏗️ Synced building ${building.id} from ${building.ownerId} at [${row}, ${col}]`);
+                        }
+                    });
+
+                    // Refresh all performance data
+                    this.refreshAllBuildingPerformances();
+                }
+                break;
+
+            case 'BUILDING_COMPLETED':
+                // Building was auto-completed by server - handle for ANY player
+                const buildingData = update.data || update;
+                const { location, buildingId, playerId } = buildingData;
+                if (location) {
+                    const [row, col] = location;
+
+                    // Ensure parcel exists
+                    if (!this.grid[row]) this.grid[row] = {};
+                    if (!this.grid[row][col]) {
+                        this.grid[row][col] = {
+                            id: `${row}-${col}`,
+                            owner: playerId,
+                            isOwned: true
+                        };
+                    }
+
+                    const parcel = this.grid[row][col];
+
+                    // Add or update building for ANY player
+                    if (!parcel.building) {
+                        // Create building if it doesn't exist (from another player)
+                        const buildingDef = this.buildingDefinitions[buildingId];
+                        if (buildingDef) {
+                            parcel.building = {
+                                type: buildingId,
+                                health: 100,
+                                age: 0,
+                                underConstruction: false,
+                                performance: 100,
+                                owner: playerId
+                            };
+                            parcel.owner = playerId;
+                            console.log(`🏗️ Building ${buildingId} from player ${playerId} completed at [${row}, ${col}]`);
+                        }
+                    } else {
+                        // Update existing building
+                        parcel.building.underConstruction = false;
+                    }
+
+                    // Fetch and update performance
+                    this.fetchBuildingPerformance(row, col);
+                }
+                break;
+
+            case 'ROOM_RESET':
+                // Clear all local building state and prepare for resync
+                console.log('🔄 Room reset - clearing all buildings from grid');
+                this.clearAllBuildings();
+                this.economicClient.clearAllCaches();
+                this.updateVitalityDisplay();
+                this.updateDemographicsDisplay();
+                this.updatePlayerStats();
+                break;
+
+            case 'REQUEST_ROOM_SYNC':
+                // Request fresh room state from server via WebSocket
+                console.log('📡 Requesting fresh room state');
+                if (this.economicClient.ws && this.economicClient.ws.readyState === 1) {
+                    this.economicClient.ws.send(JSON.stringify({
+                        type: 'REQUEST_ROOM_STATE',
+                        playerId: this.currentPlayerId,
+                        timestamp: Date.now()
+                    }));
+                }
+                break;
+
+            default:
+                console.log('Unknown economic update type:', update.type);
+        }
+    }
+
+    /**
+     * Refresh all building performances from server
+     */
+    async refreshAllBuildingPerformances() {
+        for (let row = 0; row < this.gridSize; row++) {
+            for (let col = 0; col < this.gridSize; col++) {
+                const parcel = this.grid[row]?.[col];
+                if (parcel?.building && !parcel.building.underConstruction) {
+                    await this.fetchBuildingPerformance(row, col);
+                }
+            }
+        }
+    }
+
+    /**
+     * Clear all buildings from the grid (for room reset)
+     */
+    clearAllBuildings() {
+        for (let row = 0; row < this.gridSize; row++) {
+            for (let col = 0; col < this.gridSize; col++) {
+                const parcel = this.grid[row]?.[col];
+                if (parcel?.building) {
+                    delete parcel.building;
+                    // Re-render the now-empty parcel
+                    this.renderingSystem.renderParcel(row, col, parcel);
+                }
+            }
+        }
+        console.log('🗑️ Cleared all buildings from grid');
+    }
+
+    /**
+     * Fetch and update building performance from server
+     */
+    async fetchBuildingPerformance(row, col) {
+        try {
+            const parcel = this.grid[row]?.[col];
+            if (!parcel?.building) return;
+
+            // Don't fetch performance for buildings under construction
+            if (parcel.building.underConstruction) {
+                parcel.building.performance = 0;
+                return;
+            }
+
+            const performance = await this.economicClient.getBuildingPerformance(row, col, false); // Don't use cache
+            if (performance && performance.summary) {
+                // Calculate performance score (0-100) based on net income
+                const netIncome = performance.summary.netIncome || 0;
+                const buildingDef = this.buildingDefinitions[parcel.building.type];
+                const maxRevenue = buildingDef?.economics?.maxRevenue || 100;
+
+                // Performance based on how close to max potential
+                parcel.building.performance = Math.max(0, Math.min(100, (netIncome / maxRevenue) * 100));
+
+                // Store detailed performance data
+                parcel.building.economicPerformance = performance.summary;
+
+                // Immediately redraw this parcel with new performance
+                this.renderingSystem.renderParcel(row, col, parcel);
+            }
+        } catch (error) {
+            // Building might not exist on server yet - set default performance
+            const parcel = this.grid[row]?.[col];
+            if (parcel?.building && !parcel.building.underConstruction) {
+                // Default performance for buildings not on server (25% baseline)
+                parcel.building.performance = 25;
+                this.renderingSystem.renderParcel(row, col, parcel);
+            }
+        }
+    }
+
 }
 
 // Global functions for market dashboard
@@ -7324,9 +6262,7 @@ function applyMarketSettings() {
     if (maxPriceInput) window.game.marketSettings.priceBounds.max = parseFloat(maxPriceInput.value);
     
     // Force recalculation
-    window.game.calculateCityVitality();
-    window.game.updateVitalityDisplay();
-    
+    window.game.calculateCityVitality(); // This updates the display automatically
 }
 
 function resetMarketDefaults() {
@@ -7384,568 +6320,8 @@ function generateCityName() {
     }
 }
 
-document.addEventListener('DOMContentLoaded', () => {
-    const canvas = document.getElementById('gameCanvas');
-    const game = new IsometricGrid(canvas, 12);
-    window.game = game; // Make game accessible globally right away
 
-    // COMPLETE RESET ON EVERY BROWSER RELOAD - Fresh start guaranteed
-    game.completeGameReset().then(() => {
-        console.log('🎯 Fresh game session initialized');
-    }).catch(error => {
-        console.error('🚨 Reset failed:', error);
-    });
-
-    // Solo game - no multiplayer departure handling needed
-    
-    // Simple auto-start functionality
-    const welcomeScreen = document.getElementById('welcome-screen');
-    const gameInterface = document.getElementById('game-interface');
-
-    // Set up default player settings
-    const playerSettings = {
-        name: 'Player',
-        color: '#52C77E',
-        emoji: '🏠',
-        gameMode: 'solo'
-    };
-
-    // Save default player settings
-    localStorage.setItem('theCommons_playerSettings', JSON.stringify(playerSettings));
-
-    // Force cash reset to $6000 for new session
-    localStorage.setItem('theCommons_forceReset', 'true');
-
-    // Enhanced welcome screen with DOM readiness check
-    if (welcomeScreen) {
-        // Validate all required welcome screen elements exist
-        const startGameBtn = document.getElementById('start-game-btn');
-        const playerNameInput = document.getElementById('player-name');
-        const colorSelector = document.getElementById('color-selector');
-
-        if (!startGameBtn || !playerNameInput || !colorSelector) {
-            console.error('⚠️ Critical welcome screen elements missing:', {
-                startGameBtn: !!startGameBtn,
-                playerNameInput: !!playerNameInput,
-                colorSelector: !!colorSelector
-            });
-
-            // Show error and exit
-            document.body.innerHTML = `
-                <div style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: #0a0a0a; display: flex; align-items: center; justify-content: center; color: #ff6b6b; font-family: sans-serif; text-align: center; z-index: 99999;">
-                    <div>
-                        <h2>Welcome Screen Setup Error</h2>
-                        <p>Required elements are missing. Please refresh the page.</p>
-                        <button onclick="window.location.reload()" style="background: #4CAF50; color: white; border: none; padding: 12px 24px; border-radius: 8px; cursor: pointer;">Reload Page</button>
-                    </div>
-                </div>
-            `;
-            return;
-        }
-
-        // Show welcome screen
-        welcomeScreen.style.display = 'flex';
-        welcomeScreen.classList.add('visible');
-        gameInterface.classList.add('hidden');
-
-        // Welcome screen is now ready - no title animations needed
-
-        // Setup welcome screen interactions
-        setupWelcomeScreenHandlers();
-
-        // Add space bar shortcut to skip welcome screen
-        document.addEventListener('keydown', async (e) => {
-            if (e.code === 'Space' && welcomeScreen.style.display !== 'none') {
-                e.preventDefault();
-                // Use current color and trigger instant start
-                const currentSelected = document.querySelector('.color-option.selected');
-                const selectedColor = currentSelected ? currentSelected.dataset.color : '#10AC84';
-                const playerName = document.getElementById('player-name')?.value.trim() || 'Player';
-
-                const playerSettings = {
-                    name: playerName,
-                    color: selectedColor,
-                    emoji: '🏛️',
-                    setupComplete: true
-                };
-
-                localStorage.setItem('theCommons_playerSettings', JSON.stringify(playerSettings));
-
-                // Sync player color with server
-                try {
-                    await fetch('/api/player/color', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            playerId: 'player',
-                            color: selectedColor
-                        })
-                    });
-                } catch (error) {
-                    console.warn('Could not sync player color with server:', error);
-                }
-
-                if (window.game) {
-                    window.game.playerSettings = playerSettings;
-                    // Update ParcelSelectorManager with new color
-                    if (window.game.parcelSelector) {
-                        window.game.parcelSelector.updatePlayerColor();
-                    }
-                    // Set CSS custom property for welcome underline
-                    document.documentElement.style.setProperty('--player-color', selectedColor);
-                    window.game.updatePlayerNameInUI();
-                    window.game.scheduleRender();
-                }
-
-                // Skip all animations and go straight to game
-                welcomeScreen.style.display = 'none';
-                const transitionOverlay = document.getElementById('transition-overlay');
-                if (transitionOverlay) transitionOverlay.style.display = 'none';
-                continueGameTransition();
-            }
-        });
-
-        function startGameTransition() {
-            // Phase 1: Fade out the entire modal first
-            welcomeScreen.classList.add('fade-out');
-
-            // Phase 2: After modal fade out, pause briefly on black screen
-            setTimeout(() => {
-                // Hide the modal completely
-                welcomeScreen.style.display = 'none';
-
-                // Phase 3: Brief pause for mental space, then show "Welcome to..." text
-                setTimeout(() => {
-                    // Show transition overlay with "Welcome to The Commons"
-                    const transitionOverlay = document.getElementById('transition-overlay');
-                    const transitionText = document.getElementById('transition-text');
-
-                    if (transitionOverlay && transitionText) {
-                        transitionOverlay.style.display = 'flex';
-                        transitionOverlay.style.opacity = '0';
-                        transitionOverlay.style.transition = 'none'; // Remove any existing transition
-
-                        // Force reflow to ensure display change takes effect
-                        transitionOverlay.offsetHeight;
-
-                        // Fade in the welcome text
-                        setTimeout(() => {
-                            transitionOverlay.style.transition = 'opacity 0.7s ease-out';
-                            transitionOverlay.style.opacity = '1';
-                        }, 50);
-
-                        // After showing welcome text, continue with normal transition
-                        setTimeout(() => {
-                            transitionOverlay.style.transition = 'opacity 0.7s ease-out';
-                            transitionOverlay.style.opacity = '0';
-
-                            // Hide transition overlay and proceed to game
-                            setTimeout(() => {
-                                transitionOverlay.style.display = 'none';
-                                // Continue with the original Phase 3 logic
-                                continueGameTransition();
-                            }, 700);
-                        }, 2500); // Show welcome text for 2.5 seconds
-                    } else {
-                        // Fallback if transition overlay not found
-                        continueGameTransition();
-                    }
-                }, 300); // Brief pause on black screen for mental space
-            }, 500); // Match the 0.5s CSS transition
-
-            // Helper function to continue the game transition
-            function continueGameTransition() {
-                welcomeScreen.style.display = 'none';
-                welcomeScreen.classList.remove('visible', 'fade-out');
-
-                // Show game interface with fade-in
-                gameInterface.classList.remove('hidden');
-                gameInterface.style.removeProperty('display');
-
-                // Ensure all game containers are ready
-                const containers = ['game-container', 'main-area', 'sidebar'];
-                containers.forEach(id => {
-                    const element = document.getElementById(id);
-                    if (element) {
-                        element.style.removeProperty('display');
-                        element.style.removeProperty('opacity');
-                        element.style.removeProperty('visibility');
-                    }
-                });
-
-                // Trigger fade-in animation immediately since text is fully gone
-                setTimeout(() => {
-                    gameInterface.classList.add('fade-in');
-                }, 50);
-
-                // Setup canvas and start game
-                setTimeout(async () => {
-                    game.setupCanvas();
-                    game.render();
-                    game.scheduleRender();
-
-                    // Configure game with player settings
-                    game.playerSettings = playerSettings;
-
-                    // Update player name throughout UI
-                    game.updatePlayerNameInUI();
-
-                    // Expose useful testing methods to console
-                    window.resetCash = () => {
-                        if (game.cashManager) {
-                            game.cashManager.forceReset6k();
-                        } else {
-                            console.error('CashManager not available');
-                        }
-                    };
-                    console.log('🧪 Testing helper: Use resetCash() in console to reset cash to $6,000');
-
-                    // Force correct cash display immediately after initialization
-                    setTimeout(() => {
-                        if (game.cashManager) {
-                            game.cashManager.forceReset6k();
-                            console.log('🔧 Auto-corrected cash to $6,000 on startup');
-                        }
-                    }, 200);
-
-                    // Start the game
-                    await game.startGame();
-
-                    // Initialize tooltip system
-                    if (typeof initializeTooltips === 'function') {
-                        initializeTooltips();
-                    }
-
-                    // Set up governance button
-                    if (window.setupGovernanceButton) {
-                        window.setupGovernanceButton();
-                    }
-
-                    // Setup other game systems
-                    setupContextMenuCloseListener();
-
-                    // Add delay to ensure DOM is fully ready
-                    setTimeout(() => {
-                        console.log('🔧 Setting up systems after DOM ready...');
-                        if (game.governanceSystem) {
-                            game.governanceSystem.setupEventListeners();
-                        }
-                        try {
-                            if (typeof setupMultiplierControls === 'function') {
-                                setupMultiplierControls();
-                            }
-                        } catch (error) {
-                            console.warn('setupMultiplierControls not available:', error.message);
-                        }
-                        // Setup DCF functionality via UIManager
-                        try {
-                            game.uiManager.setupCashflowMenu(game);
-                        } catch (error) {
-                            console.warn('DCF setup failed:', error.message);
-                        }
-                        if (game.tooltipManager && game.tooltipManager.setupVitalityTooltips) {
-                            game.tooltipManager.setupVitalityTooltips();
-                        }
-                    }, 50);
-
-                }, 100);
-
-            }
-        }
-
-        function setupWelcomeScreenHandlers() {
-        // Generate 10 random colors for territorial markers
-        const colors = [
-            '#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FECA57',
-            '#FF9FF3', '#54A0FF', '#5F27CD', '#00D2D3', '#FF9F43',
-            '#10AC84', '#EE5A6F', '#C44569', '#F8B500', '#6C5CE7',
-            '#A55EEA', '#26DE81', '#FD79A8', '#74B9FF', '#E17055'
-        ];
-
-        // Shuffle array and take first 5
-        const shuffledColors = colors.sort(() => 0.5 - Math.random()).slice(0, 5);
-        let selectedColor = shuffledColors[0]; // Default to first color
-
-        // Generate color picker HTML
-        const colorSelector = document.getElementById('color-selector');
-        if (colorSelector) {
-            colorSelector.innerHTML = shuffledColors.map((color, index) =>
-                `<div class="color-option ${index === 0 ? 'selected' : ''}"
-                      data-color="${color}"
-                      style="background: ${color}">
-                </div>`
-            ).join('');
-
-            // Setup color selection handlers
-            const colorOptions = colorSelector.querySelectorAll('.color-option');
-            colorOptions.forEach(option => {
-                option.addEventListener('click', () => {
-                    // Remove selected class from all options
-                    colorOptions.forEach(opt => opt.classList.remove('selected'));
-                    // Add selected class to clicked option
-                    option.classList.add('selected');
-                    selectedColor = option.dataset.color;
-                });
-            });
-        }
-
-        // Start game button
-        const startGameBtn = document.getElementById('start-game-btn');
-        const playerNameInput = document.getElementById('player-name');
-
-        if (startGameBtn && playerNameInput) {
-            startGameBtn.addEventListener('click', async () => {
-                console.log('🚀 Enter button clicked - starting transition');
-
-                const playerName = playerNameInput.value.trim() || 'Player';
-
-                // Save player settings
-                const playerSettings = {
-                    name: playerName,
-                    color: selectedColor,
-                    emoji: '🏛️', // Default civic emoji
-                    setupComplete: true
-                };
-
-                localStorage.setItem('theCommons_playerSettings', JSON.stringify(playerSettings));
-
-                // Sync player color with server
-                try {
-                    await fetch('/api/player/color', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            playerId: 'player',
-                            color: selectedColor
-                        })
-                    });
-                } catch (error) {
-                    console.warn('Could not sync player color with server:', error);
-                }
-
-                // Update game settings and trigger transition
-                if (window.game) {
-                    window.game.playerSettings = playerSettings;
-                    // Set CSS custom property for welcome underline
-                    document.documentElement.style.setProperty('--player-color', selectedColor);
-                    window.game.updatePlayerNameInUI();
-                    window.game.scheduleRender(); // Force re-render with new color
-                }
-
-                // Start transition immediately when user clicks
-                startGameTransition();
-            });
-
-            // Allow Enter key to start game
-            playerNameInput.addEventListener('keypress', (e) => {
-                if (e.key === 'Enter') {
-                    startGameBtn.click();
-                }
-            });
-        }
-    }
-
-} else {
-        // CRITICAL: Never auto-start if welcome screen is missing
-        console.error('⚠️ Welcome screen not found! Cannot start game without user consent.');
-
-        // Show error message instead of auto-starting
-        document.body.innerHTML = `
-            <div style="
-                position: fixed;
-                top: 0; left: 0; right: 0; bottom: 0;
-                background: #0a0a0a;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                color: #ff6b6b;
-                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-                font-size: 18px;
-                text-align: center;
-                z-index: 99999;
-            ">
-                <div>
-                    <h2 style="color: #ff6b6b; margin-bottom: 16px;">Welcome Screen Missing</h2>
-                    <p style="margin-bottom: 24px;">The game cannot start without proper user registration.</p>
-                    <button onclick="window.location.reload()" style="
-                        background: #4CAF50;
-                        color: white;
-                        border: none;
-                        padding: 12px 24px;
-                        border-radius: 8px;
-                        font-size: 16px;
-                        cursor: pointer;
-                    ">Reload Page</button>
-                </div>
-            </div>
-        `;
-
-        // Exit without starting any game systems
-        return;
-
-        // Add delay to ensure DOM is fully ready
-        setTimeout(() => {
-            console.log('🔧 Setting up systems after DOM ready (fallback)...');
-            if (game.governanceSystem) {
-                game.governanceSystem.setupEventListeners();
-            }
-            try {
-                if (typeof setupMultiplierControls === 'function') {
-                    setupMultiplierControls();
-                }
-            } catch (error) {
-                console.warn('setupMultiplierControls not available:', error.message);
-            }
-            // DCF functionality now handled by UIManager
-            if (game.tooltipManager && game.tooltipManager.setupVitalityTooltips) {
-                game.tooltipManager.setupVitalityTooltips();
-            }
-        }, 50);
-    }
-    
-    
-    // Keyboard shortcut to toggle testing mode (Ctrl+Shift+M)
-    document.addEventListener('keydown', (e) => {
-        if (e.ctrlKey && e.shiftKey && e.key === 'M') {
-            e.preventDefault();
-            document.body.classList.toggle('testing-mode');
-            const isTestingMode = document.body.classList.contains('testing-mode');
-        }
-    });
-
-    // Space bar shortcut to skip welcome screen for faster development
-    document.addEventListener('keydown', async (e) => {
-        if (e.code === 'Space') {
-            const welcomeScreen = document.getElementById('welcome-screen');
-            if (welcomeScreen && welcomeScreen.style.display !== 'none') {
-                e.preventDefault();
-
-                // Get current form values
-                const nameInput = document.getElementById('player-name');
-                const selectedColorOption = document.querySelector('.color-option.selected');
-
-                const playerName = nameInput ? nameInput.value.trim() || 'Player' : 'Player';
-                const selectedColor = selectedColorOption ? selectedColorOption.dataset.color : '#10AC84';
-
-                // Save to localStorage
-                localStorage.setItem('playerName', playerName);
-                localStorage.setItem('playerColor', selectedColor);
-
-                // Sync player color with server
-                try {
-                    await fetch('/api/player/color', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            playerId: 'player',
-                            color: selectedColor
-                        })
-                    });
-                } catch (error) {
-                    console.warn('Could not sync player color with server:', error);
-                }
-
-                // Update player settings
-                if (!this.playerSettings) {
-                    this.playerSettings = { name: 'Player', emoji: '🏛️' };
-                }
-                this.playerSettings.name = playerName;
-                this.playerSettings.color = selectedColor;
-
-                // Update ParcelSelectorManager with new color
-                if (this.parcelSelector) {
-                    this.parcelSelector.updatePlayerColor();
-                }
-
-                // Update current player (legacy support)
-                if (typeof currentPlayer !== 'undefined' && currentPlayer) {
-                    currentPlayer.name = playerName;
-                    currentPlayer.color = selectedColor;
-                }
-
-                // Set CSS custom property for welcome underline
-                document.documentElement.style.setProperty('--player-color', selectedColor);
-
-                // Hide all welcome elements immediately
-                welcomeScreen.style.display = 'none';
-                const overlay = document.getElementById('transition-overlay');
-                if (overlay) overlay.style.display = 'none';
-
-                // Continue to game immediately
-                continueGameTransition();
-            }
-        }
-    });
-
-    // Magic link button event listener
-    const magicLinkBtn = document.getElementById('magic-link-btn');
-    if (magicLinkBtn) {
-        magicLinkBtn.addEventListener('click', () => {
-        const emailInput = document.getElementById('player-email');
-        const email = emailInput.value.trim();
-        
-        if (!email) {
-            emailInput.style.borderColor = '#ef4444';
-            emailInput.placeholder = 'Email required';
-            setTimeout(() => {
-                emailInput.style.borderColor = '';
-                emailInput.placeholder = 'your@email.com';
-            }, 2000);
-            return;
-        }
-        
-        // Basic email validation
-        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-        if (!emailRegex.test(email)) {
-            emailInput.style.borderColor = '#ef4444';
-            emailInput.value = '';
-            emailInput.placeholder = 'Valid email required';
-            setTimeout(() => {
-                emailInput.style.borderColor = '';
-                emailInput.placeholder = 'your@email.com';
-            }, 2000);
-            return;
-        }
-        
-        // Simulate sending magic link
-        const magicBtn = document.getElementById('magic-link-btn');
-        const originalText = magicBtn.textContent;
-        
-        magicBtn.textContent = 'SENDING...';
-        magicBtn.disabled = true;
-        magicBtn.style.opacity = '0.7';
-        
-        setTimeout(() => {
-            magicBtn.textContent = 'LINK SENT!';
-            magicBtn.style.background = 'linear-gradient(135deg, #10b981 0%, #059669 100%)';
-            
-            setTimeout(() => {
-                magicBtn.textContent = originalText;
-                magicBtn.disabled = false;
-                magicBtn.style.opacity = '1';
-                magicBtn.style.background = '';
-            }, 3000);
-        }, 1500);
-        
-        // Store email for potential multiplayer session
-        localStorage.setItem('theCommons_playerEmail', email);
-        
-        });
-    }
-    
-    
-    document.getElementById('city-name').textContent = generateCityName().toUpperCase();
-    
-    // Close context menu when clicking elsewhere - will be set up after game is created
-    function setupContextMenuCloseListener() {
-        document.addEventListener('click', (e) => {
-            if (window.game && window.game.contextMenu && !window.game.contextMenu.contains(e.target) && e.target !== window.game.canvas) {
-                window.game.hideContextMenu();
-            }
-        });
-    }
-    
-    // Governance button functionality - only set up after game starts
+// Governance button functionality - only set up after game starts
     window.setupGovernanceButton = function() {
         const governanceBtn = document.getElementById('governance-btn');
         if (governanceBtn && game) {
@@ -8105,33 +6481,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     
     // Player menu options
-    const showLeaderboardBtn = document.getElementById('show-leaderboard');
-    if (showLeaderboardBtn) {
-        showLeaderboardBtn.addEventListener('click', () => {
-            if (window.game) {
-                window.game.showLeaderboardModal();
-            }
-            // Close player menu
-            const playerMenu = document.getElementById('player-menu');
-            if (playerMenu) {
-                playerMenu.classList.remove('active');
-            }
-        });
-    }
 
-    const showPlayerStatsBtn = document.getElementById('show-player-stats');
-    if (showPlayerStatsBtn) {
-        showPlayerStatsBtn.addEventListener('click', () => {
-            if (window.game) {
-                window.game.showPlayerStatsModal();
-            }
-            // Close player menu
-            const playerMenu = document.getElementById('player-menu');
-            if (playerMenu) {
-                playerMenu.classList.remove('active');
-            }
-        });
-    }
 
     const saveGameBtn = document.getElementById('save-game');
     if (saveGameBtn) {
@@ -8147,49 +6497,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // Reset game button
-    const resetGameBtn = document.getElementById('reset-game');
-    if (resetGameBtn) {
-        resetGameBtn.addEventListener('click', () => {
-            if (confirm('Are you sure you want to reset the game? This will clear all progress and cannot be undone.')) {
-                if (window.game) {
-                    window.game.resetGame();
-                }
-            }
-            // Close player menu
-            const playerMenu = document.getElementById('player-menu');
-            if (playerMenu) {
-                playerMenu.classList.remove('active');
-            }
-        });
-    }
 
-    // Attenuation overlay toggle button
-    const toggleAttenuationBtn = document.getElementById('toggle-attenuation-overlay');
-    if (toggleAttenuationBtn) {
-        toggleAttenuationBtn.addEventListener('click', () => {
-            if (window.game) {
-                // Toggle the visualization state
-                window.game.showAttenuationVisualization = !window.game.showAttenuationVisualization;
-
-                // Update the status text
-                const statusSpan = document.getElementById('attenuation-status');
-                if (statusSpan) {
-                    statusSpan.textContent = window.game.showAttenuationVisualization ? 'ON' : 'OFF';
-                }
-
-                // Request a re-render to show/hide the overlay
-                window.game.scheduleRender();
-
-                console.log('🌿 Attenuation visualization:', window.game.showAttenuationVisualization ? 'enabled' : 'disabled');
-            }
-            // Close player menu
-            const playerMenu = document.getElementById('player-menu');
-            if (playerMenu) {
-                playerMenu.classList.remove('active');
-            }
-        });
-    }
 
     const confirmSaveBtn = document.getElementById('confirm-save');
     if (confirmSaveBtn) {
@@ -8307,21 +6615,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
     
-    const resetBuildingBtn = document.getElementById('reset-building-position');
-    if (resetBuildingBtn) {
-        resetBuildingBtn.addEventListener('click', () => {
-        yOffsetSlider.value = 22;
-        heightSlider.value = 1.0;
-        widthSlider.value = 1.0;
-        
-        window.buildingPositionControls.yOffset = 22;
-        window.buildingPositionControls.heightMultiplier = 1.0;
-        window.buildingPositionControls.widthMultiplier = 1.0;
-        
-        updateBuildingPositionDisplay();
-        game.scheduleRender();
-        });
-    }
+    // Building position controls removed - handled by dedicated building modules
 
     const applyPositionBtn = document.getElementById('apply-position');
     if (applyPositionBtn) {
@@ -8343,12 +6637,12 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // Setup tooltips - now handled by external tooltip-manager.js
     if (typeof setupVitalityTooltips === 'function') {
-        if (game.tooltipManager && game.tooltipManager.setupVitalityTooltips) {
-            game.tooltipManager.setupVitalityTooltips();
+        if (window.game && window.game.tooltipManager && window.game.tooltipManager.setupVitalityTooltips) {
+            window.game.tooltipManager.setupVitalityTooltips();
         }
     }
-    if (game.tooltipManager && game.tooltipManager.setupGameTooltips) {
-        game.tooltipManager.setupGameTooltips();
+    if (window.game && window.game.tooltipManager && window.game.tooltipManager.setupGameTooltips) {
+        window.game.tooltipManager.setupGameTooltips();
     }
     
     // Tab switching
@@ -8370,255 +6664,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Legacy Amenity Creator removed - now using CSV→JSON upload system
 
-    // Update building creator to use file data and persistence
-    const originalCreateBuilding = document.getElementById('create-building');
-    if (originalCreateBuilding) {
-        originalCreateBuilding.replaceWith(originalCreateBuilding.cloneNode(true));
-    }
-
-    const createBuildingBtn = document.getElementById('create-building');
-    if (createBuildingBtn) {
-        createBuildingBtn.addEventListener('click', () => {
-        const name = document.getElementById('building-name').value;
-        const category = document.getElementById('building-category').value;
-        const editingId = document.getElementById('create-building').dataset.editingId;
-        const isDefaultCopy = document.getElementById('create-building').dataset.isDefaultCopy === 'true';
-        
-        if (!name.trim()) {
-            return; // No building name entered
-        }
-        
-        // Collect form data with file data
-        const buildingData = {
-            id: editingId || `custom_${category}_${name.toLowerCase().replace(/\s+/g, '_')}`,
-            name: name,
-            category: category,
-            images: {
-                construction: document.getElementById('construction-image').dataset.imageData || '',
-                built: document.getElementById('built-image').dataset.imageData || ''
-            },
-            economics: {
-                buildCost: parseInt(document.getElementById('build-cost').value) || 0,
-                constructionDays: parseInt(document.getElementById('construction-days').value) || 1,
-                maxRevenue: parseInt(document.getElementById('max-revenue').value) || 0,
-                maintenanceCost: parseInt(document.getElementById('maintenance-cost').value) || 0
-            },
-            population: {
-                jobsCreated: parseInt(document.getElementById('jobs-created').value) || 0,
-                bedroomsAdded: parseInt(document.getElementById('bedrooms-added').value) || 0,
-                populationRequired: parseInt(document.getElementById('population-required').value) || 0
-            },
-            resources: {
-                energyDemand: parseInt(document.getElementById('energy-demand').value) || 0,
-                foodProduction: parseInt(document.getElementById('food-production').value) || 0
-            },
-            decay: {
-                rate: parseFloat(document.getElementById('decay-rate').value) || 5.0
-            },
-            prerequisites: document.getElementById('prerequisites').value
-                .split(',')
-                .map(p => p.trim())
-                .filter(p => p.length > 0),
-            // Note: domainImpacts removed - now using JSON building data with livability system
-        };
-        
-        // Save using building manager
-        window.buildingManager.saveBuilding(buildingData);
-        
-        const action = editingId ? 'updated' : (isDefaultCopy ? 'customized' : 'created');
-        // Building saved successfully (removed alert)
-        
-        // Reset form and button if we were editing
-        if (editingId || isDefaultCopy) {
-            delete document.getElementById('create-building').dataset.editingId;
-            delete document.getElementById('create-building').dataset.isDefaultCopy;
-            document.getElementById('create-building').textContent = 'CREATE BUILDING';
-            // Clear form
-            document.getElementById('building-form').reset();
-            document.querySelectorAll('#building-creator .impact-row input').forEach(input => {
-                input.value = '0';
-            });
-            document.getElementById('construction-image').dataset.imageData = '';
-            document.getElementById('built-image').dataset.imageData = '';
-            document.getElementById('construction-preview').style.display = 'none';
-            document.getElementById('built-preview').style.display = 'none';
-            // Refresh building manager
-            showTab('building-manager');
-            showTab('building-creator');
-        }
-    });
-    }
+    // Building creator form removed - handled by dedicated building modules
 
     // Load saved data on startup
 
-    // Setup building manager
-    setupBuildingManager();
-
-    function setupBuildingManager() {
-        populateBuildingList();
-        
-        // Setup filter buttons
-        document.querySelectorAll('.filter-btn').forEach(btn => {
-            btn.addEventListener('click', () => {
-                // Update active state
-                document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
-                btn.classList.add('active');
-                
-                // Filter buildings
-                const filter = btn.dataset.filter;
-                populateBuildingList(filter);
-            });
-        });
-        
-        // Refresh building list when tab is activated
-        document.querySelectorAll('.tab-btn').forEach(btn => {
-            btn.addEventListener('click', () => {
-                if (btn.dataset.tab === 'building-manager') {
-                    populateBuildingList(); // Remove setTimeout for immediate response
-                }
-            });
-        });
-    }
-
-    function populateBuildingList(filter = 'all') {
-        const buildingList = document.getElementById('all-building-list');
-
-        // Check if building list element exists
-        if (!buildingList) {
-            console.warn('Building list element not found - skipping population');
-            return;
-        }
-
-        // Get all buildings from the building manager
-        let allBuildings = window.buildingManager.getAllBuildings();
-        
-        // Apply filter
-        if (filter === 'default') {
-            allBuildings = allBuildings.filter(b => b.isDefault);
-        } else if (filter === 'custom') {
-            allBuildings = allBuildings.filter(b => !b.isDefault);
-        }
-        
-        if (allBuildings.length === 0) {
-            buildingList.innerHTML = `<p class="no-buildings">No ${filter === 'custom' ? 'custom' : filter === 'default' ? 'default' : ''} buildings found.</p>`;
-            return;
-        }
-        
-        // Batch DOM operations for better performance
-        const fragment = document.createDocumentFragment();
-        
-        allBuildings.forEach(building => {
-            const buildingItem = document.createElement('div');
-            buildingItem.className = 'building-item';
-            const isCustom = !building.isDefault;
-            const buildCost = building.economics ? building.economics.buildCost : building.cost;
-            const createdDate = isCustom && building.createdAt ? new Date(building.createdAt).toLocaleDateString() : 'Default';
-            
-            buildingItem.innerHTML = `
-                <div class="building-info">
-                    <h5>${building.name} ${building.isDefault ? '<span style="color: #888; font-size: 0.8em;">(DEFAULT)</span>' : '<span style="color: #4CAF50; font-size: 0.8em;">(CUSTOM)</span>'}</h5>
-                    <p>Category: ${building.category} | Cost: $${buildCost.toLocaleString()} | ${isCustom ? 'Created' : 'Type'}: ${createdDate}</p>
-                </div>
-                <div class="building-actions">
-                    <button class="secondary-btn edit-building-btn" data-building-id="${building.id}">EDIT</button>
-                    <button class="danger-btn delete-building-btn" data-building-id="${building.id}">DELETE</button>
-                </div>
-            `;
-            
-            fragment.appendChild(buildingItem);
-        });
-        
-        // Single DOM update
-        buildingList.innerHTML = '';
-        buildingList.appendChild(fragment);
-        
-        // Add event listeners for edit and delete buttons
-        buildingList.querySelectorAll('.edit-building-btn').forEach(btn => {
-            btn.addEventListener('click', (e) => {
-                const buildingId = e.target.dataset.buildingId;
-                editBuilding(buildingId);
-            });
-        });
-        
-        buildingList.querySelectorAll('.delete-building-btn').forEach(btn => {
-            btn.addEventListener('click', (e) => {
-                const buildingId = e.target.dataset.buildingId;
-                deleteBuilding(buildingId);
-            });
-        });
-    }
-
-    function editBuilding(buildingId) {
-        // Find building in the building manager
-        const building = window.buildingManager.getBuildingById(buildingId);
-        
-        if (!building) {
-            return; // Building not found
-            return;
-        }
-        
-        // Switch to building creator tab
-        document.querySelector('[data-tab="building-creator"]').click();
-        
-        // Populate form with building data
-        setTimeout(() => {
-            document.getElementById('building-name').value = building.name;
-            document.getElementById('building-category').value = building.category;
-            document.getElementById('build-cost').value = building.economics?.buildCost || building.cost || 0;
-            document.getElementById('construction-days').value = building.economics?.constructionDays || 7;
-            document.getElementById('max-revenue').value = building.economics?.maxRevenue || 0;
-            document.getElementById('maintenance-cost').value = building.economics?.maintenanceCost || 0;
-            document.getElementById('decay-rate').value = building.decay?.rate || 0.01;
-            document.getElementById('jobs-created').value = building.population?.jobsCreated || 0;
-            document.getElementById('bedrooms-added').value = building.population?.bedroomsAdded || 0;
-            document.getElementById('population-required').value = building.population?.populationRequired || 0;
-            document.getElementById('energy-demand').value = building.resources?.energyDemand || 0;
-            document.getElementById('food-production').value = building.resources?.foodProduction || 0;
-            document.getElementById('prerequisites').value = building.prerequisites?.join(', ') || '';
-            
-            // Note: Domain impacts section removed - now using livability data from JSON buildings
-            
-            // Store building ID for update
-            if (building.isDefault) {
-                // For default buildings, create a custom copy with a new ID
-                document.getElementById('create-building').dataset.isDefaultCopy = 'true';
-                document.getElementById('create-building').textContent = 'CREATE CUSTOM COPY';
-                // Don't set editingId for default buildings as we want to create new
-            } else {
-                document.getElementById('create-building').dataset.editingId = buildingId;
-                document.getElementById('create-building').textContent = 'UPDATE BUILDING';
-            }
-            
-            // Set images if they exist
-            if (building.images.construction) {
-                const constructionInput = document.getElementById('construction-image');
-                constructionInput.dataset.imageData = building.images.construction;
-                document.getElementById('construction-preview').innerHTML = 
-                    `<img src="${building.images.construction}" alt="Preview">`;
-            }
-            
-            if (building.images.built) {
-                const builtInput = document.getElementById('built-image');
-                builtInput.dataset.imageData = building.images.built;
-                document.getElementById('built-preview').innerHTML = 
-                    `<img src="${building.images.built}" alt="Preview">`;
-            }
-        }, 100);
-    }
-
-    function deleteBuilding(buildingId) {
-        const building = window.buildingManager.getBuildingById(buildingId);
-
-        if (!building) {
-            return; // Building not found
-        }
-        
-        if (confirm(`Are you sure you want to delete "${building.name}"? This action cannot be undone.`)) {
-            window.buildingManager.deleteBuilding(buildingId);
-            populateBuildingList();
-            // Building deleted (removed alert)
-        }
-    }
+    // Building manager setup removed - handled by dedicated building modules
 
     // Legacy DCF functions removed - now handled by UIManager
 
@@ -8676,8 +6726,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 // syncSidebarSlider(propertyName, value); // Removed - sidebar economic controls no longer exist
                 
                 // Recalculate vitality in real-time
-                window.game.calculateCityVitality();
-                window.game.updateVitalityDisplay();
+                window.game.calculateCityVitality(); // This updates the display automatically
             });
         });
         
@@ -8702,8 +6751,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 });
                 
                 // Recalculate
-                window.game.calculateCityVitality();
-                window.game.updateVitalityDisplay();
+                window.game.calculateCityVitality(); // This updates the display automatically
             }
             });
         }
@@ -8895,88 +6943,9 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-}); // End DOMContentLoaded listener
-
 // REMOVED - Economic balance controls are now only in dev tools
-/*
-function setupSidebarMultipliers() {
-    const sidebarSliders = {
-        'sidebar-energy-multiplier': 'energy',
-        'sidebar-food-multiplier': 'food',
-        'sidebar-housing-multiplier': 'housing',
-        'sidebar-jobs-multiplier': 'jobs',
-        'sidebar-population-growth-rate': 'populationGrowthRate',
-        'sidebar-base-revenue-multiplier': 'baseRevenue',
-        'sidebar-maintenance-multiplier': 'maintenance'
-    };
-
-    // Setup each sidebar slider
-    Object.entries(sidebarSliders).forEach(([sliderId, propertyName]) => {
-        const slider = document.getElementById(sliderId);
-        const valueDisplay = slider.parentElement.querySelector('.multiplier-value-compact');
-
-        if (!slider || !valueDisplay) return;
-
-        // Load saved value or use current game value
-        const savedValue = localStorage.getItem(`multiplier_${propertyName}`);
-        if (savedValue) {
-            slider.value = savedValue;
-            window.game.economicMultipliers[propertyName] = parseFloat(savedValue);
-        }
-
-        // Update display
-        updateSidebarValueDisplay(slider, valueDisplay, propertyName);
-
-        // Add event listener for real-time updates
-        slider.addEventListener('input', () => {
-            const value = parseFloat(slider.value);
-            window.game.economicMultipliers[propertyName] = value;
-            updateSidebarValueDisplay(slider, valueDisplay, propertyName);
-
-            // Save to localStorage
-            localStorage.setItem(`multiplier_${propertyName}`, value);
-        });
-    });
-}
-
-function updateSidebarValueDisplay(slider, valueDisplay, propertyName) {
-    const value = parseFloat(slider.value);
-
-    // Format display based on property type
-    if (propertyName === 'populationGrowthRate') {
-        valueDisplay.textContent = `${(value * 100).toFixed(1)}%`;
-    } else {
-        valueDisplay.textContent = `${value.toFixed(1)}x`;
-    }
-}
-*/
 
 // REMOVED - Part of sidebar economic balance controls
-/*
-function syncSidebarSlider(propertyName, value) {
-    // Map property names to sidebar slider IDs
-    const sidebarSliderMap = {
-        energy: 'sidebar-energy-multiplier',
-        food: 'sidebar-food-multiplier',
-        housing: 'sidebar-housing-multiplier',
-        jobs: 'sidebar-jobs-multiplier',
-        populationGrowthRate: 'sidebar-population-growth-rate',
-        baseRevenue: 'sidebar-base-revenue-multiplier',
-        maintenance: 'sidebar-maintenance-multiplier'
-    };
 
-    const sidebarSliderId = sidebarSliderMap[propertyName];
-    if (sidebarSliderId) {
-        const sidebarSlider = document.getElementById(sidebarSliderId);
-        if (sidebarSlider) {
-            sidebarSlider.value = value;
-            const valueDisplay = sidebarSlider.parentElement.querySelector('.multiplier-value-compact');
-            if (valueDisplay) {
-                updateSidebarValueDisplay(sidebarSlider, valueDisplay, propertyName);
-            }
-        }
-    }
-}
-*/
-
-
+// Export IsometricGrid to global scope
+window.IsometricGrid = IsometricGrid;

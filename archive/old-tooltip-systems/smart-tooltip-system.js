@@ -40,10 +40,18 @@ class SmartTooltipSystem {
         const performance = await this.getBuildingPerformance(row, col);
         const economics = await this.getBuildingEconomics(row, col);
 
+        // Get owner name
+        const ownerName = parcel.owner ? this.getPlayerName(parcel.owner) : 'Unowned';
+
+        // Determine if critical condition for red header
+        const efficiency = isNaN(performance.efficiency) ? 0 : performance.efficiency;
+        const isCritical = efficiency < 0.4; // Less than 40% is critical
+
         const content = {
             title: `${building.name}`,
-            subtitle: this.getPerformanceSubtitle(performance),
-            sections: []
+            subtitle: ownerName,
+            sections: [],
+            headerColor: isCritical ? '#ff4444' : null // Red header for critical
         };
 
         // Performance Overview Section
@@ -52,7 +60,7 @@ class SmartTooltipSystem {
             items: [
                 {
                     label: "Efficiency",
-                    value: `${Math.round(performance.efficiency * 100)}%`,
+                    value: `${isNaN(performance.efficiency) ? 0 : Math.round(performance.efficiency * 100)}%`,
                     color: this.getEfficiencyColor(performance.efficiency),
                     trend: this.getEfficiencyTrend(row, col)
                 },
@@ -77,6 +85,33 @@ class SmartTooltipSystem {
             });
         }
 
+        // Building Supplies Section - Show what this building provides
+        const suppliesItems = this.generateBuildingSuppliesItems(building);
+        if (suppliesItems.length > 0) {
+            content.sections.push({
+                title: "🏭 Provides",
+                items: suppliesItems
+            });
+        }
+
+        // JEEFHH Resource Analysis Section - Show what building needs
+        const jeefhhItems = await this.generateJEEFHHResourceItems(row, col, building);
+        if (jeefhhItems.length > 0) {
+            content.sections.push({
+                title: "⚠️ Needs",
+                items: jeefhhItems
+            });
+        } else {
+            // Only show CARENS quality of life items if JEEFHH needs are met
+            const carensItems = await this.generateCARENSQualityItems(row, col, building);
+            if (carensItems.length > 0) {
+                content.sections.push({
+                    title: "✨ Quality of Life",
+                    items: carensItems
+                });
+            }
+        }
+
         // Resource Status Section - Show what this building needs/provides
         const resourceItems = this.generateResourceItems(building, performance);
         if (resourceItems.length > 0) {
@@ -87,7 +122,7 @@ class SmartTooltipSystem {
         }
 
         // Building Details Section
-        const age = parcel.buildingAge || 0;
+        const age = Math.floor(parcel.buildingAge || 0);
         const decay = parcel.decay || 0;
         content.sections.push({
             title: "Building Details",
@@ -120,31 +155,104 @@ class SmartTooltipSystem {
     }
 
     /**
+     * Format real-time countdown in minutes and seconds
+     */
+    formatRealTimeCountdown(timeRemainingMs) {
+        if (timeRemainingMs <= 0) return "Complete";
+
+        const totalSeconds = Math.ceil(timeRemainingMs / 1000);
+        const minutes = Math.floor(totalSeconds / 60);
+        const seconds = totalSeconds % 60;
+
+        if (minutes > 0) {
+            return `${minutes}m ${seconds}s`;
+        } else {
+            return `${seconds}s`;
+        }
+    }
+
+    /**
+     * Format how long construction has been running
+     */
+    formatConstructionStartTime(elapsedMs, gameDayMs) {
+        const daysElapsed = elapsedMs / gameDayMs;
+
+        if (daysElapsed >= 1) {
+            const days = Math.floor(daysElapsed);
+            const hours = Math.floor((daysElapsed - days) * 24);
+            if (days === 1 && hours === 0) return "1 day ago";
+            if (days > 1 && hours === 0) return `${days} days ago`;
+            if (days === 1) return `1 day, ${hours}h ago`;
+            return `${days} days, ${hours}h ago`;
+        } else {
+            const hoursElapsed = daysElapsed * 24;
+            if (hoursElapsed >= 1) {
+                const hours = Math.floor(hoursElapsed);
+                const minutes = Math.floor((hoursElapsed - hours) * 60);
+                if (minutes === 0) return `${hours}h ago`;
+                return `${hours}h ${minutes}m ago`;
+            } else {
+                const minutesElapsed = hoursElapsed * 60;
+                if (minutesElapsed >= 1) {
+                    return `${Math.ceil(minutesElapsed)}m ago`;
+                } else {
+                    return "Just started";
+                }
+            }
+        }
+    }
+
+    /**
+     * Get construction phase name based on progress
+     */
+    getConstructionPhase(progress) {
+        if (progress < 0.25) return "Foundation";
+        if (progress < 0.5) return "Framing";
+        if (progress < 0.75) return "Build-out";
+        if (progress < 0.95) return "Finishing";
+        return "Final Inspection";
+    }
+
+    /**
+     * Get detailed construction phase description
+     */
+    getConstructionPhaseDescription(progress) {
+        if (progress < 0.25) return "🏗️ Excavation and foundation work";
+        if (progress < 0.5) return "🔨 Structural framing and utilities";
+        if (progress < 0.75) return "🏠 Interior and exterior construction";
+        if (progress < 0.95) return "✨ Final details and systems testing";
+        return "🔍 Quality inspection and approval";
+    }
+
+    /**
      * Generate tooltip for buildings under construction
      */
     generateConstructionTooltip(row, col, parcel, building) {
-        const startTime = parcel._constructionStartTime || Date.now();
-        const timeRemaining = parcel._constructionTimeRemaining || 0;
-        const totalBuildTime = building.buildTime || 5000; // Default 5 seconds if not defined
-        const elapsedTime = Date.now() - startTime;
+        const now = Date.now();
+        const GAME_DAY_MS = 9860; // 1 day = 9.86 seconds (1 year = 1 hour = 3600s, so 1 day = 3600/365 = 9.86s)
+
+        const startTime = parcel._constructionStartTime || now;
+        const constructionDays = parcel._constructionDays || 3;
+        const totalBuildTime = constructionDays * GAME_DAY_MS;
+        const elapsedTime = now - startTime;
         const progress = Math.min(Math.max(elapsedTime / totalBuildTime, 0), 1);
+        const timeRemaining = Math.max(0, totalBuildTime - elapsedTime);
+
+        // Determine construction phase
+        const phase = this.getConstructionPhase(progress);
+        const progressColor = progress < 0.3 ? '#ff6b6b' : progress < 0.7 ? '#ffa500' : '#4ecdc4';
 
         return {
             title: `🚧 ${building.name}`,
-            subtitle: "Under Construction",
+            subtitle: `${Math.round(progress * 100)}% Complete`,
             sections: [
                 {
-                    title: "Construction Progress",
+                    title: "Construction",
                     items: [
                         {
-                            label: "Progress",
-                            value: `${Math.round(progress * 100)}%`,
-                            color: '#ffa500'
-                        },
-                        {
                             label: "Time Remaining",
-                            value: timeRemaining > 0 ? `${Math.ceil(timeRemaining / 1000)}s` : "Almost complete",
-                            color: '#888888'
+                            value: this.formatRealTimeCountdown(timeRemaining),
+                            color: '#ffa500'
                         }
                     ]
                 },
@@ -243,7 +351,9 @@ class SmartTooltipSystem {
         // Get from economic API or calculate locally
         let performance;
         if (this.game.economicAPI) {
-            performance = await this.game.economicAPI.getBuildingPerformance(row, col);
+            // Pass current gameState for server synchronization
+            const gameState = this.game.economicAPI.prepareGameState(this.game);
+            performance = await this.game.economicAPI.getBuildingPerformance(row, col, gameState);
         }
 
         if (!performance) {
@@ -402,7 +512,7 @@ class SmartTooltipSystem {
     }
 
     getPerformanceSubtitle(performance) {
-        const efficiency = Math.round(performance.efficiency * 100);
+        const efficiency = isNaN(performance.efficiency) ? 0 : Math.round(performance.efficiency * 100);
         if (efficiency >= 90) return `🟢 Optimal (${efficiency}%)`;
         if (efficiency >= 70) return `🟡 Good (${efficiency}%)`;
         if (efficiency >= 40) return `🟠 Poor (${efficiency}%)`;
@@ -566,6 +676,366 @@ class SmartTooltipSystem {
         }
 
         return items;
+    }
+
+    /**
+     * Generate building supplies section showing what this building provides
+     */
+    generateBuildingSuppliesItems(building) {
+        if (!building || !building.resources) return [];
+
+        const supplies = [];
+        const resourcePriority = ['housing', 'food', 'energy', 'jobs', 'education', 'healthcare'];
+
+        resourcePriority.forEach(resourceType => {
+            const provided = building.resources[resourceType + 'Provided'] || 0;
+            if (provided > 0) {
+                supplies.push({
+                    label: this.getBuildingSupplyLabel(building, resourceType),
+                    value: `${provided}`,
+                    color: '#4CAF50' // Green for supplies
+                });
+            }
+        });
+
+        return supplies;
+    }
+
+    /**
+     * Get building-specific supply labels that reflect what the building actually provides
+     */
+    getBuildingSupplyLabel(building, resourceType) {
+        const buildingId = building.id || building.type;
+
+        switch (buildingId) {
+            case 'farmers_market':
+                if (resourceType === 'jobs') return 'Jobs for workers';
+                if (resourceType === 'food') return 'Fresh food';
+                break;
+
+            case 'apartment_complex':
+                if (resourceType === 'housing') return 'Housing for residents';
+                if (resourceType === 'jobs') return 'Property management job';
+                break;
+
+            case 'cottage':
+                if (resourceType === 'housing') return 'Family housing';
+                break;
+
+            case 'solar_farm':
+                if (resourceType === 'energy') return 'Clean electricity';
+                if (resourceType === 'jobs') return 'Maintenance jobs';
+                break;
+
+            case 'elementary_school':
+                if (resourceType === 'education') return 'Primary education';
+                if (resourceType === 'jobs') return 'Teaching jobs';
+                break;
+
+            case 'library':
+                if (resourceType === 'education') return 'Educational resources';
+                if (resourceType === 'jobs') return 'Library jobs';
+                if (resourceType === 'healthcare') return 'Wellness programs';
+                break;
+
+            case 'brewery':
+                if (resourceType === 'jobs') return 'Manufacturing jobs';
+                if (resourceType === 'food') return 'Beverages & food';
+                if (resourceType === 'education') return 'Trade skills training';
+                break;
+        }
+
+        // Default label
+        return `${resourceType.charAt(0).toUpperCase()}${resourceType.slice(1)}`;
+    }
+
+    /**
+     * Generate JEEFHH resource analysis based on adjacent cells
+     */
+    async generateJEEFHHResourceItems(row, col, building) {
+        if (!building) return [];
+
+        // Priority order: Housing, Food, Energy, Jobs, Education, Healthcare
+        const resourcePriority = ['housing', 'food', 'energy', 'jobs', 'education', 'healthcare'];
+        const needs = [];
+
+        resourcePriority.forEach(resourceType => {
+            const score = this.game.buildingSystem.getAdjacentResourceScore(resourceType, row, col);
+            const required = building.resources?.[resourceType + 'Required'] || 0;
+            const provided = building.resources?.[resourceType + 'Provided'] || 0;
+
+            // Only show needs for resources this building actually requires
+            if (required > 0) {
+                const deficit = Math.max(0, required - score);
+                if (deficit > 0) {
+                    // Customize messaging based on building function and resource type
+                    const needLabel = this.getBuildingSpecificNeedLabel(building, resourceType, deficit);
+
+                    needs.push({
+                        label: needLabel,
+                        value: `${deficit}`,
+                        color: deficit > required * 0.5 ? '#ff6b6b' : '#ffa500'
+                    });
+                }
+            }
+        });
+
+        // Return only top 2 most pressing needs
+        return needs.slice(0, 2);
+    }
+
+    /**
+     * Get building-specific need labels that reflect the building's actual function
+     */
+    getBuildingSpecificNeedLabel(building, resourceType, deficit) {
+        const buildingId = building.id || building.type;
+
+        // Customize based on building type and what it actually does
+        switch (buildingId) {
+            case 'farmers_market':
+                if (resourceType === 'jobs') return 'Workers needed'; // Market needs workers to operate
+                if (resourceType === 'energy') return 'Power needed'; // Market needs energy to operate
+                break;
+
+            case 'apartment_complex':
+            case 'cottage':
+                if (resourceType === 'energy') return 'Power needed'; // Residents need power
+                if (resourceType === 'jobs') return 'Manager needed'; // Building needs management
+                break;
+
+            case 'solar_farm':
+                if (resourceType === 'jobs') return 'Workers needed'; // Solar farm needs maintenance workers
+                break;
+
+            case 'elementary_school':
+            case 'library':
+                if (resourceType === 'jobs') return 'Staff needed'; // Schools need teachers/staff
+                if (resourceType === 'energy') return 'Power needed'; // Schools need power to operate
+                break;
+
+            case 'brewery':
+                if (resourceType === 'jobs') return 'Workers needed'; // Brewery needs production workers
+                if (resourceType === 'energy') return 'Power needed'; // Brewery needs power for production
+                break;
+        }
+
+        // Default labels for other cases
+        return `${resourceType.charAt(0).toUpperCase()}${resourceType.slice(1)} needed`;
+    }
+
+    /**
+     * Get resident-focused descriptive message for missing resource
+     */
+    getResourceHint(resourceType, lastCheck) {
+        const emptyCount = lastCheck.missingResources.filter(r => r.reason === 'empty').length;
+
+        switch(resourceType) {
+            case 'jobs':
+                return emptyCount > 0 ? 'Residents here are struggling to find work' : 'Workers are commuting too far for jobs';
+            case 'energy':
+                return emptyCount > 0 ? 'Power outages are disrupting daily life' : 'The energy supply is unreliable';
+            case 'education':
+                return emptyCount > 0 ? 'Children here lack access to schools' : 'Educational opportunities are limited';
+            case 'food':
+                return emptyCount > 0 ? 'Residents are going hungry' : 'Fresh food is hard to find nearby';
+            case 'housing':
+                return emptyCount > 0 ? 'Workers need places to live' : 'Housing shortage is affecting productivity';
+            case 'healthcare':
+                return emptyCount > 0 ? 'Residents here are getting sick without care' : 'Medical help is too far away';
+            default:
+                return 'Quality of life could be improved';
+        }
+    }
+
+    /**
+     * Get resource icon for display
+     */
+    getResourceIcon(resourceType) {
+        const icons = {
+            jobs: '💼',
+            energy: '⚡',
+            education: '🎓',
+            food: '🍎',
+            housing: '🏠',
+            healthcare: '🏥'
+        };
+        return icons[resourceType] || '📋';
+    }
+
+    /**
+     * Get human-readable resource name
+     */
+    getResourceDisplayName(resourceType) {
+        const names = {
+            jobs: 'Jobs',
+            energy: 'Energy',
+            education: 'Education',
+            food: 'Food',
+            housing: 'Housing',
+            healthcare: 'Healthcare'
+        };
+        return names[resourceType] || resourceType;
+    }
+
+    /**
+     * Get color based on resource score
+     */
+    getResourceScoreColor(score) {
+        if (score >= 75) return '#90ee90';  // Light green
+        if (score >= 50) return '#ffd700';  // Gold
+        if (score >= 25) return '#ffa500';  // Orange
+        return '#ff4444';                   // Red
+    }
+
+    /**
+     * Get player display name
+     */
+    getPlayerName(playerId) {
+        // Use game's method if available
+        if (this.game.getPlayerName) {
+            return this.game.getPlayerName(playerId);
+        }
+        // Fallback to basic display
+        if (playerId === this.game.playerId) {
+            return 'You';
+        }
+        return playerId || 'Unknown';
+    }
+
+    /**
+     * Generate CARENS quality of life items (only shown when JEEFHH needs are met)
+     */
+    async generateCARENSQualityItems(row, col, building) {
+        const items = [];
+
+        // CARENS Priority Order: Safety, Environment, Culture, Affordability, Noise, Resilience
+        const carensPriority = ['safety', 'environment', 'culture', 'affordability', 'noise', 'resilience'];
+
+        carensPriority.forEach(qualityType => {
+            const score = this.calculateCARENSScore(row, col, qualityType);
+            const threshold = 60; // Below this threshold shows as a concern
+
+            if (score < threshold) {
+                const deficit = threshold - score;
+                items.push({
+                    label: `${qualityType.charAt(0).toUpperCase()}${qualityType.slice(1)} needed`,
+                    value: `${Math.round(deficit)}%`,
+                    color: score < 40 ? '#ff6b6b' : '#ffa500'
+                });
+            }
+        });
+
+        // Return only top 2 quality concerns
+        return items.slice(0, 2);
+    }
+
+    /**
+     * Calculate CARENS quality score for a specific aspect based on adjacent completed buildings
+     * CARENS scores range from -100 to +100 with 0 as neutral baseline
+     */
+    calculateCARENSScore(row, col, qualityType) {
+        const baseScore = 0; // Neutral baseline
+        let totalImpact = 0;
+        let buildingCount = 0;
+
+        // Check all 8 adjacent cells (same pattern as JEEFHH system)
+        const directions = [
+            [-1, -1], [-1, 0], [-1, 1],
+            [0, -1],           [0, 1],
+            [1, -1],  [1, 0],  [1, 1]
+        ];
+
+        for (const [dRow, dCol] of directions) {
+            const adjRow = row + dRow;
+            const adjCol = col + dCol;
+
+            // Skip if out of bounds
+            if (adjRow < 0 || adjRow >= this.game.gridSize ||
+                adjCol < 0 || adjCol >= this.game.gridSize) {
+                continue;
+            }
+
+            const parcel = this.game.grid[adjRow][adjCol];
+            if (!parcel || !parcel.building) continue;
+
+            // Only consider completed buildings (OOO rule)
+            const isUnderConstruction = parcel._constructionProgress < 1.0;
+            if (isUnderConstruction) continue;
+
+            const building = this.game.buildingManager?.getBuildingById(parcel.building);
+            if (!building) continue;
+
+            buildingCount++;
+            const impact = this.getCARENSImpact(building, qualityType);
+            totalImpact += impact;
+        }
+
+        // Calculate final score: sum of all impacts, scaled appropriately
+        let finalScore = baseScore + totalImpact;
+
+        // Clamp to -100 to +100 range
+        return Math.max(-100, Math.min(100, finalScore));
+    }
+
+    /**
+     * Get CARENS impact for a specific building and quality type
+     */
+    getCARENSImpact(building, qualityType) {
+        const buildingId = building.id?.toLowerCase() || '';
+        const category = building.category?.toLowerCase() || '';
+
+        switch (qualityType) {
+            case 'safety':
+                // Civic buildings improve safety, industrial buildings reduce it
+                if (category === 'civic') return 3;
+                if (buildingId === 'library') return 2;
+                if (category === 'industrial') return -2;
+                if (buildingId === 'brewery') return -1;
+                return 0;
+
+            case 'environment':
+                // Green energy improves environment, industrial reduces it
+                if (buildingId === 'solar_farm') return 4;
+                if (buildingId === 'park') return 3;
+                if (category === 'industrial') return -3;
+                if (buildingId === 'brewery') return -2;
+                return 0;
+
+            case 'culture':
+                // Education and civic buildings improve culture
+                if (buildingId === 'library') return 4;
+                if (category === 'education') return 3;
+                if (buildingId === 'public_pool') return 2;
+                if (category === 'civic') return 1;
+                return 0;
+
+            case 'affordability':
+                // Housing efficiency affects affordability
+                if (buildingId === 'cottage') return 2; // More affordable housing
+                if (buildingId === 'apartment_complex') return 1; // Dense housing
+                if (category === 'commercial') return 1; // Local commerce
+                return 0;
+
+            case 'noise':
+                // Industrial and commercial create noise, civic reduces it
+                if (category === 'industrial') return -3;
+                if (buildingId === 'brewery') return -2;
+                if (category === 'commercial') return -1;
+                if (buildingId === 'park') return 2;
+                if (buildingId === 'library') return 1;
+                return 0;
+
+            case 'resilience':
+                // Energy and essential services improve resilience
+                if (buildingId === 'solar_farm') return 3;
+                if (category === 'energy') return 2;
+                if (category === 'education') return 2;
+                if (buildingId === 'library') return 1;
+                return 0;
+
+            default:
+                return 0;
+        }
     }
 
     /**

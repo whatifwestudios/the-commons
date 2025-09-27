@@ -94,6 +94,9 @@ class ServerEconomicEngine {
         // Calculate performance for all buildings
         const buildingPerformances = this.calculateAllBuildingPerformances();
 
+        // Calculate CARENS scores
+        const carensScores = this.calculateCityWideCarensScores();
+
         // Calculate affected transport efficiency
         const transportEfficiency = this.calculateTransportEfficiency();
 
@@ -133,6 +136,7 @@ class ServerEconomicEngine {
                     JOBS: supplyDemand.jobs.demand
                 }
             },
+            carens: carensScores,
             affectedBuildings: buildingPerformances,
             cacheInfo: {
                 cachedResults: 0,
@@ -208,6 +212,10 @@ class ServerEconomicEngine {
      * Used for tooltips and UI updates
      */
     getBuildingPerformance(row, col) {
+        console.log(`🔍 getBuildingPerformance called for ${row},${col}`);
+        console.log(`🔍 Current gameData exists:`, !!this.gameData);
+        console.log(`🔍 Grid exists:`, !!this.gameData?.grid);
+
         const buildingKey = `${row},${col}`;
 
         // Check cache first
@@ -295,15 +303,29 @@ class ServerEconomicEngine {
      * Update internal game state from client data
      */
     updateGameState(gameState) {
-        // Debug: Game state update initiated
+        console.log('🔄 updateGameState called, gameState exists:', !!gameState);
+        console.log('🔄 gameState.grid exists:', !!gameState.grid, 'entries:', Object.keys(gameState.grid || {}).length);
+        console.log('🔄 gameState.buildings exists:', !!gameState.buildings);
 
-        if (gameState.grid) {
+        // Only update grid if it has meaningful data (non-empty)
+        // This prevents client API calls with empty grids from overwriting good server data
+        if (gameState.grid && Object.keys(gameState.grid).length > 0) {
+            // Debug: Log construction state for all buildings being received
+            Object.entries(gameState.grid).forEach(([gridKey, parcel]) => {
+                if (parcel?.building) {
+                    console.log(`🔍 [DEBUG] Client sent building ${parcel.building} at ${gridKey}: _isUnderConstruction=${parcel._isUnderConstruction} (type: ${typeof parcel._isUnderConstruction})`);
+                }
+            });
+
             this.gameData.grid = gameState.grid;
-            // Debug: Grid updated with parcels
+            console.log('🔄 Stored grid with', Object.keys(this.gameData.grid).length, 'entries');
+        } else if (gameState.grid && Object.keys(gameState.grid).length === 0) {
+            console.log('🔄 Skipping empty grid update - preserving existing data');
         }
+
         if (gameState.buildings) {
             this.gameData.buildings = new Map(Object.entries(gameState.buildings));
-            // Debug: Buildings map updated
+            console.log('🔄 Stored buildings map with', this.gameData.buildings.size, 'entries');
         }
     }
 
@@ -326,9 +348,10 @@ class ServerEconomicEngine {
 
             totalBuildings++;
 
-            // Add population
-            if (building.population?.bedroomsAdded > 0) {
-                totalPopulation += building.population.bedroomsAdded;
+            // Add population from housingProvided in building definitions
+            if (building.resources?.housingProvided > 0) {
+                totalPopulation += building.resources.housingProvided;
+                console.log(`🏠 Adding ${building.resources.housingProvided} residents from ${building.type} at ${gridKey}`);
             }
 
             // Calculate building performance for revenue/maintenance
@@ -369,6 +392,13 @@ class ServerEconomicEngine {
         // Scan all parcels for buildings
         Object.entries(this.gameData.grid).forEach(([gridKey, parcel]) => {
             if (!parcel?.building) return;
+
+            // Skip buildings under construction
+            console.log(`🔍 [DEBUG] Construction check for ${parcel.building} at ${gridKey}: _isUnderConstruction=${parcel._isUnderConstruction}`);
+            if (parcel._isUnderConstruction) {
+                console.log(`🔍 [DEBUG] Skipping building ${parcel.building} at ${gridKey} - under construction`);
+                return;
+            }
 
             console.log(`🔍 [DEBUG] Checking parcel ${gridKey}, building: ${parcel.building}`);
             const building = this.gameData.buildings.get(parcel.building);
@@ -912,6 +942,35 @@ class ServerEconomicEngine {
     }
 
     /**
+     * Migration utility: Update legacy building ownership to current player ID
+     * This fixes the mismatch between old 'player' ownership and new dynamic player IDs
+     */
+    migrateOwnershipForPlayer(gameState, currentPlayerId) {
+        let migratedCount = 0;
+
+        if (gameState && gameState.grid) {
+            for (const rowKey in gameState.grid) {
+                const row = gameState.grid[rowKey];
+                for (const colKey in row) {
+                    const parcel = row[colKey];
+                    if (parcel && parcel.building && parcel.owner === 'player') {
+                        // Migrate legacy 'player' ownership to current player ID
+                        parcel.owner = currentPlayerId;
+                        migratedCount++;
+                        console.log(`📦 Migrated building ${parcel.building} at ${rowKey},${colKey} to owner ${currentPlayerId}`);
+                    }
+                }
+            }
+        }
+
+        if (migratedCount > 0) {
+            console.log(`✅ Migration complete: Updated ${migratedCount} buildings to owner ${currentPlayerId}`);
+        }
+
+        return migratedCount;
+    }
+
+    /**
      * Calculate player cashflow breakdown
      * Using unified PlayerCashflow data structure
      */
@@ -925,16 +984,96 @@ class ServerEconomicEngine {
         const breakdown = [];
 
         // Process player's buildings from game state
-        for (const [gridKey, parcel] of Object.entries(gameState.grid || {})) {
-            if (parcel.owner === playerId && parcel.building && !parcel._isUnderConstruction) {
-                const [row, col] = gridKey.split(',').map(Number);
+        console.log(`🔍 Processing cashflow for player ${playerId}`);
+        console.log(`🔍 Client gameState.parcels exists: ${!!gameState?.parcels}`);
+        console.log(`🔍 Client gameState.grid exists: ${!!gameState?.grid}`);
+        console.log(`🔍 Client gameState.grid entries: ${Object.keys(gameState?.grid || {}).length}`);
+        console.log(`🔍 Internal gameData.grid entries: ${Object.keys(this.gameData.grid || {}).length}`);
 
-                // Get building definition
-                const building = this.buildingDefinitions.get(parcel.building);
-                if (!building) continue;
+        // Migrate ownership for legacy buildings before calculating cashflow
+        const migratedCount = this.migrateOwnershipForPlayer({ grid: this.gameData.grid }, playerId);
+        if (migratedCount > 0) {
+            console.log(`✅ Migrated ${migratedCount} buildings to owner ${playerId} before cashflow calculation`);
+        }
+
+        // Use internal gameState instead of client-provided one (which is often empty)
+        const internalGameState = {
+            grid: this.gameData.grid || {},
+            parcels: this.gameData.parcels || null,
+            buildings: this.gameData.buildings || new Map()
+        };
+
+        console.log(`🔍 Using internal gameState with ${Object.keys(internalGameState.grid).length} grid entries`);
+
+        // Check if we need to use grid instead of parcels
+        if (internalGameState.grid && !internalGameState.parcels) {
+            console.log(`🔍 Using internalGameState.grid instead of parcels`);
+            console.log(`🔍 internalGameState.grid has ${Object.keys(internalGameState.grid).length} entries`);
+
+            // Debug: show a few entries from the grid
+            const gridEntries = Object.entries(internalGameState.grid).slice(0, 3);
+            console.log(`🔍 First few grid entries:`, gridEntries.map(([k, v]) => ({
+                key: k,
+                owner: v?.owner,
+                building: v?.building,
+                progress: v?._constructionProgress
+            })));
+
+            for (const [gridKey, parcel] of Object.entries(internalGameState.grid)) {
+                console.log(`🔍 Checking grid entry ${gridKey}: owner=${parcel?.owner}, building=${parcel?.building}, progress=${parcel?._constructionProgress}`);
+                if (parcel && parcel.owner === playerId && parcel.building && parcel._constructionProgress >= 1.0) {
+                    const [row, col] = gridKey.split(',').map(Number);
+                    console.log(`🔍 Found qualifying building in grid at (${row},${col}): ${parcel.building}, owner: ${parcel.owner}, progress: ${parcel._constructionProgress}`);
+
+                    // Get building definition from internal gameState (not the empty buildingDefinitions map)
+                    const building = internalGameState.buildings?.get?.(parcel.building) || this.gameData.buildings?.get(parcel.building);
+                    if (!building) {
+                        console.warn(`Building ${parcel.building} not found in internalGameState.buildings for parcel (${row},${col})`);
+                        continue;
+                    }
+
+                    // Calculate building economics with performance data
+                    const economics = this.calculateBuildingEconomics(parcel, building, internalGameState);
+                    console.log(`🔍 Economics for (${row},${col}): revenue=${economics.revenue}, maintenance=${economics.maintenance}, lvt=${economics.lvt}`);
+
+                    // Update cashflow totals
+                    cashflow.buildingRevenue += economics.revenue;
+                    cashflow.buildingMaintenance += economics.maintenance;
+                    cashflow.landValueTax += economics.lvt;
+
+                    // Add to detailed breakdown
+                    breakdown.push({
+                        coordinates: `(${row}, ${col})`,
+                        buildingName: building.name || parcel.building,
+                        buildingAge: parcel.buildingAge || 0,
+                        decay: parcel.decay || 0,
+                        landValue: parcel.landValue?.paidPrice || 0,
+                        revenue: economics.revenue,
+                        maintenance: economics.maintenance,
+                        lvt: economics.lvt,
+                        netCashflow: economics.revenue - economics.maintenance - economics.lvt,
+                        efficiency: economics.efficiency || 1.0,
+                        deficits: economics.deficits || []
+                    });
+                }
+            }
+        } else if (internalGameState.parcels) {
+            console.log(`🔍 Parcels grid size: ${internalGameState.parcels.length}x${internalGameState.parcels[0]?.length || 0}`);
+            for (let row = 0; row < internalGameState.parcels.length; row++) {
+                for (let col = 0; col < internalGameState.parcels[row].length; col++) {
+                    const parcel = internalGameState.parcels[row][col];
+                    if (parcel && parcel.owner === playerId && parcel.building && parcel._constructionProgress >= 1.0) {
+                        console.log(`🔍 Found qualifying building at (${row},${col}): ${parcel.building}, owner: ${parcel.owner}, progress: ${parcel._constructionProgress}`);
+
+                // Get building definition from internal gameState (not the empty buildingDefinitions map)
+                const building = internalGameState.buildings?.get?.(parcel.building) || this.gameData.buildings?.get(parcel.building);
+                if (!building) {
+                    console.warn(`Building ${parcel.building} not found in internalGameState.buildings for parcel (${row},${col})`);
+                    continue;
+                }
 
                 // Calculate building economics with performance data
-                const economics = this.calculateBuildingEconomics(parcel, building, gameState);
+                const economics = this.calculateBuildingEconomics(parcel, building, internalGameState);
 
                 // Update cashflow totals
                 cashflow.buildingRevenue += economics.revenue;
@@ -955,16 +1094,18 @@ class ServerEconomicEngine {
                     efficiency: economics.efficiency || 1.0,
                     deficits: economics.deficits || []
                 });
+                    }
+                }
             }
         }
 
         // Process LVT for empty parcels owned by the player
-        for (const [gridKey, parcel] of Object.entries(gameState.grid || {})) {
+        for (const [gridKey, parcel] of Object.entries(internalGameState.grid || {})) {
             if (parcel.owner === playerId && (!parcel.building || parcel._isUnderConstruction)) {
                 const [row, col] = gridKey.split(',').map(Number);
 
                 // Calculate LVT using proper method (purchase price * LVT rate / 365)
-                const emptyParcelLVT = this.calculateLVT(parcel, gameState);
+                const emptyParcelLVT = this.calculateLVT(parcel, internalGameState);
 
                 // Add to cashflow totals
                 cashflow.landValueTax += emptyParcelLVT;
@@ -1027,6 +1168,60 @@ class ServerEconomicEngine {
     }
 
     /**
+     * Calculate revenue for a single building
+     * Based on building performance and efficiency
+     */
+    calculateRevenue(parcel, building, gameState) {
+        // Get the building's maximum revenue potential
+        const maxRevenue = building.economics?.maxRevenue || 0;
+
+        if (maxRevenue === 0) {
+            return { current: 0, max: 0, performance: 1.0 };
+        }
+
+        // Find the coordinates for this parcel
+        let row = 0, col = 0;
+        const gridKey = Object.keys(gameState.grid || {}).find(key => gameState.grid[key] === parcel);
+        if (gridKey) {
+            [row, col] = gridKey.split(',').map(Number);
+        }
+
+        // Calculate performance factors (similar to calculateBuildingPerformance but focused on revenue)
+        const needs = this.extractBuildingNeeds(building);
+        let basePerformance = 1.0;
+
+        if (needs.length > 0) {
+            let totalSatisfaction = 0;
+
+            for (const need of needs) {
+                const satisfaction = this.calculateNeedSatisfaction(need, row, col);
+                totalSatisfaction += satisfaction * (1 / needs.length);
+            }
+
+            basePerformance = Math.max(0, Math.min(1, totalSatisfaction));
+        }
+
+        // Apply decay penalty
+        const decayPenalty = 1 - (parcel.decay || 0) * 0.5;
+
+        // Apply CARENS multiplier
+        const carensMultiplier = this.calculateCarensMultiplier(building, row, col);
+
+        // Calculate final performance
+        const finalPerformance = basePerformance * decayPenalty * carensMultiplier;
+        const actualRevenue = maxRevenue * finalPerformance;
+
+        return {
+            current: actualRevenue,
+            max: maxRevenue,
+            performance: finalPerformance,
+            basePerformance: basePerformance,
+            decayPenalty: decayPenalty,
+            carensMultiplier: carensMultiplier
+        };
+    }
+
+    /**
      * Calculate economics for a single building (server-side version)
      */
     calculateBuildingEconomics(parcel, building, gameState) {
@@ -1037,7 +1232,8 @@ class ServerEconomicEngine {
         return {
             revenue: revenue.current || 0,
             maintenance: maintenance.current || 0,
-            lvt: lvt || 0
+            lvt: lvt || 0,
+            efficiency: revenue.performance || 1.0
         };
     }
 

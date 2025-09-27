@@ -154,32 +154,13 @@ class TooltipDataCollector {
      * Get cashflow data for the building
      */
     getCashflowData(row, col, parcel, building) {
-        // Use server-side economic API if available
-        if (this.game.economicAPI) {
-            // For now, use local fallback and make non-blocking server call
-            let result = undefined;
-            if (this.game.performanceEngine) {
-                const performanceInfo = this.game.performanceEngine.calculateBuildingPerformance(row, col);
-                if (performanceInfo) {
-                    result = performanceInfo.actualRevenue;
-                }
-            }
-
-            // Non-blocking server call for future updates
-            this.game.economicAPI.getBuildingPerformance(row, col).then(performanceInfo => {
-                if (performanceInfo) {
-                    console.log(`Server cashflow for ${row},${col}: $${performanceInfo.actualRevenue}`);
-                }
-            }).catch(error => {
-                console.error('Failed to get building cashflow from server:', error);
-            });
-
-            if (result !== undefined) return result;
-        } else if (this.game.performanceEngine) {
-            // Fallback: Use local performance engine
-            const performanceInfo = this.game.performanceEngine.calculateBuildingPerformance(row, col);
-            if (performanceInfo) {
-                return performanceInfo.actualRevenue;
+        // Use v2 economic client for performance data
+        if (this.game.economicClient && building && !building.underConstruction) {
+            // Get cached performance data from v2 system
+            const locationKey = `${row},${col}`;
+            const performanceData = this.game.cache?.performanceData?.[locationKey];
+            if (performanceData?.summary?.netIncome !== undefined) {
+                return performanceData.summary.netIncome;
             }
         }
 
@@ -258,95 +239,6 @@ class TooltipDataCollector {
                         type: need.type
                     });
                 });
-            }
-        } else if (this.game.economicAPI) {
-            // Use server-side economic API for authoritative need calculation
-            // For now, use local fallback and make non-blocking server call
-            if (this.game.performanceEngine) {
-                const performanceInfo = this.game.performanceEngine.calculateBuildingPerformance(row, col);
-                if (performanceInfo && performanceInfo.needs) {
-                    performanceInfo.needs.forEach(need => {
-                        // Only show unsatisfied needs (less than 100% satisfaction)
-                        if (need.satisfaction < 1.0) {
-                            let emoji = '❓';
-                            switch(need.type) {
-                                case 'workers': emoji = '👷'; break;
-                                case 'jobs': emoji = '💼'; break;
-                                case 'energy': emoji = '⚡'; break;
-                                case 'food': emoji = '🌾'; break;
-                            }
-
-                            // Calculate how much is needed to reach 100% satisfaction
-                            const shortfall = need.required * (1.0 - need.satisfaction);
-                            needs.push({
-                                type: need.type,
-                                emoji: emoji,
-                                needed: Math.ceil(shortfall),
-                                satisfaction: need.satisfaction
-                            });
-                        }
-                    });
-                }
-            }
-
-            // Non-blocking server call for future updates
-            this.game.economicAPI.getBuildingPerformance(row, col).then(performanceInfo => {
-                if (performanceInfo && performanceInfo.needs) {
-                    console.log(`Server needs for ${row},${col}:`, performanceInfo.needs.length);
-                }
-            }).catch(error => {
-                console.error('Failed to get building needs from server:', error);
-            });
-        } else if (this.game.performanceEngine) {
-            // Fallback: Use local performance engine for need calculation
-            console.log(`🎯 Using NEW performance engine for building at (${row},${col})`);
-            const performanceInfo = this.game.performanceEngine.calculateBuildingPerformance(row, col);
-
-            if (performanceInfo && performanceInfo.needs) {
-                performanceInfo.needs.forEach(need => {
-                    // Only show unsatisfied needs (less than 100% satisfaction)
-                    if (need.satisfaction < 1.0) {
-                        let emoji = '❓';
-                        switch(need.type) {
-                            case 'workers': emoji = '👷'; break;
-                            case 'jobs': emoji = '💼'; break;
-                            case 'energy': emoji = '⚡'; break;
-                            case 'food': emoji = '🌾'; break;
-                        }
-
-                        // Calculate how much is needed to reach 100% satisfaction
-                        const deficit = need.required * (1 - need.satisfaction);
-                        needs.push({
-                            emoji: emoji,
-                            amount: Math.ceil(deficit),
-                            type: need.type
-                        });
-                    }
-                });
-            }
-        } else {
-            // Fallback: Use economic engine's building efficiency data directly
-            if (this.game.economicEngine) {
-                const result = this.game.economicEngine.calculateBuildingEfficiencyPercentage(row, col);
-                if (result && result.unsatisfiedNeeds && result.unsatisfiedNeeds.length > 0) {
-                    result.unsatisfiedNeeds.forEach(need => {
-                        let emoji = '❓';
-                        let type = need.name.toLowerCase();
-                        switch(type) {
-                            case 'workers': emoji = '👷'; break;
-                            case 'energy': emoji = '⚡'; break;
-                            case 'food': emoji = '🌾'; break;
-                        }
-
-                        needs.push({
-                            emoji: emoji,
-                            type: need.name,
-                            needed: Math.ceil(need.deficit),
-                            satisfaction: need.satisfaction,
-                            issue: need.reason
-                        });
-                    });
-                }
             }
         }
 
@@ -986,12 +878,17 @@ class TooltipManager {
         document.querySelectorAll('.metric-tooltip').forEach(element => {
             element.addEventListener('mouseenter', (e) => {
                 const tooltipText = element.getAttribute('data-tooltip');
+                const metricType = element.getAttribute('data-metric');
+
                 if (tooltipText) {
+                    // Get enhanced tooltip with sum values
+                    const enhancedTooltip = this.generateMetricTooltipWithSums(tooltipText, metricType);
+
                     const rect = element.getBoundingClientRect();
                     const x = rect.left - 20;
                     const y = rect.top + rect.height / 2;
 
-                    this.show(tooltipText, x, y, {
+                    this.show(enhancedTooltip, x, y, {
                         delay: 200,
                         maxWidth: 300,
                         priority: 1,
@@ -1004,6 +901,59 @@ class TooltipManager {
                 this.hide();
             });
         });
+    }
+
+    /**
+     * Generate enhanced metric tooltip with sum values
+     */
+    generateMetricTooltipWithSums(baseTooltip, metricType) {
+        if (!window.game) return baseTooltip;
+
+        let enhancedTooltip = baseTooltip;
+
+        // Add sum values for JEEFHH metrics
+        const jeefhhMetrics = ['housing', 'food', 'energy', 'jobs', 'education', 'healthcare'];
+        if (jeefhhMetrics.includes(metricType)) {
+            const supply = window.game.vitalitySupply?.[metricType.toUpperCase()] || 0;
+            const demand = window.game.vitalityDemand?.[metricType.toUpperCase()] || 0;
+
+            enhancedTooltip += `<br/><br/><strong>Current Values:</strong><br/>`;
+            enhancedTooltip += `Supply: ${supply.toFixed(1)}<br/>`;
+            enhancedTooltip += `Demand: ${demand.toFixed(1)}<br/>`;
+            enhancedTooltip += `Balance: ${(supply - demand).toFixed(1)}`;
+        }
+
+        // Add sum values for CARENS metrics
+        const carensMetrics = ['safety', 'environment', 'culture', 'affordability', 'noise', 'resilience'];
+        if (carensMetrics.includes(metricType)) {
+            // Calculate city-wide CARENS average for this metric type
+            let totalScore = 0;
+            let validCells = 0;
+
+            for (let row = 0; row < window.game.gridSize; row++) {
+                for (let col = 0; col < window.game.gridSize; col++) {
+                    const parcel = window.game.grid[row][col];
+                    if (parcel && parcel.building) {
+                        // Only count completed buildings
+                        const isUnderConstruction = parcel._constructionProgress < 1.0;
+                        if (!isUnderConstruction) {
+                            const score = window.game.smartTooltipSystem?.calculateCARENSScore(row, col, metricType);
+                            if (score !== undefined) {
+                                totalScore += score;
+                                validCells++;
+                            }
+                        }
+                    }
+                }
+            }
+
+            const averageScore = validCells > 0 ? (totalScore / validCells) : 0;
+            enhancedTooltip += `<br/><br/><strong>City Average:</strong><br/>`;
+            enhancedTooltip += `${averageScore.toFixed(1)} (Range: -100 to +100)<br/>`;
+            enhancedTooltip += `Evaluated across ${validCells} completed buildings`;
+        }
+
+        return enhancedTooltip;
     }
 
     /**

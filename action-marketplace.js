@@ -538,10 +538,10 @@ class ActionMarketplace {
         // This function kept for compatibility but no longer needed
     }
     
-    processExpiredAuctions() {
+    async processExpiredAuctions() {
         let anyExpired = false;
         
-        this.game.actionManager.marketplace.listings.forEach(listing => {
+        for (const listing of this.game.actionManager.marketplace.listings) {
             if (listing.status === 'active' && listing.month !== this.game.gameDate.month) {
                 // Auction expired
                 if (listing.currentBid > 0 && listing.highBidder) {
@@ -549,27 +549,37 @@ class ActionMarketplace {
                     listing.status = 'sold';
                     listing.finalPrice = listing.currentBid;
                     listing.winner = listing.highBidder;
-                    
+
                     // Update price history
                     this.game.actionManager.marketplace.priceHistory.push({
                         price: listing.currentBid,
                         quantity: listing.quantity,
                         date: Date.now()
                     });
-                    
+
                     // Handle payment and transfer
                     const currentPlayerId = (this.game.multiplayerManager && this.game.multiplayerManager.playerId) ? this.game.multiplayerManager.playerId : 'player';
-                    
+
                     // If player won, give them the actions and charge them
                     if (listing.highBidder === currentPlayerId) {
-                        this.game.playerCash -= listing.currentBid;
+                        if (this.game.cashManager) {
+                            await this.game.cashManager.spend(listing.currentBid, 'Action auction purchase', { quantity: listing.quantity });
+                        } else {
+                            // Legacy fallback only if CashManager unavailable
+                            this.game.playerCash -= listing.currentBid;
+                        }
                         this.game.actionManager.currentActions += listing.quantity;
                         this.game.showNotification(`Won auction: ${listing.quantity} actions for $${listing.currentBid.toLocaleString()}`, 'success');
                     }
-                    
+
                     // If player was the seller, give them 100% of winning price
                     if (listing.seller === currentPlayerId) {
-                        this.game.playerCash += listing.currentBid;
+                        if (this.game.cashManager) {
+                            await this.game.cashManager.earn(listing.currentBid, 'Action auction sale', { quantity: listing.quantity });
+                        } else {
+                            // Legacy fallback only if CashManager unavailable
+                            this.game.playerCash += listing.currentBid;
+                        }
                         this.game.showNotification(`Auction sold: ${listing.quantity} actions for $${listing.currentBid.toLocaleString()}`, 'success');
                     }
                 } else {
@@ -583,7 +593,7 @@ class ActionMarketplace {
                 }
                 anyExpired = true;
             }
-        });
+        }
         
         if (anyExpired) {
             // Recalculate average price

@@ -70,13 +70,14 @@ class EconomicPerformanceEngine {
 
         // Housing scarcity → overcrowding, higher occupancy
         if (housingPerPerson < 0.9) {
-            occupancyMultiplier *= (1.0 + (0.9 - housingPerPerson) * 1.5); // Up to 2.35x
+            // Max 1.5x multiplier for 3 people per bedroom (2 * 1.5 = 3)
+            occupancyMultiplier *= (1.0 + (0.9 - housingPerPerson) * 0.5); // Up to 1.5x
         }
 
         return {
             jobsPerPerson,
             housingPerPerson,
-            occupancyMultiplier: Math.max(0.5, Math.min(2.5, occupancyMultiplier))
+            occupancyMultiplier: Math.max(0.5, Math.min(1.5, occupancyMultiplier))
         };
     }
 

@@ -41,15 +41,12 @@ class BuildingManager {
 
     async initializeAsync() {
         try {
-            console.log('📋 Loading buildings from JSON (temporary test)...');
 
             // Load JSON data for testing
             const response = await fetch('buildings-data.json');
             const jsonData = await response.json();
             this.buildings = jsonData;
 
-            console.log('✅ Buildings loaded from JSON:', Object.keys(this.buildings));
-            console.log('📊 Sample building data:', this.buildings.housing[0]);
             this.initialized = true;
 
             // Notify other systems that buildings are ready

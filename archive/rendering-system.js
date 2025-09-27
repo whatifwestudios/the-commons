@@ -243,6 +243,12 @@ class RenderingSystem {
         // Re-enabled: Building tint manager
         this.buildingTintManager = new BuildingTintManager();
 
+        // Server-authoritative building state (replaces legacy game.js grid)
+        this.buildings = new Map(); // locationKey -> building state
+
+        // Subscribe to economic client updates for real-time building state
+        this.setupEconomicClientSubscription();
+
         // Re-enabled: Periodic cleanup
         setInterval(() => {
             this.buildingTintManager.cleanupUnusedVariants();
@@ -263,37 +269,245 @@ class RenderingSystem {
         this.lastFrameTime = 0;
         this.performanceMode = 'high'; // 'low', 'medium', 'high'
     }
-    
+
+    /**
+     * Setup subscription to economic client for real-time building updates
+     */
+    setupEconomicClientSubscription() {
+        if (this.game.economicClient && this.game.economicClient.onUpdate) {
+            this.game.economicClient.onUpdate((update) => {
+                this.handleServerUpdate(update);
+            });
+            console.log('🎨 Rendering system subscribed to economic client updates');
+        } else {
+            // Retry connection if economic client isn't ready yet
+            setTimeout(() => this.setupEconomicClientSubscription(), 1000);
+        }
+    }
+
+    /**
+     * Handle server updates for building state
+     */
+    handleServerUpdate(update) {
+        console.log('🎨 Rendering system received update:', update.type, update);
+
+        switch (update.type) {
+            case 'BUILDING_COMPLETED':
+                console.log('🎨 Processing BUILDING_COMPLETED:', update.data || update);
+                this.handleBuildingCompleted(update.data || update);
+                break;
+
+            case 'SERVER_STATE_SYNC':
+                if (update.data && update.data.gameState && update.data.gameState.buildings) {
+                    console.log('🎨 Processing SERVER_STATE_SYNC with buildings:', update.data.gameState.buildings.length);
+                    this.syncBuildingsFromServer(update.data.gameState.buildings);
+                }
+                break;
+
+            case 'GAME_STATE':
+                if (update.eventData && update.eventData.transaction && update.eventData.transaction.type === 'BUILD_COMPLETE_AUTO') {
+                    console.log('🎨 Processing GAME_STATE BUILD_COMPLETE_AUTO:', update.eventData.transaction);
+                    this.handleBuildingCompleted(update.eventData.transaction);
+                }
+                // Sync all buildings from full game state
+                if (update.gameState && update.gameState.buildings) {
+                    console.log('🎨 Processing GAME_STATE with buildings:', update.gameState.buildings.length);
+                    this.syncBuildingsFromServer(update.gameState.buildings);
+                }
+                break;
+
+            case 'ECONOMIC_UPDATE':
+                if (update.data && update.data.transaction && update.data.transaction.type === 'BUILD_COMPLETE_AUTO') {
+                    console.log('🎨 Processing ECONOMIC_UPDATE BUILD_COMPLETE_AUTO:', update.data.transaction);
+                    this.handleBuildingCompleted(update.data.transaction);
+                }
+                break;
+
+            case 'ROOM_STATE_SYNC':
+                if (update.buildings) {
+                    console.log('🎨 Processing ROOM_STATE_SYNC with buildings:', update.buildings.length);
+                    this.syncBuildingsFromServer(update.buildings);
+                }
+                break;
+        }
+    }
+
+    /**
+     * Handle building completion from server
+     */
+    handleBuildingCompleted(buildingData) {
+        console.log('🎨 handleBuildingCompleted called with:', buildingData);
+        const { location, buildingId, playerId } = buildingData;
+        if (location && buildingId) {
+            const [row, col] = location;
+            const locationKey = `${row},${col}`;
+
+            // Update server-authoritative building state
+            const buildingState = {
+                id: buildingId,
+                type: buildingId,
+                ownerId: playerId,
+                location: [row, col],
+                underConstruction: false,
+                constructionStartTime: null,
+                age: 0,
+                condition: 100,
+                lastUpdated: Date.now()
+            };
+            this.buildings.set(locationKey, buildingState);
+
+            console.log(`🎨 Rendering system: Building ${buildingId} completed at [${row}, ${col}]`);
+            console.log(`🎨 Buildings map now has ${this.buildings.size} buildings:`, Array.from(this.buildings.entries()));
+
+            // Force re-render to show completed building
+            this.game.scheduleRender();
+        } else {
+            console.warn('🎨 handleBuildingCompleted: Missing location or buildingId:', buildingData);
+        }
+    }
+
+    /**
+     * Sync all buildings from server state
+     */
+    syncBuildingsFromServer(serverBuildings) {
+        // Clear existing state
+        this.buildings.clear();
+
+        // Populate with server-authoritative state
+        serverBuildings.forEach(building => {
+            if (building.location) {
+                const [row, col] = building.location;
+                const locationKey = `${row},${col}`;
+                this.buildings.set(locationKey, {
+                    id: building.id,
+                    type: building.id,
+                    ownerId: building.ownerId,
+                    location: building.location,
+                    underConstruction: building.underConstruction,
+                    constructionStartTime: building.constructionStartTime,
+                    age: building.age || 0,
+                    condition: building.condition || 100,
+                    lastUpdated: Date.now()
+                });
+            }
+        });
+
+        console.log(`🎨 Rendering system: Synced ${this.buildings.size} buildings from server`);
+
+        // Force re-render with new state
+        this.game.scheduleRender();
+    }
+
+    /**
+     * Get building at location (replaces legacy parcel.building access)
+     */
+    getBuildingAt(row, col) {
+        const locationKey = `${row}-${col}`;
+        const building = this.game.serverBuildings?.get(locationKey);
+        // Removed verbose logging for performance
+        return building;
+    }
+
     /**
      * Initialize the rendering system
      */
     initialize() {
-        this.setupCanvas();
+        this.setupCanvas();  // This now handles all canvas setup and calculations
         this.preloadImages();
-        this.syncTileDimensions();
+        this.setupResizeHandler();
     }
-    
+
     /**
-     * Sync tile dimensions from game object
+     * Setup window resize handler for responsive canvas
      */
-    syncTileDimensions() {
-        if (this.game.tileWidth && this.game.tileHeight) {
-            this.tileWidth = this.game.tileWidth;
-            this.tileHeight = this.game.tileHeight;
-        }
+    setupResizeHandler() {
+        // Debounced resize handler to avoid excessive recalculations
+        let resizeTimeout;
+        const handleResize = () => {
+            clearTimeout(resizeTimeout);
+            resizeTimeout = setTimeout(() => {
+                console.log('🔄 Window resized, recalculating canvas setup...');
+                this.setupCanvas();
+                // Trigger a re-render with the new dimensions
+                if (this.game.scheduleRender) {
+                    this.game.scheduleRender();
+                }
+            }, 150); // 150ms debounce
+        };
+
+        window.addEventListener('resize', handleResize);
+
+        // Store reference for cleanup if needed
+        this.resizeHandler = handleResize;
     }
     
     /**
      * Setup canvas properties
      */
     setupCanvas() {
-        // Enable image smoothing for better quality
+        // Step 1: Calculate canvas dimensions based on container
+        const container = document.getElementById('main-area');
+        if (!container) {
+            console.warn('Main-area container not found, using default canvas size');
+            this.canvas.width = 800;
+            this.canvas.height = 600;
+        } else {
+            const rect = container.getBoundingClientRect();
+            this.canvas.width = rect.width - 40;  // 20px margin on each side
+            this.canvas.height = rect.height - 40; // 20px margin top/bottom
+        }
+
+        // Step 2: Calculate optimal tile dimensions for the grid
+        // Make tiles larger and more visible - aim for grid to use ~80% of canvas space
+        const availableWidth = this.canvas.width * 0.8;
+        const availableHeight = this.canvas.height * 0.8;
+
+        // In isometric view, effective grid dimensions are:
+        // Width: gridSize * tileWidth (diamond width spans)
+        // Height: gridSize * tileHeight (diamond height spans)
+        // But isometric projection creates a 2:1 width:height ratio for diamonds
+        const maxTileWidth = availableWidth / this.game.gridSize;
+        const maxTileHeight = (availableHeight / this.game.gridSize) * 2; // Account for isometric compression
+
+        // Choose the limiting dimension and maintain 2:1 aspect ratio
+        const constrainingTileWidth = Math.min(maxTileWidth, maxTileHeight);
+        this.tileWidth = Math.max(60, constrainingTileWidth); // Minimum 60px for visibility
+        this.tileHeight = this.tileWidth * 0.5; // Maintain isometric 2:1 ratio
+
+        // Step 3: Calculate grid centering offsets
+        // Center the grid on the intersection of the middle 4 parcels
+        // For a gridSize x gridSize grid, the center is at (gridSize-1)/2
+        const centerGridX = (this.game.gridSize - 1) / 2;
+        const centerGridY = (this.game.gridSize - 1) / 2;
+
+        // Convert center grid position to isometric coordinates
+        const centerIsoX = (centerGridX - centerGridY) * (this.tileWidth / 2);
+        const centerIsoY = (centerGridX + centerGridY) * (this.tileHeight / 2);
+
+        // Position the grid so this center point is at the canvas center
+        this.offsetX = this.canvas.width / 2 - centerIsoX;
+        this.offsetY = this.canvas.height / 2 - centerIsoY;
+
+        // Step 4: Sync calculated dimensions back to game object (for backwards compatibility)
+        this.game.tileWidth = this.tileWidth;
+        this.game.tileHeight = this.tileHeight;
+        this.game.offsetX = this.offsetX;
+        this.game.offsetY = this.offsetY;
+
+        // Step 5: Set canvas rendering properties
         this.ctx.imageSmoothingEnabled = true;
         this.ctx.imageSmoothingQuality = 'high';
-        
-        // Set default styles
         this.ctx.lineJoin = 'round';
         this.ctx.lineCap = 'round';
+
+        // Step 6: Log setup for debugging
+        console.log(`🎯 Canvas setup complete:`, {
+            canvasSize: `${this.canvas.width}x${this.canvas.height}`,
+            tileSize: `${this.tileWidth}x${this.tileHeight}`,
+            gridSize: `${this.game.gridSize}x${this.game.gridSize}`,
+            offset: `${this.offsetX.toFixed(1)}, ${this.offsetY.toFixed(1)}`,
+            totalGridFootprint: `${(this.game.gridSize * this.tileWidth).toFixed(0)}x${(this.game.gridSize * this.tileHeight).toFixed(0)}`
+        });
     }
     
     /**
@@ -340,12 +554,22 @@ class RenderingSystem {
      */
     drawScene() {
         // Check for mobility layer
+        // DISABLED: Mobility layer disabled for testing
         if (this.game.currentLayer === 'mobility') {
-            if (this.game.mobilityLayer) {
-                this.game.mobilityLayer.render(this.ctx);
-            }
-            return;
+            console.log('⚠️ Mobility rendering disabled - switching to normal render');
+            // Fall through to normal rendering instead of returning
         }
+        // if (this.game.currentLayer === 'mobility') {
+        //     if (this.game.mobilityLayer) {
+        //         // Diagnostic logging
+        //         console.log('🔧 DIAGNOSTIC: RenderingSystem calling mobility render');
+        //         console.log('🔧 DIAGNOSTIC: mobilityLayer type =', this.game.mobilityLayer.constructor.name);
+        //         this.game.mobilityLayer.render(this.ctx);
+        //     } else {
+        //         console.log('🔧 DIAGNOSTIC: No mobilityLayer found!');
+        //     }
+        //     return;
+        // }
         
         // Apply transformations
         this.ctx.save();
@@ -360,10 +584,6 @@ class RenderingSystem {
         
         this.ctx.restore();
         
-        // Draw dust clouds on top of everything (not affected by zoom/pan)
-        if (this.game.renderDustClouds) {
-            this.game.renderDustClouds();
-        }
     }
     
     /**
@@ -371,18 +591,98 @@ class RenderingSystem {
      */
     drawIsometricGrid() {
         this.ctx.beginPath();
-        
-        // Draw tiles in the correct isometric order (back to front)
+
+        // Draw tiles in the correct isometric order (back to front) with Z-index ordering
+        const tiles = [];
         for (let row = 0; row < this.game.gridSize; row++) {
             for (let col = 0; col < this.game.gridSize; col++) {
-                this.drawTile(col, row);
+                const iso = this.toIsometric(col, row);
+                tiles.push({ col, row, zIndex: iso.zIndex || (row + col) });
             }
         }
-        
+
+        // Sort by Z-index for proper depth ordering
+        tiles.sort((a, b) => a.zIndex - b.zIndex);
+
+        // Draw tiles in correct order
+        for (const tile of tiles) {
+            this.drawTile(tile.col, tile.row);
+        }
+
         // Draw special effects
         this.drawSpecialEffects();
-        
-        this.ctx.stroke();
+
+        // REMOVED: this.ctx.stroke() - was overwriting hover effects
+    }
+
+    /**
+     * Create batches of tiles organized by depth for efficient rendering
+     */
+    createTileBatches() {
+        const batches = [];
+
+        for (let row = 0; row < this.game.gridSize; row++) {
+            for (let col = 0; col < this.game.gridSize; col++) {
+                const iso = this.toIsometric(col, row);
+                const zIndex = iso.zIndex || (row + col);
+
+                if (!batches[zIndex]) batches[zIndex] = [];
+                batches[zIndex].push({ col, row, iso });
+            }
+        }
+
+        return batches;
+    }
+
+    /**
+     * Render a batch of tiles with minimal state changes
+     */
+    renderTileBatch(batch) {
+        this.ctx.save();
+
+        // Group by similar properties to minimize state changes
+        const groups = this.groupTilesByProperties(batch);
+
+        for (const group of groups) {
+            // Set common properties once per group
+            if (group.alpha !== undefined) {
+                this.ctx.globalAlpha = group.alpha;
+            }
+
+            // Render all tiles in this group
+            for (const tile of group.tiles) {
+                this.drawTileOptimized(tile.col, tile.row, tile.iso);
+            }
+        }
+
+        this.ctx.restore();
+    }
+
+    /**
+     * Group tiles by common rendering properties
+     */
+    groupTilesByProperties(batch) {
+        const groups = new Map();
+
+        for (const tile of batch) {
+            const parcel = this.game.grid[tile.row][tile.col];
+            const alpha = Math.max(0.7, tile.iso.depthFactor || 1);
+            const hasBuilding = !!(parcel && parcel.building);
+
+            const key = `${alpha.toFixed(2)}_${hasBuilding}`;
+
+            if (!groups.has(key)) {
+                groups.set(key, {
+                    alpha: alpha,
+                    hasBuilding: hasBuilding,
+                    tiles: []
+                });
+            }
+
+            groups.get(key).tiles.push(tile);
+        }
+
+        return Array.from(groups.values());
     }
     
     /**
@@ -392,12 +692,6 @@ class RenderingSystem {
         switch(this.game.currentLayer) {
             case 'transportation':
                 this.drawTransportationOverlay();
-                break;
-            case 'land_values':
-                this.drawLandValueOverlay();
-                break;
-            case 'cashflow':
-                this.drawCashflowNumbers();
                 break;
             default:
                 // Normal building layer
@@ -414,17 +708,17 @@ class RenderingSystem {
         if (this.game.perfMonitor) {
             this.game.perfMonitor.recordDraw('tile');
         }
-        
+
         const iso = this.toIsometric(col, row);
         const elevationHeight = elevation * this.elevationHeight;
         const adjustedY = iso.y - elevationHeight;
-        
+
         this.ctx.save();
-        
+
         // Get parcel data
         const parcel = this.game.grid[row][col];
         const tileColor = color || this.getTileColor(parcel, row, col);
-        
+
         // Draw tile shape
         this.ctx.fillStyle = tileColor;
         this.drawDiamond(iso.x, adjustedY, this.tileWidth, this.tileHeight);
@@ -433,14 +727,26 @@ class RenderingSystem {
         // Draw parcel borders
         this.drawParcelBorders(row, col, this.tileWidth, this.tileHeight);
 
-        // Draw parcel selection effects (hover, selection, proximity) BEFORE building
-        if (this.game.parcelSelector) {
-            this.game.parcelSelector.renderParcelSelection(row, col, this.ctx, iso.x, adjustedY, this.tileWidth, this.tileHeight);
+        // Hover effects now handled by ParcelHoverV2 in V2 rendering system
+        if (this.game.parcelHover && !this.game.useV2Renderer) {
+            this.game.parcelHover.renderEffects(row, col, this.ctx, iso.x, adjustedY, this.tileWidth, this.tileHeight);
         }
 
         // Draw building if present with unified rendering
-        if (parcel && parcel.building && this.game.currentLayer !== 'mobility' && this.game.currentLayer !== 'players') {
-            this.drawBuilding(parcel.building, 0, -this.tileHeight / 4, row, col, parcel);
+        // Check both server-authoritative state AND local grid state for compatibility
+        const serverBuilding = this.getBuildingAt(row, col);
+        const gridBuilding = parcel && parcel.building;
+
+        if ((serverBuilding || gridBuilding) && this.game.currentLayer !== 'mobility' && this.game.currentLayer !== 'players') {
+            // Prefer server building if available, otherwise use grid building
+            const buildingId = serverBuilding ? serverBuilding.type : gridBuilding;
+            const buildingData = serverBuilding || {
+                type: gridBuilding,
+                underConstruction: parcel._isUnderConstruction || false,
+                constructionStartTime: parcel._constructionStartTime,
+                condition: parcel.condition || 100
+            };
+            this.drawBuilding(buildingId, 0, -this.tileHeight / 4, row, col, buildingData);
         }
         
         this.ctx.restore();
@@ -567,11 +873,7 @@ class RenderingSystem {
      * Check if the given owner is the current player
      */
     isCurrentPlayer(owner) {
-        if (owner === 'player') return true; // Legacy single-player mode
-        if (this.game.multiplayerManager && this.game.multiplayerManager.playerId) {
-            return owner === this.game.multiplayerManager.playerId;
-        }
-        return false;
+        return PlayerUtils.isCurrentPlayer(owner);
     }
 
     /**
@@ -665,49 +967,52 @@ class RenderingSystem {
      * Unified building rendering method
      * Handles construction state, performance effects, and all visual states
      */
-    drawBuilding(buildingId, offsetX = 0, offsetY = 0, row, col, parcel = null) {
-        // console.log(`🏗️ [RENDER DEBUG] drawBuilding called for ${buildingId} at ${row},${col} with offsets (${offsetX},${offsetY})`);
+    drawBuilding(buildingId, offsetX = 0, offsetY = 0, row, col, serverBuilding = null) {
+        // Server-authoritative building rendering
 
         if (this.game.perfMonitor) {
             this.game.perfMonitor.recordDraw('building');
         }
 
-        const building = this.game.buildingManager?.getBuildingById(buildingId);
-        if (!building) return;
+        // Get building definition from building manager
+        const buildingDef = this.game.buildingManager?.getBuildingById(buildingId);
+        if (!buildingDef) return;
 
-        // Use passed parcel or get from grid
-        if (!parcel) {
-            parcel = this.game.grid[row][col];
+        // Use server-authoritative building state
+        if (!serverBuilding) {
+            serverBuilding = this.getBuildingAt(row, col);
         }
-        if (!parcel) return;
+        if (!serverBuilding) return;
 
         const iso = this.toIsometric(col, row);
         const x = iso.x + offsetX;
         const y = iso.y + offsetY + this.currentElevation;
 
-        // Use unified building state from buildings.js
-        const buildingState = this.game.buildingManager.getBuildingState(row, col);
-        const constructionProgress = buildingState ? buildingState.construction.progress : 1.0;
-        const isUnderConstruction = buildingState ? !buildingState.construction.isComplete : false;
+        // Use server building state for construction status
+        const isUnderConstruction = serverBuilding.underConstruction || false;
+        const constructionProgress = isUnderConstruction ?
+            this.calculateConstructionProgress(serverBuilding) : 1.0;
 
         // Get performance data for completed buildings
         let performancePercent = 100;
         if (!isUnderConstruction) {
-            // Check if we have cached building efficiency data
-            const key = `${row},${col}`;
-            const efficiencyData = this.game.buildingEfficiencies?.get(key);
-
-            if (efficiencyData && efficiencyData.overallEfficiency !== undefined) {
-                // Use server-synchronized efficiency data
-                performancePercent = Math.round(efficiencyData.overallEfficiency * 100);
+            // Use server condition or fallback to cached efficiency data
+            if (serverBuilding.condition !== undefined) {
+                performancePercent = serverBuilding.condition;
             } else {
-                // Fallback: assume good performance if no data available yet
-                performancePercent = 90; // Default to 90% instead of 100% to show slight dimming
+                // Fallback to legacy efficiency cache if server data not available
+                const key = `${row},${col}`;
+                const efficiencyData = this.game.buildingEfficiencies?.get(key);
+                if (efficiencyData && efficiencyData.overallEfficiency !== undefined) {
+                    performancePercent = Math.round(efficiencyData.overallEfficiency * 100);
+                } else {
+                    performancePercent = 90; // Default good performance
+                }
             }
         }
 
-        // Draw building with all states
-        this.renderBuildingUnified(building, x, y, row, col, {
+        // Draw building with server-authoritative state
+        this.renderBuildingUnified(buildingDef, x, y, row, col, {
             constructionProgress,
             isUnderConstruction,
             performancePercent
@@ -717,6 +1022,22 @@ class RenderingSystem {
         if (!isUnderConstruction && performancePercent < 80) {
             this.drawEfficiencyIndicator(row, col, iso.x, iso.y);
         }
+    }
+
+    /**
+     * Calculate construction progress from server building state
+     */
+    calculateConstructionProgress(serverBuilding) {
+        if (!serverBuilding.underConstruction || !serverBuilding.constructionStartTime) {
+            return 1.0; // Completed
+        }
+
+        // Calculate progress based on elapsed time
+        const elapsedMs = Date.now() - serverBuilding.constructionStartTime;
+        const constructionDurationMs = (serverBuilding.constructionDays || 1) * (3600000 / 365); // ~9.86 seconds per day
+        const progress = Math.min(elapsedMs / constructionDurationMs, 1.0);
+
+        return Math.max(progress, 0.1); // Minimum 10% progress for visual consistency
     }
     
     /**
@@ -796,9 +1117,9 @@ class RenderingSystem {
         let baseVariant = 'stock';
         let applyPerformanceFilter = true;
 
-        // Check for proximity tinting via ParcelSelectorManager (unified system)
-        if (this.game.parcelSelector) {
-            const buildingTint = this.game.parcelSelector.getBuildingTint(row, col);
+        // Check for proximity tinting via V2 Rendering System
+        if (this.game.renderingSystemV2) {
+            const buildingTint = this.game.renderingSystemV2.getBuildingTint(row, col);
             if (buildingTint) {
                 baseVariant = buildingTint;
                 applyPerformanceFilter = false; // Proximity overrides performance
@@ -817,27 +1138,32 @@ class RenderingSystem {
         const parcel = this.game.grid[row][col];
         const decayPercent = (parcel?.decay || 0) * 100;
 
-        // Construction dimming (smooth transition from 30% to 100% brightness)
+        // Construction visual state: desaturated and dimmed
         if (state.isUnderConstruction) {
             const constructionProgress = state.constructionProgress || 0;
+            // Dimming: starts at 30% (70% dim), gradually brightens to 100% as construction progresses
             const brightness = 0.3 + (constructionProgress * 0.7); // 30% to 100%
-            const saturation = 20 + (constructionProgress * 80); // 20% to 100%
+            // Desaturation: remains at 0% saturation throughout construction
+            const saturation = 0; // Total desaturation during construction
             filters.push(`brightness(${brightness})`);
             filters.push(`saturate(${saturation}%)`);
-            filters.push(`contrast(${0.7 + constructionProgress * 0.3})`); // 70% to 100%
+            filters.push(`contrast(${0.8 + constructionProgress * 0.2})`); // 80% to 100% contrast
         } else {
             // Performance-based effects for completed buildings
+            // Building gets colorized according to performance score upon completion
 
-            // Performance-based desaturation (0-100%)
-            let baseSaturation = 100;
-            if (performance < 100) {
-                baseSaturation = Math.max(0, performance);
-            }
+            // Performance-based saturation (0-100%)
+            // Buildings with 0% performance are fully desaturated
+            // Buildings with 100% performance are fully saturated/colored
+            let baseSaturation = Math.max(0, Math.min(100, performance));
 
-            // If proximity tinting is active, we still apply performance desaturation
-            // The colored variant will inherit the saturation level
-            if (baseSaturation < 100 || baseVariant === 'stock') {
-                filters.push(`saturate(${baseSaturation}%)`);
+            // Always apply saturation based on performance
+            filters.push(`saturate(${baseSaturation}%)`);
+
+            // Additional brightness adjustment for low performance
+            if (performance < 50) {
+                const dimming = 0.7 + (performance / 50) * 0.3; // 70% to 100% brightness
+                filters.push(`brightness(${dimming})`);
             }
 
             // Glow effect for performance above 100%
@@ -1045,56 +1371,58 @@ class RenderingSystem {
     /**
      * Draw land values on parcels
      */
-    drawParcelLandValues() {
-        for (let row = 0; row < this.game.gridSize; row++) {
-            for (let col = 0; col < this.game.gridSize; col++) {
-                const parcel = this.game.grid[row][col];
-                if (parcel?.landValue) {
-                    this.drawLandValueLabel(row, col, parcel.landValue.current || 0);
-                }
-            }
-        }
-    }
-    
-    /**
-     * Draw land value label on a parcel
-     */
-    drawLandValueLabel(row, col, landValue) {
-        const iso = this.toIsometric(col, row);
-        const formatted = landValue >= 1000 ? 
-            `$${(landValue/1000).toFixed(0)}k` : 
-            `$${landValue.toFixed(0)}`;
-        
-        this.ctx.font = '8px SF Mono, Monaco, monospace';
-        this.ctx.textAlign = 'center';
-        this.ctx.fillStyle = '#fff';
-        this.ctx.strokeStyle = '#000';
-        this.ctx.lineWidth = 1;
-        
-        // Draw text with outline
-        this.ctx.strokeText(formatted, iso.x, iso.y + 3);
-        this.ctx.fillText(formatted, iso.x, iso.y + 3);
-    }
-    
-    /**
-     * Draw land value overlay
-     */
-    drawLandValueOverlay() {
-        // Could add heat map visualization here
-        this.drawParcelLandValues();
-    }
     
     /**
      * Convert grid coordinates to isometric screen coordinates
      */
-    toIsometric(col, row) {
-        return window.CoordinateUtils?.toIsometric(
+    toIsometric(col, row, depthOffset = 0) {
+        const baseCoords = window.CoordinateUtils?.toIsometric(
             col, row, this.tileWidth, this.tileHeight,
             this.game.offsetX || 0, this.game.offsetY || 0
         ) || {
             x: (col - row) * (this.tileWidth / 2) + (this.game.offsetX || 0),
             y: (col + row) * (this.tileHeight / 2) + (this.game.offsetY || 0)
         };
+
+        return {
+            x: baseCoords.x,
+            y: baseCoords.y + depthOffset,
+            zIndex: row + col // For proper rendering order
+        };
+    }
+
+    /**
+     * Adjust color brightness for depth perception
+     */
+    adjustColorBrightness(color, factor) {
+        if (!color || typeof color !== 'string') return color;
+
+        // Handle hex colors
+        if (color.startsWith('#')) {
+            const hex = color.slice(1);
+            const r = parseInt(hex.substr(0, 2), 16);
+            const g = parseInt(hex.substr(2, 2), 16);
+            const b = parseInt(hex.substr(4, 2), 16);
+
+            const newR = Math.round(Math.min(255, r * factor));
+            const newG = Math.round(Math.min(255, g * factor));
+            const newB = Math.round(Math.min(255, b * factor));
+
+            return `#${newR.toString(16).padStart(2, '0')}${newG.toString(16).padStart(2, '0')}${newB.toString(16).padStart(2, '0')}`;
+        }
+
+        // Handle rgb colors
+        if (color.startsWith('rgb')) {
+            const matches = color.match(/rgb\((\d+),\s*(\d+),\s*(\d+)\)/);
+            if (matches) {
+                const r = Math.round(Math.min(255, parseInt(matches[1]) * factor));
+                const g = Math.round(Math.min(255, parseInt(matches[2]) * factor));
+                const b = Math.round(Math.min(255, parseInt(matches[3]) * factor));
+                return `rgb(${r}, ${g}, ${b})`;
+            }
+        }
+
+        return color; // Return original if can't parse
     }
 
     /**
@@ -1348,15 +1676,9 @@ class RenderingSystem {
         this.ctx.shadowBlur = 0;
         this.ctx.shadowColor = 'transparent';
         this.ctx.restore();
-        
-        // Request animation frame to keep the animation running
-        if (this.game.parcelReach) {
-            requestAnimationFrame(() => {
-                if (this.game.parcelReach) {
-                    this.game.scheduleRender();
-                }
-            });
-        }
+
+        // Animation is now handled by the main render loop
+        // Removed redundant requestAnimationFrame that was causing blinking
     }
     
     /**
@@ -1407,45 +1729,6 @@ class RenderingSystem {
         });
     }
     
-    /**
-     * Draw cashflow numbers on parcels
-     */
-    drawCashflowNumbers() {
-        // Draw cashflow numbers on each parcel
-        for (let row = 0; row < this.game.gridSize; row++) {
-            for (let col = 0; col < this.game.gridSize; col++) {
-                const cashflow = this.game.getParcelCashflow ? this.game.getParcelCashflow(row, col) : 0;
-                
-                if (Math.abs(cashflow) >= 0.1) {
-                    const iso = this.toIsometric(col, row);
-                    this.drawCashflowNumber(iso.x, iso.y, cashflow);
-                }
-            }
-        }
-    }
-    
-    /**
-     * Draw a single cashflow number
-     */
-    drawCashflowNumber(x, y, cashflow) {
-        this.ctx.save();
-        this.ctx.translate(x, y);
-        
-        // Format the cashflow number
-        const formatted = cashflow >= 0 ? `+$${cashflow.toFixed(1)}` : `-$${Math.abs(cashflow).toFixed(1)}`;
-        const color = cashflow >= 0 ? '#4caf50' : '#f44336';
-        
-        // Draw text with outline for visibility
-        this.ctx.font = '8px SF Mono, Monaco, monospace';
-        this.ctx.textAlign = 'center';
-        this.ctx.fillStyle = '#000';
-        this.ctx.lineWidth = 2;
-        this.ctx.strokeText(formatted, 0, 3);
-        this.ctx.fillStyle = color;
-        this.ctx.fillText(formatted, 0, 3);
-        
-        this.ctx.restore();
-    }
     
     
     /**
@@ -1751,6 +2034,180 @@ class RenderingSystem {
         } else if (type === 'subway') {
             this.game.drawExistingSubwayLines(ctx, cellSize);
         }
+    }
+
+    /**
+     * Draw only the elevated building portion (no ground tile)
+     */
+    drawBuildingOnly(col, row, elevation) {
+        const parcel = this.game.grid[row][col];
+        if (!parcel || !parcel.building) return;
+
+        const iso = this.game.toIsometric(col, row);
+        const elevationHeight = elevation * 8;
+        const adjustedY = iso.y - elevationHeight;
+
+        this.ctx.save();
+        this.ctx.translate(iso.x, adjustedY);
+
+        // Draw elevation sides if elevated
+        if (elevation > 0) {
+            // Left side
+            this.ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
+            this.ctx.beginPath();
+            this.ctx.moveTo(-this.game.tileWidth / 2, 0);
+            this.ctx.lineTo(-this.game.tileWidth / 2, elevationHeight);
+            this.ctx.lineTo(0, this.game.tileHeight / 2 + elevationHeight);
+            this.ctx.lineTo(0, this.game.tileHeight / 2);
+            this.ctx.closePath();
+            this.ctx.fill();
+
+            // Right side
+            this.ctx.fillStyle = 'rgba(0, 0, 0, 0.15)';
+            this.ctx.beginPath();
+            this.ctx.moveTo(this.game.tileWidth / 2, 0);
+            this.ctx.lineTo(this.game.tileWidth / 2, elevationHeight);
+            this.ctx.lineTo(0, this.game.tileHeight / 2 + elevationHeight);
+            this.ctx.lineTo(0, this.game.tileHeight / 2);
+            this.ctx.closePath();
+            this.ctx.fill();
+
+            // Top face
+            this.ctx.fillStyle = this.getTileColor(row, col);
+            this.ctx.beginPath();
+            this.ctx.moveTo(0, -this.game.tileHeight / 2);
+            this.ctx.lineTo(this.game.tileWidth / 2, 0);
+            this.ctx.lineTo(0, this.game.tileHeight / 2);
+            this.ctx.lineTo(-this.game.tileWidth / 2, 0);
+            this.ctx.closePath();
+            this.ctx.fill();
+        }
+
+        // Draw building
+        if (this.game.currentLayer === 'normal') {
+            this.drawBuilding(parcel.building, 0, -this.game.tileHeight / 4, row, col);
+        }
+
+        this.ctx.restore();
+    }
+
+    /**
+     * Optimized tile drawing for performance
+     */
+    drawTileOptimized(col, row, isoData, elevation = 0) {
+        const parcel = this.game.grid[row][col];
+        const tileColor = this.getTileColor(parcel, row, col);
+        const elevationHeight = elevation * this.elevationHeight;
+        const adjustedY = isoData.y - elevationHeight;
+
+        this.ctx.save();
+
+        // Draw tile shape
+        this.ctx.fillStyle = tileColor;
+        this.drawDiamond(isoData.x, adjustedY, this.tileWidth, this.tileHeight);
+        this.ctx.fill();
+
+        // Draw parcel borders
+        this.drawParcelBorders(row, col, this.tileWidth, this.tileHeight);
+
+        // V2 hover effects handled separately in V2 rendering pipeline
+
+        this.ctx.restore();
+
+        // Handle buildings separately for better performance
+        if (parcel && parcel.building) {
+            this.drawBuildingOptimized(parcel.building, col, row, isoData);
+        }
+    }
+
+    /**
+     * Optimized building rendering
+     */
+    drawBuildingOptimized(buildingId, col, row, isoData) {
+        // Use existing building draw method but with optimized positioning
+        const serverBuilding = this.game.serverBuildings?.get(`${row}-${col}`);
+        if (serverBuilding) {
+            this.drawBuilding(buildingId, 0, 0, row, col, serverBuilding);
+        }
+
+        // Restore transform
+        this.ctx.setTransform(currentTransform);
+    }
+
+    /**
+     * Draw green attenuation visualization for Data Insights
+     */
+    drawAttenuationVisualization() {
+        if (!this.game.attenuationCenter) return;
+
+        const { row: centerRow, col: centerCol } = this.game.attenuationCenter;
+        const parcel = this.game.grid[centerRow][centerCol];
+        if (!parcel || !parcel.building) return;
+
+        // Get building data to get attenuation info
+        const buildingData = this.game.getBuildingDataByName(parcel.building);
+        if (!buildingData || !buildingData.livability) return;
+
+        this.ctx.save();
+
+        // Calculate maximum attenuation distance from all CARENS impacts
+        let maxAttenuation = 1;
+        Object.values(buildingData.livability).forEach(livabilityData => {
+            if (livabilityData && typeof livabilityData.attenuation === 'number') {
+                maxAttenuation = Math.max(maxAttenuation, livabilityData.attenuation);
+            }
+        });
+
+        // Draw 6-step gradient around the building
+        for (let step = 6; step >= 1; step--) {
+            const distance = (step / 6) * maxAttenuation;
+            const alpha = (7 - step) * 0.08; // Fade from 0.48 to 0.08
+
+            // Draw all tiles within this distance
+            for (let row = 0; row < this.game.gridSize; row++) {
+                for (let col = 0; col < this.game.gridSize; col++) {
+                    const dr = row - centerRow;
+                    const dc = col - centerCol;
+                    const tileDistance = Math.sqrt(dr * dr + dc * dc);
+
+                    if (tileDistance <= distance && tileDistance > distance - (maxAttenuation / 6)) {
+                        this.drawTileHighlight(col, row, `rgba(76, 175, 80, ${alpha})`, 0);
+                    }
+                }
+            }
+        }
+
+        // Highlight the center building with a bright green outline
+        this.drawTileHighlight(centerCol, centerRow, `rgba(76, 175, 80, 0.8)`, 0);
+
+        this.ctx.restore();
+    }
+
+    /**
+     * Draw tile highlight effect
+     */
+    drawTileHighlight(col, row, color, elevation = 0) {
+        const iso = this.game.toIsometric(col, row);
+        const elevationHeight = elevation * 8;
+        const adjustedY = iso.y - elevationHeight;
+
+        this.ctx.save();
+        this.ctx.translate(iso.x, adjustedY);
+
+        // Draw diamond-shaped highlight with white glow only
+        this.ctx.beginPath();
+        this.ctx.moveTo(0, -this.game.tileHeight / 2);
+        this.ctx.lineTo(this.game.tileWidth / 2, 0);
+        this.ctx.lineTo(0, this.game.tileHeight / 2);
+        this.ctx.lineTo(-this.game.tileWidth / 2, 0);
+        this.ctx.closePath();
+
+        // Subtle white glow effect with fading alpha
+        this.ctx.strokeStyle = color; // Use the color parameter which includes the alpha
+        this.ctx.lineWidth = 2;
+        this.ctx.stroke();
+
+        this.ctx.restore();
     }
 }
 

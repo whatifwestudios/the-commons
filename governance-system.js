@@ -134,6 +134,10 @@ class GovernanceSystem {
         this.ensureGovernanceStructures();
         this.calculateTotalBudget();
         this.updatePolicyEffects();
+        this.updateGovernanceModal(); // Update modal to reflect initial state
+
+        // Proactively cache player color for better performance
+        this.initializePlayerColorCache();
     }
 
     /**
@@ -255,6 +259,7 @@ class GovernanceSystem {
         this.governance.voteAllocations[category] += 1;
         this.governance.playerVotes[playerId].categories[category] += 1;
 
+
         this.calculateActualAllocations();
         this.updatePolicyEffects();
         this.updateGovernanceModal();
@@ -285,6 +290,7 @@ class GovernanceSystem {
         this.governance.votingPoints += 1;
         this.governance.voteAllocations[category] -= 1;
         this.governance.playerVotes[playerId].categories[category] -= 1;
+
 
         this.calculateActualAllocations();
         this.updatePolicyEffects();
@@ -615,14 +621,30 @@ class GovernanceSystem {
     /**
      * Get building cost after applying governance discounts
      */
-    getBuildingCostWithFunding(building) {
-        if (!building || !building.cost) return 0;
-        
-        const baseCost = building.cost;
+    getBuildingCostWithFunding(building, baseCost) {
+        if (!building) {
+            console.warn('🏤️ Governance: No building data provided');
+            return 0;
+        }
+
+        if (!baseCost || baseCost <= 0) {
+            console.warn('🏤️ Governance: No valid base cost provided:', baseCost);
+            return 0;
+        }
+
         const category = building.category?.toLowerCase();
         const discount = this.policyEffects.buildingCostReductions.get(category) || 0;
-        
-        return Math.round(baseCost * (1 - discount));
+        const finalCost = Math.round(baseCost * (1 - discount));
+
+        console.log('🏤️ Governance cost calculation:', {
+            buildingId: building.id,
+            baseCost,
+            category,
+            discount,
+            finalCost
+        });
+
+        return finalCost;
     }
     
     /**
@@ -739,7 +761,10 @@ class GovernanceSystem {
         
         // Use the new smooth modal animation system
         modal.classList.add('visible');
-        
+
+        // Ensure event listeners are set up
+        this.setupEventListeners();
+
         this.updateGovernanceModal();
         
         // Update state management system
@@ -1162,6 +1187,11 @@ class GovernanceSystem {
                 const data = await response.json();
                 const currentPlayer = data.players?.player || data.players?.[Object.keys(data.players)[0]];
                 if (currentPlayer && currentPlayer.color) {
+                    // Cache the server data for sync method use
+                    if (!this._cachedPlayerColors) {
+                        this._cachedPlayerColors = {};
+                    }
+                    this._cachedPlayerColors.player = currentPlayer.color;
                     return currentPlayer.color;
                 }
             }
@@ -1188,24 +1218,37 @@ class GovernanceSystem {
      * Synchronous version of getPlayerColor for immediate use
      */
     getPlayerColorSync() {
-        // Use cached server data if available
-        if (this._cachedPlayerColors && this._cachedPlayerColors.player) {
-            return this._cachedPlayerColors.player;
-        }
-
-        // Fallback to game's player settings
+        // Priority 1: Game's player settings (most reliable after initialization fix)
         if (typeof window !== 'undefined' && window.game && window.game.playerSettings && window.game.playerSettings.color) {
             return window.game.playerSettings.color;
         }
 
-        // Fallback to localStorage
+        // Priority 2: Use cached server data if available
+        if (this._cachedPlayerColors && this._cachedPlayerColors.player) {
+            return this._cachedPlayerColors.player;
+        }
+
+        // Priority 3: Fallback to localStorage
         const savedColor = localStorage.getItem('playerColor');
         if (savedColor) {
             return savedColor;
         }
 
-        // Default fallback color
+        // Priority 4: Default fallback color
         return '#10AC84';
+    }
+
+    /**
+     * Initialize player color cache from server
+     */
+    async initializePlayerColorCache() {
+        try {
+            const color = await this.getPlayerColor();
+            if (color) {
+            }
+        } catch (error) {
+            console.warn('Could not initialize player color cache:', error);
+        }
     }
 }
 

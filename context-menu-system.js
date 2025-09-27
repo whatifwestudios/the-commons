@@ -77,6 +77,28 @@ class ContextMenuSystem {
     }
 
     /**
+     * Show context menu with transition from tooltip
+     */
+    showWithTransition(row, col, mouseX, mouseY, tooltipBounds) {
+        // First, set up the menu content like normal
+        this.show(row, col, mouseX, mouseY);
+
+        // Apply initial tooltip-matching styling and position
+        if (tooltipBounds) {
+            // Start with tooltip-like appearance
+            this.contextMenu.style.transform = 'scale(0.9)';
+            this.contextMenu.style.opacity = '0';
+
+            // Smooth transition to menu
+            setTimeout(() => {
+                this.contextMenu.style.transition = 'opacity 200ms ease-in, transform 200ms ease-in';
+                this.contextMenu.style.opacity = '1';
+                this.contextMenu.style.transform = 'scale(1)';
+            }, 10);
+        }
+    }
+
+    /**
      * Hide context menu
      */
     hide() {
@@ -129,10 +151,10 @@ class ContextMenuSystem {
 
 
         if (!parcel.building) {
-            // Empty parcel - show auction and building categories
+            // Empty parcel - show building categories
             this.createEmptyParcelMenu(contentEl, row, col);
         } else {
-            // Built parcel - show auction, destroy, upgrade, and amenity options
+            // Built parcel - show destroy, upgrade, and amenity options
             this.createBuiltParcelMenu(contentEl, row, col, parcel);
         }
     }
@@ -162,11 +184,6 @@ class ContextMenuSystem {
             contentEl.appendChild(buildingInfo);
         }
 
-        const auctionBtn = document.createElement('button');
-        auctionBtn.className = 'context-btn primary';
-        auctionBtn.textContent = 'START AUCTION';
-        auctionBtn.onclick = async () => await this.game.startAuction(row, col);
-        contentEl.appendChild(auctionBtn);
     }
 
     /**
@@ -184,21 +201,6 @@ class ContextMenuSystem {
      * Create empty parcel menu
      */
     createEmptyParcelMenu(contentEl, row, col) {
-        // Start Auction section
-        const auctionSection = document.createElement('div');
-        auctionSection.className = 'context-section';
-
-        const auctionBtn = document.createElement('button');
-        auctionBtn.className = 'context-btn primary';
-
-        // Get market value for display
-        const parcel = this.game.grid[row][col];
-        const landValue = parcel.landValue?.calculatedValue || this.game.getParcelPrice(row, col);
-
-        auctionBtn.innerHTML = `START AUCTION<br><small>Mkt: $${landValue.toLocaleString()}</small>`;
-        auctionBtn.onclick = async () => await this.game.startAuction(row, col);
-        auctionSection.appendChild(auctionBtn);
-        contentEl.appendChild(auctionSection);
 
         // Build Menu section
         const buildSection = document.createElement('div');
@@ -360,11 +362,6 @@ class ContextMenuSystem {
         const actionsSection = document.createElement('div');
         actionsSection.className = 'context-section';
 
-        const auctionBtn = document.createElement('button');
-        auctionBtn.className = 'context-btn primary';
-        auctionBtn.textContent = 'START AUCTION';
-        auctionBtn.onclick = async () => await this.game.startAuction(row, col);
-        actionsSection.appendChild(auctionBtn);
 
         const destroyBtn = document.createElement('button');
         destroyBtn.className = 'context-btn';
@@ -549,7 +546,7 @@ class ContextMenuSystem {
             this.game.updateSupplyDemandDisplay(buildingData);
 
             // Update requirements display
-            this.game.updateBuildingRequirements(buildingData.name);
+            this.game.updateBuildingRequirements(buildingData);
 
             // Set building image
             const img = document.getElementById('building-info-img');

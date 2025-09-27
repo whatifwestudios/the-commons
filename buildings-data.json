@@ -22,15 +22,17 @@
       "economics": {
         "buildCost": 250,
         "constructionDays": 1,
-        "maxRevenue": 10
+        "maxRevenue": 10,
+        "maintenanceCost": 1,
+        "decayRatePercent": 0.1
       },
       "livability": {
-        "safety": {"impact": 5, "attenuation": 2, "description": "Residential housing provides community safety"},
-        "culture": {"impact": 5, "attenuation": 2, "description": "Family homes contribute to community culture"},
-        "affordability": {"impact": 5, "attenuation": 2, "description": "Cottages provide affordable housing options"},
-        "resilience": {"impact": 5, "attenuation": 2, "description": "Individual housing adds community resilience"},
-        "environment": {"impact": 1, "attenuation": 2, "description": "Low-density housing has minimal environmental impact"},
-        "noise": {"impact": 0, "attenuation": 2, "description": "Residential areas are generally quiet"}
+        "culture": 0.05,
+        "affordability": 0.15,
+        "resilience": 0.05,
+        "environment": 0.10,
+        "noise": 0.05,
+        "safety": 0.10
       },
       "isDefault": true,
       "graphicsFile": "assets/buildings/housing/cottage.png",
@@ -52,7 +54,7 @@
         "jobsProvided": 1,
         "jobsRequired": 1,
         "energyProvided": 0,
-        "energyRequired": 25,
+        "energyRequired": 30,
         "educationProvided": 0,
         "educationRequired": 0,
         "foodProvided": 0,
@@ -65,15 +67,17 @@
       "economics": {
         "buildCost": 800,
         "constructionDays": 7,
-        "maxRevenue": 80
+        "maxRevenue": 80,
+        "maintenanceCost": 5,
+        "decayRatePercent": 0.15
       },
       "livability": {
-        "safety": {"impact": 3, "attenuation": 2, "description": "Dense housing reduces community safety visibility"},
-        "culture": {"impact": 0, "attenuation": 2, "description": "Apartment complexes provide minimal cultural contribution"},
-        "affordability": {"impact": 10, "attenuation": 2, "description": "Higher density housing improves affordability"},
-        "resilience": {"impact": 5, "attenuation": 2, "description": "Multi-family housing adds moderate community resilience"},
-        "environment": {"impact": -2, "attenuation": 2, "description": "Higher density housing has slight negative environmental impact"},
-        "noise": {"impact": 5, "attenuation": 2, "description": "Apartment complexes generate moderate noise"}
+        "culture": 0.02,
+        "affordability": 0.20,
+        "resilience": 0.05,
+        "environment": -0.05,
+        "noise": -0.10,
+        "safety": 0.05
       },
       "isDefault": true,
       "graphicsFile": "assets/buildings/housing/apartments.png",
@@ -97,7 +101,7 @@
         "jobsProvided": 8,
         "jobsRequired": 8,
         "energyProvided": 0,
-        "energyRequired": 3,
+        "energyRequired": 8,
         "educationProvided": 0,
         "educationRequired": 0,
         "foodProvided": 25,
@@ -110,15 +114,17 @@
       "economics": {
         "buildCost": 250,
         "constructionDays": 2,
-        "maxRevenue": 25
+        "maxRevenue": 25,
+        "maintenanceCost": 2,
+        "decayRatePercent": 0.12
       },
       "livability": {
-        "safety": {"impact": 5, "attenuation": 2, "description": "Commercial activity improves community safety"},
-        "culture": {"impact": 5, "attenuation": 2, "description": "Local markets are important cultural gathering spaces"},
-        "affordability": {"impact": 20, "attenuation": 2, "description": "Farmers markets provide affordable fresh food access"},
-        "resilience": {"impact": 10, "attenuation": 2, "description": "Local food systems enhance community resilience"},
-        "environment": {"impact": 2, "attenuation": 2, "description": "Local food reduces transportation environmental impact"},
-        "noise": {"impact": 0, "attenuation": 2, "description": "Markets operate during business hours only"}
+        "culture": 0.08,
+        "affordability": 0.12,
+        "resilience": 0.06,
+        "environment": 0.05,
+        "noise": 0.02,
+        "safety": 0.08
       },
       "isDefault": true,
       "graphicsFile": "assets/buildings/commercial/farmers_market.png",
@@ -137,13 +143,13 @@
       "id": "elementary_school",
       "name": "Elementary School",
       "category": "education",
-      "description": "Primary education for children ages 5-11",
+      "description": "Primary education for children ages 5-13",
       "resources": {
         "jobsProvided": 6,
-        "jobsRequired": 6,
+        "jobsRequired": 0,
         "energyProvided": 0,
-        "energyRequired": 16,
-        "educationProvided": 15,
+        "energyRequired": 18,
+        "educationProvided": 8,
         "educationRequired": 0,
         "foodProvided": 0,
         "foodRequired": 0,
@@ -157,14 +163,7 @@
         "constructionDays": 5,
         "maxRevenue": 0
       },
-      "livability": {
-        "safety": {"impact": 10, "attenuation": 3, "description": "Schools significantly improve neighborhood safety"},
-        "culture": {"impact": 15, "attenuation": 3, "description": "Schools are major centers of community culture"},
-        "affordability": {"impact": 0, "attenuation": 2, "description": "Public education doesn't directly affect housing affordability"},
-        "resilience": {"impact": 10, "attenuation": 3, "description": "Education infrastructure greatly enhances community resilience"},
-        "environment": {"impact": 5, "attenuation": 2, "description": "Schools provide environmental education benefits"},
-        "noise": {"impact": -5, "attenuation": 2, "description": "Schools generate noise during operating hours"}
-      },
+      "livability": {},
       "isDefault": true,
       "graphicsFile": "assets/buildings/education/school_elementary.png",
       "graphics": {
@@ -177,16 +176,52 @@
       }
     },
     {
+      "id": "high_school",
+      "name": "High School",
+      "category": "education",
+      "description": "Primary education for children ages 14-18",
+      "resources": {
+        "jobsProvided": 22,
+        "jobsRequired": 0,
+        "energyProvided": 0,
+        "energyRequired": 35,
+        "educationProvided": 12,
+        "educationRequired": 0,
+        "foodProvided": 0,
+        "foodRequired": 0,
+        "housingProvided": 0,
+        "housingRequired": 0,
+        "healthcareProvided": 0,
+        "healthcareRequired": 0
+      },
+      "economics": {
+        "buildCost": 2500,
+        "constructionDays": 23,
+        "maxRevenue": 0
+      },
+      "livability": {},
+      "isDefault": true,
+      "graphicsFile": "assets/buildings/education/high_school.png",
+      "graphics": {
+        "filename": "high_school.png",
+        "path": "assets/buildings/education/high_school.png",
+        "fallbackPath": "assets/buildings/default.svg"
+      },
+      "images": {
+        "built": "assets/buildings/education/high_school.png"
+      }
+    },
+    {
       "id": "library",
       "name": "Library",
       "category": "education",
       "description": "Public library providing educational resources",
       "resources": {
         "jobsProvided": 7,
-        "jobsRequired": 7,
+        "jobsRequired": 0,
         "energyProvided": 0,
-        "energyRequired": 8,
-        "educationProvided": 8,
+        "energyRequired": 4,
+        "educationProvided": 6,
         "educationRequired": 0,
         "foodProvided": 0,
         "foodRequired": 0,
@@ -200,14 +235,7 @@
         "constructionDays": 4,
         "maxRevenue": 0
       },
-      "livability": {
-        "safety": {"impact": 8, "attenuation": 2, "description": "Libraries improve neighborhood safety through activity"},
-        "culture": {"impact": 20, "attenuation": 3, "description": "Libraries are major cultural and educational hubs"},
-        "affordability": {"impact": 5, "attenuation": 2, "description": "Free access to information and resources"},
-        "resilience": {"impact": 8, "attenuation": 2, "description": "Knowledge centers enhance community resilience"},
-        "environment": {"impact": 3, "attenuation": 2, "description": "Libraries promote environmental awareness"},
-        "noise": {"impact": -3, "attenuation": 2, "description": "Libraries are generally quiet spaces"}
-      },
+      "livability": {},
       "isDefault": true,
       "graphicsFile": "assets/buildings/education/library.png",
       "graphics": {
@@ -228,9 +256,9 @@
       "description": "A",
       "resources": {
         "jobsProvided": 5,
-        "jobsRequired": 5,
+        "jobsRequired": 0,
         "energyProvided": 0,
-        "energyRequired": 20,
+        "energyRequired": 40,
         "educationProvided": 1,
         "educationRequired": 0,
         "foodProvided": 0,
@@ -245,14 +273,7 @@
         "constructionDays": 10,
         "maxRevenue": 0
       },
-      "livability": {
-        "safety": {"impact": 8, "attenuation": 2, "description": "Recreational facilities improve community safety"},
-        "culture": {"impact": 12, "attenuation": 3, "description": "Public pools are important social gathering spaces"},
-        "affordability": {"impact": 8, "attenuation": 2, "description": "Public recreation provides affordable entertainment"},
-        "resilience": {"impact": 6, "attenuation": 2, "description": "Community facilities enhance social resilience"},
-        "environment": {"impact": 3, "attenuation": 2, "description": "Public facilities efficient use of resources"},
-        "noise": {"impact": 3, "attenuation": 2, "description": "Pools generate moderate recreational noise"}
-      },
+      "livability": {},
       "isDefault": true,
       "graphicsFile": "assets/buildings/civic/public_pool.png",
       "graphics": {
@@ -271,9 +292,9 @@
       "description": "Green space for recreation and community",
       "resources": {
         "jobsProvided": 1,
-        "jobsRequired": 1,
+        "jobsRequired": 0,
         "energyProvided": 0,
-        "energyRequired": 0,
+        "energyRequired": 1,
         "educationProvided": 0,
         "educationRequired": 0,
         "foodProvided": 0,
@@ -289,12 +310,12 @@
         "maxRevenue": 0
       },
       "livability": {
-        "safety": {"impact": 10, "attenuation": 3, "description": "Parks improve community safety through visibility"},
-        "culture": {"impact": 15, "attenuation": 3, "description": "Parks are major cultural gathering spaces"},
-        "affordability": {"impact": 10, "attenuation": 2, "description": "Free public recreation improves affordability"},
-        "resilience": {"impact": 5, "attenuation": 2, "description": "Green spaces add community resilience"},
-        "environment": {"impact": 20, "attenuation": 3, "description": "Parks provide major environmental benefits"},
-        "noise": {"impact": 0, "attenuation": 2, "description": "Parks are peaceful green spaces"}
+        "culture": {"effect": 0.12, "range": 3},
+        "affordability": {"effect": 0.08, "range": 2},
+        "resilience": {"effect": 0.05, "range": 2},
+        "environment": {"effect": 0.25, "range": 4},
+        "noise": {"effect": 0.15, "range": 3},
+        "safety": {"effect": 0.15, "range": 3}
       },
       "isDefault": true,
       "graphicsFile": "assets/buildings/civic/park.png",
@@ -316,8 +337,8 @@
       "description": "Clean energy generation facility",
       "resources": {
         "jobsProvided": 2,
-        "jobsRequired": 2,
-        "energyProvided": 100,
+        "jobsRequired": 0,
+        "energyProvided": 60,
         "energyRequired": 0,
         "educationProvided": 0,
         "educationRequired": 0,
@@ -331,15 +352,17 @@
       "economics": {
         "buildCost": 1000,
         "constructionDays": 4,
-        "maxRevenue": 15
+        "maxRevenue": 15,
+        "maintenanceCost": 1,
+        "decayRatePercent": 0.08
       },
       "livability": {
-        "safety": {"impact": 5, "attenuation": 2, "description": "Clean energy infrastructure improves community safety"},
-        "culture": {"impact": 0, "attenuation": 2, "description": "Solar farms provide minimal cultural value"},
-        "affordability": {"impact": 5, "attenuation": 2, "description": "Renewable energy reduces long-term costs"},
-        "resilience": {"impact": 15, "attenuation": 3, "description": "Local energy generation greatly enhances resilience"},
-        "environment": {"impact": 10, "attenuation": 2, "description": "Clean energy provides significant environmental benefits"},
-        "noise": {"impact": -5, "attenuation": 2, "description": "Solar panels operate silently"}
+        "culture": 0.02,
+        "affordability": -0.05,
+        "resilience": 0.15,
+        "environment": 0.30,
+        "noise": 0.05,
+        "safety": 0.03
       },
       "isDefault": true,
       "graphicsFile": "assets/buildings/energy/solar_farm.png",
@@ -361,9 +384,9 @@
       "description": "A brewery that brews beer",
       "resources": {
         "jobsProvided": 40,
-        "jobsRequired": 40,
+        "jobsRequired": 0,
         "energyProvided": 0,
-        "energyRequired": 50,
+        "energyRequired": 60,
         "educationProvided": 3,
         "educationRequired": 0,
         "foodProvided": 10,
@@ -379,12 +402,12 @@
         "maxRevenue": 50
       },
       "livability": {
-        "safety": {"impact": 3, "attenuation": 2, "description": "Industrial activity provides moderate safety through activity"},
-        "culture": {"impact": 8, "attenuation": 2, "description": "Breweries can become local cultural landmarks"},
-        "affordability": {"impact": 5, "attenuation": 2, "description": "Local industry provides jobs improving affordability"},
-        "resilience": {"impact": 7, "attenuation": 2, "description": "Local production enhances economic resilience"},
-        "environment": {"impact": -5, "attenuation": 2, "description": "Industrial processes have negative environmental impact"},
-        "noise": {"impact": 8, "attenuation": 2, "description": "Industrial operations generate significant noise"}
+        "culture": {"effect": 0.08, "range": 3},
+        "affordability": {"effect": -0.02, "range": 2},
+        "resilience": {"effect": 0.03, "range": 2},
+        "environment": {"effect": -0.08, "range": 3},
+        "noise": {"effect": -0.12, "range": 2},
+        "safety": {"effect": -0.05, "range": 2}
       },
       "isDefault": true,
       "graphicsFile": "assets/buildings/industrial/brewery.png",
