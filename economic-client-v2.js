@@ -29,8 +29,8 @@ class EconomicClient {
         };
 
         this.carens = {
-            culture: 0.8, affordability: 0.8, resilience: 0.8,
-            environment: 0.8, noise: 0.8, safety: 0.8, multiplier: 1.0
+            culture: 0.5, affordability: 0.5, resilience: 0.5,
+            environment: 0.5, noise: 0.5, safety: 0.5, multiplier: 1.0
         };
         this.carensMultiplier = 1.0; // Keep for backward compatibility
         this.totalResidents = 0;
@@ -409,6 +409,85 @@ class EconomicClient {
     }
 
     /**
+     * Get city attractiveness score for population movement
+     */
+    getCityAttractiveness() {
+        // Return null for empty grid (no buildings)
+        if (!this.buildings || this.buildings.size === 0) {
+            return null;
+        }
+        return this.attractiveness || 0.96; // Default starting attractiveness
+    }
+
+    /**
+     * Get detailed attractiveness breakdown for tooltip
+     */
+    getAttractivenessBreakdown() {
+        if (!this.jeefhh || !this.carens) {
+            return {
+                score: 0.96,
+                coreScore: 1.0,
+                qualityScore: 0.87,
+                strongest: 'No data available',
+                weakest: 'No data available',
+                immigrationStatus: 'Building city infrastructure...'
+            };
+        }
+
+        // Calculate the same breakdown as server
+        const coreMultipliers = [
+            this.jeefhh.jobs?.multiplier || 1.0,
+            this.jeefhh.housing?.multiplier || 1.0,
+            this.jeefhh.food?.multiplier || 1.0,
+            this.jeefhh.energy?.multiplier || 1.0
+        ];
+        const coreScore = coreMultipliers.reduce((sum, m) => sum + m, 0) / coreMultipliers.length;
+
+        const qualityMultipliers = [
+            this.jeefhh.education?.multiplier || 1.0,
+            this.jeefhh.healthcare?.multiplier || 1.0,
+            this.carens?.multiplier || 1.0
+        ];
+        const qualityScore = qualityMultipliers.reduce((sum, m) => sum + m, 0) / qualityMultipliers.length;
+
+        const attractiveness = (coreScore * 0.7) + (qualityScore * 0.3);
+
+        // Find strongest and weakest categories
+        const allCategories = {
+            'Jobs': this.jeefhh.jobs?.multiplier || 1.0,
+            'Housing': this.jeefhh.housing?.multiplier || 1.0,
+            'Food': this.jeefhh.food?.multiplier || 1.0,
+            'Energy': this.jeefhh.energy?.multiplier || 1.0,
+            'Education': this.jeefhh.education?.multiplier || 1.0,
+            'Healthcare': this.jeefhh.healthcare?.multiplier || 1.0,
+            'Quality of Life': this.carens?.multiplier || 1.0
+        };
+
+        const sorted = Object.entries(allCategories).sort(([,a], [,b]) => b - a);
+        const strongest = sorted[0];
+        const weakest = sorted[sorted.length - 1];
+
+        // Immigration status message
+        let immigrationStatus;
+        if (attractiveness >= 1.1) {
+            immigrationStatus = '✅ Attracting new residents!';
+        } else if (attractiveness >= 0.95) {
+            immigrationStatus = `⚠️ Need ${(1.1 - attractiveness).toFixed(2)} more points to attract residents`;
+        } else {
+            immigrationStatus = '❌ Risk of emigration if conditions persist';
+        }
+
+        return {
+            score: attractiveness,
+            coreScore,
+            qualityScore,
+            strongest: `${strongest[0]} (${strongest[1].toFixed(2)}x)`,
+            weakest: `${weakest[0]} (${weakest[1].toFixed(2)}x)`,
+            immigrationStatus
+        };
+    }
+
+    /**
      * SERVER EVENT HANDLING
      */
 
@@ -612,6 +691,9 @@ class EconomicClient {
         }
         if (gameState.carens) {
             this.carens = gameState.carens;
+        }
+        if (gameState.attractiveness !== undefined) {
+            this.attractiveness = gameState.attractiveness;
         }
 
         // V2: Process vitality data for UI

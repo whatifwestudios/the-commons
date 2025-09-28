@@ -30,12 +30,12 @@ class ServerEconomicEngine {
 
             // Global CARENS livability scores
             carens: {
-                culture: 0.8,      // Base score 0.8 (80%)
-                affordability: 0.8,
-                resilience: 0.8,
-                environment: 0.8,
-                noise: 0.8,
-                safety: 0.8,
+                culture: 0.5,      // Base score 0.5 (neutral baseline = 0 points)
+                affordability: 0.5,
+                resilience: 0.5,
+                environment: 0.5,
+                noise: 0.5,
+                safety: 0.5,
                 multiplier: 1.0    // Combined multiplier (0.6x to 1.4x)
             },
 
@@ -58,7 +58,13 @@ class ServerEconomicEngine {
                 seniors: 0,
                 total: 0
             },
-            demographicsPerBuilding: new Map() // key: "row,col" -> {children, adults, seniors, total}
+            demographicsPerBuilding: new Map(), // key: "row,col" -> {children, adults, seniors, total}
+
+            // Emigration tracking for sustained poor conditions
+            emigrationTracking: {
+                poorConditionsDays: 0,   // Days attractiveness has been < 0.95
+                lastAttractivenessCheck: 0  // Last attractiveness value
+            }
         };
 
         // Building definitions loaded from JSON
@@ -198,12 +204,14 @@ class ServerEconomicEngine {
      * Broadcast current game state with time - called after player actions
      */
     broadcastGameStateUpdate(actionType = 'GAME_STATE_UPDATE') {
-        this.broadcastToClients({
-            type: actionType,
-            gameTime: this.gameState.gameTime,
-            gameDay: Math.floor(this.gameState.gameTime),
-            timestamp: Date.now()
-        });
+        if (this.broadcastFunction) {
+            this.broadcastFunction({
+                type: actionType,
+                gameTime: this.gameState.gameTime,
+                gameDay: Math.floor(this.gameState.gameTime),
+                timestamp: Date.now()
+            });
+        }
     }
 
     /**
@@ -338,7 +346,8 @@ class ServerEconomicEngine {
         });
 
         // Broadcast monthly update to all clients
-        this.broadcastToClients({
+        if (this.broadcastFunction) {
+            this.broadcastFunction({
             type: 'MONTHLY_UPDATE',
             gameTime: this.gameState.gameTime,
             gameDay: currentDay,
@@ -346,7 +355,8 @@ class ServerEconomicEngine {
             monthName: monthName,
             message: `New month started: ${monthName}! +2 governance points awarded.`,
             timestamp: Date.now()
-        });
+            });
+        }
 
         console.log(`📊 Monthly events completed for ${monthName}`);
     }
@@ -656,6 +666,7 @@ class ServerEconomicEngine {
      * Recalculate global JEEFHH and CARENS after building changes
      */
     recalculateGlobalEconomics() {
+        console.log(`🔄 DEBUG: Recalculating global economics (buildings: ${this.gameState.buildings.size})`);
         this.calculateGlobalJEEFHH();
         this.calculateGlobalCARENS();
         this.recalculateAllBuildingPerformances();
@@ -711,6 +722,9 @@ class ServerEconomicEngine {
      */
     calculateGlobalCARENS() {
         const carens = this.gameState.carens;
+        const buildingCount = this.gameState.buildings.size;
+
+        console.log(`🏛️ DEBUG: Calculating CARENS with ${buildingCount} buildings`);
 
         // Start CARENS scores at neutral (0.5) baseline
         carens.culture = 0.5;
@@ -753,6 +767,7 @@ class ServerEconomicEngine {
         // Convert to multiplier (0.6x to 1.4x)
         carens.multiplier = 0.6 + (avgScore * 0.8);
 
+        console.log(`🏛️ DEBUG: CARENS calculation - avgScore=${avgScore.toFixed(3)}, multiplier=${carens.multiplier.toFixed(3)}`);
         console.log('🏛️ Global CARENS updated:', carens);
     }
 
@@ -1055,6 +1070,8 @@ class ServerEconomicEngine {
         const attractiveness = (coreScore * 0.7) + (qualityScore * 0.3);
 
         console.log(`🧲 Economic attractiveness: ${attractiveness.toFixed(3)} (core: ${coreScore.toFixed(3)}, quality: ${qualityScore.toFixed(3)})`);
+        console.log(`🧲 DEBUG JEEFHH multipliers: jobs=${jeefhh.jobs.multiplier.toFixed(3)}, housing=${jeefhh.housing.multiplier.toFixed(3)}, food=${jeefhh.food.multiplier.toFixed(3)}, energy=${jeefhh.energy.multiplier.toFixed(3)}`);
+        console.log(`🧲 DEBUG Quality multipliers: education=${jeefhh.education.multiplier.toFixed(3)}, healthcare=${jeefhh.healthcare.multiplier.toFixed(3)}, carens=${carens.multiplier.toFixed(3)}`);
         return attractiveness;
     }
 
@@ -1075,16 +1092,46 @@ class ServerEconomicEngine {
         // Calculate new population
         let newPopulation = currentPop * (1 + dailyGrowthRate);
 
-        // If no current population but conditions are good, allow initial immigration
-        if (currentPop === 0 && attractiveness > 1.0) {
+        // If no current population but conditions are very good, allow initial immigration
+        if (currentPop === 0 && attractiveness > 1.1) {
             const maxHousingCapacity = this.calculateMaxHousingCapacity();
+            console.log(`🏠 DEBUG Immigration Check: currentPop=${currentPop}, attractiveness=${attractiveness.toFixed(3)}, maxHousingCapacity=${maxHousingCapacity}`);
             if (maxHousingCapacity > 0) {
                 // Start with small initial population when conditions are good
                 const immigrationRate = (attractiveness - 1.0) * 2; // Scale with attractiveness
-                newPopulation = Math.min(immigrationRate, maxHousingCapacity * 0.1); // Cap at 10% of housing capacity
+                const cappedImmigration = maxHousingCapacity * 0.1; // Cap at 10% of housing capacity
+                newPopulation = Math.min(immigrationRate, cappedImmigration);
+                console.log(`🏠 DEBUG Immigration Calc: immigrationRate=${immigrationRate.toFixed(3)}, cappedAt=${cappedImmigration.toFixed(3)}, result=${newPopulation.toFixed(3)}`);
                 console.log(`🏠 Initial immigration: ${newPopulation.toFixed(1)} residents attracted by economic conditions (attractiveness: ${attractiveness.toFixed(3)})`);
+            } else {
+                console.log(`🏠 DEBUG: No immigration - maxHousingCapacity is 0`);
+            }
+        } else {
+            console.log(`🏠 DEBUG: No immigration - currentPop=${currentPop}, attractiveness=${attractiveness.toFixed(3)} (needs currentPop===0 && attractiveness>1.1)`);
+        }
+
+        // Track poor conditions for emigration (existing residents leave after sustained week of poor conditions)
+        if (currentPop > 0) {
+            if (attractiveness < 0.95) {
+                this.gameState.emigrationTracking.poorConditionsDays++;
+                console.log(`🏠 DEBUG: Poor conditions day ${this.gameState.emigrationTracking.poorConditionsDays}/7 (attractiveness: ${attractiveness.toFixed(3)})`);
+
+                // If poor conditions persist for a week (7 days), trigger emigration
+                if (this.gameState.emigrationTracking.poorConditionsDays >= 7) {
+                    const emigrationRate = (0.95 - attractiveness) * 0.5; // Scale emigration with how bad conditions are
+                    const emigrationLoss = currentPop * emigrationRate * 0.1; // 10% base rate
+                    newPopulation = Math.max(0, currentPop - emigrationLoss);
+                    console.log(`🏠 Emigration: ${emigrationLoss.toFixed(1)} residents leaving due to sustained poor conditions (${this.gameState.emigrationTracking.poorConditionsDays} days < 0.95)`);
+                }
+            } else {
+                // Reset counter when conditions improve
+                if (this.gameState.emigrationTracking.poorConditionsDays > 0) {
+                    console.log(`🏠 DEBUG: Conditions improved (${attractiveness.toFixed(3)}), resetting emigration counter`);
+                    this.gameState.emigrationTracking.poorConditionsDays = 0;
+                }
             }
         }
+        this.gameState.emigrationTracking.lastAttractivenessCheck = attractiveness;
 
         // Apply maximum housing constraint
         const maxHousingCapacity = this.calculateMaxHousingCapacity();
@@ -1106,15 +1153,23 @@ class ServerEconomicEngine {
     calculateMaxHousingCapacity() {
         let totalCapacity = 0;
 
+        console.log(`🏠 DEBUG: Calculating housing capacity from ${this.gameState.buildings.size} buildings`);
         for (const [locationKey, building] of this.gameState.buildings) {
+            console.log(`🏠 DEBUG: Building ${building.id} at ${locationKey}, underConstruction: ${building.underConstruction}`);
             if (building.underConstruction) continue;
 
             const buildingDef = this.buildingDefinitions.get(building.id);
-            if (buildingDef && buildingDef.resources && buildingDef.resources.housingProvided > 0) {
-                totalCapacity += buildingDef.resources.housingProvided;
+            if (buildingDef && buildingDef.resources) {
+                console.log(`🏠 DEBUG: Building ${building.id} housing provided: ${buildingDef.resources.housingProvided}`);
+                if (buildingDef.resources.housingProvided > 0) {
+                    totalCapacity += buildingDef.resources.housingProvided;
+                }
+            } else {
+                console.log(`🏠 DEBUG: No building definition or resources for ${building.id}`);
             }
         }
 
+        console.log(`🏠 DEBUG: Total housing capacity: ${totalCapacity} units = ${totalCapacity * 2} people`);
         return totalCapacity * 2; // Assume 2 people per bedroom on average
     }
 
@@ -1574,6 +1629,7 @@ class ServerEconomicEngine {
                 demographics: this.gameState.demographics,
                 jeefhh: this.gameState.jeefhh,
                 carens: this.gameState.carens,
+                attractiveness: this.calculateEconomicAttractiveness(),
                 buildings: buildings,
                 players: players,
                 cashflow: cashflowData,
@@ -1687,15 +1743,15 @@ class ServerEconomicEngine {
             healthcare: { supply: 0, demand: 0, multiplier: 1.0 }
         };
 
-        // Reset CARENS to defaults (scores will be calculated from buildings)
+        // Reset CARENS to defaults (neutral baseline until buildings are built)
         this.gameState.carens = {
-            culture: 0,
-            affordability: 0,
-            resilience: 0,
-            environment: 0,
-            noise: 0,
-            safety: 0,
-            multiplier: 0.6 // Base multiplier when no buildings provide CARENS
+            culture: 0.5,
+            affordability: 0.5,
+            resilience: 0.5,
+            environment: 0.5,
+            noise: 0.5,
+            safety: 0.5,
+            multiplier: 1.0 // Neutral multiplier when no buildings exist
         };
 
         // Reset residents and demographics

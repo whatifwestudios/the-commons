@@ -460,6 +460,9 @@ class BeerHallLobby {
         if (this.readyCheckModal) {
             this.readyCheckModal.style.display = 'none';
         }
+
+        // Remove blur classes from body
+        document.body.classList.remove('beer-hall-active', 'ready-check-active');
     }
 
     /**
@@ -489,6 +492,7 @@ class BeerHallLobby {
     showBeerHallLobby() {
         this.welcomeScreen.style.display = 'flex';
         this.beerHallLobby.style.display = 'flex';
+        document.body.classList.add('beer-hall-active');
     }
 
     /**
@@ -744,6 +748,7 @@ class BeerHallLobby {
 
         // Show modal
         this.readyCheckModal.style.display = 'flex';
+        document.body.classList.add('ready-check-active');
     }
 
     /**
@@ -1248,9 +1253,13 @@ class BeerHallLobby {
 
         container.innerHTML = '';
 
-        // Pre-game LVT setup only
+        // Pre-game LVT setup only - get current rate
+        const governanceSystem = window.game?.governanceSystem;
+        const currentRate = governanceSystem?.governance?.taxRate || 0.50;
+        const ratePercent = (currentRate * 100).toFixed(0);
+
         const categories = {
-            lvt: { name: 'Land Value Tax Rate', icon: '📊' }
+            lvt: { name: `Land Value Tax Rate (current: ${ratePercent}%)`, icon: '📊' }
         };
 
         Object.entries(categories).forEach(([key, category]) => {

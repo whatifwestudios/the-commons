@@ -3257,10 +3257,15 @@ class IsometricGrid {
             progress.style.position = 'absolute';
             
             // CARENS purple-centered visualization: purple center, red left, blue right
-            const maxImpact = 50;
+            const maxImpact = 100; // Use full range for faster color transitions
             const normalizedValue = Math.min(Math.max(value / maxImpact, -1), 1);
+            const absValue = Math.abs(value);
 
-            if (Math.abs(value) < 0.1) {
+            // Add pulsing glow effect for extreme values (90-100 range)
+            const isExtreme = absValue >= 90;
+            const pulseClass = isExtreme ? ' carens-extreme-pulse' : '';
+
+            if (Math.abs(value) < 5) {
                 // Nearly neutral - show purple dot in center
                 progress.style.left = '49%';
                 progress.style.width = '2%';
@@ -3268,23 +3273,30 @@ class IsometricGrid {
                 progress.style.borderRadius = '50%';
                 progress.style.background = '#8b5cf6'; // Purple for CARENS center
                 progress.style.border = '1px solid rgba(255,255,255,0.3)';
+                progress.className = 'carens-progress' + pulseClass;
             } else if (value > 0) {
-                // Positive impact - goes right toward blue
+                // Positive impact - goes right toward blue, faster transition
                 progress.style.left = '50%';
                 progress.style.width = `${Math.abs(normalizedValue) * 50}%`;
                 progress.style.height = '6px';
                 progress.style.borderRadius = '0';
                 progress.style.border = 'none';
-                progress.style.background = '#3b82f6'; // Blue for positive CARENS
+                // Faster blue transition - more intense blue for smaller values
+                const blueIntensity = Math.min(255, 100 + (absValue * 2));
+                progress.style.background = `rgb(59, 130, ${blueIntensity})`;
+                progress.className = 'carens-progress' + pulseClass;
             } else {
-                // Negative impact - goes left toward red
+                // Negative impact - goes left toward red, faster transition
                 const width = Math.abs(normalizedValue) * 50;
                 progress.style.left = `${50 - width}%`;
                 progress.style.width = `${width}%`;
                 progress.style.height = '6px';
                 progress.style.borderRadius = '0';
                 progress.style.border = 'none';
-                progress.style.background = '#ef4444'; // Red for negative CARENS
+                // Faster red transition - more intense red for smaller values
+                const redIntensity = Math.min(255, 150 + (absValue * 2));
+                progress.style.background = `rgb(${redIntensity}, 68, 68)`;
+                progress.className = 'carens-progress' + pulseClass;
             }
             
             barContainer.appendChild(progress);

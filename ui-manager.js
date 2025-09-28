@@ -30,6 +30,7 @@ class UIManager {
             playerCashflow: 'player-cashflow',
             cityName: 'city-name',
             totalResidents: 'total-residents',
+            cityAttractiveness: 'city-attractiveness',
             
             // Actions
             currentActions: 'current-actions',
@@ -441,7 +442,98 @@ class UIManager {
         // Update vitality displays
         this.updateVitalityFromEconomicClient(economicClient);
 
+        // Update attractiveness metric with dynamic tooltip
+        this.updateAttractiveness(economicClient);
+
         console.log('✅ UI Manager: Economic displays updated');
+    }
+
+    /**
+     * Update attractiveness metric with dynamic tooltip
+     */
+    updateAttractiveness(economicClient) {
+        const attractiveness = economicClient.getCityAttractiveness();
+        const breakdown = economicClient.getAttractivenessBreakdown();
+
+        // Check if city is empty (no buildings)
+        const hasBuildings = attractiveness !== null;
+
+        let displayValue, color;
+
+        if (!hasBuildings) {
+            displayValue = '--';
+            color = '#ffffff';
+        } else {
+            displayValue = attractiveness.toFixed(2);
+            // Color coding: blue (>1.1), white (0.95-1.1), red (<0.95)
+            if (attractiveness >= 1.1) {
+                color = '#4A9EFF'; // Blue
+            } else if (attractiveness >= 0.95) {
+                color = '#ffffff'; // White
+            } else {
+                color = '#FF6B6B'; // Red
+            }
+        }
+
+        // Update the metric value with color
+        const attractivenessElement = document.getElementById('city-attractiveness');
+        if (attractivenessElement) {
+            attractivenessElement.textContent = displayValue;
+            attractivenessElement.style.color = color;
+        }
+
+        // Create dynamic tooltip with detailed breakdown
+        let tooltip;
+
+        if (!hasBuildings) {
+            tooltip = `
+                <div style="text-align: left;">
+                    <div style="font-weight: 600; margin-bottom: 8px; color: #FFD700;">
+                        City Attractiveness: --
+                    </div>
+                    <div style="color: #87CEEB; margin-bottom: 8px;">
+                        Build your first structure to establish city attractiveness.
+                    </div>
+                    <div style="font-size: 11px; color: #888;">
+                        Above 1.1 attracts residents • Below 0.95 for a week causes emigration
+                    </div>
+                </div>
+            `;
+        } else {
+            tooltip = `
+                <div style="text-align: left;">
+                    <div style="font-weight: 600; margin-bottom: 8px; color: #FFD700;">
+                        City Attractiveness: ${breakdown.score.toFixed(2)}
+                    </div>
+
+                    <div style="margin-bottom: 6px;">
+                        <div style="color: #98FB98;">Core Needs: ${breakdown.coreScore.toFixed(2)} (70% weight)</div>
+                        <div style="color: #87CEEB;">Quality of Life: ${breakdown.qualityScore.toFixed(2)} (30% weight)</div>
+                    </div>
+
+                    <div style="margin-bottom: 6px;">
+                        <div style="color: #90EE90;">🏆 Strongest: ${breakdown.strongest}</div>
+                        <div style="color: #FFA07A;">⚠️ Weakest: ${breakdown.weakest}</div>
+                    </div>
+
+                    <div style="border-top: 1px solid #444; padding-top: 6px; margin-top: 6px;">
+                        <div style="color: ${breakdown.score >= 1.1 ? '#90EE90' : breakdown.score >= 0.95 ? '#FFD700' : '#FFA07A'};">
+                            ${breakdown.immigrationStatus}
+                        </div>
+                    </div>
+
+                    <div style="font-size: 11px; color: #888; margin-top: 4px;">
+                        Above 1.1 attracts residents • Below 0.95 for a week causes emigration
+                    </div>
+                </div>
+            `;
+        }
+
+        // Update the tooltip
+        const attractivenessRow = document.getElementById('attractiveness-row');
+        if (attractivenessRow) {
+            attractivenessRow.setAttribute('data-tooltip', tooltip);
+        }
     }
 
     /**

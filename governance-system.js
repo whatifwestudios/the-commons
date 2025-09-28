@@ -46,7 +46,6 @@ class GovernanceSystem {
                         emergency: 0, ubi: 0
                     },
                     lvtVotes: 0,
-                    pregameLVTVotes: 0,  // Track total LVT votes (pre-game + gameplay)
                     pregameLVTVotes: 0  // Track locked pre-game LVT votes separately
                 }
             },

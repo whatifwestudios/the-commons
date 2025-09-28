@@ -1378,7 +1378,6 @@
             <div class="top-bar-section">
                 <button class="top-bar-btn" id="player-btn">
                     PLAYER
-                    <span class="indicator">⌄</span>
                 </button>
                 <div class="dropdown-menu" id="player-menu">
                     <!-- Menu items removed: leaderboard, player stats, reset game, attenuation overlay -->
@@ -1536,7 +1535,7 @@
                             <div class="points-available">Points: <span id="available-points">4</span></div>
                         </div>
                         <div class="governance-instructions">
-                            <p>Set the starting Land Value Tax rate for your city. Each + or - changes the rate by 1%. You can modify this later during gameplay through the main governance system.</p>
+                            <p>Set the starting Land Value Tax rate for your city (default: 50%). All players can modify this rate by up to 4 points in any direction. Each + or - changes the rate by 1%. You can modify this later during gameplay through the main governance system.</p>
                         </div>
                         <div class="governance-categories" id="governance-categories">
                             <!-- LVT category will be populated by JavaScript -->
@@ -1682,6 +1681,10 @@
                     <span class="collapse-icon"></span>
                 </div>
                 <div id="info" class="section-content">
+                    <div class="metric-row metric-tooltip" id="attractiveness-row" data-tooltip="How appealing your city is to potential residents. Above 1.1 attracts new residents. Below 0.95 for a week causes emigration.">
+                        <span class="metric-label">ATTRACTIVENESS</span>
+                        <span class="metric-value" id="city-attractiveness">--</span>
+                    </div>
                     <div class="metric-row metric-tooltip" id="residents-row" data-tooltip="Total population living in your city. Higher numbers indicate successful urban development.">
                         <span class="metric-label">RESIDENTS</span>
                         <span class="metric-value" id="total-residents">0</span>
