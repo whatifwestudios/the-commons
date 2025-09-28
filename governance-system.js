@@ -45,11 +45,14 @@ class GovernanceSystem {
                         culture: 0, recreation: 0, commercial: 0, civic: 0,
                         emergency: 0, ubi: 0
                     },
-                    lvtVotes: 0  // Track LVT votes separately
+                    lvtVotes: 0,
+                    pregameLVTVotes: 0,  // Track total LVT votes (pre-game + gameplay)
+                    pregameLVTVotes: 0  // Track locked pre-game LVT votes separately
                 }
             },
             taxRate: 0.50, // 50% default LVT rate
-            votingPoints: 2, // Start with 2 voting points
+            votingPoints: 4, // Start with 4 voting points for pre-game LVT setup
+            gameStarted: false, // Track if game has started (locks pre-game LVT)
             lastBudgetUpdate: 0
         };
         
@@ -162,7 +165,8 @@ class GovernanceSystem {
                         culture: 0, recreation: 0, commercial: 0, civic: 0,
                         emergency: 0, ubi: 0
                     },
-                    lvtVotes: 0
+                    lvtVotes: 0,
+                    pregameLVTVotes: 0
                 }
             };
         }
@@ -179,13 +183,8 @@ class GovernanceSystem {
             };
         }
 
-        // Ensure treasury fields exist (backward compatibility)
-        if (this.governance.treasuryBalance === undefined) {
-            this.governance.treasuryBalance = 0;
-        }
-        if (this.governance.monthlyCollected === undefined) {
-            this.governance.monthlyCollected = 0;
-        }
+        // ❌ REMOVED: Client-side treasury initialization
+        // Treasury state is now server-authoritative and synced via broadcasts
     }
     
     /**
@@ -227,8 +226,28 @@ class GovernanceSystem {
 
     /**
      * Add a vote to a category (costs 1 voting point)
+     *
+     * Expected server response:
+     * {
+     *   success: boolean,
+     *   votingPoints: number,    // Remaining voting points
+     *   votes: {                 // Full votes object for this player
+     *     education: number,
+     *     healthcare: number,
+     *     infrastructure: number,
+     *     housing: number,
+     *     culture: number,
+     *     recreation: number,
+     *     commercial: number,
+     *     civic: number,
+     *     emergency: number,
+     *     ubi: number
+     *   },
+     *   category: string,        // The category that was voted on
+     *   action: string           // 'add' or 'remove'
+     * }
      */
-    addCategoryVote(category, playerId = 'player') {
+    async addCategoryVote(category, playerId = 'player') {
         // Ensure structures exist before proceeding
         this.ensureGovernanceStructures();
 
@@ -242,35 +261,99 @@ class GovernanceSystem {
             return false;
         }
 
-        // Ensure player entry exists
-        if (!this.governance.playerVotes[playerId]) {
-            this.governance.playerVotes[playerId] = {
-                categories: {
-                    education: 0, healthcare: 0, infrastructure: 0, housing: 0,
-                    culture: 0, recreation: 0, commercial: 0, civic: 0,
-                    emergency: 0, ubi: 0
-                },
-                lvtVotes: 0
-            };
+        // Send transaction to server instead of updating local state
+        if (this.game && this.game.economicClient) {
+            try {
+                const transaction = {
+                    type: 'GOVERNANCE_VOTE',
+                    playerId: this.game.currentPlayerId || playerId,
+                    category: category,
+                    action: 'add'
+                };
+
+                const result = await this.game.economicClient.sendTransaction(transaction);
+
+                if (result.success) {
+                    // Update local state based on server response
+                    this.governance.votingPoints = result.votingPoints;
+
+                    // Ensure player votes structure exists
+                    if (!this.governance.playerVotes[playerId]) {
+                        this.governance.playerVotes[playerId] = {
+                            categories: {
+                                education: 0, healthcare: 0, infrastructure: 0, housing: 0,
+                                culture: 0, recreation: 0, commercial: 0, civic: 0,
+                                emergency: 0, ubi: 0
+                            },
+                            lvtVotes: 0
+                        };
+                    }
+
+                    // Update local allocations from server response
+                    if (result.votes && result.votes[category] !== undefined) {
+                        // Server returns the full votes object with all categories
+                        this.governance.playerVotes[playerId].categories[category] = result.votes[category];
+                    } else {
+                        // Fallback: increment locally if server doesn't return vote details
+                        this.governance.playerVotes[playerId].categories[category] =
+                            (this.governance.playerVotes[playerId].categories[category] || 0) + 1;
+                    }
+
+                    // Update voting points from server
+                    if (result.votingPoints !== undefined) {
+                        this.governance.votingPoints = result.votingPoints;
+                    }
+
+                    this.governance.voteAllocations[category] = (this.governance.voteAllocations[category] || 0) + 1;
+
+                    this.calculateActualAllocations();
+                    this.updatePolicyEffects();
+                    this.updateGovernanceModal();
+
+                    console.log(`🗳️ Vote added for ${category}. Server confirmed: ${result.votingPoints} points remaining`);
+                    return true;
+                } else {
+                    console.error('Server rejected governance vote:', result.error);
+                    return false;
+                }
+            } catch (error) {
+                console.error('Failed to send governance vote transaction:', error);
+                return false;
+            }
+        } else {
+            // Fallback to local-only mode if no economic client
+            console.warn('No economic client available, using local-only governance');
+
+            // Ensure player entry exists
+            if (!this.governance.playerVotes[playerId]) {
+                this.governance.playerVotes[playerId] = {
+                    categories: {
+                        education: 0, healthcare: 0, infrastructure: 0, housing: 0,
+                        culture: 0, recreation: 0, commercial: 0, civic: 0,
+                        emergency: 0, ubi: 0
+                    },
+                    lvtVotes: 0,
+                    pregameLVTVotes: 0
+                };
+            }
+
+            // Spend point and add vote (local only)
+            this.governance.votingPoints -= 1;
+            this.governance.voteAllocations[category] += 1;
+            this.governance.playerVotes[playerId].categories[category] += 1;
+
+            this.calculateActualAllocations();
+            this.updatePolicyEffects();
+            this.updateGovernanceModal();
+
+            return true;
         }
-
-        // Spend point and add vote
-        this.governance.votingPoints -= 1;
-        this.governance.voteAllocations[category] += 1;
-        this.governance.playerVotes[playerId].categories[category] += 1;
-
-
-        this.calculateActualAllocations();
-        this.updatePolicyEffects();
-        this.updateGovernanceModal();
-
-        return true;
     }
 
     /**
      * Remove a vote from a category (refunds 1 voting point)
      */
-    removeCategoryVote(category, playerId = 'player') {
+    async removeCategoryVote(category, playerId = 'player') {
         // Ensure structures exist before proceeding
         this.ensureGovernanceStructures();
 
@@ -286,17 +369,64 @@ class GovernanceSystem {
             return false;
         }
 
-        // Refund point and remove vote
-        this.governance.votingPoints += 1;
-        this.governance.voteAllocations[category] -= 1;
-        this.governance.playerVotes[playerId].categories[category] -= 1;
+        // Send transaction to server instead of updating local state
+        if (this.game && this.game.economicClient) {
+            try {
+                const transaction = {
+                    type: 'GOVERNANCE_VOTE',
+                    playerId: this.game.currentPlayerId || playerId,
+                    category: category,
+                    action: 'remove'
+                };
 
+                const result = await this.game.economicClient.sendTransaction(transaction);
 
-        this.calculateActualAllocations();
-        this.updatePolicyEffects();
-        this.updateGovernanceModal();
+                if (result.success) {
+                    // Update local state based on server response
+                    if (result.votingPoints !== undefined) {
+                        this.governance.votingPoints = result.votingPoints;
+                    }
 
-        return true;
+                    // Update local allocations from server response
+                    if (result.votes && result.votes[category] !== undefined) {
+                        this.governance.playerVotes[playerId].categories[category] = result.votes[category];
+                    } else {
+                        // Fallback: decrement locally if server doesn't return vote details
+                        this.governance.playerVotes[playerId].categories[category] =
+                            Math.max(0, (this.governance.playerVotes[playerId].categories[category] || 0) - 1);
+                    }
+
+                    this.governance.voteAllocations[category] = Math.max(0, (this.governance.voteAllocations[category] || 0) - 1);
+
+                    this.calculateActualAllocations();
+                    this.updatePolicyEffects();
+                    this.updateGovernanceModal();
+
+                    console.log(`🗳️ Vote removed from ${category}. Server confirmed: ${result.votingPoints} points available`);
+                    return true;
+                } else {
+                    console.error('Server rejected governance vote removal:', result.error);
+                    return false;
+                }
+            } catch (error) {
+                console.error('Failed to send governance vote removal transaction:', error);
+                return false;
+            }
+        } else {
+            // Fallback to local-only mode if no economic client
+            console.warn('No economic client available, using local-only governance');
+
+            // Refund point and remove vote (local only)
+            this.governance.votingPoints += 1;
+            this.governance.voteAllocations[category] -= 1;
+            this.governance.playerVotes[playerId].categories[category] -= 1;
+
+            this.calculateActualAllocations();
+            this.updatePolicyEffects();
+            this.updateGovernanceModal();
+
+            return true;
+        }
     }
 
     /**
@@ -326,9 +456,18 @@ class GovernanceSystem {
      * Set tax rate
      */
     /**
-     * Increase LVT rate by 1% (costs 1 voting point)
+     * Vote to increase LVT rate by 1% (costs 1 voting point)
+     *
+     * Expected server response:
+     * {
+     *   success: boolean,
+     *   votingPoints: number,  // Remaining voting points
+     *   lvtRate: number,       // New LVT rate (0.0 to 1.0)
+     *   lvtVotesIncrease: number,
+     *   lvtVotesDecrease: number
+     * }
      */
-    increaseLVTRate(playerId = 'player') {
+    async increaseLVTRate(playerId = 'player') {
         // Ensure structures exist before proceeding
         this.ensureGovernanceStructures();
 
@@ -337,64 +476,100 @@ class GovernanceSystem {
             return false;
         }
 
-        if (this.governance.taxRate >= 1.0) {
-            console.log('LVT rate already at maximum (100%)');
-            return false;
+        // Send LVT vote to server
+        if (this.game && this.game.economicClient) {
+            try {
+                const transaction = {
+                    type: 'GOVERNANCE_VOTE',
+                    playerId: this.game.currentPlayerId || playerId,
+                    category: 'lvt_increase',
+                    action: 'add'
+                };
+
+                const result = await this.game.economicClient.sendTransaction(transaction);
+
+                if (result.success) {
+                    // Update local state based on server response
+                    if (result.votingPoints !== undefined) {
+                        this.governance.votingPoints = result.votingPoints;
+                    }
+                    if (result.lvtRate !== undefined) {
+                        this.governance.taxRate = result.lvtRate;
+                    }
+
+                    this.calculateTotalBudget();
+                    this.updatePolicyEffects();
+                    this.updateGovernanceModal();
+
+                    const lvtRate = result.lvtRate || this.governance.taxRate;
+                    console.log(`🗳️ LVT increase vote added. New rate: ${(lvtRate * 100).toFixed(1)}%`);
+                    return true;
+                } else {
+                    console.error('Server rejected LVT increase vote:', result.error);
+                    return false;
+                }
+            } catch (error) {
+                console.error('Failed to send LVT increase vote:', error);
+                return false;
+            }
         }
 
-        // Ensure player entry exists
-        if (!this.governance.playerVotes[playerId]) {
-            this.governance.playerVotes[playerId] = {
-                categories: {
-                    education: 0, healthcare: 0, infrastructure: 0, housing: 0,
-                    culture: 0, recreation: 0, commercial: 0, civic: 0,
-                    emergency: 0, ubi: 0
-                },
-                lvtVotes: 0
-            };
-        }
-
-        // Spend point and increase rate
-        this.governance.votingPoints -= 1;
-        this.governance.taxRate = Math.min(1.0, this.governance.taxRate + 0.01);
-        this.governance.playerVotes[playerId].lvtVotes += 1;
-
-        this.calculateTotalBudget();
-        this.updatePolicyEffects();
-        this.updateGovernanceModal();
-
-        return true;
+        return false;
     }
 
     /**
-     * Decrease LVT rate by 1% (refunds 1 voting point if player allocated it)
+     * Vote to decrease LVT rate by 1% (costs 1 voting point)
      */
-    decreaseLVTRate(playerId = 'player') {
+    async decreaseLVTRate(playerId = 'player') {
         // Ensure structures exist before proceeding
         this.ensureGovernanceStructures();
 
-        // Check if player has LVT votes to remove
-        if (!this.governance.playerVotes[playerId] ||
-            this.governance.playerVotes[playerId].lvtVotes <= 0) {
-            console.log('No LVT votes to remove for this player');
+        if (this.governance.votingPoints < 1) {
+            console.log('Not enough voting points');
             return false;
         }
 
-        if (this.governance.taxRate <= 0.0) {
-            console.log('LVT rate already at minimum (0%)');
-            return false;
+        // During gameplay, allow LVT changes but track them separately from pre-game baseline
+
+        // Send LVT vote to server
+        if (this.game && this.game.economicClient) {
+            try {
+                const transaction = {
+                    type: 'GOVERNANCE_VOTE',
+                    playerId: this.game.currentPlayerId || playerId,
+                    category: 'lvt_decrease',
+                    action: 'add'
+                };
+
+                const result = await this.game.economicClient.sendTransaction(transaction);
+
+                if (result.success) {
+                    // Update local state based on server response
+                    if (result.votingPoints !== undefined) {
+                        this.governance.votingPoints = result.votingPoints;
+                    }
+                    if (result.lvtRate !== undefined) {
+                        this.governance.taxRate = result.lvtRate;
+                    }
+
+                    this.calculateTotalBudget();
+                    this.updatePolicyEffects();
+                    this.updateGovernanceModal();
+
+                    const lvtRate = result.lvtRate || this.governance.taxRate;
+                    console.log(`🗳️ LVT decrease vote added. New rate: ${(lvtRate * 100).toFixed(1)}%`);
+                    return true;
+                } else {
+                    console.error('Server rejected LVT decrease vote:', result.error);
+                    return false;
+                }
+            } catch (error) {
+                console.error('Failed to send LVT decrease vote:', error);
+                return false;
+            }
         }
 
-        // Refund point and decrease rate
-        this.governance.votingPoints += 1;
-        this.governance.taxRate = Math.max(0.0, this.governance.taxRate - 0.01);
-        this.governance.playerVotes[playerId].lvtVotes -= 1;
-
-        this.calculateTotalBudget();
-        this.updatePolicyEffects();
-        this.updateGovernanceModal();
-
-        return true;
+        return false;
     }
 
     /**
@@ -427,6 +602,42 @@ class GovernanceSystem {
                 points
             });
         }
+    }
+
+    /**
+     * Lock in pre-game LVT settings and reset for gameplay (called when game starts)
+     */
+    startGameplay() {
+        console.log('🏛️ Locking in pre-game LVT settings and starting gameplay governance');
+
+        // Mark game as started to prevent reclaiming pre-game LVT votes
+        this.governance.gameStarted = true;
+
+        // Lock in current LVT votes as pre-game baseline
+        Object.keys(this.governance.playerVotes).forEach(playerId => {
+            const currentLVTVotes = this.governance.playerVotes[playerId].lvtVotes || 0;
+            this.governance.playerVotes[playerId].pregameLVTVotes = currentLVTVotes;
+        });
+
+        // Reset voting points to 2 for regular gameplay
+        this.governance.votingPoints = 2;
+
+        // Clear any category votes (LVT votes continue to be modifiable)
+        Object.keys(this.governance.voteAllocations).forEach(category => {
+            this.governance.voteAllocations[category] = 0;
+        });
+
+        // Clear player category votes but keep LVT system intact
+        Object.keys(this.governance.playerVotes).forEach(playerId => {
+            Object.keys(this.governance.playerVotes[playerId].categories).forEach(category => {
+                this.governance.playerVotes[playerId].categories[category] = 0;
+            });
+            // LVT votes remain but are now baseline + any future changes
+        });
+
+        console.log(`🏛️ Game started with LVT rate: ${(this.governance.taxRate * 100).toFixed(1)}%`);
+        console.log(`🏛️ Pre-game LVT votes locked, but LVT rate can still be modified during gameplay`);
+        console.log(`🏛️ Players now have ${this.governance.votingPoints} points for regular governance`);
     }
 
     /**
@@ -740,12 +951,37 @@ class GovernanceSystem {
             }, 2000);
         }
     }
+
+    /**
+     * Animate governance button with gold fade on month turnover
+     */
+    animateGovernanceButtonGold() {
+        const governanceBtn = this.game.uiManager?.get('showGovernance');
+        if (governanceBtn) {
+            // Apply gold background that fades over 3 seconds
+            governanceBtn.style.transition = 'background-color 3s ease-out';
+            governanceBtn.style.backgroundColor = '#FFD700'; // Gold color
+
+            setTimeout(() => {
+                governanceBtn.style.backgroundColor = ''; // Reset to original
+                setTimeout(() => {
+                    governanceBtn.style.transition = ''; // Clear transition
+                }, 100);
+            }, 3000);
+
+            console.log('🏆 Gold fade animation applied to governance button');
+        }
+    }
     
     /**
      * Open governance modal
      */
     openGovernanceModal() {
-        
+        // Skip DOM operations if running on server (Node.js)
+        if (typeof document === 'undefined') {
+            return;
+        }
+
         // Get modal directly
         let modal = document.getElementById('governance-modal');
         
@@ -780,6 +1016,11 @@ class GovernanceSystem {
      * Close governance modal
      */
     closeGovernanceModal() {
+        // Skip DOM operations if running on server (Node.js)
+        if (typeof document === 'undefined') {
+            return;
+        }
+
         const modal = document.getElementById('governance-modal');
 
         if (modal) {
@@ -809,13 +1050,18 @@ class GovernanceSystem {
      * Update governance modal with current data
      */
     updateGovernanceModal() {
+        // Skip DOM updates if running on server (Node.js)
+        if (typeof document === 'undefined') {
+            return;
+        }
+
         // Ensure structures exist before updating UI
         this.ensureGovernanceStructures();
 
 
         // Update voting points display
         const votingPointsEl = document.getElementById('player-voting-points');
-        if (votingPointsEl) {
+        if (votingPointsEl && this.governance.votingPoints !== undefined) {
             votingPointsEl.textContent = this.governance.votingPoints.toString();
         }
 
@@ -969,10 +1215,12 @@ class GovernanceSystem {
     }
     
     /**
-     * Reset governance state
+     * Reset governance state (board game reset)
      */
     reset() {
         this.governance = {
+            treasuryBalance: 0,
+            monthlyCollected: 0,
             totalBudget: 0,
             unallocatedFunds: 0,
             allocations: {
@@ -987,14 +1235,40 @@ class GovernanceSystem {
                 emergency: 0,
                 ubi: 0
             },
+            voteAllocations: {
+                education: 0,
+                healthcare: 0,
+                infrastructure: 0,
+                housing: 0,
+                culture: 0,
+                recreation: 0,
+                commercial: 0,
+                civic: 0,
+                emergency: 0,
+                ubi: 0
+            },
+            playerVotes: {
+                player: {
+                    categories: {
+                        education: 0, healthcare: 0, infrastructure: 0, housing: 0,
+                        culture: 0, recreation: 0, commercial: 0, civic: 0,
+                        emergency: 0, ubi: 0
+                    },
+                    lvtVotes: 0,
+                    pregameLVTVotes: 0
+                }
+            },
             taxRate: 0.50,
-            votingPoints: 2,
+            votingPoints: 4, // Start fresh with 4 voting points for LVT setup
+            gameStarted: false, // Reset to pre-game state
             lastBudgetUpdate: 0
         };
 
         this.policyEffects.buildingCostReductions.clear();
         this.policyEffects.ubiRevenueBoost = 0;
         this.updatePolicyEffects();
+
+        console.log('🎲 Governance system reset to fresh board game state');
     }
     
     /**
@@ -1052,6 +1326,11 @@ class GovernanceSystem {
      * Set up governance modal event listeners
      */
     setupEventListeners() {
+        // Skip DOM operations if running on server (Node.js)
+        if (typeof document === 'undefined') {
+            return;
+        }
+
         // Prevent duplicate event listener registration
         if (this._eventListenersSetup) {
             console.log('🏛️ Governance event listeners already setup, skipping...');
@@ -1090,13 +1369,13 @@ class GovernanceSystem {
                 const category = btn.getAttribute('data-category');
                 const action = btn.getAttribute('data-action');
 
-                btn.addEventListener('click', () => {
+                btn.addEventListener('click', async () => {
                     try {
                         let result = false;
                         if (action === 'increase') {
-                            result = this.addCategoryVote(category);
+                            result = await this.addCategoryVote(category);
                         } else {
-                            result = this.removeCategoryVote(category);
+                            result = await this.removeCategoryVote(category);
                         }
                     } catch (error) {
                         console.error('Error in vote button click:', error);
@@ -1138,42 +1417,93 @@ class GovernanceSystem {
 
     /**
      * Update player allocation indicators (colored dots) for a category
+     * Shows one dot per player with 5 size steps based on vote count
      */
-    updatePlayerAllocationDots(category, playerVotes) {
+    async updatePlayerAllocationDots(category, playerVotes) {
+        // Skip DOM operations if running on server (Node.js)
+        if (typeof document === 'undefined') {
+            return;
+        }
+
         const indicatorsContainer = document.querySelector(`.player-allocation-indicators[data-category="${category}"]`);
         if (!indicatorsContainer) return;
 
         // Clear existing dots
         indicatorsContainer.innerHTML = '';
 
-        if (playerVotes > 0) {
-            // Get player color from current player settings
-            const playerColor = this.getPlayerColorSync();
+        try {
+            // Get all players data to show all votes in this category
+            const response = await fetch('/api/players');
+            if (!response.ok) return;
 
-            // Create a dot for each vote (up to 5 for visual clarity)
-            const dotsToShow = Math.min(playerVotes, 5);
-            for (let i = 0; i < dotsToShow; i++) {
-                const dot = document.createElement('div');
-                dot.className = `player-allocation-dot visible size-${Math.min(playerVotes, 5)}`;
-                dot.style.backgroundColor = playerColor;
+            const data = await response.json();
+            const allPlayers = data.players || {};
 
-                // Add a slight delay for each dot for a nice animation effect
-                setTimeout(() => {
-                    indicatorsContainer.appendChild(dot);
-                }, i * 50);
-            }
+            // Create dots for all players who have voted in this category
+            Object.entries(allPlayers).forEach(([playerId, playerData], index) => {
+                const votes = this.governance.playerVotes[playerId]?.categories[category] || 0;
 
-            // If more than 5 votes, show a number indicator
-            if (playerVotes > 5) {
-                const numberIndicator = document.createElement('span');
-                numberIndicator.textContent = `×${playerVotes}`;
-                numberIndicator.style.color = playerColor;
-                numberIndicator.style.fontSize = '10px';
-                numberIndicator.style.fontWeight = 'bold';
-                numberIndicator.style.marginLeft = '4px';
-                indicatorsContainer.appendChild(numberIndicator);
-            }
+                if (votes > 0) {
+                    const dot = document.createElement('div');
+
+                    // Determine size class (1-5 based on vote count)
+                    const sizeClass = Math.min(Math.max(votes, 1), 5);
+                    dot.className = `player-allocation-dot visible size-${sizeClass}`;
+
+                    // Set player color
+                    const playerColor = playerData.color || this.getDefaultPlayerColor(playerId);
+                    dot.style.backgroundColor = playerColor;
+
+                    // Add hover tooltip with player name and vote count
+                    dot.title = `${playerData.name || playerId}: ${votes} vote${votes !== 1 ? 's' : ''}`;
+
+                    // Add data attributes for hover functionality
+                    dot.dataset.playerId = playerId;
+                    dot.dataset.playerName = playerData.name || playerId;
+                    dot.dataset.voteCount = votes;
+
+                    // Add slight animation delay
+                    setTimeout(() => {
+                        indicatorsContainer.appendChild(dot);
+                    }, index * 30);
+                }
+            });
+        } catch (error) {
+            console.error('Failed to update player allocation dots:', error);
+            // Fallback to old behavior showing only current player
+            this.updatePlayerAllocationDotsFallback(category, playerVotes);
         }
+    }
+
+    /**
+     * Fallback method for showing dots when API call fails
+     */
+    updatePlayerAllocationDotsFallback(category, playerVotes) {
+        const indicatorsContainer = document.querySelector(`.player-allocation-indicators[data-category="${category}"]`);
+        if (!indicatorsContainer || playerVotes <= 0) return;
+
+        const playerColor = this.getPlayerColorSync();
+        const dot = document.createElement('div');
+
+        // Single dot sized by vote count
+        const sizeClass = Math.min(Math.max(playerVotes, 1), 5);
+        dot.className = `player-allocation-dot visible size-${sizeClass}`;
+        dot.style.backgroundColor = playerColor;
+        dot.title = `You: ${playerVotes} vote${playerVotes !== 1 ? 's' : ''}`;
+
+        indicatorsContainer.appendChild(dot);
+    }
+
+    /**
+     * Get default color for a player if not set
+     */
+    getDefaultPlayerColor(playerId) {
+        const colors = ['#3B82F6', '#EF4444', '#10B981', '#F59E0B', '#8B5CF6', '#EC4899', '#06B6D4', '#84CC16'];
+        const hash = playerId.split('').reduce((a, b) => {
+            a = ((a << 5) - a) + b.charCodeAt(0);
+            return a & a;
+        }, 0);
+        return colors[Math.abs(hash) % colors.length];
     }
 
     /**

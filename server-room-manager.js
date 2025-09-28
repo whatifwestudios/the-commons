@@ -7,6 +7,7 @@
 
 const ServerEconomicEngine = require('./server-economic-engine-v2');
 const GameState = require('./game-state');
+const GovernanceSystem = require('./governance-system');
 
 class GameRoom {
     constructor(id, options = {}) {
@@ -27,6 +28,11 @@ class GameRoom {
         // Each room has its own economic engine and game state
         this.economicEngine = new ServerEconomicEngine();
         this.gameState = new GameState();
+
+        // CRITICAL FIX: Create and connect governance system for treasury/LVT management
+        this.governanceSystem = new GovernanceSystem(null); // No client game object on server
+        this.economicEngine.setGovernanceSystem(this.governanceSystem);
+        console.log(`🏛️ Room ${this.id}: Governance system connected to economic engine`);
 
         // CRITICAL: Connect economic engine broadcast to room broadcast
         // This enables building completions to reach the right players
@@ -191,12 +197,15 @@ class GameRoom {
 
             console.log(`🍺 Beer Hall table ${this.id} started! ${this.players.size} players, Day 1, fresh board`);
 
-            // Broadcast game start
-            this.broadcast({
-                type: 'GAME_STARTED',
+            // Lock in pre-game governance settings and reset for gameplay
+            if (this.economicEngine.governanceSystem) {
+                this.economicEngine.governanceSystem.startGameplay();
+            }
+
+            // Broadcast complete initial game state (includes player balances)
+            this.economicEngine.broadcastGameState('GAME_STARTED', {
                 roomId: this.id,
-                players: Array.from(this.players.values()),
-                gameTime: 0
+                players: Array.from(this.players.values())
             });
         }, 3000);
 

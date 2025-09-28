@@ -18,8 +18,9 @@ class BeerHallLobby {
             '#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7',
             '#DDA0DD', '#98D8C8', '#F7DC6F', '#BB8FCE', '#85C1E9',
             '#FF7675', '#00B894', '#0984E3', '#A29BFE', '#FD79A8',
-            '#E17055', '#00CEC9', '#6C5CE7', '#FDCB6E', '#E84393',
-            '#2D3436', '#636E72', '#B2BEC3', '#DDD3D3', '#FF6348'
+            '#E17055', '#00CEC9', '#FDCB6E', '#E84393', '#FF6348',
+            '#FF3838', '#FF9500', '#FFD93D', '#6BCF7F', '#4D96FF',
+            '#9775FA', '#FF8CC8', '#20E3B2', '#FFB8B8', '#C3FDB8'
         ];
 
         // Player state
@@ -27,6 +28,7 @@ class BeerHallLobby {
         this.playerName = '';
         this.playerPreferences = { minPlayers: 4, maxPlayers: 8 };
         this.playerId = null;
+        // Governance integration - use main system instead of parallel state
 
         // Current table state
         this.currentTable = null;
@@ -160,6 +162,11 @@ class BeerHallLobby {
             if (index === 0 && !this.selectedColor) {
                 colorDiv.classList.add('selected');
                 this.selectedColor = color;
+                // Apply initial selection styling
+                colorDiv.style.transform = 'scale(1.1)';
+                colorDiv.style.boxShadow = `0 0 12px ${color}80, 0 0 4px ${color}CC`;
+                // Sync UI colors with the initially selected color
+                setTimeout(() => this.syncUIColors(color), 50);
             }
 
             colorDiv.addEventListener('click', () => this.selectColor(color));
@@ -171,14 +178,113 @@ class BeerHallLobby {
      * Select a color
      */
     selectColor(color) {
-        // Remove previous selection
+        // Remove previous selection and styling
         document.querySelectorAll('.color-option').forEach(el => {
             el.classList.remove('selected');
+            // Reset any dynamic styling
+            el.style.transform = '';
+            el.style.boxShadow = '';
         });
 
-        // Add selection to clicked color
-        document.querySelector(`[data-color="${color}"]`).classList.add('selected');
+        // Add selection to clicked color with dynamic styling
+        const selectedElement = document.querySelector(`[data-color="${color}"]`);
+        if (selectedElement) {
+            selectedElement.classList.add('selected');
+            // Apply 10% bigger size and glow using the actual color
+            selectedElement.style.transform = 'scale(1.1)';
+            selectedElement.style.boxShadow = `0 0 12px ${color}80, 0 0 4px ${color}CC`;
+        }
+
         this.selectedColor = color;
+
+        // Sync header and game size colors with selected color
+        this.syncUIColors(color);
+
+        // Don't animate on click - only on regeneration
+    }
+
+    /**
+     * Sync header and game size selected colors with player color
+     */
+    syncUIColors(color) {
+        // Update "The Commons" header text color - target beer lobby specifically
+        const beerLobby = document.getElementById('beer-hall-lobby');
+        if (beerLobby) {
+            const headerTitle = beerLobby.querySelector('h1');
+            if (headerTitle) {
+                console.log('🎨 Setting Commons title color to:', color);
+                // Remove inline style first, then apply new color with important
+                headerTitle.removeAttribute('style');
+                headerTitle.style.cssText = `font-size: 28px; color: ${color} !important; margin: 0 0 8px 0; font-weight: 600;`;
+            } else {
+                console.warn('🎨 No h1 found in beer lobby');
+            }
+        } else {
+            console.warn('🎨 Beer lobby element not found');
+        }
+
+        // Update active size button with colored border, white text, no background change
+        const activeSizeBtn = document.querySelector('.size-btn.active');
+        if (activeSizeBtn) {
+            activeSizeBtn.style.borderColor = color;
+            activeSizeBtn.style.color = 'white';
+            activeSizeBtn.style.boxShadow = `0 0 10px ${color}40`;
+            // Ensure background doesn't change
+            activeSizeBtn.style.backgroundColor = 'transparent';
+        }
+
+        // Update find table button
+        const findTableBtn = document.getElementById('find-table-btn');
+        if (findTableBtn) {
+            findTableBtn.style.backgroundColor = color;
+        }
+    }
+
+    /**
+     * Add subtle bouncy wave animation with smooth color transitions
+     */
+    animateColorWave() {
+        const colorOptions = document.querySelectorAll('.color-option');
+
+        // Add wave animation with random duration variations and color transitions
+        colorOptions.forEach((option, index) => {
+            option.style.animation = 'none';
+            option.offsetHeight; // Trigger reflow
+
+            // Random variation: ±4% of base duration (0.3s base)
+            const baseDuration = 0.3;
+            const variation = (Math.random() - 0.5) * 0.08; // ±4%
+            const duration = baseDuration + (baseDuration * variation);
+
+            // Add transition for smooth color change
+            option.style.transition = 'background-color 0.15s ease-out';
+
+            // Calculate exact midpoint of the bounce animation for this element
+            // Animation starts after index * 0.05s delay
+            const animationDelay = index * 0.05;
+            const animationMidpoint = animationDelay + (duration / 2);
+
+            // Change color at the exact midpoint of the bounce (50% keyframe)
+            setTimeout(() => {
+                option.style.backgroundColor = option.dataset.color;
+            }, animationMidpoint * 1000); // Convert to milliseconds
+
+            option.style.animation = `colorWave ${duration}s ease-out ${animationDelay}s`;
+        });
+
+        // Create the subtle wave keyframes if they don't exist
+        if (!document.getElementById('color-wave-styles')) {
+            const style = document.createElement('style');
+            style.id = 'color-wave-styles';
+            style.textContent = `
+                @keyframes colorWave {
+                    0% { transform: scale(1) translateY(0); }
+                    50% { transform: scale(1.08) translateY(-2px); }
+                    100% { transform: scale(1) translateY(0); }
+                }
+            `;
+            document.head.appendChild(style);
+        }
     }
 
     /**
@@ -186,19 +292,31 @@ class BeerHallLobby {
      */
     regenerateColors() {
         this.populateColors();
+
+        // Apply wave animation to new colors
+        setTimeout(() => this.animateColorWave(), 100);
     }
 
     /**
      * Handle table size selection
      */
     handleSizeSelection(e) {
-        // Remove active from all buttons
+        // Remove active from all buttons and reset their styles
         document.querySelectorAll('.size-btn').forEach(btn => {
             btn.classList.remove('active');
+            btn.style.borderColor = '';
+            btn.style.color = '';
+            btn.style.boxShadow = '';
+            btn.style.backgroundColor = '';
         });
 
         // Add active to clicked button
         e.target.classList.add('active');
+
+        // Sync colors with the newly active button
+        if (this.selectedColor) {
+            this.syncUIColors(this.selectedColor);
+        }
 
         // Parse preferences
         const sizeData = e.target.dataset.size;
@@ -265,6 +383,7 @@ class BeerHallLobby {
                 body: JSON.stringify({
                     playerId: this.playerId,
                     playerName: playerName,
+                    playerColor: this.selectedColor,
                     preferences: {
                         minPlayers: 1,
                         maxPlayers: 1  // Solo table: exactly 1 player
@@ -285,6 +404,7 @@ class BeerHallLobby {
                     id: this.playerId,
                     tableId: result.table.id,
                     timestamp: Date.now()
+                    // Governance preferences now handled by main governance system
                 };
 
                 console.log('🎮 Starting solo game with config:', playerConfig);
@@ -413,6 +533,7 @@ class BeerHallLobby {
                 preferences: this.playerPreferences,
                 isMultiplayer: true,
                 waitingForPlayers: true
+                // Governance preferences now handled by main governance system
             };
 
             console.log('🎮 Entering The Commons:', playerConfig);
@@ -465,6 +586,7 @@ class BeerHallLobby {
                 body: JSON.stringify({
                     playerId: this.playerId,
                     playerName: this.playerName,
+                    playerColor: this.selectedColor,
                     preferences: this.playerPreferences
                 })
             });
@@ -572,6 +694,14 @@ class BeerHallLobby {
 
             case 'START_GAME':
                 this.handleGameStart(update);
+                break;
+
+            case 'GAME_STATE':
+                // Forward GAME_STATE messages to Economic Client
+                console.log('📡 Beer Hall: Forwarding GAME_STATE to Economic Client');
+                if (window.game && window.game.economicClient) {
+                    window.game.economicClient.handleWebSocketUpdate(update);
+                }
                 break;
 
             case 'ERROR':
@@ -719,6 +849,9 @@ class BeerHallLobby {
             // Show chat overlay
             chatOverlay.style.display = 'flex';
 
+            // Update waiting text based on player preferences
+            this.updateWaitingText();
+
             // Set up chat functionality
             this.setupChatHandlers();
 
@@ -771,8 +904,64 @@ class BeerHallLobby {
         // Start game button
         if (startGameBtn) {
             startGameBtn.addEventListener('click', () => {
-                this.handleStartGame();
+                if (!startGameBtn.disabled) {
+                    this.handleStartGame();
+                }
             });
+        }
+
+        // Setup emoji buttons
+        this.setupEmojiButtons();
+
+        // Setup governance panel
+        this.setupGovernancePanel();
+
+        // Setup tab switching
+        this.setupTabSwitching();
+
+        // Governance integration now uses main GovernanceSystem directly
+    }
+
+    /**
+     * Setup emoji quick buttons
+     */
+    setupEmojiButtons() {
+        const chatInput = document.getElementById('chat-input');
+        if (!chatInput) return;
+
+        // Create emoji button container if it doesn't exist
+        let emojiContainer = document.getElementById('emoji-buttons');
+        if (!emojiContainer) {
+            emojiContainer = document.createElement('div');
+            emojiContainer.id = 'emoji-buttons';
+            emojiContainer.className = 'emoji-buttons';
+
+            const emojis = [
+                { emoji: '👋', label: 'Wave' },
+                { emoji: '👍', label: 'Thumbs up' },
+                { emoji: '❤️', label: 'Heart' },
+                { emoji: '🏢', label: 'Building' },
+                { emoji: '🚀', label: 'Rocket' },
+                { emoji: '💰', label: 'Money' },
+                { emoji: '🔥', label: 'Fire' },
+                { emoji: '🎯', label: 'Target' }
+            ];
+
+            emojis.forEach(({ emoji }) => {
+                const btn = document.createElement('button');
+                btn.className = 'emoji-btn';
+                btn.textContent = emoji;
+                btn.addEventListener('click', () => {
+                    this.sendChatMessage(emoji);
+                });
+                emojiContainer.appendChild(btn);
+            });
+
+            // Insert before chat input area
+            const inputArea = document.querySelector('.chat-input-area');
+            if (inputArea) {
+                inputArea.parentNode.insertBefore(emojiContainer, inputArea);
+            }
         }
     }
 
@@ -860,15 +1049,58 @@ class BeerHallLobby {
     updatePlayerCount(current, max) {
         const currentPlayersSpan = document.getElementById('current-players');
         const maxPlayersSpan = document.getElementById('max-players');
-        const chatActions = document.getElementById('chat-actions');
+        const startGameBtn = document.getElementById('start-game-btn');
 
         if (currentPlayersSpan) currentPlayersSpan.textContent = current;
         if (maxPlayersSpan) maxPlayersSpan.textContent = max;
 
-        // Show start game button when minimum players reached (2 for testing)
-        if (chatActions && current >= 2) {
-            chatActions.style.display = 'block';
+        // Enable/disable start game button based on threshold
+        const minPlayers = this.playerPreferences.minPlayers || 2;
+        if (startGameBtn) {
+            if (current >= minPlayers) {
+                startGameBtn.disabled = false;
+                startGameBtn.textContent = '🚀 Start Game Now';
+            } else {
+                startGameBtn.disabled = true;
+                startGameBtn.textContent = `⏳ Need ${minPlayers - current} more player${minPlayers - current > 1 ? 's' : ''}`;
+            }
         }
+    }
+
+    /**
+     * Update waiting text based on player preferences
+     */
+    updateWaitingText() {
+        const waitingStatus = document.querySelector('.waiting-status');
+        const maxPlayersSpan = document.getElementById('max-players');
+
+        if (!waitingStatus || !this.playerPreferences) return;
+
+        const min = this.playerPreferences.minPlayers;
+        const max = this.playerPreferences.maxPlayers;
+
+        let waitingText = '';
+        let displayMax = max;
+
+        if (min === 1 && max === 1) {
+            waitingText = 'Solo mode';
+            displayMax = 1;
+        } else if (min === 2 && max === 12) {
+            waitingText = 'Waiting for 2 or more total players';
+            displayMax = '2+';
+        } else if (min === 6 && max === 12) {
+            waitingText = 'Waiting for 6 or more total players';
+            displayMax = '6+';
+        } else if (min === 12 && max === 12) {
+            waitingText = 'Waiting for exactly 12 players';
+            displayMax = 12;
+        } else {
+            waitingText = `Waiting for ${min}-${max} players`;
+            displayMax = max;
+        }
+
+        waitingStatus.textContent = waitingText;
+        if (maxPlayersSpan) maxPlayersSpan.textContent = displayMax;
     }
 
     /**
@@ -923,6 +1155,8 @@ class BeerHallLobby {
         this.addChatMessage(update.playerName, update.message, update.color);
     }
 
+    // syncGovernanceFromServer method removed - now using main governance system
+
     /**
      * Handle game start event
      */
@@ -961,6 +1195,7 @@ class BeerHallLobby {
                     color: this.selectedColor,
                     tableData: gameData,
                     isMultiplayer: true
+                    // Governance preferences now handled by main governance system
                 };
 
                 // Start the game!
@@ -969,6 +1204,288 @@ class BeerHallLobby {
                 }
             }
         }, 1000);
+    }
+
+    /**
+     * Setup tab switching between chat and governance
+     */
+    setupTabSwitching() {
+        const tabs = document.querySelectorAll('.chat-tab');
+        const contents = document.querySelectorAll('.chat-tab-content');
+
+        tabs.forEach(tab => {
+            tab.addEventListener('click', () => {
+                const targetTab = tab.dataset.tab;
+
+                // Remove active from all tabs and contents
+                tabs.forEach(t => t.classList.remove('active'));
+                contents.forEach(c => c.classList.remove('active'));
+
+                // Add active to clicked tab and corresponding content
+                tab.classList.add('active');
+                const targetContent = document.getElementById(`${targetTab}-content`);
+                if (targetContent) {
+                    targetContent.classList.add('active');
+                }
+            });
+        });
+    }
+
+    /**
+     * Setup governance priorities panel using main governance system
+     */
+    setupGovernancePanel() {
+        this.renderGovernanceCategories();
+        this.setupGovernanceHandlers();
+    }
+
+    /**
+     * Render governance categories using static category list
+     */
+    renderGovernanceCategories() {
+        const container = document.getElementById('governance-categories');
+        if (!container) return;
+
+        container.innerHTML = '';
+
+        // Pre-game LVT setup only
+        const categories = {
+            lvt: { name: 'Land Value Tax Rate', icon: '📊' }
+        };
+
+        Object.entries(categories).forEach(([key, category]) => {
+            const categoryDiv = document.createElement('div');
+            categoryDiv.className = 'governance-category';
+            categoryDiv.innerHTML = `
+                <div class="category-info">
+                    <span class="category-icon">${category.icon}</span>
+                    <span class="category-name">${category.name}</span>
+                </div>
+                <div class="category-controls">
+                    <button class="point-btn" data-action="decrease" data-category="${key}">-</button>
+                    <span class="points-display" data-category="${key}">0</span>
+                    <button class="point-btn" data-action="increase" data-category="${key}">+</button>
+                </div>
+            `;
+            container.appendChild(categoryDiv);
+        });
+
+        this.updatePointsDisplay();
+    }
+
+    /**
+     * Setup governance event handlers
+     */
+    setupGovernanceHandlers() {
+        // Point allocation buttons
+        document.addEventListener('click', (e) => {
+            if (e.target.classList.contains('point-btn')) {
+                const action = e.target.dataset.action;
+                const category = e.target.dataset.category;
+                this.handlePointAllocation(category, action);
+            }
+        });
+
+        // Reset button
+        const resetBtn = document.getElementById('reset-governance');
+        if (resetBtn) {
+            resetBtn.addEventListener('click', () => {
+                this.resetGovernancePoints();
+            });
+        }
+
+        // Save button
+        const saveBtn = document.getElementById('save-governance');
+        if (saveBtn) {
+            saveBtn.addEventListener('click', () => {
+                this.saveGovernancePreferences();
+            });
+        }
+    }
+
+    /**
+     * Handle point allocation using main governance system
+     */
+    async handlePointAllocation(category, action) {
+        // Get main governance system
+        const governanceSystem = window.game?.governanceSystem;
+        if (!governanceSystem) {
+            console.error('🏛️ Governance system not available');
+            return;
+        }
+
+        try {
+            let result = false;
+
+            if (category === 'lvt') {
+                // Handle LVT voting with proper methods
+                if (action === 'increase') {
+                    result = await governanceSystem.increaseLVTRate();
+                } else if (action === 'decrease') {
+                    result = await governanceSystem.decreaseLVTRate();
+                }
+            } else {
+                // Handle regular category voting
+                if (action === 'increase') {
+                    result = await governanceSystem.addCategoryVote(category);
+                } else if (action === 'decrease') {
+                    result = await governanceSystem.removeCategoryVote(category);
+                }
+            }
+
+            if (result) {
+                // Update display after successful vote
+                this.updatePointsDisplay();
+
+                // Send chat message about the change
+                const categoryName = this.getCategoryDisplayName(category);
+                const actionText = action === 'increase' ? 'increased' : 'decreased';
+                this.sendChatMessage(`${actionText} ${categoryName} priority`);
+            }
+        } catch (error) {
+            console.error('🏛️ Error handling point allocation:', error);
+        }
+    }
+
+    /**
+     * Get display name for category
+     */
+    getCategoryDisplayName(category) {
+        const categoryNames = {
+            education: 'Education',
+            healthcare: 'Healthcare',
+            infrastructure: 'Infrastructure',
+            housing: 'Housing',
+            culture: 'Culture',
+            recreation: 'Recreation',
+            commercial: 'Commercial',
+            civic: 'Civic Services',
+            emergency: 'Emergency',
+            ubi: 'UBI',
+            lvt: 'Land Value Tax'
+        };
+        return categoryNames[category] || category;
+    }
+
+    /**
+     * Update points display using main governance system
+     */
+    updatePointsDisplay() {
+        const governanceSystem = window.game?.governanceSystem;
+        if (!governanceSystem) {
+            return;
+        }
+
+        // Update available points from main system
+        const availablePointsSpan = document.getElementById('available-points');
+        if (availablePointsSpan) {
+            availablePointsSpan.textContent = governanceSystem.governance.votingPoints;
+        }
+
+        // Update category points and button states from main system
+        const playerVotes = governanceSystem.governance.playerVotes?.player?.categories || {};
+
+        // Only show LVT for pre-game setup
+        const categoriesToShow = { lvt: 'Land Value Tax' };
+
+        Object.keys(categoriesToShow).forEach(key => {
+            const pointsDisplay = document.querySelector(`[data-category="${key}"].points-display`);
+            const increaseBtn = document.querySelector(`[data-category="${key}"][data-action="increase"]`);
+            const decreaseBtn = document.querySelector(`[data-category="${key}"][data-action="decrease"]`);
+
+            const currentPoints = key === 'lvt' ?
+                Math.abs(governanceSystem.governance.playerVotes?.player?.lvtVotes || 0) :
+                (playerVotes[key] || 0);
+
+            if (pointsDisplay) pointsDisplay.textContent = currentPoints;
+            if (increaseBtn) increaseBtn.disabled = governanceSystem.governance.votingPoints === 0;
+            if (decreaseBtn) decreaseBtn.disabled = currentPoints === 0;
+        });
+    }
+
+    /**
+     * Get category mapping for display
+     */
+    getCategoryMap() {
+        return {
+            education: 'Education',
+            healthcare: 'Healthcare',
+            infrastructure: 'Infrastructure',
+            housing: 'Housing',
+            culture: 'Culture',
+            recreation: 'Recreation',
+            commercial: 'Commercial',
+            civic: 'Civic Services',
+            emergency: 'Emergency',
+            ubi: 'UBI',
+            lvt: 'Land Value Tax'
+        };
+    }
+
+    /**
+     * Reset governance points using main governance system
+     */
+    async resetGovernancePoints() {
+        const governanceSystem = window.game?.governanceSystem;
+        if (!governanceSystem) {
+            console.error('🏛️ Governance system not available');
+            return;
+        }
+
+        try {
+            // Reset all player votes to zero using the main governance system
+            const playerVotes = governanceSystem.governance.playerVotes?.player?.categories || {};
+
+            // Remove all category votes
+            for (const [category, points] of Object.entries(playerVotes)) {
+                for (let i = 0; i < points; i++) {
+                    await governanceSystem.removeCategoryVote(category);
+                }
+            }
+
+            // Reset LVT votes
+            const lvtVotes = Math.abs(governanceSystem.governance.playerVotes?.player?.lvtVotes || 0);
+            for (let i = 0; i < lvtVotes; i++) {
+                await governanceSystem.decreaseLVTRate();
+            }
+
+            this.updatePointsDisplay();
+            this.addChatMessage('System', 'Reset governance priorities to default', '#888');
+        } catch (error) {
+            console.error('🏛️ Error resetting governance points:', error);
+        }
+    }
+
+    /**
+     * Save governance preferences (now redundant - votes are saved automatically)
+     */
+    saveGovernancePreferences() {
+        const governanceSystem = window.game?.governanceSystem;
+        if (!governanceSystem) {
+            console.error('🏛️ Governance system not available');
+            return;
+        }
+
+        // Governance votes are now automatically saved to server via the main system
+        const totalVotes = Object.values(governanceSystem.governance.playerVotes?.player?.categories || {})
+            .reduce((sum, votes) => sum + votes, 0);
+
+        const lvtVotes = Math.abs(governanceSystem.governance.playerVotes?.player?.lvtVotes || 0);
+        const totalAllocated = totalVotes + lvtVotes;
+
+        const currentLVTRate = (governanceSystem.governance.taxRate * 100).toFixed(1);
+        this.addChatMessage('System', `LVT rate set to ${currentLVTRate}% (${totalAllocated} points used)`, '#888');
+        console.log('🏛️ LVT rate preferences are automatically synchronized');
+    }
+
+    // broadcastGovernanceChange method removed - now using main governance system directly
+
+    /**
+     * Setup global reference for beer hall lobby access
+     */
+    setupGlobalReference() {
+        // Store reference for global access
+        window.beerHallLobby = this;
     }
 }
 

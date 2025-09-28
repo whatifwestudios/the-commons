@@ -316,9 +316,8 @@
         }
 
         .color-option.selected {
-            transform: scale(1.15);
-            border-color: #9C27B0;
-            box-shadow: 0 0 0 2px rgba(156, 39, 176, 0.3);
+            /* Styling now handled dynamically in JavaScript */
+            transition: all 0.2s ease;
         }
 
 
@@ -631,9 +630,9 @@
         }
 
         .size-btn.active {
-            border-color: #ff6b6b;
-            background: rgba(255, 107, 107, 0.1);
-            color: #ff6b6b;
+            /* Colors now handled dynamically by JavaScript */
+            border-width: 2px;
+            transition: all 0.2s ease;
         }
 
         .find-table-btn {
@@ -938,138 +937,190 @@
 
         .chat-container {
             position: relative;
-            background: #1a1a1a;
-            border: 2px solid #444;
-            border-radius: 12px;
+            background: linear-gradient(135deg, #0a0a0f 0%, #0f0f14 100%);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 4px;
             width: 500px;
             max-width: 90vw;
             max-height: 80vh;
             display: flex;
             flex-direction: column;
-            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+            box-shadow: 0 20px 40px rgba(0,0,0,0.5), 0 0 1px rgba(255,255,255,0.1);
         }
 
         .chat-header {
             padding: 20px;
-            border-bottom: 1px solid #333;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+            background: rgba(255, 255, 255, 0.02);
             text-align: center;
         }
 
         .chat-header h2 {
-            color: #fff;
+            color: #ffffff;
             margin: 0 0 10px 0;
-            font-size: 24px;
+            font-size: 20px;
+            font-weight: 500;
+            letter-spacing: -0.5px;
         }
 
         .player-status {
-            color: #888;
-            font-size: 14px;
+            color: rgba(255, 255, 255, 0.5);
+            font-size: 13px;
         }
 
         .player-count {
-            color: #4ECDC4;
-            font-weight: 600;
+            color: rgba(255, 255, 255, 0.7);
+            font-weight: 500;
         }
 
         .waiting-status {
             margin-top: 5px;
-            font-style: italic;
+            color: rgba(255, 255, 255, 0.6);
+            font-weight: 400;
         }
 
         .chat-messages {
             height: 300px;
             overflow-y: auto;
             padding: 15px;
-            background: #222;
-            border-top: 1px solid #333;
-            border-bottom: 1px solid #333;
+            background: rgba(0, 0, 0, 0.2);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
         }
 
         .system-message {
-            margin-bottom: 10px;
-            opacity: 0.8;
+            margin-bottom: 8px;
+            padding: 8px 10px;
+            background: rgba(255, 255, 255, 0.02);
+            border-radius: 4px;
+            font-size: 13px;
+            color: rgba(255, 255, 255, 0.5);
         }
 
         .player-message {
-            margin-bottom: 10px;
+            margin-bottom: 8px;
+            padding: 8px 10px;
+            background: rgba(255, 255, 255, 0.03);
+            border-radius: 4px;
+            border-left: 2px solid rgba(255, 255, 255, 0.1);
         }
 
         .message-time {
-            color: #666;
+            color: rgba(255, 255, 255, 0.3);
             font-size: 11px;
-            margin-right: 8px;
+            margin-right: 10px;
+            font-weight: 400;
         }
 
         .message-player {
-            color: #4ECDC4;
-            font-weight: 600;
-            margin-right: 8px;
+            font-weight: 500;
+            margin-right: 5px;
         }
 
         .message-text {
-            color: #ddd;
+            color: rgba(255, 255, 255, 0.8);
+            font-weight: 400;
+        }
+
+        .emoji-buttons {
+            display: flex;
+            padding: 10px 15px;
+            gap: 8px;
+            background: rgba(255, 255, 255, 0.02);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+            justify-content: center;
+        }
+
+        .emoji-btn {
+            padding: 6px 10px;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 18px;
+            transition: all 0.15s;
+        }
+
+        .emoji-btn:hover {
+            background: rgba(255, 255, 255, 0.1);
+            border-color: rgba(255, 255, 255, 0.2);
+            transform: translateY(-1px);
         }
 
         .chat-input-area {
             padding: 15px;
             display: flex;
             gap: 10px;
-            background: #1a1a1a;
+            background: rgba(255, 255, 255, 0.02);
         }
 
         #chat-input {
             flex: 1;
-            background: #333;
-            border: 1px solid #555;
-            border-radius: 6px;
-            padding: 10px;
-            color: #fff;
+            padding: 10px 12px;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 4px;
+            color: white;
             font-size: 14px;
+            font-weight: 400;
+            font-family: 'SF Mono', Monaco, Inconsolata, 'Roboto Mono', 'Source Code Pro', monospace;
+        }
+
+        #chat-input::placeholder {
+            color: rgba(255, 255, 255, 0.4);
         }
 
         #chat-input:focus {
             outline: none;
-            border-color: #4ECDC4;
+            border-color: rgba(255, 255, 255, 0.3);
+            background: rgba(255, 255, 255, 0.08);
         }
 
         #chat-send {
-            background: #4ECDC4;
-            color: #fff;
-            border: none;
-            border-radius: 6px;
             padding: 10px 20px;
+            background: rgba(255, 255, 255, 0.1);
+            color: white;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 4px;
             cursor: pointer;
-            font-weight: 600;
-            transition: background 0.2s;
+            font-weight: 500;
+            transition: all 0.15s;
+            font-family: 'SF Mono', Monaco, Inconsolata, 'Roboto Mono', 'Source Code Pro', monospace;
         }
 
         #chat-send:hover {
-            background: #45B7D1;
+            background: rgba(255, 255, 255, 0.15);
+            border-color: rgba(255, 255, 255, 0.3);
         }
 
         .chat-actions {
             padding: 15px;
             text-align: center;
-            border-top: 1px solid #333;
-            background: #1a1a1a;
+            background: rgba(255, 255, 255, 0.02);
         }
 
         .start-game-btn {
-            background: #FF6B6B;
-            color: #fff;
+            width: 100%;
+            padding: 12px;
+            background: #10AC84;
+            color: white;
             border: none;
-            border-radius: 8px;
-            padding: 12px 30px;
+            border-radius: 4px;
             font-size: 16px;
-            font-weight: 600;
+            font-weight: 500;
             cursor: pointer;
-            transition: all 0.2s;
-            margin-bottom: 8px;
+            transition: all 0.15s;
+            font-family: 'SF Mono', Monaco, Inconsolata, 'Roboto Mono', 'Source Code Pro', monospace;
         }
 
-        .start-game-btn:hover {
-            background: #FF5252;
-            transform: translateY(-2px);
+        .start-game-btn:hover:not(:disabled) {
+            background: #0D8A6A;
+            transform: translateY(-1px);
+        }
+
+        .start-game-btn:disabled {
+            background: rgba(255, 255, 255, 0.05);
+            color: rgba(255, 255, 255, 0.3);
+            cursor: not-allowed;
         }
 
         .start-info {
@@ -1079,9 +1130,208 @@
 
         .chat-players {
             padding: 15px;
-            border-top: 1px solid #333;
-            background: #1a1a1a;
-            border-radius: 0 0 12px 12px;
+            border-top: 1px solid rgba(255, 255, 255, 0.08);
+            background: rgba(255, 255, 255, 0.02);
+            border-radius: 0 0 4px 4px;
+        }
+
+        /* Governance Panel Styles */
+        .chat-content-tabs {
+            display: flex;
+            background: rgba(255, 255, 255, 0.02);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+        }
+
+        .chat-tab {
+            flex: 1;
+            padding: 12px;
+            text-align: center;
+            cursor: pointer;
+            color: rgba(255, 255, 255, 0.5);
+            font-weight: 500;
+            font-size: 14px;
+            font-family: 'SF Mono', Monaco, Inconsolata, 'Roboto Mono', 'Source Code Pro', monospace;
+            transition: all 0.15s;
+        }
+
+        .chat-tab:hover {
+            color: rgba(255, 255, 255, 0.7);
+            background: rgba(255, 255, 255, 0.05);
+        }
+
+        .chat-tab.active {
+            color: white;
+            background: rgba(255, 255, 255, 0.1);
+            border-bottom: 2px solid #10AC84;
+        }
+
+        .chat-tab-content {
+            display: none;
+            height: 300px;
+            overflow-y: auto;
+        }
+
+        .chat-tab-content.active {
+            display: block;
+        }
+
+        .governance-panel {
+            padding: 15px;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .governance-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+        }
+
+        .governance-header h3 {
+            margin: 0;
+            color: white;
+            font-size: 16px;
+            font-weight: 500;
+        }
+
+        .governance-instructions {
+            margin-bottom: 15px;
+            padding: 12px;
+            background: rgba(156, 39, 176, 0.1);
+            border-left: 3px solid #9C27B0;
+            border-radius: 6px;
+        }
+
+        .governance-instructions p {
+            margin: 0;
+            color: rgba(255, 255, 255, 0.8);
+            font-size: 13px;
+            line-height: 1.4;
+        }
+
+        .points-available {
+            color: #10AC84;
+            font-weight: 600;
+            font-size: 14px;
+            font-family: 'SF Mono', Monaco, Inconsolata, 'Roboto Mono', 'Source Code Pro', monospace;
+        }
+
+        .governance-categories {
+            flex: 1;
+            overflow-y: auto;
+        }
+
+        .governance-category {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .category-info {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .category-icon {
+            font-size: 16px;
+            width: 20px;
+            text-align: center;
+        }
+
+        .category-name {
+            color: rgba(255, 255, 255, 0.8);
+            font-size: 13px;
+            font-weight: 500;
+        }
+
+        .category-controls {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .points-display {
+            color: #10AC84;
+            font-weight: 600;
+            font-size: 14px;
+            min-width: 20px;
+            text-align: center;
+            font-family: 'SF Mono', Monaco, Inconsolata, 'Roboto Mono', 'Source Code Pro', monospace;
+        }
+
+        .point-btn {
+            width: 24px;
+            height: 24px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            background: rgba(255, 255, 255, 0.05);
+            color: white;
+            border-radius: 4px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 16px;
+            line-height: 1;
+            transition: all 0.15s;
+            font-family: 'SF Mono', Monaco, Inconsolata, 'Roboto Mono', 'Source Code Pro', monospace;
+        }
+
+        .point-btn:hover:not(:disabled) {
+            background: rgba(255, 255, 255, 0.1);
+            border-color: rgba(255, 255, 255, 0.3);
+        }
+
+        .point-btn:disabled {
+            opacity: 0.3;
+            cursor: not-allowed;
+        }
+
+        .governance-footer {
+            display: flex;
+            gap: 10px;
+            margin-top: 15px;
+            padding-top: 15px;
+            border-top: 1px solid rgba(255, 255, 255, 0.08);
+        }
+
+        .governance-btn {
+            flex: 1;
+            padding: 8px 16px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 500;
+            transition: all 0.15s;
+            font-family: 'SF Mono', Monaco, Inconsolata, 'Roboto Mono', 'Source Code Pro', monospace;
+        }
+
+        .governance-btn.secondary {
+            background: rgba(255, 255, 255, 0.05);
+            color: rgba(255, 255, 255, 0.7);
+        }
+
+        .governance-btn.secondary:hover {
+            background: rgba(255, 255, 255, 0.1);
+            color: white;
+        }
+
+        .governance-btn.primary {
+            background: #10AC84;
+            color: white;
+            border-color: #10AC84;
+        }
+
+        .governance-btn.primary:hover {
+            background: #0D8A6A;
         }
 
         .chat-players h3 {
@@ -1259,25 +1509,52 @@
             <div class="chat-backdrop"></div>
             <div class="chat-container">
                 <div class="chat-header">
-                    <h2>🌊 Welcome to The Commons</h2>
+                    <h2>Welcome to The Commons</h2>
                     <div class="player-status">
-                        <span class="player-count">
-                            <span id="current-players">1</span> / <span id="max-players">6</span> players
-                        </span>
                         <div class="waiting-status">Waiting for more players...</div>
                     </div>
                 </div>
 
-                <div class="chat-messages" id="chat-messages">
-                    <div class="system-message">
-                        <span class="message-time">Now</span>
-                        <span class="message-text">Welcome! Chat while waiting for others to join.</span>
+                <div class="chat-content-tabs">
+                    <div class="chat-tab active" data-tab="chat">Chat</div>
+                    <div class="chat-tab" data-tab="governance">Governance</div>
+                </div>
+
+                <div class="chat-tab-content active" id="chat-content">
+                    <div class="chat-messages" id="chat-messages">
+                        <div class="system-message">
+                            <span class="message-time">Now</span>
+                            <span class="message-text">Welcome! Chat while waiting for others to join.</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="chat-tab-content" id="governance-content">
+                    <div class="governance-panel">
+                        <div class="governance-header">
+                            <h3>Pre-Game LVT Setup</h3>
+                            <div class="points-available">Points: <span id="available-points">4</span></div>
+                        </div>
+                        <div class="governance-instructions">
+                            <p>Set the starting Land Value Tax rate for your city. Each + or - changes the rate by 1%. You can modify this later during gameplay through the main governance system.</p>
+                        </div>
+                        <div class="governance-categories" id="governance-categories">
+                            <!-- LVT category will be populated by JavaScript -->
+                        </div>
+                        <div class="governance-footer">
+                            <button id="reset-governance" class="governance-btn secondary">Reset</button>
+                            <button id="save-governance" class="governance-btn primary">Confirm LVT Rate</button>
+                        </div>
                     </div>
                 </div>
 
                 <div class="chat-input-area">
                     <input type="text" id="chat-input" placeholder="Type a message..." maxlength="200">
                     <button id="chat-send">Send</button>
+                </div>
+
+                <div class="chat-actions">
+                    <button id="start-game-btn" class="start-game-btn" disabled>🚀 Start Game Now</button>
                 </div>
 
                 <div class="chat-actions" id="chat-actions" style="display: none;">
@@ -1304,40 +1581,46 @@
                     <div class="vitality-group">
                         <div class="vitality-group-title">JEEFHH (SUPPLY & DEMAND)</div>
                         <div class="jeefhh-bars-container">
-                            <div class="jeefhh-bar-row metric-tooltip" data-metric="housing" data-tooltip="Housing supply vs demand. Surpluses increase affordability but lower residential building revenue. Deficits decrease affordability but increase residential building revenue.">
+                            <div class="jeefhh-bar-row metric-tooltip" data-metric="housing" data-tooltip="Housing supply vs demand. Goal: balanced supply and demand.">
                                 <span class="jeefhh-label">HOUSING</span>
                                 <div class="jeefhh-bar">
                                     <div class="jeefhh-progress" id="housing-bar"></div>
+                                    <div class="balance-dot"></div>
                                 </div>
                             </div>
-                            <div class="jeefhh-bar-row metric-tooltip" data-metric="food" data-tooltip="Food supply vs demand. Surpluses decrease revenue for certain commercial buildings. Deficits cause population loss, job crises and increased healthcare costs.">
+                            <div class="jeefhh-bar-row metric-tooltip" data-metric="food" data-tooltip="Food supply vs demand. Goal: balanced supply and demand.">
                                 <span class="jeefhh-label">FOOD</span>
                                 <div class="jeefhh-bar">
                                     <div class="jeefhh-progress" id="food-bar"></div>
+                                    <div class="balance-dot"></div>
                                 </div>
                             </div>
-                            <div class="jeefhh-bar-row metric-tooltip" data-metric="energy" data-tooltip="Energy supply vs demand. Surpluses increase affordability scores but lower revenues for energy producing buildings. Deficits decrease affordability but increase revenue for energy producing buildings.">
+                            <div class="jeefhh-bar-row metric-tooltip" data-metric="energy" data-tooltip="Energy supply vs demand. Goal: balanced supply and demand.">
                                 <span class="jeefhh-label">ENERGY</span>
                                 <div class="jeefhh-bar">
                                     <div class="jeefhh-progress" id="energy-bar"></div>
+                                    <div class="balance-dot"></div>
                                 </div>
                             </div>
-                            <div class="jeefhh-bar-row metric-tooltip" data-metric="jobs" data-tooltip="Jobs supply vs demand. Surpluses decrease revenue for certain commercial buildings. Deficits cause population loss and unemployment.">
+                            <div class="jeefhh-bar-row metric-tooltip" data-metric="jobs" data-tooltip="Jobs supply vs demand. Goal: balanced supply and demand.">
                                 <span class="jeefhh-label">JOBS</span>
                                 <div class="jeefhh-bar">
                                     <div class="jeefhh-progress" id="jobs-bar"></div>
+                                    <div class="balance-dot"></div>
                                 </div>
                             </div>
-                            <div class="jeefhh-bar-row metric-tooltip" data-metric="education" data-tooltip="Education supply vs demand. Surpluses increase educational outcomes and deficits limit worker availability and skills advancement.">
+                            <div class="jeefhh-bar-row metric-tooltip" data-metric="education" data-tooltip="Education supply vs demand. Goal: balanced supply and demand.">
                                 <span class="jeefhh-label">EDUCATION</span>
                                 <div class="jeefhh-bar">
                                     <div class="jeefhh-progress" id="education-bar"></div>
+                                    <div class="balance-dot"></div>
                                 </div>
                             </div>
-                            <div class="jeefhh-bar-row metric-tooltip" data-metric="healthcare" data-tooltip="Healthcare supply vs demand. Surpluses boost health outcomes and affordability, and deficits impair affordability, safety and resilience.">
+                            <div class="jeefhh-bar-row metric-tooltip" data-metric="healthcare" data-tooltip="Healthcare supply vs demand. Goal: balanced supply and demand.">
                                 <span class="jeefhh-label">HEALTHCARE</span>
                                 <div class="jeefhh-bar">
                                     <div class="jeefhh-progress" id="healthcare-bar"></div>
+                                    <div class="balance-dot"></div>
                                 </div>
                             </div>
                         </div>
@@ -1351,36 +1634,42 @@
                                 <span class="carens-label">SAFETY</span>
                                 <div class="carens-bar">
                                     <div class="carens-progress" id="safety-bar"></div>
+                                    <div class="balance-dot"></div>
                                 </div>
                             </div>
                             <div class="carens-bar-row metric-tooltip" data-metric="environment" data-tooltip="Environmental quality and sustainability. Higher scores indicate cleaner air, green spaces, and eco-friendly practices.">
                                 <span class="carens-label">ENVIRONMENT</span>
                                 <div class="carens-bar">
                                     <div class="carens-progress" id="environment-bar"></div>
+                                    <div class="balance-dot"></div>
                                 </div>
                             </div>
                             <div class="carens-bar-row metric-tooltip" data-metric="culture" data-tooltip="Cultural richness and community engagement. Higher scores indicate vibrant arts, events, and social activities.">
                                 <span class="carens-label">CULTURE</span>
                                 <div class="carens-bar">
                                     <div class="carens-progress" id="culture-bar"></div>
+                                    <div class="balance-dot"></div>
                                 </div>
                             </div>
                             <div class="carens-bar-row metric-tooltip" data-metric="affordability" data-tooltip="Cost of living relative to income levels. Higher scores indicate more affordable housing, goods, and services.">
                                 <span class="carens-label">AFFORDABILITY</span>
                                 <div class="carens-bar">
                                     <div class="carens-progress" id="affordability-bar"></div>
+                                    <div class="balance-dot"></div>
                                 </div>
                             </div>
                             <div class="carens-bar-row metric-tooltip" data-metric="noise" data-tooltip="Noise pollution levels in the area. Higher scores indicate quieter, more peaceful neighborhoods.">
                                 <span class="carens-label">NOISE</span>
                                 <div class="carens-bar">
                                     <div class="carens-progress" id="noise-bar"></div>
+                                    <div class="balance-dot"></div>
                                 </div>
                             </div>
                             <div class="carens-bar-row metric-tooltip" data-metric="resilience" data-tooltip="Community's ability to adapt and recover from challenges. Higher scores indicate better disaster preparedness and economic stability.">
                                 <span class="carens-label">RESILIENCE</span>
                                 <div class="carens-bar">
                                     <div class="carens-progress" id="resilience-bar"></div>
+                                    <div class="balance-dot"></div>
                                 </div>
                             </div>
                         </div>
@@ -2259,6 +2548,9 @@
     <script src="utils/csv-converter.js"></script>
     <script src="csv-uploader.js"></script>
     <script type="module" src="buildings.js"></script>
+    <!-- State Auditing System - Load FIRST to intercept all mutations -->
+    <script src="client-state-auditor.js"></script>
+
     <!-- Utility Scripts -->
     <script src="utils/player-utils.js"></script>
 
@@ -2279,6 +2571,8 @@
     <script src="game-state.js"></script>
     <script src="ui-manager.js"></script>
     <script src="tooltip-system-v2.js"></script>
+    <script src="position-adjuster.js"></script>
+    <script src="isometric-angle-adjuster.js"></script>
     <script src="rendering-system-v2.js"></script>
     <!-- Legacy tooltip systems archived -->
     <script src="context-menu-system.js"></script>
@@ -2304,11 +2598,11 @@
             console.log('🔍 DOM Check - BeerHallLobby class:', typeof BeerHallLobby);
 
             // ALL PLAYERS go through beer hall system
-            beerHallLobby = new BeerHallLobby();
+            window.beerHallLobby = new BeerHallLobby();
             console.log('🍺 Beer Hall Lobby instance created');
             try {
                 console.log('🍺 Attempting beer hall initialization...');
-                await beerHallLobby.initialize((playerConfig) => {
+                await window.beerHallLobby.initialize((playerConfig) => {
                     console.log('🎮 Beer Hall complete, starting game with config:', playerConfig);
                     // Pass clean config to game
                     window.playerConfig = playerConfig;
@@ -2335,6 +2629,16 @@
                         try {
                             await window.game.initializeWithPlayerConfig(playerConfig);
                             console.log('🍻 Multiplayer game started successfully!');
+
+                            // Initialize position adjuster after game is ready
+                            if (typeof PositionAdjuster !== 'undefined') {
+                                PositionAdjuster.init(window.game);
+                            }
+
+                            // Initialize isometric angle adjuster
+                            if (typeof IsometricAngleAdjuster !== 'undefined') {
+                                IsometricAngleAdjuster.init(window.game);
+                            }
                         } catch (error) {
                             console.error('❌ Game initialization failed:', error);
                             // Restore city name even on error
