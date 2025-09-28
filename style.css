@@ -26,13 +26,14 @@ body {
     transition: all 0.3s ease;
 }
 
-/* Blur top bar when in waiting/chat mode */
-body.beer-hall-active #top-bar,
-body.ready-check-active #top-bar {
+/* Blur top bar when in waiting/chat mode only - not during actual gameplay */
+body.beer-hall-active #top-bar {
     backdrop-filter: blur(4px);
     opacity: 0.7;
     pointer-events: none;
 }
+
+/* Ready check modal should allow top bar access since players might need it */
 
 /* CARENS extreme value pulsing glow effect */
 .carens-extreme-pulse {
@@ -82,7 +83,7 @@ body.ready-check-active #top-bar {
     border: none;
     color: #888888;
     font-family: inherit;
-    font-size: 11px;
+    font-size: 14px;
     font-weight: 500;
     letter-spacing: 0.5px;
     cursor: pointer;
@@ -142,7 +143,7 @@ body.ready-check-active #top-bar {
 }
 
 .info-label {
-    font-size: 11px;
+    font-size: 14px;
     font-weight: 600;
     letter-spacing: 0.5px;
     color: #666666;
@@ -150,7 +151,7 @@ body.ready-check-active #top-bar {
 }
 
 .info-value {
-    font-size: 12px;
+    font-size: 14px;
     font-weight: 600;
     letter-spacing: 0.5px;
     color: #ffffff;
@@ -1348,7 +1349,9 @@ body.ready-check-active #top-bar {
     transform: translateY(10px);
     transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
     pointer-events: none;
-    min-height: 400px;
+    height: 400px;
+    max-height: 400px;
+    overflow-y: auto;
     position: absolute;
     width: 100%;
     top: 0;
@@ -1618,14 +1621,14 @@ body.ready-check-active #top-bar {
 }
 
 .metric-label {
-    font-size: 11px;
+    font-size: 14px;
     font-weight: 500;
     letter-spacing: 0.5px;
     color: #666666;
 }
 
 .metric-value {
-    font-size: 12px;
+    font-size: 14px;
     font-weight: 600;
     color: #ffffff;
     font-variant-numeric: tabular-nums;
@@ -2320,7 +2323,7 @@ body.ready-check-active #top-bar {
 
 .jeefhh-label,
 .carens-label {
-    font-size: 12px;
+    font-size: 14px;
     font-weight: 600;
     letter-spacing: 0.5px;
     min-width: 110px;
@@ -4001,7 +4004,7 @@ body.ready-check-active #top-bar {
 
 .metric-label {
     color: #999;
-    font-size: 11px;
+    font-size: 14px;
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.3px;
@@ -4009,7 +4012,7 @@ body.ready-check-active #top-bar {
 
 .metric-value {
     color: #DAA520;
-    font-size: 12px;
+    font-size: 14px;
     font-weight: 500;
 }
 
@@ -4620,6 +4623,191 @@ body.ready-check-active #top-bar {
     color: #ffffff;
     font-weight: 600;
 }
+
+/* Governance Overlay */
+.governance-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.8);
+    backdrop-filter: blur(4px);
+    z-index: 10;
+    padding: 20px;
+    overflow-y: auto;
+}
+
+.governance-panel {
+    background: rgba(20, 20, 20, 0.95);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    padding: 20px;
+    max-width: 500px;
+    margin: 0 auto;
+}
+
+/* Professional LVT Voting Interface */
+.lvt-voting-interface {
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    padding: 20px;
+    margin: 16px 0;
+}
+
+.lvt-main-display {
+    text-align: center;
+    margin-bottom: 24px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    padding-bottom: 20px;
+}
+
+.lvt-title {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 16px;
+}
+
+.lvt-icon {
+    font-size: 20px;
+    margin-bottom: 4px;
+}
+
+.lvt-title h4 {
+    color: #FFFFFF;
+    font-size: 18px;
+    font-weight: 600;
+    margin: 0;
+}
+
+.lvt-subtitle {
+    color: #888;
+    font-size: 12px;
+    font-weight: 400;
+}
+
+.lvt-current-rate {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+}
+
+.rate-value {
+    font-size: 32px;
+    font-weight: 700;
+    color: #FFFFFF;
+    letter-spacing: -1px;
+}
+
+.rate-label {
+    color: #888;
+    font-size: 12px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.lvt-voting-section {
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+}
+
+.voting-controls {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    border-radius: 6px;
+    padding: 16px;
+}
+
+.lvt-vote-btn {
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 4px;
+    color: #FFF;
+    padding: 12px 20px;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    min-width: 80px;
+}
+
+.lvt-vote-btn:hover {
+    background: rgba(255, 255, 255, 0.08);
+    border-color: rgba(255, 255, 255, 0.2);
+}
+
+.lvt-vote-btn:active {
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.lvt-vote-btn:disabled {
+    background: rgba(255, 255, 255, 0.01);
+    border-color: rgba(255, 255, 255, 0.05);
+    color: #666;
+    cursor: not-allowed;
+}
+
+
+.vote-symbol {
+    font-size: 16px;
+    font-weight: 600;
+    line-height: 1;
+}
+
+.vote-text {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    font-weight: 500;
+}
+
+.voting-status {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    border-radius: 4px;
+    padding: 12px;
+    min-width: 100px;
+}
+
+.my-votes, .points-remaining {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+}
+
+.vote-count, .points-count {
+    font-size: 20px;
+    font-weight: 600;
+    color: #FFFFFF;
+}
+
+.vote-label, .points-label {
+    font-size: 10px;
+    color: #888;
+    text-transform: uppercase;
+    font-weight: 500;
+    letter-spacing: 0.5px;
+}
+
 
 /* Governance Tooltips - Disabled CSS tooltips, using unified manager */
 .budget-category {

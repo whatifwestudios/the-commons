@@ -48,6 +48,15 @@ class ServerEconomicEngine {
             // Players
             players: new Map(),   // key: playerId -> PlayerState
             playerBalances: new Map(), // key: playerId -> cash balance (server-authoritative)
+            playerActions: new Map(), // key: playerId -> action inventory (server-authoritative)
+
+            // Action Marketplace
+            actionMarketplace: {
+                nextListingId: 1,
+                listings: new Map(), // key: listingId -> AuctionListing
+                priceHistory: [],
+                avgPrice: 0
+            },
 
             // Residents distribution with age demographics
             totalResidents: 0,
@@ -414,6 +423,31 @@ class ServerEconomicEngine {
 
                 case 'GOVERNANCE_VOTE':
                     result = await this.processGovernanceVote(transaction);
+                    break;
+
+                // Action Marketplace Transactions
+                case 'ACTION_CREATE_LISTING':
+                    result = await this.processCreateActionListing(transaction);
+                    break;
+
+                case 'ACTION_BID':
+                    result = await this.processActionBid(transaction);
+                    break;
+
+                case 'ACTION_BUY_NOW':
+                    result = await this.processActionBuyNow(transaction);
+                    break;
+
+                case 'ACTION_CANCEL_LISTING':
+                    result = await this.processCancelActionListing(transaction);
+                    break;
+
+                case 'ACTION_END_EARLY':
+                    result = await this.processEndActionEarly(transaction);
+                    break;
+
+                case 'ACTION_SPEND':
+                    result = await this.processActionSpend(transaction);
                     break;
 
                 default:
@@ -1415,6 +1449,7 @@ class ServerEconomicEngine {
      * Get or create player state
      */
     getOrCreatePlayer(playerId) {
+        console.log(`🔍 DEBUG: getOrCreatePlayer called for ${playerId}, exists: ${this.gameState.players.has(playerId)}`);
         if (!this.gameState.players.has(playerId)) {
             this.gameState.players.set(playerId, {
                 id: playerId,
@@ -1423,8 +1458,15 @@ class ServerEconomicEngine {
                 transactions: [],
                 buildings: [],
                 lastCashflowUpdate: 0,
+
+                // Action inventory (server-authoritative)
+                actions: {
+                    monthly: this.calculateMonthlyActionAllowance(), // Expire at month end
+                    purchased: 0, // Never expire
+                    total: this.calculateMonthlyActionAllowance()
+                },
                 governance: {
-                    votingPoints: 2, // Start with 2 voting points
+                    votingPoints: 2, // Start with 2 voting points for regular gameplay
                     allocations: {
                         education: 0, healthcare: 0, infrastructure: 0, housing: 0,
                         culture: 0, recreation: 0, commercial: 0, civic: 0,
@@ -1634,7 +1676,7 @@ class ServerEconomicEngine {
                 players: players,
                 cashflow: cashflowData,
                 grid: this.gameState.grid,
-                governance: this.governanceSystem ? this.governanceSystem.governance : null  // ✅ ADD GOVERNANCE TO BROADCASTS
+                governance: null  // Player governance is handled via individual transactions, not global broadcast
             }
         };
 
@@ -1767,7 +1809,45 @@ class ServerEconomicEngine {
         // Reset grid ownership to 'City' (clear all player ownership)
         this.initializeGrid(12);
 
+        // Initialize LVT rate to default 50%
+        this.currentLVTRate = 0.5;
+
         console.log('✅ Economic engine reset complete - fresh board game state');
+    }
+
+    /**
+     * Initialize players from room data (called after resetGameState)
+     */
+    initializePlayersFromRoom(roomPlayers) {
+        console.log('🎲 Initializing economic engine players from room data...');
+
+        for (const [playerId, roomPlayerData] of roomPlayers) {
+            // Create player in economic engine with room's governance data
+            this.gameState.players.set(playerId, {
+                id: playerId,
+                cash: roomPlayerData.balance || 6000,
+                wealth: roomPlayerData.balance || 6000,
+                transactions: [],
+                buildings: [],
+                lastCashflowUpdate: 0,
+                governance: {
+                    votingPoints: 2, // Always start with 2 points for regular gameplay (pre-game gets 4 separately)
+                    allocations: {
+                        education: 0, healthcare: 0, infrastructure: 0, housing: 0,
+                        culture: 0, recreation: 0, commercial: 0, civic: 0,
+                        emergency: 0, ubi: 0
+                    },
+                    votes: roomPlayerData.governance?.votes || {},
+                    lvtVotesIncrease: 0,
+                    lvtVotesDecrease: 0
+                }
+            });
+
+            // Set player balance
+            this.gameState.playerBalances.set(playerId, roomPlayerData.balance || 6000);
+
+            console.log(`💰 Player ${playerId} initialized with $${roomPlayerData.balance || 6000} and ${roomPlayerData.governance?.votingPoints || 4} governance points`);
+        }
     }
 
     /**
@@ -1920,8 +2000,26 @@ class ServerEconomicEngine {
         const player = this.getOrCreatePlayer(playerId);
 
         if (action === 'add') {
-            // Check if player has voting points
-            if (player.governance.votingPoints < 1) {
+            // Calculate current and projected net LVT votes
+            const currentIncrease = player.governance.lvtVotesIncrease || 0;
+            const currentDecrease = player.governance.lvtVotesDecrease || 0;
+            const currentNetLVT = Math.abs(currentIncrease - currentDecrease);
+
+            let projectedIncrease = currentIncrease;
+            let projectedDecrease = currentDecrease;
+
+            if (voteType === 'lvt_increase') {
+                projectedIncrease += 1;
+            } else {
+                projectedDecrease += 1;
+            }
+
+            const projectedNetLVT = Math.abs(projectedIncrease - projectedDecrease);
+
+            // Only charge if net LVT votes increase
+            const pointCost = projectedNetLVT > currentNetLVT ? 1 : 0;
+
+            if (pointCost > 0 && player.governance.votingPoints < 1) {
                 return {
                     success: false,
                     error: 'Not enough voting points',
@@ -1929,24 +2027,27 @@ class ServerEconomicEngine {
                 };
             }
 
-            // Spend point and add LVT vote
-            player.governance.votingPoints -= 1;
+            // Spend point only if net LVT increased
+            if (pointCost > 0) {
+                player.governance.votingPoints -= pointCost;
+            }
 
             if (voteType === 'lvt_increase') {
-                player.governance.lvtVotesIncrease = (player.governance.lvtVotesIncrease || 0) + 1;
+                player.governance.lvtVotesIncrease = projectedIncrease;
             } else {
-                player.governance.lvtVotesDecrease = (player.governance.lvtVotesDecrease || 0) + 1;
+                player.governance.lvtVotesDecrease = projectedDecrease;
             }
 
             // Calculate new LVT rate based on all player votes
             this.calculateLVTRate();
 
-            console.log(`🗳️ Added ${voteType} vote. Player ${playerId} now has ${player.governance.votingPoints} points`);
+            console.log(`🗳️ Added ${voteType} vote (cost: ${pointCost}). Player ${playerId} now has ${player.governance.votingPoints} points`);
 
         } else if (action === 'remove') {
-            const currentVotes = voteType === 'lvt_increase' ?
-                (player.governance.lvtVotesIncrease || 0) :
-                (player.governance.lvtVotesDecrease || 0);
+            const currentIncrease = player.governance.lvtVotesIncrease || 0;
+            const currentDecrease = player.governance.lvtVotesDecrease || 0;
+
+            const currentVotes = voteType === 'lvt_increase' ? currentIncrease : currentDecrease;
 
             if (currentVotes <= 0) {
                 return {
@@ -1956,19 +2057,38 @@ class ServerEconomicEngine {
                 };
             }
 
-            // Refund point and remove LVT vote
-            player.governance.votingPoints += 1;
+            // Calculate current and projected net LVT votes
+            const currentNetLVT = Math.abs(currentIncrease - currentDecrease);
+
+            let projectedIncrease = currentIncrease;
+            let projectedDecrease = currentDecrease;
 
             if (voteType === 'lvt_increase') {
-                player.governance.lvtVotesIncrease -= 1;
+                projectedIncrease -= 1;
             } else {
-                player.governance.lvtVotesDecrease -= 1;
+                projectedDecrease -= 1;
+            }
+
+            const projectedNetLVT = Math.abs(projectedIncrease - projectedDecrease);
+
+            // Only refund if net LVT votes decrease
+            const pointRefund = projectedNetLVT < currentNetLVT ? 1 : 0;
+
+            // Refund point only if net LVT decreased
+            if (pointRefund > 0) {
+                player.governance.votingPoints += pointRefund;
+            }
+
+            if (voteType === 'lvt_increase') {
+                player.governance.lvtVotesIncrease = projectedIncrease;
+            } else {
+                player.governance.lvtVotesDecrease = projectedDecrease;
             }
 
             // Recalculate LVT rate
             this.calculateLVTRate();
 
-            console.log(`🗳️ Removed ${voteType} vote. Player ${playerId} now has ${player.governance.votingPoints} points`);
+            console.log(`🗳️ Removed ${voteType} vote (refund: ${pointRefund}). Player ${playerId} now has ${player.governance.votingPoints} points`);
         }
 
         return {
@@ -2179,6 +2299,630 @@ class ServerEconomicEngine {
     setGovernanceSystem(governanceSystem) {
         this.governanceSystem = governanceSystem;
         console.log('🏛️ Governance system connected to economic engine');
+    }
+
+    /**
+     * ACTION MANAGEMENT METHODS
+     */
+
+    /**
+     * Calculate monthly action allowance (20 actions in Sept, declining by 2 each month to min 10)
+     */
+    calculateMonthlyActionAllowance() {
+        const monthOrder = ['SEPT', 'OCT', 'NOV', 'DEC', 'JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG'];
+        const currentMonth = this.getCurrentGameMonth();
+        const currentMonthIndex = monthOrder.indexOf(currentMonth);
+        const baseActions = 20;
+        const reduction = currentMonthIndex * 2;
+        const minimumActions = 10;
+
+        return Math.max(minimumActions, baseActions - reduction);
+    }
+
+    /**
+     * Get current game month from game time
+     */
+    getCurrentGameMonth() {
+        const monthOrder = ['SEPT', 'OCT', 'NOV', 'DEC', 'JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG'];
+        const monthIndex = Math.floor(this.gameState.gameTime / 30.44) % 12; // ~30.44 days per month
+        return monthOrder[monthIndex];
+    }
+
+    /**
+     * Refresh monthly actions for all players (called at month transition)
+     */
+    refreshMonthlyActions() {
+        const newAllowance = this.calculateMonthlyActionAllowance();
+
+        for (const [playerId, player] of this.gameState.players) {
+            // Reset monthly actions to new allowance, keep purchased actions
+            player.actions.monthly = newAllowance;
+            player.actions.total = player.actions.monthly + player.actions.purchased;
+
+            console.log(`🎯 Player ${playerId} actions refreshed: ${player.actions.total} total (${player.actions.monthly} monthly + ${player.actions.purchased} purchased)`);
+        }
+
+        // Update playerActions map for sync
+        for (const [playerId, player] of this.gameState.players) {
+            this.gameState.playerActions.set(playerId, player.actions.total);
+        }
+    }
+
+    /**
+     * Spend actions for a player
+     */
+    spendActions(playerId, count, reason = 'action') {
+        const player = this.getOrCreatePlayer(playerId);
+
+        if (player.actions.total < count) {
+            throw new Error(`Insufficient actions: need ${count}, have ${player.actions.total}`);
+        }
+
+        // Spend monthly actions first, then purchased
+        let remainingToSpend = count;
+
+        if (player.actions.monthly >= remainingToSpend) {
+            player.actions.monthly -= remainingToSpend;
+        } else {
+            remainingToSpend -= player.actions.monthly;
+            player.actions.monthly = 0;
+            player.actions.purchased -= remainingToSpend;
+        }
+
+        // Update total
+        player.actions.total = player.actions.monthly + player.actions.purchased;
+
+        // Update playerActions map for sync
+        this.gameState.playerActions.set(playerId, player.actions.total);
+
+        // Add transaction record
+        player.transactions.push({
+            type: 'ACTION_SPEND',
+            amount: -count,
+            timestamp: Date.now(),
+            description: `Spent ${count} action${count !== 1 ? 's' : ''} on ${reason}`
+        });
+
+        console.log(`🎯 Player ${playerId} spent ${count} actions on ${reason}. Remaining: ${player.actions.total}`);
+        return true;
+    }
+
+    /**
+     * Add purchased actions to a player (from marketplace)
+     */
+    addPurchasedActions(playerId, count, reason = 'marketplace') {
+        const player = this.getOrCreatePlayer(playerId);
+
+        player.actions.purchased += count;
+        player.actions.total = player.actions.monthly + player.actions.purchased;
+
+        // Update playerActions map for sync
+        this.gameState.playerActions.set(playerId, player.actions.total);
+
+        // Add transaction record
+        player.transactions.push({
+            type: 'ACTION_PURCHASE',
+            amount: count,
+            timestamp: Date.now(),
+            description: `Purchased ${count} action${count !== 1 ? 's' : ''} from ${reason}`
+        });
+
+        console.log(`🎯 Player ${playerId} purchased ${count} actions from ${reason}. Total: ${player.actions.total}`);
+        return true;
+    }
+
+    /**
+     * ACTION MARKETPLACE TRANSACTION PROCESSORS
+     */
+
+    /**
+     * Process creating an action listing
+     */
+    async processCreateActionListing(transaction) {
+        const { playerId, quantity, reservePrice, buyNowPrice } = transaction;
+
+        const player = this.getOrCreatePlayer(playerId);
+
+        // Validate player has enough actions
+        if (player.actions.total < quantity) {
+            throw new Error(`Insufficient actions to list: need ${quantity}, have ${player.actions.total}`);
+        }
+
+        // Calculate auction expiration (end of current month)
+        const monthLengthDays = 30.44; // Average days per month
+        const currentMonth = Math.floor(this.gameState.gameTime / monthLengthDays);
+        const nextMonthStart = (currentMonth + 1) * monthLengthDays;
+        const expiresAt = Date.now() + ((nextMonthStart - this.gameState.gameTime) * this.GAME_DAY_MS);
+
+        // Create listing
+        const listing = {
+            id: this.gameState.actionMarketplace.nextListingId++,
+            sellerId: playerId,
+            quantity: quantity,
+            reservePrice: reservePrice,
+            buyNowPrice: buyNowPrice || null,
+            currentBid: 0,
+            highBidderId: null,
+            status: 'active',
+            createdAt: Date.now(),
+            expiresAt: expiresAt,
+            month: this.getCurrentGameMonth()
+        };
+
+        // Remove actions from seller (hold in escrow)
+        this.spendActions(playerId, quantity, 'action listing');
+
+        // Add to marketplace
+        this.gameState.actionMarketplace.listings.set(listing.id, listing);
+
+        console.log(`🏪 Action listing created: ${quantity} actions by ${playerId} for $${reservePrice.toLocaleString()}+ (listing ${listing.id})`);
+
+        return {
+            success: true,
+            listingId: listing.id,
+            listing: listing
+        };
+    }
+
+    /**
+     * Process bidding on an action listing
+     */
+    async processActionBid(transaction) {
+        const { playerId, listingId, bidAmount } = transaction;
+
+        const listing = this.gameState.actionMarketplace.listings.get(listingId);
+        if (!listing || listing.status !== 'active') {
+            throw new Error('Listing not available for bidding');
+        }
+
+        if (listing.sellerId === playerId) {
+            throw new Error('Cannot bid on your own listing');
+        }
+
+        const player = this.getOrCreatePlayer(playerId);
+
+        // Validate bid amount
+        const minimumBid = Math.max(listing.reservePrice, Math.ceil(listing.currentBid * 1.1));
+        if (bidAmount < minimumBid) {
+            throw new Error(`Bid too low: minimum $${minimumBid.toLocaleString()}`);
+        }
+
+        // Validate player has enough cash
+        if (player.cash < bidAmount) {
+            throw new Error(`Insufficient funds: need $${bidAmount.toLocaleString()}, have $${player.cash.toLocaleString()}`);
+        }
+
+        // Refund previous high bidder if any
+        if (listing.highBidderId && listing.currentBid > 0) {
+            const previousBidder = this.getOrCreatePlayer(listing.highBidderId);
+            previousBidder.cash += listing.currentBid;
+
+            previousBidder.transactions.push({
+                type: 'BID_REFUND',
+                amount: listing.currentBid,
+                timestamp: Date.now(),
+                description: `Bid refund for action listing ${listingId}`
+            });
+        }
+
+        // Charge new bidder
+        player.cash -= bidAmount;
+        player.transactions.push({
+            type: 'ACTION_BID',
+            amount: -bidAmount,
+            timestamp: Date.now(),
+            description: `Bid $${bidAmount.toLocaleString()} on action listing ${listingId}`
+        });
+
+        // Update listing
+        listing.currentBid = bidAmount;
+        listing.highBidderId = playerId;
+
+        // Extend auction if close to expiry (snipe protection)
+        const timeUntilExpiry = listing.expiresAt - Date.now();
+        if (timeUntilExpiry < 300000) { // Less than 5 minutes
+            listing.expiresAt += 300000; // Add 5 minutes
+        }
+
+        console.log(`🏪 Bid placed: $${bidAmount.toLocaleString()} by ${playerId} on listing ${listingId}`);
+
+        return {
+            success: true,
+            currentBid: listing.currentBid,
+            highBidderId: listing.highBidderId,
+            expiresAt: listing.expiresAt
+        };
+    }
+
+    /**
+     * Process buy now action
+     */
+    async processActionBuyNow(transaction) {
+        const { playerId, listingId } = transaction;
+
+        const listing = this.gameState.actionMarketplace.listings.get(listingId);
+        if (!listing || listing.status !== 'active' || !listing.buyNowPrice) {
+            throw new Error('Buy now not available');
+        }
+
+        if (listing.sellerId === playerId) {
+            throw new Error('Cannot buy your own listing');
+        }
+
+        const player = this.getOrCreatePlayer(playerId);
+
+        // Calculate buy now price with premium
+        const buyNowPrice = this.calculateBuyNowPrice(listing);
+
+        // Validate player has enough cash
+        if (player.cash < buyNowPrice) {
+            throw new Error(`Insufficient funds: need $${buyNowPrice.toLocaleString()}, have $${player.cash.toLocaleString()}`);
+        }
+
+        // Refund previous high bidder if any
+        if (listing.highBidderId && listing.currentBid > 0) {
+            const previousBidder = this.getOrCreatePlayer(listing.highBidderId);
+            previousBidder.cash += listing.currentBid;
+
+            previousBidder.transactions.push({
+                type: 'BID_REFUND',
+                amount: listing.currentBid,
+                timestamp: Date.now(),
+                description: `Bid refund - action listing ${listingId} bought`
+            });
+        }
+
+        // Charge buyer
+        player.cash -= buyNowPrice;
+        player.transactions.push({
+            type: 'ACTION_BUY_NOW',
+            amount: -buyNowPrice,
+            timestamp: Date.now(),
+            description: `Bought ${listing.quantity} actions for $${buyNowPrice.toLocaleString()}`
+        });
+
+        // Pay seller
+        const seller = this.getOrCreatePlayer(listing.sellerId);
+        seller.cash += buyNowPrice;
+        seller.transactions.push({
+            type: 'ACTION_SALE',
+            amount: buyNowPrice,
+            timestamp: Date.now(),
+            description: `Sold ${listing.quantity} actions for $${buyNowPrice.toLocaleString()}`
+        });
+
+        // Give actions to buyer
+        this.addPurchasedActions(playerId, listing.quantity, 'buy now');
+
+        // Mark listing as sold
+        listing.status = 'sold';
+        listing.finalPrice = buyNowPrice;
+        listing.winnerId = playerId;
+        listing.soldAt = Date.now();
+
+        // Update price history
+        this.gameState.actionMarketplace.priceHistory.push({
+            price: buyNowPrice,
+            quantity: listing.quantity,
+            date: Date.now(),
+            type: 'buy_now'
+        });
+
+        this.updateAveragePrice();
+
+        console.log(`🏪 Buy now completed: ${listing.quantity} actions sold for $${buyNowPrice.toLocaleString()}`);
+
+        return {
+            success: true,
+            finalPrice: buyNowPrice,
+            actionsReceived: listing.quantity
+        };
+    }
+
+    /**
+     * Calculate buy now price with time-based premium
+     */
+    calculateBuyNowPrice(listing) {
+        if (!listing.buyNowPrice) return 0;
+
+        // If no bids yet, use base buy now price
+        if (listing.currentBid === 0) {
+            return listing.buyNowPrice;
+        }
+
+        // Calculate month progress (0 = start, 1 = end)
+        const monthLengthDays = 30.44;
+        const currentMonth = Math.floor(this.gameState.gameTime / monthLengthDays);
+        const monthStart = currentMonth * monthLengthDays;
+        const monthProgress = (this.gameState.gameTime - monthStart) / monthLengthDays;
+
+        // Premium starts at 500% and decays to 0%
+        const maxPremiumRate = 5.0; // 500%
+        const currentPremiumRate = maxPremiumRate * (1 - monthProgress);
+
+        // If current bid exceeds buy now + premium, no premium (bidding war)
+        const premiumPrice = listing.buyNowPrice * (1 + currentPremiumRate);
+        if (listing.currentBid >= premiumPrice) {
+            return listing.buyNowPrice;
+        }
+
+        return Math.floor(premiumPrice);
+    }
+
+    /**
+     * Process canceling an action listing
+     */
+    async processCancelActionListing(transaction) {
+        const { playerId, listingId } = transaction;
+
+        const listing = this.gameState.actionMarketplace.listings.get(listingId);
+        if (!listing || listing.status !== 'active') {
+            throw new Error('Listing not available for cancellation');
+        }
+
+        if (listing.sellerId !== playerId) {
+            throw new Error('Can only cancel your own listings');
+        }
+
+        // Calculate fee if there are bids
+        let fee = 0;
+        if (listing.currentBid > 0) {
+            const monthProgress = this.calculateMonthProgress();
+            const maxFeeRate = 5.0; // 500% of current bid
+            const currentFeeRate = maxFeeRate * (1 - monthProgress);
+            fee = Math.floor(listing.currentBid * currentFeeRate);
+        }
+
+        const player = this.getOrCreatePlayer(playerId);
+
+        // Validate player can afford fee
+        if (player.cash < fee) {
+            throw new Error(`Insufficient funds for cancellation fee: need $${fee.toLocaleString()}, have $${player.cash.toLocaleString()}`);
+        }
+
+        // Charge fee
+        if (fee > 0) {
+            player.cash -= fee;
+            player.transactions.push({
+                type: 'LISTING_CANCEL_FEE',
+                amount: -fee,
+                timestamp: Date.now(),
+                description: `Cancellation fee for action listing ${listingId}`
+            });
+
+            // Add fee to treasury
+            if (this.governanceSystem) {
+                this.governanceSystem.addFunds(fee, 'marketplace cancellation fees');
+            }
+        }
+
+        // Refund high bidder if any
+        if (listing.highBidderId && listing.currentBid > 0) {
+            const bidder = this.getOrCreatePlayer(listing.highBidderId);
+            bidder.cash += listing.currentBid;
+
+            bidder.transactions.push({
+                type: 'BID_REFUND',
+                amount: listing.currentBid,
+                timestamp: Date.now(),
+                description: `Bid refund - listing ${listingId} cancelled`
+            });
+        }
+
+        // Return actions to seller (they will expire at month end)
+        this.addPurchasedActions(playerId, listing.quantity, 'cancelled listing');
+
+        // Mark listing as cancelled
+        listing.status = 'cancelled';
+        listing.cancelledAt = Date.now();
+        listing.cancellationFee = fee;
+
+        console.log(`🏪 Listing cancelled: ${listingId} with fee $${fee.toLocaleString()}`);
+
+        return {
+            success: true,
+            fee: fee,
+            actionsReturned: listing.quantity
+        };
+    }
+
+    /**
+     * Process ending auction early
+     */
+    async processEndActionEarly(transaction) {
+        const { playerId, listingId } = transaction;
+
+        const listing = this.gameState.actionMarketplace.listings.get(listingId);
+        if (!listing || listing.status !== 'active') {
+            throw new Error('Listing not available');
+        }
+
+        if (listing.sellerId !== playerId) {
+            throw new Error('Can only end your own auctions');
+        }
+
+        if (listing.currentBid === 0) {
+            throw new Error('No bids to end - just cancel the listing');
+        }
+
+        // Calculate fee
+        const monthProgress = this.calculateMonthProgress();
+        const maxFeeRate = 5.0; // 500% of current bid
+        const currentFeeRate = maxFeeRate * (1 - monthProgress);
+        const fee = Math.floor(listing.currentBid * currentFeeRate);
+
+        const player = this.getOrCreatePlayer(playerId);
+
+        // Validate player can afford fee
+        if (player.cash < fee) {
+            throw new Error(`Insufficient funds for end early fee: need $${fee.toLocaleString()}, have $${player.cash.toLocaleString()}`);
+        }
+
+        // Charge fee
+        player.cash -= fee;
+        player.transactions.push({
+            type: 'END_EARLY_FEE',
+            amount: -fee,
+            timestamp: Date.now(),
+            description: `End early fee for action listing ${listingId}`
+        });
+
+        // Pay seller (winning bid minus fee)
+        const sellerPayment = listing.currentBid - fee;
+        player.cash += sellerPayment;
+        player.transactions.push({
+            type: 'ACTION_SALE',
+            amount: sellerPayment,
+            timestamp: Date.now(),
+            description: `Sold ${listing.quantity} actions for $${listing.currentBid.toLocaleString()} (net: $${sellerPayment.toLocaleString()})`
+        });
+
+        // Pay winner
+        const winner = this.getOrCreatePlayer(listing.highBidderId);
+        winner.transactions.push({
+            type: 'ACTION_WIN',
+            amount: -listing.currentBid, // Already charged when bidding
+            timestamp: Date.now(),
+            description: `Won ${listing.quantity} actions for $${listing.currentBid.toLocaleString()}`
+        });
+
+        // Give actions to winner
+        this.addPurchasedActions(listing.highBidderId, listing.quantity, 'auction win');
+
+        // Add fee to treasury
+        if (this.governanceSystem) {
+            this.governanceSystem.addFunds(fee, 'marketplace early end fees');
+        }
+
+        // Mark listing as ended early
+        listing.status = 'ended_early';
+        listing.finalPrice = listing.currentBid;
+        listing.winnerId = listing.highBidderId;
+        listing.endEarlyFee = fee;
+        listing.endedAt = Date.now();
+
+        // Update price history
+        this.gameState.actionMarketplace.priceHistory.push({
+            price: listing.currentBid,
+            quantity: listing.quantity,
+            date: Date.now(),
+            type: 'ended_early'
+        });
+
+        this.updateAveragePrice();
+
+        console.log(`🏪 Auction ended early: ${listing.quantity} actions sold for $${listing.currentBid.toLocaleString()}, fee: $${fee.toLocaleString()}`);
+
+        return {
+            success: true,
+            finalPrice: listing.currentBid,
+            fee: fee,
+            actionsTransferred: listing.quantity
+        };
+    }
+
+    /**
+     * Calculate current month progress (0 = start, 1 = end)
+     */
+    calculateMonthProgress() {
+        const monthLengthDays = 30.44;
+        const currentMonth = Math.floor(this.gameState.gameTime / monthLengthDays);
+        const monthStart = currentMonth * monthLengthDays;
+        return (this.gameState.gameTime - monthStart) / monthLengthDays;
+    }
+
+    /**
+     * Update average price from recent sales
+     */
+    updateAveragePrice() {
+        const recent = this.gameState.actionMarketplace.priceHistory.slice(-10);
+        if (recent.length > 0) {
+            this.gameState.actionMarketplace.avgPrice = recent.reduce((sum, sale) => sum + sale.price, 0) / recent.length;
+        }
+    }
+
+    /**
+     * Process expired auctions (called at month transition)
+     */
+    processExpiredActionAuctions() {
+        let processed = 0;
+
+        for (const [listingId, listing] of this.gameState.actionMarketplace.listings) {
+            if (listing.status === 'active' && listing.month !== this.getCurrentGameMonth()) {
+                if (listing.currentBid > 0 && listing.highBidderId) {
+                    // Auction sold
+                    const seller = this.getOrCreatePlayer(listing.sellerId);
+                    const winner = this.getOrCreatePlayer(listing.highBidderId);
+
+                    // Pay seller
+                    seller.cash += listing.currentBid;
+                    seller.transactions.push({
+                        type: 'ACTION_SALE',
+                        amount: listing.currentBid,
+                        timestamp: Date.now(),
+                        description: `Auction sold: ${listing.quantity} actions for $${listing.currentBid.toLocaleString()}`
+                    });
+
+                    // Give actions to winner (already charged when bidding)
+                    this.addPurchasedActions(listing.highBidderId, listing.quantity, 'auction win');
+
+                    // Update listing
+                    listing.status = 'sold';
+                    listing.finalPrice = listing.currentBid;
+                    listing.winnerId = listing.highBidderId;
+                    listing.soldAt = Date.now();
+
+                    // Update price history
+                    this.gameState.actionMarketplace.priceHistory.push({
+                        price: listing.currentBid,
+                        quantity: listing.quantity,
+                        date: Date.now(),
+                        type: 'auction'
+                    });
+
+                    console.log(`🏪 Auction completed: ${listing.quantity} actions sold for $${listing.currentBid.toLocaleString()}`);
+                } else {
+                    // No bids - return actions to seller (monthly actions will expire anyway)
+                    this.addPurchasedActions(listing.sellerId, listing.quantity, 'expired auction');
+
+                    listing.status = 'expired';
+                    listing.expiredAt = Date.now();
+
+                    console.log(`🏪 Auction expired: ${listing.quantity} actions returned to ${listing.sellerId}`);
+                }
+                processed++;
+            }
+        }
+
+        if (processed > 0) {
+            this.updateAveragePrice();
+            console.log(`🏪 Processed ${processed} expired action auctions`);
+        }
+
+        return processed;
+    }
+
+    /**
+     * Process action spending (for builds, purchases, etc.)
+     */
+    async processActionSpend(transaction) {
+        const { playerId, count, reason } = transaction;
+
+        // Validate input
+        if (!playerId || !count || count <= 0) {
+            throw new Error('Invalid action spend parameters');
+        }
+
+        // Spend actions
+        this.spendActions(playerId, count, reason);
+
+        console.log(`🎯 Action spend processed: ${playerId} spent ${count} actions on ${reason}`);
+
+        return {
+            success: true,
+            actionsSpent: count,
+            reason: reason
+        };
     }
 }
 

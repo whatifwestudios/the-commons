@@ -1101,8 +1101,8 @@
         .start-game-btn {
             width: 100%;
             padding: 12px;
-            background: #10AC84;
-            color: white;
+            background: #FFFFFF;
+            color: black;
             border: none;
             border-radius: 4px;
             font-size: 16px;
@@ -1113,7 +1113,7 @@
         }
 
         .start-game-btn:hover:not(:disabled) {
-            background: #0D8A6A;
+            background: #E6E6E6;
             transform: translateY(-1px);
         }
 
@@ -1162,7 +1162,7 @@
         .chat-tab.active {
             color: white;
             background: rgba(255, 255, 255, 0.1);
-            border-bottom: 2px solid #10AC84;
+            border-bottom: 2px solid #FFFFFF;
         }
 
         .chat-tab-content {
@@ -1214,7 +1214,7 @@
         }
 
         .points-available {
-            color: #10AC84;
+            color: #FFFFFF;
             font-weight: 600;
             font-size: 14px;
             font-family: 'SF Mono', Monaco, Inconsolata, 'Roboto Mono', 'Source Code Pro', monospace;
@@ -1259,7 +1259,7 @@
         }
 
         .points-display {
-            color: #10AC84;
+            color: #FFFFFF;
             font-weight: 600;
             font-size: 14px;
             min-width: 20px;
@@ -1325,13 +1325,13 @@
         }
 
         .governance-btn.primary {
-            background: #10AC84;
-            color: white;
-            border-color: #10AC84;
+            background: #FFFFFF;
+            color: black;
+            border-color: #FFFFFF;
         }
 
         .governance-btn.primary:hover {
-            background: #0D8A6A;
+            background: #E6E6E6;
         }
 
         .chat-players h3 {
@@ -1429,15 +1429,8 @@
             </div>
         </div>
         
-        <!-- Right container: Zoom controls -->
+        <!-- Right container: Empty for now -->
         <div class="top-bar-right">
-            <div class="top-bar-section">
-                <div class="zoom-controls">
-                    <button class="zoom-btn" id="zoom-out" title="Zoom Out">-</button>
-                    <button class="zoom-btn" id="zoom-reset" title="Reset Zoom">◦</button>
-                    <button class="zoom-btn" id="zoom-in" title="Zoom In">+</button>
-                </div>
-            </div>
         </div>
     </div>
     
@@ -1526,23 +1519,21 @@
                             <span class="message-text">Welcome! Chat while waiting for others to join.</span>
                         </div>
                     </div>
-                </div>
 
-                <div class="chat-tab-content" id="governance-content">
-                    <div class="governance-panel">
-                        <div class="governance-header">
-                            <h3>Pre-Game LVT Setup</h3>
-                            <div class="points-available">Points: <span id="available-points">4</span></div>
-                        </div>
-                        <div class="governance-instructions">
-                            <p>Set the starting Land Value Tax rate for your city (default: 50%). All players can modify this rate by up to 4 points in any direction. Each + or - changes the rate by 1%. You can modify this later during gameplay through the main governance system.</p>
-                        </div>
-                        <div class="governance-categories" id="governance-categories">
-                            <!-- LVT category will be populated by JavaScript -->
-                        </div>
-                        <div class="governance-footer">
-                            <button id="reset-governance" class="governance-btn secondary">Reset</button>
-                            <button id="save-governance" class="governance-btn primary">Confirm LVT Rate</button>
+                    <!-- Governance overlay that appears over chat messages -->
+                    <div class="governance-overlay" id="governance-overlay" style="display: none;">
+                        <div class="governance-panel">
+                            <div class="governance-header">
+                                <h3>Pre-Game LVT Setup</h3>
+                                <div class="points-available">Points: <span id="available-points">4</span></div>
+                            </div>
+                            <div class="governance-categories" id="governance-categories">
+                                <!-- LVT category will be populated by JavaScript -->
+                            </div>
+                            <div class="governance-footer">
+                                <button id="reset-governance" class="governance-btn secondary">Reset</button>
+                                <button id="save-governance" class="governance-btn primary">Return to Chat</button>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -1698,7 +1689,7 @@
             
 
             <!-- Action Manager Section -->
-            <div class="sidebar-section collapsible action-manager">
+            <div class="sidebar-section collapsible action-manager" id="action-manager-section">
                 <div class="section-header" data-target="action-manager-content">
                     <span>ACTION MANAGER</span>
                     <span class="collapse-icon"></span>
@@ -2265,7 +2256,7 @@
                         </div>
                         <div class="balance-info">
                             <p>Used this month: <span id="modal-actions-used">0</span></p>
-                            <p>Next refresh: <span id="modal-next-refresh">--</span></p>
+                            <p id="month-end-countdown" style="font-weight: bold; margin: 8px 0;">--</p>
                             <p class="rollover-text">
                                 <strong>✓ Purchased actions never expire and rollover monthly until used</strong>
                             </p>
@@ -2580,7 +2571,7 @@
     <!-- Legacy tooltip systems archived -->
     <script src="context-menu-system.js"></script>
     <script src="action-manager.js"></script>
-    <script src="action-marketplace.js"></script>
+    <script src="action-marketplace-v2.js"></script>
     <script src="game.js?v=13"></script>
 
     <script>

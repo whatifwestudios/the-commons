@@ -785,9 +785,12 @@ class RenderingSystemV2 {
             this.canvas.height = rect.height - 40; // 20px margin top/bottom
         }
 
-        // Calculate optimal tile dimensions for the grid
-        const availableWidth = this.canvas.width * 0.9;
-        const availableHeight = this.canvas.height * 0.9;
+        // Calculate optimal tile dimensions for the grid - maximize canvas usage
+        // Leave small margins to prevent edge clipping
+        const marginX = 20; // Small horizontal margin
+        const marginY = 20; // Small vertical margin
+        const availableWidth = this.canvas.width - (2 * marginX);
+        const availableHeight = this.canvas.height - (2 * marginY);
 
         // CORRECT ISOMETRIC GRID CALCULATION
         // For a gridSize x gridSize grid (indices 0 to gridSize-1):
@@ -796,20 +799,24 @@ class RenderingSystemV2 {
         const gridSpan = this.game.gridSize - 1;
 
         // Calculate maximum tile size that fits in available space
-        const maxTileWidth = availableWidth / gridSpan;
-        const maxTileHeight = availableHeight / gridSpan;
+        // For isometric view: tileHeight = tileWidth / 2 (2:1 ratio for 30° standard isometric)
+        const maxTileWidthFromWidth = availableWidth / gridSpan;
+        const maxTileWidthFromHeight = (availableHeight / gridSpan) * 2; // height constraint converted to width
 
-        // Use optimal tile dimensions (maintain 2:1 ratio for isometric look)
-        this.tileWidth = Math.min(maxTileWidth, 100);
-        this.tileHeight = Math.min(maxTileHeight, this.tileWidth / 2);
+        // Choose the limiting dimension to ensure grid fits in both directions
+        const optimalTileWidth = Math.min(maxTileWidthFromWidth, maxTileWidthFromHeight);
+
+        // Set tile dimensions with proper 2:1 isometric ratio, reduced by 20% for better canvas utilization
+        this.tileWidth = Math.max(optimalTileWidth * 0.8, 20); // Minimum tile size for readability, 20% smaller
+        this.tileHeight = this.tileWidth / 2;
 
         // CORRECT CENTERING CALCULATION
         // Isometric grid bounds (before offset):
         // minX = -gridSpan * tileWidth/2, maxX = gridSpan * tileWidth/2
         // minY = 0, maxY = gridSpan * tileHeight
 
-        // Center the grid properly:
-        this.game.offsetX = this.canvas.width / 2;  // Centers the diamond horizontally
+        // Center the grid properly, shifted left by 1%:
+        this.game.offsetX = (this.canvas.width / 2) - (this.canvas.width * 0.01);  // Centers the diamond horizontally, shifted left by 1%
         this.game.offsetY = (this.canvas.height - gridSpan * this.tileHeight) / 2;  // Centers vertically
 
         // Set tile dimensions on game object for backwards compatibility

@@ -73,7 +73,7 @@ class TooltipSystemV2 {
             border-radius: 4px;
             padding: 12px;
             font-family: 'SF Mono', Monaco, monospace;
-            font-size: 13px;
+            font-size: 12px;
             line-height: 1.4;
             color: white;
             z-index: 10000;

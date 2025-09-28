@@ -7,10 +7,8 @@ class ActionManager {
     constructor(game) {
         this.game = game;
 
-        // Action state
-        this.monthlyAllowance = this.calculateMonthlyActionAllowance();
-        this.currentActions = this.monthlyAllowance;
-        this.usedThisMonth = 0;
+        // V2: Server-authoritative action state (client displays server data)
+        // Note: Actual action counts come from economic client sync
 
         // Action costs configuration
         this.actionCosts = {
@@ -67,24 +65,37 @@ class ActionManager {
     }
 
     /**
-     * Check if player can use a specific action type
+     * Check if player can use a specific action type (server-authoritative)
      */
     canUseAction(actionType, cost = null) {
         const actionCost = cost || this.actionCosts[actionType] || 1;
-        return this.currentActions >= actionCost;
+        const currentActions = this.getCurrentActions();
+        return currentActions >= actionCost;
     }
 
     /**
-     * Check if player can use a specific number of actions
+     * Check if player can use a specific number of actions (server-authoritative)
      */
     canUseActions(count) {
-        return this.currentActions >= count;
+        const currentActions = this.getCurrentActions();
+        return currentActions >= count;
     }
 
     /**
-     * Use a specific action type
+     * Get current action count from server-authoritative source
      */
-    useAction(actionType, cost = null) {
+    getCurrentActions() {
+        if (this.game.economicClient && this.game.economicClient.getCurrentPlayerActions) {
+            return this.game.economicClient.getCurrentPlayerActions();
+        }
+        // Fallback to default monthly allowance
+        return this.calculateMonthlyActionAllowance();
+    }
+
+    /**
+     * Use a specific action type (V2: Server-authoritative)
+     */
+    async useAction(actionType, cost = null) {
         const actionCost = cost || this.actionCosts[actionType] || 1;
 
         if (!this.canUseAction(actionType, actionCost)) {
@@ -92,10 +103,36 @@ class ActionManager {
             return false;
         }
 
-        this.currentActions -= actionCost;
-        this.usedThisMonth += actionCost;
-        this.updateActionDisplay();
-        return true;
+        // V2: Send action spend transaction to server
+        try {
+            if (this.game.economicClient && this.game.economicClient.sendTransaction) {
+                const transaction = {
+                    type: 'ACTION_SPEND',
+                    playerId: this.game.currentPlayerId,
+                    count: actionCost,
+                    reason: actionType
+                };
+
+                const result = await this.game.economicClient.sendTransaction(transaction);
+                if (result.success) {
+                    console.log(`🎯 Server confirmed action spend: ${actionCost} for ${actionType}`);
+                    this.updateActionDisplay();
+                    return true;
+                } else {
+                    this.game.showNotification(result.error || 'Failed to spend actions', 'error');
+                    return false;
+                }
+            } else {
+                // Fallback for offline/solo mode
+                console.log(`🎯 Offline action spend: ${actionCost} for ${actionType}`);
+                this.updateActionDisplay();
+                return true;
+            }
+        } catch (error) {
+            console.error('Failed to spend actions:', error);
+            this.game.showNotification('Failed to spend actions', 'error');
+            return false;
+        }
     }
 
     /**
@@ -135,17 +172,20 @@ class ActionManager {
     }
 
     /**
-     * Update action display in UI
+     * Update action display in UI (V2: Server-authoritative)
      */
     updateActionDisplay() {
+        const currentActions = this.getCurrentActions();
+        const monthlyAllowance = this.calculateMonthlyActionAllowance();
+
         const actionsElement = document.getElementById('current-actions');
         if (actionsElement) {
-            actionsElement.textContent = this.currentActions;
+            actionsElement.textContent = currentActions;
         }
 
         const monthlyElement = document.getElementById('monthly-actions');
         if (monthlyElement) {
-            monthlyElement.textContent = this.monthlyAllowance;
+            monthlyElement.textContent = monthlyAllowance;
         }
     }
 

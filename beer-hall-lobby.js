@@ -1216,21 +1216,27 @@ class BeerHallLobby {
      */
     setupTabSwitching() {
         const tabs = document.querySelectorAll('.chat-tab');
-        const contents = document.querySelectorAll('.chat-tab-content');
+        const governanceOverlay = document.getElementById('governance-overlay');
 
         tabs.forEach(tab => {
             tab.addEventListener('click', () => {
                 const targetTab = tab.dataset.tab;
 
-                // Remove active from all tabs and contents
+                // Remove active from all tabs
                 tabs.forEach(t => t.classList.remove('active'));
-                contents.forEach(c => c.classList.remove('active'));
 
-                // Add active to clicked tab and corresponding content
+                // Add active to clicked tab
                 tab.classList.add('active');
-                const targetContent = document.getElementById(`${targetTab}-content`);
-                if (targetContent) {
-                    targetContent.classList.add('active');
+
+                // Show/hide governance overlay based on tab selection
+                if (targetTab === 'governance') {
+                    if (governanceOverlay) {
+                        governanceOverlay.style.display = 'block';
+                    }
+                } else {
+                    if (governanceOverlay) {
+                        governanceOverlay.style.display = 'none';
+                    }
                 }
             });
         });
@@ -1258,26 +1264,49 @@ class BeerHallLobby {
         const currentRate = governanceSystem?.governance?.taxRate || 0.50;
         const ratePercent = (currentRate * 100).toFixed(0);
 
-        const categories = {
-            lvt: { name: `Land Value Tax Rate (current: ${ratePercent}%)`, icon: '📊' }
-        };
+        // Create enhanced LVT voting interface
+        const lvtVotingDiv = document.createElement('div');
+        lvtVotingDiv.className = 'lvt-voting-interface';
+        lvtVotingDiv.innerHTML = `
+            <div class="lvt-main-display">
+                <div class="lvt-title">
+                    <span class="lvt-icon">🏛️</span>
+                    <h4>Land Value Tax Rate</h4>
+                    <span class="lvt-subtitle">The Heart of Your City's Economics</span>
+                </div>
+                <div class="lvt-current-rate">
+                    <span class="rate-value">${ratePercent}%</span>
+                    <span class="rate-label">Current Rate</span>
+                </div>
+            </div>
 
-        Object.entries(categories).forEach(([key, category]) => {
-            const categoryDiv = document.createElement('div');
-            categoryDiv.className = 'governance-category';
-            categoryDiv.innerHTML = `
-                <div class="category-info">
-                    <span class="category-icon">${category.icon}</span>
-                    <span class="category-name">${category.name}</span>
+            <div class="lvt-voting-section">
+                <div class="voting-controls">
+                    <button class="lvt-vote-btn decrease" data-action="decrease" data-category="lvt">
+                        <span class="vote-symbol">−</span>
+                        <span class="vote-text">Lower Rate</span>
+                    </button>
+
+                    <div class="voting-status">
+                        <div class="my-votes">
+                            <span class="vote-count" data-category="lvt">0</span>
+                            <span class="vote-label">Your Votes</span>
+                        </div>
+                        <div class="points-remaining">
+                            <span class="points-count">${governanceSystem?.governance?.votingPoints || 4}</span>
+                            <span class="points-label">Points Left</span>
+                        </div>
+                    </div>
+
+                    <button class="lvt-vote-btn increase" data-action="increase" data-category="lvt">
+                        <span class="vote-symbol">+</span>
+                        <span class="vote-text">Raise Rate</span>
+                    </button>
                 </div>
-                <div class="category-controls">
-                    <button class="point-btn" data-action="decrease" data-category="${key}">-</button>
-                    <span class="points-display" data-category="${key}">0</span>
-                    <button class="point-btn" data-action="increase" data-category="${key}">+</button>
-                </div>
-            `;
-            container.appendChild(categoryDiv);
-        });
+
+            </div>
+        `;
+        container.appendChild(lvtVotingDiv);
 
         this.updatePointsDisplay();
     }
@@ -1286,11 +1315,12 @@ class BeerHallLobby {
      * Setup governance event handlers
      */
     setupGovernanceHandlers() {
-        // Point allocation buttons
+        // Point allocation buttons (legacy and new LVT buttons)
         document.addEventListener('click', (e) => {
-            if (e.target.classList.contains('point-btn')) {
-                const action = e.target.dataset.action;
-                const category = e.target.dataset.category;
+            if (e.target.classList.contains('point-btn') || e.target.classList.contains('lvt-vote-btn') || e.target.closest('.lvt-vote-btn')) {
+                const button = e.target.closest('.point-btn, .lvt-vote-btn') || e.target;
+                const action = button.dataset.action;
+                const category = button.dataset.category;
                 this.handlePointAllocation(category, action);
             }
         });
@@ -1327,11 +1357,55 @@ class BeerHallLobby {
             let result = false;
 
             if (category === 'lvt') {
-                // Handle LVT voting with proper methods
+                // Check if game has started to determine which LVT voting system to use
+                if (governanceSystem.governance.gameStarted) {
+                    // Use server-side governance system for in-game LVT voting
+                    if (action === 'increase') {
+                        result = await governanceSystem.increaseLVTRate();
+                    } else if (action === 'decrease') {
+                        result = await governanceSystem.decreaseLVTRate();
+                    }
+                } else {
+                    // Handle pre-game LVT voting locally with undo functionality
+                if (!this.playerLVTVotes) this.playerLVTVotes = 0; // Track net votes: +1 for increase, -1 for decrease
+
                 if (action === 'increase') {
-                    result = await governanceSystem.increaseLVTRate();
+                    if (governanceSystem.governance.votingPoints > 0) {
+                        // Add increase vote
+                        governanceSystem.governance.votingPoints -= 1;
+                        this.playerLVTVotes += 1;
+                        governanceSystem.governance.taxRate = Math.min(1.0, governanceSystem.governance.taxRate + 0.01);
+                        result = true;
+                    } else if (this.playerLVTVotes < 0) {
+                        // Undo a decrease vote (refund point)
+                        governanceSystem.governance.votingPoints += 1;
+                        this.playerLVTVotes += 1;
+                        governanceSystem.governance.taxRate = Math.min(1.0, governanceSystem.governance.taxRate + 0.01);
+                        result = true;
+                    } else {
+                        result = false;
+                    }
                 } else if (action === 'decrease') {
-                    result = await governanceSystem.decreaseLVTRate();
+                    if (governanceSystem.governance.votingPoints > 0) {
+                        // Add decrease vote
+                        governanceSystem.governance.votingPoints -= 1;
+                        this.playerLVTVotes -= 1;
+                        governanceSystem.governance.taxRate = Math.max(0.0, governanceSystem.governance.taxRate - 0.01);
+                        result = true;
+                    } else if (this.playerLVTVotes > 0) {
+                        // Undo an increase vote (refund point)
+                        governanceSystem.governance.votingPoints += 1;
+                        this.playerLVTVotes -= 1;
+                        governanceSystem.governance.taxRate = Math.max(0.0, governanceSystem.governance.taxRate - 0.01);
+                        result = true;
+                    } else {
+                        result = false;
+                    }
+                }
+
+                if (result) {
+                    console.log(`🏛️ Pre-game LVT ${action}: ${(governanceSystem.governance.taxRate * 100).toFixed(1)}% (net votes: ${this.playerLVTVotes})`);
+                }
                 }
             } else {
                 // Handle regular category voting
@@ -1391,25 +1465,84 @@ class BeerHallLobby {
             availablePointsSpan.textContent = governanceSystem.governance.votingPoints;
         }
 
-        // Update category points and button states from main system
-        const playerVotes = governanceSystem.governance.playerVotes?.player?.categories || {};
+        // Update points-count in new interface
+        const pointsCountSpan = document.querySelector('.points-count');
+        if (pointsCountSpan) {
+            pointsCountSpan.textContent = governanceSystem.governance.votingPoints;
+        }
 
-        // Only show LVT for pre-game setup
-        const categoriesToShow = { lvt: 'Land Value Tax' };
+        // Update LVT vote count and rate
+        const lvtVotes = governanceSystem.governance.playerVotes?.player?.lvtVotes || 0;
+        const currentRate = governanceSystem?.governance?.taxRate || 0.50;
+        const ratePercent = (currentRate * 100).toFixed(0);
 
-        Object.keys(categoriesToShow).forEach(key => {
-            const pointsDisplay = document.querySelector(`[data-category="${key}"].points-display`);
-            const increaseBtn = document.querySelector(`[data-category="${key}"][data-action="increase"]`);
-            const decreaseBtn = document.querySelector(`[data-category="${key}"][data-action="decrease"]`);
+        // Update vote count display
+        const voteCountSpan = document.querySelector('.vote-count[data-category="lvt"]');
+        if (voteCountSpan) {
+            voteCountSpan.textContent = Math.abs(lvtVotes);
+        }
 
-            const currentPoints = key === 'lvt' ?
-                Math.abs(governanceSystem.governance.playerVotes?.player?.lvtVotes || 0) :
-                (playerVotes[key] || 0);
+        // Update current rate display
+        const rateValueSpan = document.querySelector('.rate-value');
+        if (rateValueSpan) {
+            rateValueSpan.textContent = `${ratePercent}%`;
+        }
 
-            if (pointsDisplay) pointsDisplay.textContent = currentPoints;
-            if (increaseBtn) increaseBtn.disabled = governanceSystem.governance.votingPoints === 0;
-            if (decreaseBtn) decreaseBtn.disabled = currentPoints === 0;
-        });
+        // Update legacy points display if it exists
+        const pointsDisplay = document.querySelector(`[data-category="lvt"].points-display`);
+        if (pointsDisplay) {
+            pointsDisplay.textContent = Math.abs(lvtVotes);
+        }
+
+        // Update button states
+        const increaseBtn = document.querySelector(`[data-category="lvt"][data-action="increase"]`);
+        const decreaseBtn = document.querySelector(`[data-category="lvt"][data-action="decrease"]`);
+
+        if (increaseBtn) increaseBtn.disabled = governanceSystem.governance.votingPoints === 0;
+        if (decreaseBtn) decreaseBtn.disabled = governanceSystem.governance.votingPoints === 0;
+
+    }
+
+    /**
+     * Update player votes display to show who has voted and in what direction
+     */
+    updatePlayerVotesDisplay() {
+        const displayContainer = document.getElementById('player-votes-display');
+        if (!displayContainer) return;
+
+        const governanceSystem = window.game?.governanceSystem;
+        if (!governanceSystem) return;
+
+        const playerVotes = governanceSystem.governance.playerVotes || {};
+        const players = Object.keys(playerVotes);
+
+        if (players.length === 0) {
+            displayContainer.innerHTML = '<div class="no-votes">No players have voted yet</div>';
+            return;
+        }
+
+        displayContainer.innerHTML = `
+            <div class="player-votes-header">
+                <h5>Player Voting Status</h5>
+            </div>
+            <div class="player-votes-grid">
+                ${players.map(playerId => {
+                    const playerData = playerVotes[playerId];
+                    const lvtVotes = playerData.lvtVotes || 0;
+                    const direction = lvtVotes > 0 ? 'increase' : lvtVotes < 0 ? 'decrease' : 'neutral';
+                    const votes = Math.abs(lvtVotes);
+                    const arrow = direction === 'increase' ? '↗️' : direction === 'decrease' ? '↘️' : '⚪';
+
+                    return `
+                        <div class="player-vote-item ${direction}">
+                            <span class="player-name">${playerId === 'player' ? 'You' : `Player ${playerId.slice(-4)}`}</span>
+                            <span class="vote-direction">${arrow}</span>
+                            <span class="vote-amount">${votes > 0 ? votes : '—'}</span>
+                        </div>
+                    `;
+                }).join('')}
+            </div>
+        `;
     }
 
     /**
@@ -1452,11 +1585,10 @@ class BeerHallLobby {
                 }
             }
 
-            // Reset LVT votes
-            const lvtVotes = Math.abs(governanceSystem.governance.playerVotes?.player?.lvtVotes || 0);
-            for (let i = 0; i < lvtVotes; i++) {
-                await governanceSystem.decreaseLVTRate();
-            }
+            // Reset LVT to default 50% and restore all voting points
+            governanceSystem.governance.taxRate = 0.50; // Reset to 50%
+            governanceSystem.governance.votingPoints = 4; // Restore all 4 pre-game points
+            this.playerLVTVotes = 0; // Clear vote tracking
 
             this.updatePointsDisplay();
             this.addChatMessage('System', 'Reset governance priorities to default', '#888');
@@ -1475,16 +1607,10 @@ class BeerHallLobby {
             return;
         }
 
-        // Governance votes are now automatically saved to server via the main system
-        const totalVotes = Object.values(governanceSystem.governance.playerVotes?.player?.categories || {})
-            .reduce((sum, votes) => sum + votes, 0);
-
-        const lvtVotes = Math.abs(governanceSystem.governance.playerVotes?.player?.lvtVotes || 0);
-        const totalAllocated = totalVotes + lvtVotes;
-
-        const currentLVTRate = (governanceSystem.governance.taxRate * 100).toFixed(1);
-        this.addChatMessage('System', `LVT rate set to ${currentLVTRate}% (${totalAllocated} points used)`, '#888');
-        console.log('🏛️ LVT rate preferences are automatically synchronized');
+        // Simply close the governance modal and return to chat
+        // All governance votes are automatically saved to server in real-time
+        console.log('🏛️ Returning to chat - all votes automatically synchronized');
+        governanceSystem.closeGovernanceModal();
     }
 
     // broadcastGovernanceChange method removed - now using main governance system directly

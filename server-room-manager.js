@@ -76,6 +76,10 @@ class GameRoom {
             ready: false,
             connected: true,
             balance: 6000, // Starting balance
+            governance: {
+                votingPoints: 4, // Pre-game voting points for LVT setup
+                votes: {}
+            },
             ...playerData
         });
 
@@ -177,6 +181,9 @@ class GameRoom {
 
             // 🍺 BEER HALL FRESH START: Reset everything for new game
             this.economicEngine.resetGameState();
+
+            // Initialize economic engine players with room player data (including governance points)
+            this.economicEngine.initializePlayersFromRoom(this.players);
 
             // Set fresh starting conditions: September 2nd, $6k per player
             this.economicEngine.gameState.gameTime = 1.0; // Day 1 (Sept 2)

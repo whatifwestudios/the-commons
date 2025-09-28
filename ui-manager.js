@@ -887,7 +887,7 @@ class UIManager {
             zoomResetBtn.dataset.listenerAdded = 'true';
         }
         
-        // Update zoom buttons state
+        // Update zoom buttons state - now safe for missing buttons
         if (game.updateZoomButtons) {
             game.updateZoomButtons();
         }

@@ -483,8 +483,8 @@ class IsometricGrid {
         
         // Periodic sync removed - not needed for solo game
         
-        // Initialize Action Marketplace
-        this.actionMarketplace = new ActionMarketplace(this);
+        // Initialize Action Marketplace V2
+        this.actionMarketplace = new ActionMarketplaceV2(this);
 
         // Multiplayer system removed for clean solo game
     }
@@ -678,6 +678,13 @@ class IsometricGrid {
         // V2: Onboarding complete
         if (playerConfig.mode === 'solo') {
             console.log('🎮 V2: Solo mode onboarding complete - isolated table ready');
+
+            // Hide Action Manager in solo mode
+            const actionManagerSection = document.getElementById('action-manager-section');
+            if (actionManagerSection) {
+                actionManagerSection.style.display = 'none';
+                console.log('🎮 Action Manager hidden in solo mode');
+            }
         } else {
             console.log('🍺 V2: Multiplayer mode onboarding complete - no legacy server reset needed');
         }
@@ -1336,18 +1343,7 @@ class IsometricGrid {
     }
 
     async updateGameDate() {
-        const monthLengths = {
-            'SEPT': 30, 'OCT': 31, 'NOV': 30, 'DEC': 31,
-            'JAN': 31, 'FEB': 28, 'MAR': 31, 'APR': 30,
-            'MAY': 31, 'JUN': 30, 'JUL': 31, 'AUG': 31
-        };
-        
-        const monthOrder = ['SEPT', 'OCT', 'NOV', 'DEC', 'JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG'];
-        
-        // ❌ DISABLED: Server-authoritative time management
-        // Date progression is now handled by server broadcasts
-        // Monthly processing is handled by server economic engine
-        
+        // Simple date display for top bar - no countdown
         const currentDate = this.getGameDate();
         this.domCache.gameDate.textContent = `${currentDate.month} ${currentDate.day}`;
     }
@@ -4019,8 +4015,11 @@ class IsometricGrid {
     }
 
     updateZoomButtons() {
-        document.getElementById('zoom-in').disabled = this.zoomLevel >= 2.4;
-        document.getElementById('zoom-out').disabled = this.zoomLevel <= 0.4;
+        // Zoom buttons have been removed - this method is now a no-op
+        const zoomIn = document.getElementById('zoom-in');
+        const zoomOut = document.getElementById('zoom-out');
+        if (zoomIn) zoomIn.disabled = this.zoomLevel >= 2.4;
+        if (zoomOut) zoomOut.disabled = this.zoomLevel <= 0.4;
     }
 
     // Convert screen coordinates to world coordinates accounting for zoom and pan

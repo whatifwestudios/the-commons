@@ -49,6 +49,7 @@ class EconomicClient {
         // WebSocket-based data stores (replaces HTTP API calls)
         this.buildings = new Map(); // Building data from WebSocket
         this.playerBalances = {}; // Player balances from WebSocket
+        this.playerActions = {}; // Player action inventories from WebSocket
 
         // Update callbacks
         this.updateCallbacks = new Set();
@@ -409,6 +410,17 @@ class EconomicClient {
     }
 
     /**
+     * Get current player's actions from WebSocket data
+     */
+    getCurrentPlayerActions() {
+        if (!this.playerId || !this.playerActions) {
+            // Return starting actions before server sync (default monthly allowance)
+            return 20;
+        }
+        return this.playerActions[this.playerId] || 20;
+    }
+
+    /**
      * Get city attractiveness score for population movement
      */
     getCityAttractiveness() {
@@ -719,51 +731,58 @@ class EconomicClient {
         // Sync player data (server-authoritative)
         if (gameState.players) {
             this.playerBalances = {};
+            this.playerActions = {};
             Object.values(gameState.players).forEach(player => {
                 this.playerBalances[player.id] = player.cash;
+                this.playerActions[player.id] = player.actions?.total || 0;
             });
-
-            // Balance sync logging (reduced frequency)
+            // Balance and action sync logging (reduced frequency)
             if (!this.lastBalanceLogTime || Date.now() - this.lastBalanceLogTime > 2000) {
                 console.log('💰 Balance sync check:', this.playerId, 'server balance:', gameState.players[this.playerId]?.cash);
+                console.log('🎯 Action sync check:', this.playerId, 'server actions:', gameState.players[this.playerId]?.actions?.total);
                 this.lastBalanceLogTime = Date.now();
             }
+        }
 
-            // Sync player ID if not set
-            if (!this.playerId && window.game?.currentPlayerId) {
-                console.log('🔄 Syncing Economic Client player ID from game:', window.game.currentPlayerId);
-                this.playerId = window.game.currentPlayerId;
-            }
+        // Sync action marketplace data
+        if (gameState.actionMarketplace && this.game.actionMarketplace?.syncMarketplaceData) {
+            this.game.actionMarketplace.syncMarketplaceData(gameState.actionMarketplace);
+        }
 
-            // Update current player cash if available
-            if (this.playerId && gameState.players[this.playerId]) {
-                const playerData = gameState.players[this.playerId];
-                const newBalance = playerData.cash;
+        // Sync player ID if not set
+        if (!this.playerId && window.game?.currentPlayerId) {
+            console.log('🔄 Syncing Economic Client player ID from game:', window.game.currentPlayerId);
+            this.playerId = window.game.currentPlayerId;
+        }
 
-                console.log(`💰 Server-authoritative balance update: ${this.playerId} -> $${Math.round(newBalance).toLocaleString()}`);
+        // Update current player cash if available
+        if (this.playerId && gameState.players[this.playerId]) {
+            const playerData = gameState.players[this.playerId];
+            const newBalance = playerData.cash;
 
-                // Server-authoritative: Store server balance and update UI directly
-                this.serverBalance = newBalance;
+            console.log(`💰 Server-authoritative balance update: ${this.playerId} -> $${Math.round(newBalance).toLocaleString()}`);
 
-                // Update UI directly with server balance (no client state mutations)
-                if (window.game && window.game.domCache && window.game.domCache.playerCash) {
-                    window.game.domCache.playerCash.textContent = `$${Math.round(newBalance).toLocaleString()}`;
-                    console.log('✅ UI updated to:', window.game.domCache.playerCash.textContent);
+            // Server-authoritative: Store server balance and update UI directly
+            this.serverBalance = newBalance;
 
-                    // Check if something overrides our update within 100ms
-                    setTimeout(() => {
-                        const currentDisplay = window.game.domCache.playerCash.textContent;
-                        if (currentDisplay !== `$${Math.round(newBalance).toLocaleString()}`) {
-                            console.warn('⚠️ Cash display was overridden!', 'Expected:', `$${Math.round(newBalance).toLocaleString()}`, 'Actual:', currentDisplay);
-                        }
-                    }, 100);
-                } else {
-                    console.warn('⚠️ DOM cache not found, using fallback');
-                    const cashElement = document.querySelector('.player-cash, #player-cash, [class*="cash"]');
-                    if (cashElement) {
-                        cashElement.textContent = `$${Math.round(newBalance).toLocaleString()}`;
-                        console.log('✅ Fallback update to:', cashElement.textContent);
+            // Update UI directly with server balance (no client state mutations)
+            if (window.game && window.game.domCache && window.game.domCache.playerCash) {
+                window.game.domCache.playerCash.textContent = `$${Math.round(newBalance).toLocaleString()}`;
+                console.log('✅ UI updated to:', window.game.domCache.playerCash.textContent);
+
+                // Check if something overrides our update within 100ms
+                setTimeout(() => {
+                    const currentDisplay = window.game.domCache.playerCash.textContent;
+                    if (currentDisplay !== `$${Math.round(newBalance).toLocaleString()}`) {
+                        console.warn('⚠️ Cash display was overridden!', 'Expected:', `$${Math.round(newBalance).toLocaleString()}`, 'Actual:', currentDisplay);
                     }
+                }, 100);
+            } else {
+                console.warn('⚠️ DOM cache not found, using fallback');
+                const cashElement = document.querySelector('.player-cash, #player-cash, [class*="cash"]');
+                if (cashElement) {
+                    cashElement.textContent = `$${Math.round(newBalance).toLocaleString()}`;
+                    console.log('✅ Fallback update to:', cashElement.textContent);
                 }
             }
         }
@@ -801,8 +820,9 @@ class EconomicClient {
             console.log(`💸 Synced cashflow data for ${Object.keys(gameState.cashflow).length} players`);
         }
 
-        // Sync governance data (server-authoritative treasury, tax rates, allocations)
-        if (gameState.governance && this.game.governanceSystem) {
+        // Skip governance sync - player governance is handled via individual transactions
+        // This prevents the client governance system from being overwritten by legacy server data
+        if (gameState.governance && this.game.governanceSystem && false) {
             this.game.governanceSystem.governance = gameState.governance;
             this.game.governanceSystem.updateGovernanceModal();
             console.log(`🏛️ Synced governance data: treasury $${gameState.governance.treasuryBalance || 0}`);

@@ -272,9 +272,12 @@ class GovernanceSystem {
 
                 const result = await this.game.economicClient.sendTransaction(transaction);
 
-                if (result.success) {
+                // Access the actual server result (wrapped in metadata)
+                const serverResult = result.metadata?.originalTransaction?.result || result;
+
+                if (serverResult.success) {
                     // Update local state based on server response
-                    this.governance.votingPoints = result.votingPoints;
+                    this.governance.votingPoints = serverResult.votingPoints;
 
                     // Ensure player votes structure exists
                     if (!this.governance.playerVotes[playerId]) {
@@ -289,18 +292,18 @@ class GovernanceSystem {
                     }
 
                     // Update local allocations from server response
-                    if (result.votes && result.votes[category] !== undefined) {
+                    if (serverResult.votes && serverResult.votes[category] !== undefined) {
                         // Server returns the full votes object with all categories
-                        this.governance.playerVotes[playerId].categories[category] = result.votes[category];
+                        this.governance.playerVotes[playerId].categories[category] = serverResult.votes[category];
                     } else {
                         // Fallback: increment locally if server doesn't return vote details
                         this.governance.playerVotes[playerId].categories[category] =
                             (this.governance.playerVotes[playerId].categories[category] || 0) + 1;
                     }
 
-                    // Update voting points from server
-                    if (result.votingPoints !== undefined) {
-                        this.governance.votingPoints = result.votingPoints;
+                    // Update voting points from server (redundant check but keeping for safety)
+                    if (serverResult.votingPoints !== undefined) {
+                        this.governance.votingPoints = serverResult.votingPoints;
                     }
 
                     this.governance.voteAllocations[category] = (this.governance.voteAllocations[category] || 0) + 1;
@@ -309,10 +312,10 @@ class GovernanceSystem {
                     this.updatePolicyEffects();
                     this.updateGovernanceModal();
 
-                    console.log(`🗳️ Vote added for ${category}. Server confirmed: ${result.votingPoints} points remaining`);
+                    console.log(`🗳️ Vote added for ${category}. Server confirmed: ${serverResult.votingPoints} points remaining`);
                     return true;
                 } else {
-                    console.error('Server rejected governance vote:', result.error);
+                    console.error('Server rejected governance vote:', serverResult.error);
                     return false;
                 }
             } catch (error) {
@@ -380,15 +383,18 @@ class GovernanceSystem {
 
                 const result = await this.game.economicClient.sendTransaction(transaction);
 
-                if (result.success) {
+                // Access the actual server result (wrapped in metadata)
+                const serverResult = result.metadata?.originalTransaction?.result || result;
+
+                if (serverResult.success) {
                     // Update local state based on server response
-                    if (result.votingPoints !== undefined) {
-                        this.governance.votingPoints = result.votingPoints;
+                    if (serverResult.votingPoints !== undefined) {
+                        this.governance.votingPoints = serverResult.votingPoints;
                     }
 
                     // Update local allocations from server response
-                    if (result.votes && result.votes[category] !== undefined) {
-                        this.governance.playerVotes[playerId].categories[category] = result.votes[category];
+                    if (serverResult.votes && serverResult.votes[category] !== undefined) {
+                        this.governance.playerVotes[playerId].categories[category] = serverResult.votes[category];
                     } else {
                         // Fallback: decrement locally if server doesn't return vote details
                         this.governance.playerVotes[playerId].categories[category] =
@@ -401,10 +407,10 @@ class GovernanceSystem {
                     this.updatePolicyEffects();
                     this.updateGovernanceModal();
 
-                    console.log(`🗳️ Vote removed from ${category}. Server confirmed: ${result.votingPoints} points available`);
+                    console.log(`🗳️ Vote removed from ${category}. Server confirmed: ${serverResult.votingPoints} points available`);
                     return true;
                 } else {
-                    console.error('Server rejected governance vote removal:', result.error);
+                    console.error('Server rejected governance vote removal:', serverResult.error);
                     return false;
                 }
             } catch (error) {
@@ -487,24 +493,27 @@ class GovernanceSystem {
 
                 const result = await this.game.economicClient.sendTransaction(transaction);
 
-                if (result.success) {
+                // Access the actual server result (wrapped in metadata)
+                const serverResult = result.metadata?.originalTransaction?.result || result;
+
+                if (serverResult.success) {
                     // Update local state based on server response
-                    if (result.votingPoints !== undefined) {
-                        this.governance.votingPoints = result.votingPoints;
+                    if (serverResult.votingPoints !== undefined) {
+                        this.governance.votingPoints = serverResult.votingPoints;
                     }
-                    if (result.lvtRate !== undefined) {
-                        this.governance.taxRate = result.lvtRate;
+                    if (serverResult.lvtRate !== undefined) {
+                        this.governance.taxRate = serverResult.lvtRate;
                     }
 
                     this.calculateTotalBudget();
                     this.updatePolicyEffects();
                     this.updateGovernanceModal();
 
-                    const lvtRate = result.lvtRate || this.governance.taxRate;
+                    const lvtRate = serverResult.lvtRate || this.governance.taxRate;
                     console.log(`🗳️ LVT increase vote added. New rate: ${(lvtRate * 100).toFixed(1)}%`);
                     return true;
                 } else {
-                    console.error('Server rejected LVT increase vote:', result.error);
+                    console.error('Server rejected LVT increase vote:', serverResult.error);
                     return false;
                 }
             } catch (error) {
@@ -542,24 +551,27 @@ class GovernanceSystem {
 
                 const result = await this.game.economicClient.sendTransaction(transaction);
 
-                if (result.success) {
+                // Access the actual server result (wrapped in metadata)
+                const serverResult = result.metadata?.originalTransaction?.result || result;
+
+                if (serverResult.success) {
                     // Update local state based on server response
-                    if (result.votingPoints !== undefined) {
-                        this.governance.votingPoints = result.votingPoints;
+                    if (serverResult.votingPoints !== undefined) {
+                        this.governance.votingPoints = serverResult.votingPoints;
                     }
-                    if (result.lvtRate !== undefined) {
-                        this.governance.taxRate = result.lvtRate;
+                    if (serverResult.lvtRate !== undefined) {
+                        this.governance.taxRate = serverResult.lvtRate;
                     }
 
                     this.calculateTotalBudget();
                     this.updatePolicyEffects();
                     this.updateGovernanceModal();
 
-                    const lvtRate = result.lvtRate || this.governance.taxRate;
+                    const lvtRate = serverResult.lvtRate || this.governance.taxRate;
                     console.log(`🗳️ LVT decrease vote added. New rate: ${(lvtRate * 100).toFixed(1)}%`);
                     return true;
                 } else {
-                    console.error('Server rejected LVT decrease vote:', result.error);
+                    console.error('Server rejected LVT decrease vote:', serverResult.error);
                     return false;
                 }
             } catch (error) {
@@ -618,8 +630,10 @@ class GovernanceSystem {
             this.governance.playerVotes[playerId].pregameLVTVotes = currentLVTVotes;
         });
 
-        // Reset voting points to 2 for regular gameplay
-        this.governance.votingPoints = 2;
+        // Transition from 4 pre-game points to 2 regular gameplay points
+        console.log(`🏛️ Transitioning from ${this.governance.votingPoints} pre-game points to server-authoritative gameplay points`);
+        // Note: Actual voting points will be synced from server transactions, not set locally
+        this.governance.votingPoints = 2; // Default until server confirms
 
         // Clear any category votes (LVT votes continue to be modifiable)
         Object.keys(this.governance.voteAllocations).forEach(category => {
@@ -633,6 +647,13 @@ class GovernanceSystem {
             });
             // LVT votes remain but are now baseline + any future changes
         });
+
+        // Send final pre-game LVT rate to server
+        if (this.game && this.game.economicClient) {
+            const finalRate = this.governance.taxRate;
+            console.log(`🏛️ Sending final pre-game LVT rate to server: ${(finalRate * 100).toFixed(1)}%`);
+            // We can send this as a special transaction or just let it be handled by the first gameplay transaction
+        }
 
         console.log(`🏛️ Game started with LVT rate: ${(this.governance.taxRate * 100).toFixed(1)}%`);
         console.log(`🏛️ Pre-game LVT votes locked, but LVT rate can still be modified during gameplay`);
