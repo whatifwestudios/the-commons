@@ -336,7 +336,12 @@ class ActionMarketplace {
         const bidIncrement = Math.max(100, Math.round(listing.reservePrice * 0.1));
         const newBid = Math.max(listing.reservePrice, listing.currentBid + bidIncrement);
 
-        if (this.game.playerCash < newBid) {
+        // Use server-authoritative balance for bid affordability
+        const currentBalance = (this.game.economicClient && typeof this.game.economicClient.serverBalance === 'number')
+            ? this.game.economicClient.serverBalance
+            : this.game.playerCash;
+
+        if (currentBalance < newBid) {
             this.game.showNotification(`Insufficient funds! Need ${newBid.toLocaleString()}`, 'error');
             return;
         }
@@ -365,7 +370,12 @@ class ActionMarketplace {
             return;
         }
         
-        if (this.game.playerCash < listing.buyNowPrice) {
+        // Use server-authoritative balance for buy now affordability
+        const currentBalance = (this.game.economicClient && typeof this.game.economicClient.serverBalance === 'number')
+            ? this.game.economicClient.serverBalance
+            : this.game.playerCash;
+
+        if (currentBalance < listing.buyNowPrice) {
             this.game.showNotification(`Insufficient funds! Need $${listing.buyNowPrice.toLocaleString()}`, 'error');
             return;
         }
@@ -442,8 +452,12 @@ class ActionMarketplace {
         // Calculate fee
         const fee = this.calculateEndItNowFee(listing);
         
-        // Check if player can afford the fee
-        if (this.game.playerCash < fee) {
+        // Check if player can afford the fee - use server-authoritative balance
+        const currentBalance = (this.game.economicClient && typeof this.game.economicClient.serverBalance === 'number')
+            ? this.game.economicClient.serverBalance
+            : this.game.playerCash;
+
+        if (currentBalance < fee) {
             this.game.showNotification(`Insufficient funds for End It Now fee: $${fee.toLocaleString()}`, 'error');
             return;
         }
@@ -562,11 +576,9 @@ class ActionMarketplace {
 
                     // If player won, give them the actions and charge them
                     if (listing.highBidder === currentPlayerId) {
-                        if (this.game.cashManager) {
-                            await this.game.cashManager.spend(listing.currentBid, 'Action auction purchase', { quantity: listing.quantity });
-                        } else {
-                            // Legacy fallback only if CashManager unavailable
-                            this.game.playerCash -= listing.currentBid;
+                        // ✅ CLEANED: Server-authoritative auction payment
+                        if (this.game.economicClient) {
+                            await this.game.economicClient.spendCash(this.game.currentPlayerId, listing.currentBid, 'Action auction purchase');
                         }
                         this.game.actionManager.currentActions += listing.quantity;
                         this.game.showNotification(`Won auction: ${listing.quantity} actions for $${listing.currentBid.toLocaleString()}`, 'success');
@@ -574,12 +586,8 @@ class ActionMarketplace {
 
                     // If player was the seller, give them 100% of winning price
                     if (listing.seller === currentPlayerId) {
-                        if (this.game.cashManager) {
-                            await this.game.cashManager.earn(listing.currentBid, 'Action auction sale', { quantity: listing.quantity });
-                        } else {
-                            // Legacy fallback only if CashManager unavailable
-                            this.game.playerCash += listing.currentBid;
-                        }
+                        // ✅ CLEANED: Server-authoritative auction payment
+                        // Note: Seller payment handled by server during auction resolution
                         this.game.showNotification(`Auction sold: ${listing.quantity} actions for $${listing.currentBid.toLocaleString()}`, 'success');
                     }
                 } else {

@@ -215,8 +215,11 @@ class IsometricGrid {
         this.gameStartTime = Date.now();
 
         // V2: Simple client-side balance tracking (server-authoritative)
-        this._playerCash = 6000;
-        this._playerWealth = 6000;
+        // ❌ REMOVED: Initial cash value set by server
+        this._playerCash = 0; // Will be set by server sync
+        this._playerWealth = 0; // Will be calculated from server data
+
+        console.log('💰 DEBUG: Client initialized with $0, waiting for server sync...');
 
         // Legacy cityTreasury removed - now using governanceSystem.totalBudget
         console.log('💰 Client cash tracking initialized (server-authoritative)');
@@ -231,76 +234,32 @@ class IsometricGrid {
             }
         });
 
-        // V2: Simple compatibility methods
-        this.cashManager = {
-            getBalance: () => this._playerCash,
-            updateBalance: (newBalance) => { this._playerCash = newBalance; },
-            forceReset6k: () => { this._playerCash = 6000; },
-            notifyBalanceChange: () => { /* No-op for v2 */ },
-            applyDailyCashflow: async (cashflowData) => {
-                this._playerCash += cashflowData.netCashflow;
-                console.log(`💰 V2: Applied daily cashflow: ${cashflowData.netCashflow}, new balance: ${this._playerCash}`);
-            },
-            spend: (amount, description = 'Purchase') => {
-                // V2: Use economicClient for server-side transaction
-                const gameInstance = this;
-                if (gameInstance.economicClient && gameInstance.currentPlayerId) {
-                    return gameInstance.economicClient.spendCash(gameInstance.currentPlayerId, amount, description)
-                        .then(result => {
-                            console.log('🔍 DEBUG: Transaction result:', result);
-                            if (result.success && result.result && result.result.success) {
-                                console.log('🔍 DEBUG: newBalance from server:', result.result.newBalance);
-                                gameInstance._playerCash = result.result.newBalance;
-                                if (result.result.wealth !== undefined) {
-                                    gameInstance._playerWealth = result.result.wealth;
-                                    console.log('🔍 DEBUG: Updated wealth:', gameInstance._playerWealth);
-                                }
-                                console.log('🔍 DEBUG: gameInstance._playerCash after update:', gameInstance._playerCash);
-                                // Update cash display
-                                if (gameInstance.updateCashDisplay) {
-                                    gameInstance.updateCashDisplay();
-                                } else if (gameInstance.domCache && gameInstance.domCache.playerCash) {
-                                    if (gameInstance._playerCash !== undefined && gameInstance._playerCash !== null) {
-                                        gameInstance.domCache.playerCash.textContent = `$${gameInstance._playerCash.toLocaleString()}`;
-                                    } else {
-                                        console.error('🔍 ERROR: _playerCash is undefined/null:', gameInstance._playerCash);
-                                        gameInstance.domCache.playerCash.textContent = '$0';
-                                    }
-                                }
-                                return true;
-                            } else {
-                                const errorMsg = result.error || (result.result && result.result.error) || 'Unknown transaction error';
-                                console.warn('Server transaction failed:', errorMsg);
-                                return false;
-                            }
-                        })
-                        .catch(error => {
-                            console.error('Cash spend transaction failed:', error);
-                            return false;
-                        });
-                } else {
-                    // Fallback: client-side only (for compatibility)
-                    if (gameInstance._playerCash >= amount) {
-                        gameInstance._playerCash -= amount;
-                        // Update cash display
-                        if (gameInstance.updateCashDisplay) {
-                            gameInstance.updateCashDisplay();
-                        } else if (gameInstance.domCache && gameInstance.domCache.playerCash) {
-                            gameInstance.domCache.playerCash.textContent = `$${gameInstance._playerCash.toLocaleString()}`;
-                        }
-                        return Promise.resolve(true);
-                    }
-                    return Promise.resolve(false);
-                }
+        // ✅ CLEANED: CashManager removed - using V2 server-authoritative Economic Client directly
+
+        // ❌ REMOVED: Legacy hardcoded date - server manages game time
+        // Date is now synced from server gameTime broadcasts
+
+        // Game date calculation from server time
+        this.getGameDate = () => {
+            if (this.economicClient && this.economicClient.gameTime !== undefined) {
+                // Server starts at gameTime = 1.0 = Sept 2 (Henry George's birthday)
+                const gameDay = Math.floor(this.economicClient.gameTime);
+                const monthOrder = ['SEPT', 'OCT', 'NOV', 'DEC', 'JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG'];
+                const month = monthOrder[Math.floor(gameDay / 30) % 12];
+                const day = (gameDay % 30) + 1;
+                return { month, day };
             }
+            return { month: 'SEPT', day: 2 }; // Fallback to correct starting date
         };
 
-        this.gameDate = { month: 'SEPT', day: 2 }; // September 2nd start date
+        // Compatibility property for legacy systems that expect this.gameDate
+        Object.defineProperty(this, 'gameDate', {
+            get: () => this.getGameDate()
+        });
         
         // Start game time updates (1 year = 1 hour = 3600 seconds)
         // 1 day in game = 3600/365 = ~9.86 seconds real time
-        this.dayLength = 3600000 / 365; // milliseconds per game day
-        this.dayDuration = this.dayLength; // Alias for construction calculations
+        // V2: Removed client-side day timing - using server-authoritative time
         this.currentDay = 0;
 
         // Building manager handles all building data
@@ -416,7 +375,7 @@ class IsometricGrid {
         this.liftAmount = 3; // Base elevation for hovered buildings
         
         this.constructionAnimations = new Set(); // Set of buildings currently animating construction
-        this.lastDayStartTime = performance.now(); // Track when current day started
+        // V2: Removed client-side day tracking - using server-authoritative time
         this.pixelRowTimestamps = new Map(); // Track when each pixel row was revealed: "row,col" -> [timestamps]
         
         
@@ -496,9 +455,12 @@ class IsometricGrid {
             }
         }
         
-        this.updateVitalityDisplay();
-        this.updateDemographicsDisplay();
-        this.calculateCurrentCashflow(); // Initialize cashflow data
+        // V2: UI updates handled by ui-manager
+        if (this.uiManager && this.economicClient) {
+            this.uiManager.updateEconomicDisplays(this.economicClient);
+        }
+        // V2: Cashflow handled by economic client - initialize through updateCashflowAsync()
+        this.updateCashflowAsync();
 
         // Initialize V2 Economic System
         this.initializeEconomicClientV2();
@@ -514,14 +476,9 @@ class IsometricGrid {
             if (this.actionMarketplace && this.actionMarketplace.updateAuctionCountdowns) {
                 this.actionMarketplace.updateAuctionCountdowns();
             }
-            // Update building construction progress
-            if (this.buildingSystem) {
-                // Game time: 1 day = 9.86 seconds real time = 9860ms
-                // This runs every 1000ms (1 second) = 1/9.86 game days
-                const gameTimeDeltaDays = 1 / 9.86;
-                this.buildingSystem.ageBuildings(gameTimeDeltaDays);
-                this.buildingSystem.updateConstructionProgress();
-            }
+            // Building construction progress - SERVER AUTHORITATIVE (disabled client-side time progression)
+            // Construction updates now come from server via BUILD_COMPLETE_AUTO messages
+            // Client just renders current state, doesn't advance time
         }, 1000);
         
         // Periodic sync removed - not needed for solo game
@@ -587,7 +544,7 @@ class IsometricGrid {
         this.currentMonth = 'SEPT';
         this.gameSpeed = 1;
         this.isPaused = false;
-        this.lastDayStartTime = performance.now();
+        // V2: Removed client-side day tracking - using server-authoritative time
         
         // Clear rendering caches
         this.dirtyRegions.clear();
@@ -648,8 +605,8 @@ class IsometricGrid {
         
         // Load existing player settings if available
         await this.loadPlayerSettings();
-        
-        // Update player button with current settings
+
+        // Update player button with current settings (including beer hall lobby data)
         this.updatePlayerButton();
 
         // Initialize panel states - ensure players panel is collapsed by default
@@ -695,6 +652,12 @@ class IsometricGrid {
         // Set currentPlayerId for cash manager and transactions
         this.currentPlayerId = playerConfig.id;
         console.log('🆔 Set currentPlayerId to:', this.currentPlayerId);
+
+        // Sync player ID to Economic Client immediately
+        if (this.economicClient) {
+            this.economicClient.playerId = this.currentPlayerId;
+            console.log('🔗 Economic Client player ID synced:', this.currentPlayerId);
+        }
 
         // Convert to legacy playerSettings format for compatibility
         this.playerSettings = {
@@ -782,20 +745,18 @@ class IsometricGrid {
         // Schedule initial render with new player color
         this.scheduleRender();
 
-        // Force correct cash display after initialization
-        setTimeout(() => {
-            if (this.cashManager) {
-                this.cashManager.forceReset6k();
-            }
-        }, 100);
+        // ❌ REMOVED: Force reset conflicts with server-authoritative balance
+        // Server sets initial balance, client should not override
 
         // Set up testing helpers for development
         if (!window.resetCash) {
             window.resetCash = () => {
-                if (this.cashManager) {
-                    this.cashManager.forceReset6k();
+                // ✅ CLEANED: Using server-authoritative reset via Economic Client
+                if (this.economicClient) {
+                    console.log('🔄 Resetting to server-authoritative balance...');
+                    this.economicClient.syncBalanceWithServer();
                 } else {
-                    console.error('CashManager not available');
+                    console.error('Economic Client not available');
                 }
             };
         }
@@ -856,8 +817,15 @@ class IsometricGrid {
     updatePlayerButton() {
         const playerBtn = document.getElementById('player-btn');
         if (playerBtn) {
-            const playerName = this.playerSettings?.name || 'PLAYER';
-            playerBtn.innerHTML = `${playerName.toUpperCase()}<span class="indicator">⌄</span>`;
+            // Get player name and color from beer hall lobby first, then fallback to player settings
+            const playerName = window.beerHallLobby?.playerName || this.playerSettings?.name || 'PLAYER';
+            const playerColor = window.beerHallLobby?.selectedColor || this.playerSettings?.color || '#4CAF50';
+
+            // Update button with colored name
+            playerBtn.innerHTML = `
+                <span style="color: ${playerColor}; font-weight: bold;">${playerName.toUpperCase()}</span>
+                <span class="indicator">⌄</span>
+            `;
         }
     }
 
@@ -1052,19 +1020,18 @@ class IsometricGrid {
     startGameTime() {
         // Solo game - client controls time advancement
         
-        setInterval(async () => {
-            this.currentDay++;
-            this.lastDayStartTime = performance.now(); // Track when this day started
-            await this.updateGameDate();
-            await this.processDailyCashflow();
-            this.updatePlayerStats();
+        // DISABLED: Client-side day progression (SERVER AUTHORITATIVE TIME)
+        // Server manages game time via economicClient updates
+        // Client receives time updates and only renders current state
 
-            // Run commute simulation every 7 game days
-            // Weekly transport capacity simulation removed - was unused
-
-            // Re-render to update building construction stages
-            this.scheduleRender();
-        }, this.dayLength);
+        // setInterval(async () => {
+        //     this.currentDay++;
+        //     this.lastDayStartTime = performance.now();
+        //     await this.updateGameDate();
+        //     await this.processDailyCashflow(); // Server handles this
+        //     this.updatePlayerStats();
+        //     this.scheduleRender();
+        // }, this.dayLength);
     }
 
     // Action Manager Methods
@@ -1169,30 +1136,49 @@ class IsometricGrid {
         const progressBar = document.getElementById('month-progress-bar');
         const progressText = document.getElementById('month-progress-text');
         const progressContainer = document.getElementById('month-progress-container');
-        
+
         if (!progressBar || !progressText || !progressContainer) return;
-        
+
+        // Start optimistic countdown if not already running
+        this.startOptimisticCountdown();
+
         // Month lengths in days
         const monthLengths = {
             'SEPT': 30, 'OCT': 31, 'NOV': 30, 'DEC': 31,
             'JAN': 31, 'FEB': 28, 'MAR': 31, 'APR': 30,
             'MAY': 31, 'JUN': 30, 'JUL': 31, 'AUG': 31
         };
-        
+
         const daysInMonth = monthLengths[this.gameDate.month];
         const daysRemaining = daysInMonth - this.gameDate.day;
-        
+
         // Calculate real-time seconds remaining
         // Total year = 1 hour = 3600 seconds
         // Total days in year = 365
         // Seconds per day = 3600 / 365 = 9.863 seconds
         const secondsPerDay = 3600 / 365;
-        
-        // Time remaining in current day (in milliseconds)
-        const msIntoDay = performance.now() - this.lastDayStartTime;
-        const msRemainingInDay = this.dayLength - msIntoDay;
-        const secondsRemainingInDay = msRemainingInDay / 1000;
-        
+
+        // V2: Use server-authoritative time instead of client performance.now()
+        let secondsRemainingInDay = 0;
+        if (this.economicClient && this.economicClient.gameTime !== undefined) {
+            // Server-authoritative time calculation
+            const currentDay = Math.floor(this.economicClient.gameTime);
+            const dayProgress = this.economicClient.gameTime - currentDay; // 0.0 to 0.999...
+            secondsRemainingInDay = (1 - dayProgress) * secondsPerDay;
+        } else {
+            // Fallback to approximate remaining time if server time not available
+            secondsRemainingInDay = secondsPerDay / 2; // Assume mid-day
+        }
+
+        // Store server-authoritative data for optimistic countdown
+        this.countdownData = {
+            daysInMonth,
+            daysRemaining,
+            secondsPerDay,
+            serverTime: this.economicClient?.gameTime || 0,
+            clientSyncTime: Date.now() / 1000 // Client timestamp when we got server data
+        };
+
         // Total seconds remaining in month
         const totalSecondsRemaining = (daysRemaining * secondsPerDay) + secondsRemainingInDay;
         const totalSecondsInMonth = daysInMonth * secondsPerDay;
@@ -1248,7 +1234,107 @@ class IsometricGrid {
             `⏳ ${gameMonthsRemaining} ${monthsRemainingText} until Sept 1<br><br>` +
             `💼 Actions refresh when month ends`);
     }
-    
+
+    /**
+     * Start optimistic countdown timer that updates every second
+     */
+    startOptimisticCountdown() {
+        // Don't start multiple timers
+        if (this.optimisticCountdownInterval) return;
+
+        this.optimisticCountdownInterval = setInterval(() => {
+            this.updateOptimisticCountdown();
+        }, 1000); // Update every second
+
+        console.log('🕐 Started optimistic countdown timer');
+    }
+
+    /**
+     * Stop optimistic countdown timer
+     */
+    stopOptimisticCountdown() {
+        if (this.optimisticCountdownInterval) {
+            clearInterval(this.optimisticCountdownInterval);
+            this.optimisticCountdownInterval = null;
+            console.log('🕐 Stopped optimistic countdown timer');
+        }
+    }
+
+    /**
+     * Update countdown optimistically between server updates
+     */
+    updateOptimisticCountdown() {
+        if (!this.countdownData) return;
+
+        const progressBar = document.getElementById('month-progress-bar');
+        const progressText = document.getElementById('month-progress-text');
+        const progressContainer = document.getElementById('month-progress-container');
+
+        if (!progressBar || !progressText || !progressContainer) return;
+
+        const { daysInMonth, daysRemaining, secondsPerDay, serverTime, clientSyncTime } = this.countdownData;
+
+        // Calculate elapsed time since server sync
+        const currentClientTime = Date.now() / 1000;
+        const clientElapsedSeconds = currentClientTime - clientSyncTime;
+
+        // Calculate optimistic server time
+        const optimisticServerTime = serverTime + clientElapsedSeconds;
+
+        // Calculate optimistic day progress and remaining time
+        const currentDay = Math.floor(optimisticServerTime);
+        const dayProgress = optimisticServerTime - currentDay;
+        const secondsRemainingInDay = (1 - dayProgress) * secondsPerDay;
+
+        // Total seconds remaining in month
+        const totalSecondsRemaining = Math.max(0, (daysRemaining * secondsPerDay) + secondsRemainingInDay);
+        const totalSecondsInMonth = daysInMonth * secondsPerDay;
+
+        // Calculate progress percentage (100% to 0%)
+        const progressPercent = Math.max(0, Math.min(100, (totalSecondsRemaining / totalSecondsInMonth) * 100));
+
+        // Show urgent timer only in final 30 seconds
+        const isUrgent = totalSecondsRemaining <= 30;
+
+        // Format time as MM:SS
+        const minutes = Math.floor(totalSecondsRemaining / 60);
+        const seconds = Math.floor(totalSecondsRemaining % 60);
+        const timeText = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+
+        // Update progress bar
+        progressBar.style.width = `${progressPercent}%`;
+
+        if (isUrgent) {
+            // Final 30 seconds - add urgent styling and show timer
+            progressContainer.classList.add('urgent');
+            progressText.textContent = timeText;
+            progressText.style.display = 'block';
+        } else {
+            // Normal state - remove urgent styling and show days
+            progressContainer.classList.remove('urgent');
+
+            const remainingDays = Math.ceil(totalSecondsRemaining / secondsPerDay);
+
+            if (remainingDays === 1) {
+                progressText.textContent = 'Final Day';
+            } else {
+                progressText.textContent = `${remainingDays} days left`;
+            }
+            progressText.style.display = 'block';
+        }
+
+        // Update tooltip with current time (keep other info from server update)
+        const existingTooltip = progressContainer.getAttribute('data-tooltip') || '';
+        if (existingTooltip) {
+            // Replace the time portion in the tooltip
+            const updatedTooltip = existingTooltip.replace(
+                /⏱️ \d+:\d+ remaining in month/,
+                `⏱️ ${timeText} remaining in month`
+            );
+            progressContainer.setAttribute('data-tooltip', updatedTooltip);
+        }
+    }
+
     async updateGameDate() {
         const monthLengths = {
             'SEPT': 30, 'OCT': 31, 'NOV': 30, 'DEC': 31,
@@ -1258,35 +1344,12 @@ class IsometricGrid {
         
         const monthOrder = ['SEPT', 'OCT', 'NOV', 'DEC', 'JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG'];
         
-        const daysInCurrentMonth = monthLengths[this.gameDate.month];
+        // ❌ DISABLED: Server-authoritative time management
+        // Date progression is now handled by server broadcasts
+        // Monthly processing is handled by server economic engine
         
-        if (this.gameDate.day >= daysInCurrentMonth) {
-            // Move to next month
-            this.gameDate.day = 1;
-            const currentMonthIndex = monthOrder.indexOf(this.gameDate.month);
-            const nextMonthIndex = (currentMonthIndex + 1) % monthOrder.length;
-            this.gameDate.month = monthOrder[nextMonthIndex];
-            
-            // NEW: Refresh actions at month start
-            this.refreshMonthlyActions();
-
-            // Distribute treasury funds to budget allocations
-            this.governanceSystem.distributeMonthlyBudget();
-
-            // Process expired auctions at month end
-            try {
-                await this.actionMarketplace.processExpiredAuctions();
-            } catch (error) {
-                console.warn('Failed to process expired auctions:', error);
-            }
-
-            // Award voting points and trigger governance button animation
-            this.governanceSystem.processMonthlyGovernance();
-        } else {
-            this.gameDate.day++;
-        }
-        
-        this.domCache.gameDate.textContent = `${this.gameDate.month} ${this.gameDate.day}`;
+        const currentDate = this.getGameDate();
+        this.domCache.gameDate.textContent = `${currentDate.month} ${currentDate.day}`;
     }
 
     async processDailyCashflow() {
@@ -1513,47 +1576,7 @@ class IsometricGrid {
         return this.buildingSystem.calculateBuildingCostWithFunding(building, fullCost);
     }
 
-    calculateCurrentCashflow() {
-        console.log('🔍 calculateCurrentCashflow called:', {
-            cache: this.cache?.cashflowBreakdown,
-            dailyCashflowTotals: this.dailyCashflowTotals
-        });
-
-        // Trigger async server-side calculation in background
-        this.updateCashflowAsync();
-
-        // DISABLED: Legacy economic engine cashflow breakdown - using server-authoritative system
-
-        // Return cached values immediately for UI responsiveness
-        if (this.cache?.cashflowBreakdown) {
-            const cashflow = this.cache.cashflowBreakdown;
-            this.cashflowBreakdown = cashflow.breakdown;
-            this.currentCashflowPreview = {
-                revenue: cashflow.totalRevenue,
-                maintenance: cashflow.totalMaintenance,
-                lvt: cashflow.totalLVT,
-                netCashflow: cashflow.netCashflow
-            };
-            this.dailyCashflowTotals = this.currentCashflowPreview;
-            return cashflow.netCashflow;
-        }
-
-        // DISABLED: Legacy economic engine cache fallback - using server-authoritative system
-        // Fallback to default values
-        if (false) {
-            // Disabled legacy code path
-            this.currentCashflowPreview = {
-                revenue: engineCashflow.totalRevenue,
-                maintenance: engineCashflow.totalMaintenance,
-                lvt: engineCashflow.totalLVT,
-                netCashflow: engineCashflow.netCashflow
-            };
-            this.dailyCashflowTotals = this.currentCashflowPreview;
-            return engineCashflow.netCashflow;
-        }
-
-        return 0; // Default fallback
-    }
+    // REMOVED: calculateCurrentCashflow() - V2 architecture uses updateCashflowAsync() directly
 
     async updateCashflowAsync() {
         // Skip cashflow calculation if no player ID is available
@@ -1644,8 +1667,8 @@ class IsometricGrid {
             }
         } catch (error) {
             console.error('Error calculating player cashflow:', error);
-            // Fallback to current player calculation
-            this.calculateCurrentCashflow();
+            // V2: Fallback to economic client async calculation
+            this.updateCashflowAsync();
         }
     }
 
@@ -1668,7 +1691,7 @@ class IsometricGrid {
         for (let row = 0; row < this.gridSize; row++) {
             for (let col = 0; col < this.gridSize; col++) {
                 const parcel = this.grid[row][col];
-                if (parcel && parcel.building && parcel.owner && parcel.owner !== 'unclaimed') {
+                if (parcel && parcel.building && parcel.owner && parcel.owner !== 'City' && parcel.owner !== 'unclaimed') {
                     count++;
                 }
             }
@@ -2021,23 +2044,22 @@ class IsometricGrid {
             // Keep population as 0 (fallback)
         }
 
-        const totalWealth = this._playerWealth || 0;
-
-        // Cash is now guaranteed valid by CashManager
-        // Force immediate cash sync to fix display timing issues
+        // Server-authoritative cash display: Check Economic Client first, fallback to cashManager
         let currentCash = 0;
-        if (this.cashManager) {
-            currentCash = this.cashManager.getBalance();
-            // Ensure UI gets the correct value immediately
-            if (currentCash === 6000 && this.domCache.playerCash && this.domCache.playerCash.textContent !== '$6,000') {
-                console.log('💰 Forcing immediate cash display sync from', this.domCache.playerCash.textContent, 'to $6,000');
-            }
+
+        // First priority: Server balance from Economic Client (server-authoritative)
+        if (this.economicClient) {
+            currentCash = this.economicClient.getCurrentPlayerBalance() || 0;
+            console.log('💰 Using server-authoritative balance from Economic Client:', currentCash);
         }
+
+        const totalWealth = this._playerWealth || currentCash || 6000; // Start with same as cash
+        // ✅ CLEANED: No more cashManager fallback - V2 server-authoritative only
 
         console.log('💰 updatePlayerStats cash check:', {
             currentCash,
-            hasCashManager: !!this.cashManager,
-            cashManagerBalance: this.cashManager ? this.cashManager.getBalance() : 'N/A',
+            hasEconomicClient: !!this.economicClient,
+            economicClientBalance: this.economicClient ? this.economicClient.getCurrentPlayerBalance() : 'N/A',
             domCashDisplay: this.domCache.playerCash ? this.domCache.playerCash.textContent : 'N/A'
         });
         const safeWealth = isNaN(totalWealth) || totalWealth === null || totalWealth === undefined ? 0 : totalWealth;
@@ -2170,7 +2192,7 @@ class IsometricGrid {
     showBuildingDataInsights(row, col) {
         const parcel = this.grid[row][col];
         // Allow viewing data insights for ANY building (full transparency)
-        if (!parcel || !parcel.building || !parcel.owner || parcel.owner === 'unclaimed') {
+        if (!parcel || !parcel.building || !parcel.owner || parcel.owner === 'City' || parcel.owner === 'unclaimed') {
             return;
         }
         
@@ -2273,7 +2295,7 @@ class IsometricGrid {
         }
         
         // Always hide tooltip immediately when mouse moves
-        if (this.crispTooltip) this.crispTooltip.hide();
+        // REMOVED: Legacy crispTooltip - TooltipSystemV2 handles all tooltips
         
         // Update selected tile display
         if (tile && tile.row >= 0 && tile.row < this.gridSize &&
@@ -2349,7 +2371,7 @@ class IsometricGrid {
     
     showContextMenu(row, col, mouseX, mouseY) {
         this.contextMenuSystem.show(row, col, mouseX, mouseY);
-        if (this.crispTooltip) this.crispTooltip.hide();
+        // REMOVED: Legacy crispTooltip - TooltipSystemV2 handles all tooltips
     }
     
     hideContextMenu() {
@@ -2651,7 +2673,7 @@ class IsometricGrid {
             for (let col = 0; col < this.gridSize; col++) {
                 const parcel = this.grid[row][col];
                 // Collect LVT from ALL owned parcels in the city
-                if (parcel && parcel.owner && parcel.owner !== 'unclaimed') {
+                if (parcel && parcel.owner && parcel.owner !== 'City' && parcel.owner !== 'unclaimed') {
                     const landValue = Math.max(parcel.landValue?.paidPrice || 0, parcel.landValue?.calculatedValue || 0);
                     totalLVT += landValue * currentLVTRate / 12; // Monthly portion
                 }
@@ -2725,9 +2747,14 @@ class IsometricGrid {
             baseBuildingCost;
 
         const playerCostRequired = discountedCost;
-        
-        if (this.playerCash < playerCostRequired) {
-            reasons.push(`Insufficient funds: need $${playerCostRequired.toLocaleString()} (have $${Math.floor(this.playerCash).toLocaleString()})`);
+
+        // Use server-authoritative balance for affordability check
+        const currentBalance = (this.economicClient && typeof this.economicClient.serverBalance === 'number')
+            ? this.economicClient.serverBalance
+            : this.playerCash;
+
+        if (currentBalance < playerCostRequired) {
+            reasons.push(`Insufficient funds: need $${playerCostRequired.toLocaleString()} (have $${Math.floor(currentBalance).toLocaleString()})`);
         }
         
         // Check prerequisites (if any) - use cache for performance
@@ -3691,41 +3718,7 @@ class IsometricGrid {
     }
 
     // Server-only vitality calculation system (as per architecture requirements)
-    async calculateCityVitality() {
-        try {
-            // V2: Get authoritative server state through economic client
-            const result = await this.economicClient.getEconomicState();
-
-            if (result && result.success && result.jeefhh) {
-                // Update JEEFHH data (vitality) from server
-                this.cityStats.vitality = result.jeefhh;
-                this.vitalitySupply = result.jeefhh.supply || {};
-                this.vitalityDemand = result.jeefhh.demand || {};
-
-                // Update CARENS data from server
-                if (result.carens) {
-                    this.cityStats.carens = result.carens;
-                    console.log('🔍 [DEBUG] Updated CARENS scores from server:', result.carens);
-                }
-
-                console.log('✅ V2 Economic state updated from server');
-
-                // Update UI displays
-                this.updateVitalityDisplay();
-                this.updateDemographicsDisplay();
-                await this.updateVitalityUI();
-
-                return result.jeefhh;
-            } else {
-                console.warn('Server vitality calculation failed or returned invalid data');
-                return null;
-            }
-        } catch (error) {
-            console.error('Server vitality calculation error:', error);
-            // No fallback to local calculation - maintain server authority
-            return null;
-        }
-    }
+    // REMOVED: calculateCityVitality() - V2 architecture uses ui-manager.updateEconomicDisplays() instead
 
     // Check if server data differs significantly from current data
     hasSignificantVitalityChange(newVitality) {
@@ -3751,7 +3744,7 @@ class IsometricGrid {
 
     // Update building revenues based on supply/demand satisfaction
     applySupplyDemandEffects() {
-        this.calculateCityVitality(); // Ensure we have current supply/demand data (now uses server API)
+        // V2: Economic client already has current data, just update UI
         
         // Calculate supply/demand ratios for JEFH
         const energyRatio = this.vitalitySupply.ENERGY / Math.max(1, this.vitalityDemand.ENERGY);
@@ -4046,464 +4039,23 @@ class IsometricGrid {
     
     
     
-    async updateVitalityDisplay() {
-        // This method is now deprecated - all vitality updates go through calculateCityVitality()
-        // Just update the UI with current data
-        await this.updateVitalityUI();
+    updateVitalityDisplay() {
+        // V2: Simple method - just update UI with economic client data
+        this.updateVitalityUI();
     }
 
-    async updateVitalityUI() {
-        // V2: Get server state through economic client
-        try {
-            // Get current server economic state
-            const serverState = await this.economicClient.getEconomicState();
-
-            if (serverState && serverState.success && serverState.jeefhh) {
-                // Update vitality properties with server data
-                this.vitalitySupply = {
-                    JOBS: serverState.jeefhh.jobs?.supply || 0,
-                    ENERGY: serverState.jeefhh.energy?.supply || 0,
-                    EDUCATION: serverState.jeefhh.education?.supply || 0,
-                    FOOD: serverState.jeefhh.food?.supply || 0,
-                    HOUSING: serverState.jeefhh.housing?.supply || 0,
-                    HEALTHCARE: serverState.jeefhh.healthcare?.supply || 0
-                };
-
-                this.vitalityDemand = {
-                    JOBS: serverState.jeefhh.jobs?.demand || 0,
-                    ENERGY: serverState.jeefhh.energy?.demand || 0,
-                    EDUCATION: serverState.jeefhh.education?.demand || 0,
-                    FOOD: serverState.jeefhh.food?.demand || 0,
-                    HOUSING: serverState.jeefhh.housing?.demand || 0,
-                    HEALTHCARE: serverState.jeefhh.healthcare?.demand || 0
-                };
-
-                console.log('📊 Updated vitality from server:', { supply: this.vitalitySupply, demand: this.vitalityDemand });
-            }
-        } catch (error) {
-            console.warn('Failed to fetch server vitality data, using cached values:', error);
-            // Fallback to existing values or defaults
-            if (!this.vitalitySupply || !this.vitalityDemand) {
-                this.initializeEconomicDefaults();
-            }
-        }
-
-        // JEEFHH bars (Jobs, Energy, Education, Food, Housing, Healthcare)
-        const jeefhhMetrics = ['JOBS', 'ENERGY', 'EDUCATION', 'FOOD', 'HOUSING', 'HEALTHCARE'];
-
-        jeefhhMetrics.forEach(domain => {
-            const progressBar = document.getElementById(`${domain.toLowerCase()}-bar`);
-            if (!progressBar) return;
-
-            const supply = this.vitalitySupply[domain] || 0;
-            const demand = this.vitalityDemand[domain] || 0;
-            const netBalance = supply - demand;
-
-            // Calculate ratio: -100 to +100 scale
-            let ratio = 0;
-            if (demand > 0) {
-                ratio = ((supply - demand) / demand) * 100;
-            } else if (supply > 0) {
-                ratio = 100; // Infinite supply, no demand
-            }
-
-            // Clamp to -100 to +100 range
-            ratio = Math.max(-100, Math.min(100, ratio));
-
-            // Update the JEEFHH balance-based bar
-            this.updateBalanceBasedBar(progressBar, ratio, supply, demand, domain);
-        });
-
-        // CARENS livability bars (Culture, Affordability, Resilience, Environment, Noise, Safety)
-        const carensMetrics = ['SAFETY', 'CULTURE', 'AFFORDABILITY', 'RESILIENCE', 'ENVIRONMENT', 'NOISE'];
-
-        // Use server-calculated CARENS scores (no fallback)
-        const carensScores = this.cityStats.carens || {
-            safety: 0, culture: 0, affordability: 0, resilience: 0, environment: 0, noise: 0
-        };
-
-        carensMetrics.forEach(domain => {
-            const progressBar = document.getElementById(`${domain.toLowerCase()}-bar`);
-            if (!progressBar) return;
-
-            const netScore = carensScores[domain.toLowerCase()] || 0;
-            this.updateNetScoreBar(progressBar, netScore, domain);
-        });
-    }
-
-
-    updateSupplyDemandBar(progressBar, ratio, supply, demand, domain) {
-        // Clear ALL existing positioning and styling
-        progressBar.style.cssText = '';
-        
-        // Convert ratio (-100 to +100) to bar display
-        const absRatio = Math.abs(ratio);
-        const barPercent = Math.min(absRatio, 100); // 0-100% of half container width
-        
-        if (Math.abs(ratio) < 0.5) {
-            // Nearly balanced - show minimal indicator at center
-            progressBar.style.cssText = `
-                position: absolute !important;
-                left: 50% !important;
-                top: 0 !important;
-                width: 2px !important;
-                height: 100% !important;
-                transform: translateX(-1px) !important;
-                background: #666 !important;
-                border-radius: 4px !important;
-            `;
-        } else if (ratio < 0) {
-            // Shortage: Red bar extending LEFT from center
-            const width = (barPercent / 100) * 50; // Convert to percentage of half container
-            progressBar.style.cssText = `
-                position: absolute !important;
-                right: 50% !important;
-                top: 0 !important;
-                width: ${width}% !important;
-                height: 100% !important;
-                background: linear-gradient(to left, #ff6b6b 0%, #c92a2a 100%) !important;
-                border-radius: 4px !important;
-            `;
-        } else {
-            // Surplus: Green bar extending RIGHT from center  
-            const width = (barPercent / 100) * 50; // Convert to percentage of half container
-            progressBar.style.cssText = `
-                position: absolute !important;
-                left: 50% !important;
-                top: 0 !important;
-                width: ${width}% !important;
-                height: 100% !important;
-                background: linear-gradient(to right, #69db7c 0%, #2b8a3e 100%) !important;
-                border-radius: 4px !important;
-            `;
-        }
-        
-        // Set up comprehensive tooltip data
-        const tooltipData = {
-            type: 'supply-demand',
-            domain: domain,
-            supply: supply,
-            demand: demand,
-            ratio: ratio,
-            balance: supply - demand
-        };
-        
-        const parentRow = progressBar.closest('.jeefhh-bar-row') || progressBar.closest('.carens-bar-row') || progressBar.closest('.vitality-row');
-        if (parentRow) {
-            parentRow.setAttribute('data-tooltip-data', JSON.stringify(tooltipData));
+    updateVitalityUI() {
+        // V2: Simple coordinator - delegate to UI manager
+        if (this.uiManager && this.economicClient) {
+            this.uiManager.updateVitalityFromEconomicClient(this.economicClient);
         }
     }
+
+
     
-    updateNetScoreBar(progressBar, score, domain) {
-        // Clear and reset the progress bar completely
-        progressBar.style.cssText = '';
-        progressBar.innerHTML = '';
+    // REMOVED: updateNetScoreBar() - V2 architecture uses ui-manager.updateNetScoreBar() instead
 
-        // Set up container with center-balanced design for CARENS (purple theme)
-        progressBar.style.cssText = `
-            position: relative !important;
-            width: 100% !important;
-            height: 8px !important;
-            background: #2a2a2a !important;
-            border-radius: 4px !important;
-            overflow: hidden !important;
-        `;
-
-        // Convert score (-100 to +100) to bar display
-        const absScore = Math.abs(score);
-        const isBalanced = absScore < 2; // Nearly balanced threshold
-
-        if (isBalanced) {
-            // Perfect balance: Purple dot at center with ripples
-            const centerDot = document.createElement('div');
-            centerDot.style.cssText = `
-                position: absolute !important;
-                left: 50% !important;
-                top: 50% !important;
-                width: 8px !important;
-                height: 8px !important;
-                background: #8b5cf6 !important;
-                border-radius: 50% !important;
-                transform: translate(-50%, -50%) !important;
-                box-shadow: 0 0 4px rgba(139, 92, 246, 0.6) !important;
-                z-index: 10 !important;
-            `;
-
-            // Add ripple effects if there's any activity (score is not exactly 0)
-            if (absScore > 0.01) {
-                // Calculate ripple intensity based on balance optimality
-                const balanceOptimality = Math.max(0, 1 - absScore / 2);
-                const rippleIntensity = Math.max(0.3, balanceOptimality);
-
-                // Create purple ripple layers for CARENS
-                for (let i = 1; i <= 3; i++) {
-                    const ripple = document.createElement('div');
-                    const delay = i * 0.6; // Stagger the ripples
-                    const duration = 2.5 + (i * 0.5); // Vary duration for wave effect
-
-                    ripple.style.cssText = `
-                        position: absolute !important;
-                        left: 50% !important;
-                        top: 50% !important;
-                        width: 8px !important;
-                        height: 8px !important;
-                        border: 2px solid rgba(139, 92, 246, ${rippleIntensity * 0.4}) !important;
-                        border-radius: 50% !important;
-                        transform: translate(-50%, -50%) !important;
-                        pointer-events: none !important;
-                        animation: carens-ripple-${i} ${duration}s infinite ease-out !important;
-                        animation-delay: ${delay}s !important;
-                    `;
-                    progressBar.appendChild(ripple);
-                }
-
-                // Add the CSS keyframes for CARENS if not already added
-                if (!document.getElementById('carens-ripple-styles')) {
-                    const style = document.createElement('style');
-                    style.id = 'carens-ripple-styles';
-                    style.textContent = `
-                        @keyframes carens-ripple-1 {
-                            0% {
-                                transform: translate(-50%, -50%) scale(1);
-                                opacity: 0.5;
-                            }
-                            100% {
-                                transform: translate(-50%, -50%) scale(3);
-                                opacity: 0;
-                            }
-                        }
-                        @keyframes carens-ripple-2 {
-                            0% {
-                                transform: translate(-50%, -50%) scale(1);
-                                opacity: 0.4;
-                            }
-                            100% {
-                                transform: translate(-50%, -50%) scale(2.5);
-                                opacity: 0;
-                            }
-                        }
-                        @keyframes carens-ripple-3 {
-                            0% {
-                                transform: translate(-50%, -50%) scale(1);
-                                opacity: 0.45;
-                            }
-                            100% {
-                                transform: translate(-50%, -50%) scale(2.2);
-                                opacity: 0;
-                            }
-                        }
-                    `;
-                    document.head.appendChild(style);
-                }
-            }
-
-            progressBar.appendChild(centerDot);
-        } else {
-            // Imbalanced: Red (negative) or Green (positive) bar extending from center
-            const barWidth = Math.min(50, (absScore / 100) * 50); // Max 50% of container width
-
-            const imbalanceBar = document.createElement('div');
-
-            if (score < 0) {
-                // Negative impact: Red bar extending LEFT from center
-                imbalanceBar.style.cssText = `
-                    position: absolute !important;
-                    right: 50% !important;
-                    top: 50% !important;
-                    width: ${barWidth}% !important;
-                    height: 6px !important;
-                    background: linear-gradient(to left, #ff6b6b 0%, #c92a2a 100%) !important;
-                    border-radius: 3px !important;
-                    transform: translateY(-50%) !important;
-                `;
-            } else {
-                // Positive impact: Green bar extending RIGHT from center
-                imbalanceBar.style.cssText = `
-                    position: absolute !important;
-                    left: 50% !important;
-                    top: 50% !important;
-                    width: ${barWidth}% !important;
-                    height: 6px !important;
-                    background: linear-gradient(to right, #69db7c 0%, #2b8a3e 100%) !important;
-                    border-radius: 3px !important;
-                    transform: translateY(-50%) !important;
-                `;
-            }
-
-            progressBar.appendChild(imbalanceBar);
-        }
-        
-        // Set up comprehensive tooltip data
-        const tooltipData = {
-            type: 'net-score',
-            domain: domain,
-            score: score,
-            // TODO: Calculate from building.livability data when server-side CARENS is implemented
-            buildingCount: 0,
-            impactDetails: {}
-        };
-        
-        const parentRow = progressBar.closest('.jeefhh-bar-row') || progressBar.closest('.carens-bar-row') || progressBar.closest('.vitality-row');
-        if (parentRow) {
-            parentRow.setAttribute('data-tooltip-data', JSON.stringify(tooltipData));
-        }
-    }
-
-    updateBalanceBasedBar(progressBar, ratio, supply, demand, domain) {
-        // Clear existing styling
-        progressBar.style.cssText = '';
-        progressBar.innerHTML = '';
-
-        // Set up container with center-balanced design
-        progressBar.style.cssText = `
-            position: relative !important;
-            width: 100% !important;
-            height: 8px !important;
-            background: #2a2a2a !important;
-            border-radius: 4px !important;
-            overflow: hidden !important;
-        `;
-
-        // Calculate balance state
-        const absRatio = Math.abs(ratio);
-        const isBalanced = absRatio < 2; // Nearly balanced threshold
-
-        if (isBalanced) {
-            // Perfect balance: Blue dot at center with ripples
-            const centerDot = document.createElement('div');
-            centerDot.style.cssText = `
-                position: absolute !important;
-                left: 50% !important;
-                top: 50% !important;
-                width: 8px !important;
-                height: 8px !important;
-                background: #4a9eff !important;
-                border-radius: 50% !important;
-                transform: translate(-50%, -50%) !important;
-                box-shadow: 0 0 4px rgba(74, 158, 255, 0.6) !important;
-                z-index: 10 !important;
-            `;
-
-            // Add ripple effects if both supply and demand exist
-            if (supply > 0 && demand > 0) {
-                // Calculate ripple intensity based on balance optimality (closer to 1.0 = more intense)
-                const balanceOptimality = Math.max(0, 1 - Math.abs(ratio - 1) / 2);
-                const rippleIntensity = Math.max(0.3, balanceOptimality);
-
-                // Create multiple ripple layers for depth
-                for (let i = 1; i <= 3; i++) {
-                    const ripple = document.createElement('div');
-                    const delay = i * 0.6; // Stagger the ripples
-                    const duration = 2 + (i * 0.5); // Vary duration for wave effect
-
-                    ripple.style.cssText = `
-                        position: absolute !important;
-                        left: 50% !important;
-                        top: 50% !important;
-                        width: 8px !important;
-                        height: 8px !important;
-                        border: 2px solid rgba(74, 158, 255, ${rippleIntensity * 0.4}) !important;
-                        border-radius: 50% !important;
-                        transform: translate(-50%, -50%) !important;
-                        pointer-events: none !important;
-                        animation: jefhh-ripple-${i} ${duration}s infinite ease-out !important;
-                        animation-delay: ${delay}s !important;
-                    `;
-                    progressBar.appendChild(ripple);
-                }
-
-                // Add the CSS keyframes if not already added
-                if (!document.getElementById('jefhh-ripple-styles')) {
-                    const style = document.createElement('style');
-                    style.id = 'jefhh-ripple-styles';
-                    style.textContent = `
-                        @keyframes jefhh-ripple-1 {
-                            0% {
-                                transform: translate(-50%, -50%) scale(1);
-                                opacity: 0.6;
-                            }
-                            100% {
-                                transform: translate(-50%, -50%) scale(3);
-                                opacity: 0;
-                            }
-                        }
-                        @keyframes jefhh-ripple-2 {
-                            0% {
-                                transform: translate(-50%, -50%) scale(1);
-                                opacity: 0.4;
-                            }
-                            100% {
-                                transform: translate(-50%, -50%) scale(2.5);
-                                opacity: 0;
-                            }
-                        }
-                        @keyframes jefhh-ripple-3 {
-                            0% {
-                                transform: translate(-50%, -50%) scale(1);
-                                opacity: 0.5;
-                            }
-                            100% {
-                                transform: translate(-50%, -50%) scale(2);
-                                opacity: 0;
-                            }
-                        }
-                    `;
-                    document.head.appendChild(style);
-                }
-            }
-
-            progressBar.appendChild(centerDot);
-        } else {
-            // Imbalanced: Red bar extending from center
-            const barWidth = Math.min(50, (absRatio / 100) * 50); // Max 50% of container width
-
-            const imbalanceBar = document.createElement('div');
-            if (ratio < 0) {
-                // Deficit: Red bar extending LEFT from center
-                imbalanceBar.style.cssText = `
-                    position: absolute !important;
-                    right: 50% !important;
-                    top: 0 !important;
-                    width: ${barWidth}% !important;
-                    height: 100% !important;
-                    background: linear-gradient(to left, #ff6b6b 0%, #c92a2a 100%) !important;
-                    border-radius: 8px 0 0 8px !important;
-                `;
-            } else {
-                // Surplus: Red bar extending RIGHT from center
-                imbalanceBar.style.cssText = `
-                    position: absolute !important;
-                    left: 50% !important;
-                    top: 0 !important;
-                    width: ${barWidth}% !important;
-                    height: 100% !important;
-                    background: linear-gradient(to right, #ff6b6b 0%, #c92a2a 100%) !important;
-                    border-radius: 0 8px 8px 0 !important;
-                `;
-            }
-            progressBar.appendChild(imbalanceBar);
-        }
-
-        // Add tooltip data for hover information
-        const tooltipData = {
-            type: 'supply-demand',
-            domain: domain,
-            supply: supply,
-            demand: demand,
-            ratio: ratio,
-            balance: supply - demand,
-            status: ratio >= 20 ? 'Surplus' :
-                   Math.abs(ratio) < 2 ? 'Balanced' :
-                   ratio >= 0 ? 'Minor Surplus' :
-                   ratio >= -20 ? 'Minor Shortage' :
-                   ratio >= -50 ? 'Shortage' : 'Critical Shortage'
-        };
-
-        const parentRow = progressBar.closest('.jeefhh-bar-row') || progressBar.closest('.carens-bar-row') || progressBar.closest('.vitality-row');
-        if (parentRow) {
-            parentRow.setAttribute('data-tooltip-data', JSON.stringify(tooltipData));
-        }
-    }
+    // REMOVED: updateBalanceBasedBar() - V2 architecture uses ui-manager.updateBalanceBasedBar() instead
 
 
     
@@ -4788,10 +4340,10 @@ class IsometricGrid {
         // Clean up pixel row timestamps
         this.pixelRowTimestamps.delete(`${row},${col}`);
 
-        // Server will broadcast economic updates automatically when construction completes
-        this.calculateCityVitality().catch(error => {
-            console.error('Failed to update vitality after construction completion:', error);
-        });
+        // V2: Server will broadcast economic updates automatically via VITALITY_UPDATE
+        if (this.uiManager && this.economicClient) {
+            this.uiManager.updateEconomicDisplays(this.economicClient);
+        }
     }
 
     
@@ -5509,7 +5061,8 @@ class IsometricGrid {
 
             // Convert to world coordinates
             const worldCoords = this.screenToWorldCoords(screenX, screenY);
-            const tile = this.fromIsometric(worldCoords.x, worldCoords.y);
+            const tile = this.renderingSystem?.fromIsometric(worldCoords.x, worldCoords.y);
+
             
             // Handle mobility layer clicks first (including UI areas)
             // DISABLED: Testing without mobility
@@ -5526,8 +5079,10 @@ class IsometricGrid {
 
             if (tile && tile.row >= 0 && tile.row < this.gridSize &&
                 tile.col >= 0 && tile.col < this.gridSize) {
-                
-                
+
+                // Set selectedTile for context menu logic
+                this.selectedTile = tile;
+
                 // Check if clicking the same selected tile - toggle it off
                 if (this.selectedTile && 
                     this.selectedTile.row === tile.row && 
@@ -5535,22 +5090,15 @@ class IsometricGrid {
                     this.contextMenu && this.contextMenu.classList && this.contextMenu.classList.contains('visible')) {
                     this.hideContextMenu();
                 } else {
-                    // Skip legacy context menu handling if tooltip transition is in progress
-                    if (this.preventLegacyContextMenu) {
-                        return;
-                    }
+                    // LEGACY REMOVAL: Let TooltipSystemV2 handle all click-to-context-menu transitions
+                    // The tooltip system will show context menu via transitionToContextMenu()
 
-                    // Clicking any other parcel: hide previous menu and show new one
-                    if (this.contextMenu && this.contextMenu.classList && this.contextMenu.classList.contains('visible')) {
-                        this.hideContextMenu();
-                    }
-                    // Only show context menu if it's not already being shown for this tile (prevents tooltip transition interference)
-                    if (!this.contextMenu || !this.contextMenu.classList.contains('visible') ||
-                        !this.selectedTile || this.selectedTile.row !== tile.row || this.selectedTile.col !== tile.col) {
+                    // Only handle case where there's no tooltip (empty parcels)
+                    if (!this.tooltipSystemV2?.currentType) {
                         this.showContextMenu(tile.row, tile.col, e.clientX, e.clientY);
                     }
                 }
-                if (this.crispTooltip) this.crispTooltip.hide();
+                // REMOVED: Legacy crispTooltip - TooltipSystemV2 handles all tooltips
             } else {
                 if (this.currentLayer !== 'transportation') {
                     this.hideContextMenu();
@@ -5629,8 +5177,10 @@ class IsometricGrid {
             return;
         }
         
-        // Get current supply/demand data
-        this.calculateCityVitality(); // Now uses server API
+        // Get current supply/demand data - V2: Economic client already has current data
+        if (this.uiManager && this.economicClient) {
+            this.uiManager.updateEconomicDisplays(this.economicClient);
+        }
         
         // Update market stats
         const markets = ['jobs', 'energy', 'education', 'food', 'housing', 'healthcare'];
@@ -5702,8 +5252,10 @@ class IsometricGrid {
 
             await Promise.all(promises);
 
-            // Update displays after sync
-            this.calculateCityVitality(); // This updates the display automatically
+            // Update displays after sync - V2: Use ui-manager for display updates
+            if (this.uiManager && this.economicClient) {
+                this.uiManager.updateEconomicDisplays(this.economicClient);
+            }
 
         } catch (error) {
             console.warn('Medium sync failed:', error);
@@ -5721,6 +5273,9 @@ class IsometricGrid {
             this.mediumSyncInterval = null;
         }
 
+        // Stop optimistic countdown timer
+        this.stopOptimisticCountdown();
+
         console.log('Real-time synchronization system destroyed');
     }
 
@@ -5728,15 +5283,17 @@ class IsometricGrid {
     initializeGameLoop() {
         console.log('Initializing game loop for construction and cash accrual...');
 
-        // Construction progress update (every 1 second)
-        this.constructionInterval = setInterval(() => {
-            this.updateConstructionProgress();
-        }, 1000);
+        // DISABLED: Client-side construction and cash updates (SERVER AUTHORITATIVE)
+        // Server manages construction via BUILD_COMPLETE_AUTO messages
+        // Server manages cash accrual via economic engine
 
-        // Cash accrual from completed buildings (every 5 seconds)
-        this.cashAccrualInterval = setInterval(() => {
-            this.applyCashAccrual();
-        }, 5000);
+        // this.constructionInterval = setInterval(() => {
+        //     this.updateConstructionProgress(); // Server handles this
+        // }, 1000);
+
+        // this.cashAccrualInterval = setInterval(() => {
+        //     this.applyCashAccrual(); // Server handles this
+        // }, 5000);
     }
 
     updateConstructionProgress() {
@@ -5764,7 +5321,10 @@ class IsometricGrid {
         // Refresh displays if construction was completed
         if (constructionUpdated) {
             this.render();
-            this.calculateCityVitality(); // This updates the display automatically
+            // V2: Use ui-manager for display updates
+            if (this.uiManager && this.economicClient) {
+                this.uiManager.updateEconomicDisplays(this.economicClient);
+            }
         }
     }
 
@@ -5885,20 +5445,19 @@ class IsometricGrid {
                     }
                 }
 
-                // Update JEEFHH vitality displays
-                if (update.jeefhh) {
-                    this.updateVitalityDisplay();
-                }
-                // Update demographics
-                if (update.totalResidents !== undefined) {
-                    this.updateDemographicsDisplay();
+                // V2: UI updates handled by ui-manager
+                if (update.jeefhh || update.totalResidents !== undefined) {
+                    if (this.uiManager && this.economicClient) {
+                        this.uiManager.updateEconomicDisplays(this.economicClient);
+                    }
                 }
                 // Refresh all building performances after economic changes
                 this.refreshAllBuildingPerformances();
                 break;
 
             case 'DAILY_UPDATE':
-                this.calculateCurrentCashflow();
+                // V2: Cashflow handled by economic client
+                this.updateCashflowAsync();
                 this.updatePlayerStats();
                 // Refresh building performances daily
                 this.refreshAllBuildingPerformances();
@@ -5908,9 +5467,12 @@ class IsometricGrid {
                 // Sync economic data from server on daily tick
                 this.economicClient.getEconomicState().then(() => {
                     console.log('🔄 Economic state synced from server on DAILY_TICK');
-                    this.updateVitalityDisplay();
-                    this.updateDemographicsDisplay();
-                    this.calculateCurrentCashflow();
+                    // V2: UI updates handled by ui-manager
+                    if (this.uiManager && this.economicClient) {
+                        this.uiManager.updateEconomicDisplays(this.economicClient);
+                    }
+                    // V2: Cashflow handled by economic client
+                    this.updateCashflowAsync();
                     this.updatePlayerStats();
                     this.refreshAllBuildingPerformances();
                 }).catch(error => {
@@ -5981,26 +5543,17 @@ class IsometricGrid {
 
                     const parcel = this.grid[row][col];
 
-                    // Add or update building for ANY player
-                    if (!parcel.building) {
-                        // Create building if it doesn't exist (from another player)
-                        const buildingDef = this.buildingDefinitions[buildingId];
-                        if (buildingDef) {
-                            parcel.building = {
-                                type: buildingId,
-                                health: 100,
-                                age: 0,
-                                underConstruction: false,
-                                performance: 100,
-                                owner: playerId
-                            };
-                            parcel.owner = playerId;
-                            console.log(`🏗️ Building ${buildingId} from player ${playerId} completed at [${row}, ${col}]`);
-                        }
-                    } else {
-                        // Update existing building
-                        parcel.building.underConstruction = false;
-                    }
+                    // CRITICAL FIX: Store building as ID string (not object) for rendering compatibility
+                    parcel.building = buildingId;
+                    parcel.owner = playerId;
+
+                    console.log(`🏗️ Building ${buildingId} from player ${playerId} completed at [${row}, ${col}]`);
+
+                    // CRITICAL FIX: Update client-side construction state properties
+                    parcel._isUnderConstruction = false;
+                    parcel._constructionProgress = 1.0;
+                    delete parcel._constructionStartTime;
+                    delete parcel._constructionDays;
 
                     // Fetch and update performance
                     this.fetchBuildingPerformance(row, col);
@@ -6012,8 +5565,10 @@ class IsometricGrid {
                 console.log('🔄 Room reset - clearing all buildings from grid');
                 this.clearAllBuildings();
                 this.economicClient.clearAllCaches();
-                this.updateVitalityDisplay();
-                this.updateDemographicsDisplay();
+                // V2: UI updates handled by ui-manager
+                if (this.uiManager && this.economicClient) {
+                    this.uiManager.updateEconomicDisplays(this.economicClient);
+                }
                 this.updatePlayerStats();
                 break;
 
@@ -6026,6 +5581,31 @@ class IsometricGrid {
                         playerId: this.currentPlayerId,
                         timestamp: Date.now()
                     }));
+                }
+                break;
+
+            case 'VITALITY_UPDATE':
+                // V2: Handle JEEFHH/CARENS vitality data updates via UI manager
+                console.log('📊 VITALITY_UPDATE received - delegating to UI manager');
+                if (update.jeefhh || update.carens) {
+                    // Simple delegation to UI manager
+                    if (this.uiManager && this.economicClient) {
+                        this.uiManager.updateEconomicDisplays(this.economicClient);
+                        console.log('✅ Economic displays updated via UI manager');
+                    }
+                }
+                if (update.totalResidents !== undefined) {
+                    // V2: Demographics updates handled by ui-manager
+                    if (this.uiManager && this.economicClient) {
+                        this.uiManager.updateEconomicDisplays(this.economicClient);
+                    }
+                }
+                break;
+
+            case 'GAME_TIME_UPDATE':
+                // Server-authoritative time update for smooth display
+                if (this.economicClient && update.gameTime !== undefined) {
+                    this.economicClient.syncGameTime(update.gameTime);
                 }
                 break;
 
@@ -6136,8 +5716,10 @@ function applyMarketSettings() {
     if (minPriceInput) window.game.marketSettings.priceBounds.min = parseFloat(minPriceInput.value);
     if (maxPriceInput) window.game.marketSettings.priceBounds.max = parseFloat(maxPriceInput.value);
     
-    // Force recalculation
-    window.game.calculateCityVitality(); // This updates the display automatically
+    // Force recalculation - V2: Use ui-manager for display updates
+    if (window.game.uiManager && window.game.economicClient) {
+        window.game.uiManager.updateEconomicDisplays(window.game.economicClient);
+    }
 }
 
 function resetMarketDefaults() {
@@ -6600,8 +6182,10 @@ function generateCityName() {
                 // Sync with sidebar panel if it exists
                 // syncSidebarSlider(propertyName, value); // Removed - sidebar economic controls no longer exist
                 
-                // Recalculate vitality in real-time
-                window.game.calculateCityVitality(); // This updates the display automatically
+                // Recalculate vitality in real-time - V2: Use ui-manager for display updates
+                if (window.game.uiManager && window.game.economicClient) {
+                    window.game.uiManager.updateEconomicDisplays(window.game.economicClient);
+                }
             });
         });
         
@@ -6625,8 +6209,10 @@ function generateCityName() {
                     localStorage.removeItem(`multiplier_${propertyName}`);
                 });
                 
-                // Recalculate
-                window.game.calculateCityVitality(); // This updates the display automatically
+                // Recalculate - V2: Use ui-manager for display updates
+                if (window.game.uiManager && window.game.economicClient) {
+                    window.game.uiManager.updateEconomicDisplays(window.game.economicClient);
+                }
             }
             });
         }
@@ -6635,9 +6221,11 @@ function generateCityName() {
         const applyBtn = document.getElementById('apply-multipliers');
         if (applyBtn) {
             applyBtn.addEventListener('click', () => {
-            // Force recalculation
-            window.game.calculateCityVitality();
-            window.game.updateVitalityDisplay();
+            // Force recalculation - V2: Use ui-manager for display updates
+            // V2: Force recalculation - Use ui-manager for display updates
+            if (window.game.uiManager && window.game.economicClient) {
+                window.game.uiManager.updateEconomicDisplays(window.game.economicClient);
+            }
 
             // Visual feedback
             const btn = document.getElementById('apply-multipliers');

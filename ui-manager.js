@@ -339,19 +339,19 @@ class UIManager {
     updatePlayerStats(stats) {
         const updates = [];
         
-        if (stats.cash !== undefined) {
-            updates.push({ type: 'text', key: 'playerCash', value: `$${stats.cash.toLocaleString()}` });
+        if (stats.cash !== undefined && stats.cash !== null) {
+            updates.push({ type: 'text', key: 'playerCash', value: `$${Math.round(stats.cash).toLocaleString()}` });
         }
-        if (stats.wealth !== undefined) {
+        if (stats.wealth !== undefined && stats.wealth !== null) {
             updates.push({ type: 'text', key: 'playerWealth', value: `$${Math.round(stats.wealth).toLocaleString()}` });
         }
-        if (stats.cashflow !== undefined) {
+        if (stats.cashflow !== undefined && stats.cashflow !== null) {
             const sign = stats.cashflow >= 0 ? '+' : '';
             const color = stats.cashflow >= 0 ? '#4CAF50' : '#f44336';
-            updates.push({ 
-                type: 'text', 
-                key: 'playerCashflow', 
-                value: `${sign}$${Math.round(stats.cashflow).toLocaleString()}/day` 
+            updates.push({
+                type: 'text',
+                key: 'playerCashflow',
+                value: `${sign}$${Math.round(stats.cashflow).toLocaleString()}/day`
             });
             updates.push({ 
                 type: 'style', 
@@ -389,13 +389,301 @@ class UIManager {
     updateVitalityBar(domain, percentage, color) {
         const key = `vitality${domain.charAt(0).toUpperCase() + domain.slice(1).toLowerCase()}`;
         const element = this.get(key);
-        
+
         if (element) {
             // Update width and color in one operation
             element.style.cssText = `width: ${percentage}%; background: ${color};`;
         }
     }
-    
+
+    /**
+     * V2: Update all vitality displays from economic client data
+     */
+    updateVitalityFromEconomicClient(economicClient) {
+        console.log('📊 UI Manager: Updating vitality displays from economic client');
+
+        // Get processed vitality metrics from economic client
+        const jeefhhMetrics = economicClient.getVitalityMetrics();
+        const carensMetrics = economicClient.getCarensMetrics();
+
+        // Update JEEFHH bars
+        Object.entries(jeefhhMetrics).forEach(([domain, data]) => {
+            const barElement = document.getElementById(`${domain.toLowerCase()}-bar`);
+            if (barElement) {
+                // Convert ratio (-100 to +100) to visual representation
+                this.updateBalanceBasedBar(barElement, data.ratio, data.supply, data.demand, domain);
+            }
+        });
+
+        // Update CARENS bars
+        Object.entries(carensMetrics).forEach(([domain, data]) => {
+            const barElement = document.getElementById(`${domain.toLowerCase()}-bar`);
+            if (barElement) {
+                this.updateNetScoreBar(barElement, data.score, domain);
+            }
+        });
+
+        console.log('✅ UI Manager: Vitality displays updated');
+    }
+
+    /**
+     * V2: Update all economic displays from economic client
+     */
+    updateEconomicDisplays(economicClient) {
+        console.log('💰 UI Manager: Updating economic displays');
+
+        // Update player balance
+        const playerBalance = economicClient.getCurrentPlayerBalance();
+        if (playerBalance !== undefined) {
+            this.updatePlayerStats({ cash: playerBalance });
+        }
+
+        // Update vitality displays
+        this.updateVitalityFromEconomicClient(economicClient);
+
+        console.log('✅ UI Manager: Economic displays updated');
+    }
+
+    /**
+     * Helper: Update balance-based bars (for JEEFHH) with gradient visualization
+     */
+    updateBalanceBasedBar(progressBar, ratio, supply, demand, domain) {
+        const barContainer = progressBar.parentElement;
+        const balanceDot = barContainer.querySelector('.balance-dot');
+
+        // Clear existing styles and classes
+        progressBar.style.cssText = '';
+        barContainer.classList.remove('balanced');
+
+        // Calculate balance state
+        const absRatio = Math.abs(ratio);
+        const isBalanced = absRatio < 5; // Within 5% is considered balanced
+        const barPercent = Math.min(absRatio, 100) / 2; // Convert to 0-50% for half-bar display
+
+        // Update tooltip with colored supply/demand numbers
+        this.updateJEEFHHTooltip(barContainer, supply, demand, ratio, domain);
+
+        if (isBalanced) {
+            // Balanced state: show pulsing blue dot
+            barContainer.classList.add('balanced');
+            progressBar.style.cssText = `
+                position: absolute !important;
+                left: 50% !important; top: 0 !important;
+                width: 2px !important; height: 100% !important;
+                transform: translateX(-1px) !important;
+                background: #4A90E2 !important;
+            `;
+        } else if (ratio > 0) {
+            // Surplus (right side) - gradient from blue (left) to red (right)
+            const gradientBackground = this.getSurplusGradient(absRatio);
+            progressBar.style.cssText = `
+                position: absolute !important;
+                left: 50% !important; top: 0 !important;
+                width: ${barPercent}% !important; height: 100% !important;
+                background: ${gradientBackground} !important;
+                border-radius: 0 4px 4px 0 !important;
+            `;
+        } else {
+            // Deficit (left side) - gradient from blue (right) to red (left)
+            const gradientBackground = this.getDeficitGradient(absRatio);
+            progressBar.style.cssText = `
+                position: absolute !important;
+                right: 50% !important; top: 0 !important;
+                width: ${barPercent}% !important; height: 100% !important;
+                background: ${gradientBackground} !important;
+                border-radius: 4px 0 0 4px !important;
+            `;
+        }
+    }
+
+    /**
+     * Generate CSS gradient for surplus (right side)
+     * Blue at left edge (center) transitioning to red at right edge
+     */
+    getSurplusGradient(absRatio) {
+        // Always start with blue at the left (center point)
+        const startColor = '#4A90E2'; // Optimal blue
+
+        // End color depends on intensity - deeper red for higher surplus
+        let endColor;
+        if (absRatio < 20) {
+            // Light surplus: blue to purple
+            const blend = absRatio / 20;
+            endColor = this.interpolateColor('#4A90E2', '#8B7FE5', blend);
+        } else {
+            // Heavy surplus: blue to deep red
+            const blend = Math.min((absRatio - 20) / 30, 1);
+            endColor = this.interpolateColor('#8B7FE5', '#E74C3C', blend);
+        }
+
+        return `linear-gradient(to right, ${startColor}, ${endColor})`;
+    }
+
+    /**
+     * Generate CSS gradient for deficit (left side)
+     * Blue at right edge (center) transitioning to red at left edge
+     */
+    getDeficitGradient(absRatio) {
+        // Always start with blue at the right (center point)
+        const startColor = '#4A90E2'; // Optimal blue
+
+        // End color depends on intensity - deeper red for higher deficit
+        let endColor;
+        if (absRatio < 20) {
+            // Light deficit: blue to purple
+            const blend = absRatio / 20;
+            endColor = this.interpolateColor('#4A90E2', '#8B7FE5', blend);
+        } else {
+            // Heavy deficit: blue to deep red
+            const blend = Math.min((absRatio - 20) / 30, 1);
+            endColor = this.interpolateColor('#8B7FE5', '#E74C3C', blend);
+        }
+
+        return `linear-gradient(to left, ${startColor}, ${endColor})`;
+    }
+
+    /**
+     * Interpolate between two hex colors
+     */
+    interpolateColor(color1, color2, factor) {
+        const c1 = this.hexToRgb(color1);
+        const c2 = this.hexToRgb(color2);
+
+        const r = Math.round(c1.r + (c2.r - c1.r) * factor);
+        const g = Math.round(c1.g + (c2.g - c1.g) * factor);
+        const b = Math.round(c1.b + (c2.b - c1.b) * factor);
+
+        return `rgb(${r}, ${g}, ${b})`;
+    }
+
+    /**
+     * Convert hex color to RGB
+     */
+    hexToRgb(hex) {
+        const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+        return result ? {
+            r: parseInt(result[1], 16),
+            g: parseInt(result[2], 16),
+            b: parseInt(result[3], 16)
+        } : null;
+    }
+
+    /**
+     * Update JEEFHH tooltip with colored supply/demand numbers
+     */
+    updateJEEFHHTooltip(barContainer, supply, demand, ratio, domain) {
+        const absRatio = Math.abs(ratio);
+        let tooltipClass = 'tooltip-balanced';
+
+        if (absRatio >= 5) {
+            if (absRatio < 20) {
+                tooltipClass = ratio > 0 ? 'tooltip-surplus-light' : 'tooltip-deficit-light';
+            } else {
+                tooltipClass = ratio > 0 ? 'tooltip-surplus-heavy' : 'tooltip-deficit-heavy';
+            }
+        }
+
+        // Update tooltip content with colored numbers
+        const newTooltip = `<span class="${tooltipClass}">${supply}/${demand}</span> ${domain}. Goal: balanced supply and demand.`;
+        barContainer.setAttribute('data-tooltip', newTooltip);
+    }
+
+    /**
+     * Helper: Update net score bars (for CARENS) with gradient system
+     * 0.5 = neutral (purple dot), >0.5 = gradient toward blue, <0.5 = gradient toward red
+     */
+    updateNetScoreBar(progressBar, score, domain) {
+        const barContainer = progressBar.parentElement;
+        const balanceDot = barContainer.querySelector('.balance-dot');
+
+        // Clear existing styles and classes
+        progressBar.style.cssText = '';
+        barContainer.classList.remove('balanced', 'positive', 'negative');
+
+        // Convert 0-1 score to -100 to +100 points scale (0.5 = 0 points)
+        const points = (score - 0.5) * 200;
+        const absPoints = Math.abs(points);
+        const isNeutral = absPoints < 5; // Within 5 points is considered neutral
+
+        if (isNeutral) {
+            // Neutral state: show purple dot in center
+            barContainer.classList.add('balanced');
+            progressBar.style.cssText = `
+                position: absolute !important;
+                left: 50% !important; top: 0 !important;
+                width: 2px !important; height: 100% !important;
+                transform: translateX(-1px) !important;
+                background: #a855f7 !important;
+            `;
+        } else if (points > 0) {
+            // Positive values: gradient from center toward blue on the right
+            barContainer.classList.add('positive');
+            const barPercent = Math.min(absPoints, 100) / 2; // Convert to 0-50% for half-bar display
+            const gradientBackground = this.getCarensPositiveGradient(absPoints);
+            progressBar.style.cssText = `
+                position: absolute !important;
+                left: 50% !important; top: 0 !important;
+                width: ${barPercent}% !important; height: 100% !important;
+                background: ${gradientBackground} !important;
+                border-radius: 0 4px 4px 0 !important;
+            `;
+        } else {
+            // Negative values: gradient from center toward red on the left
+            barContainer.classList.add('negative');
+            const barPercent = Math.min(absPoints, 100) / 2; // Convert to 0-50% for half-bar display
+            const gradientBackground = this.getCarensNegativeGradient(absPoints);
+            progressBar.style.cssText = `
+                position: absolute !important;
+                right: 50% !important; top: 0 !important;
+                width: ${barPercent}% !important; height: 100% !important;
+                background: ${gradientBackground} !important;
+                border-radius: 4px 0 0 4px !important;
+            `;
+        }
+    }
+
+    /**
+     * Generate CSS gradient for positive CARENS values (right side)
+     * Purple at left edge (center) transitioning to blue at right edge
+     */
+    getCarensPositiveGradient(absPoints) {
+        const startColor = '#a855f7'; // Purple at center
+
+        let endColor;
+        if (absPoints < 50) {
+            // Light positive: purple to light blue
+            const blend = absPoints / 50;
+            endColor = this.interpolateColor('#a855f7', '#60a5fa', blend);
+        } else {
+            // Strong positive: purple to optimal blue
+            const blend = Math.min((absPoints - 50) / 50, 1);
+            endColor = this.interpolateColor('#60a5fa', '#4A90E2', blend);
+        }
+
+        return `linear-gradient(to right, ${startColor}, ${endColor})`;
+    }
+
+    /**
+     * Generate CSS gradient for negative CARENS values (left side)
+     * Purple at right edge (center) transitioning to red at left edge
+     */
+    getCarensNegativeGradient(absPoints) {
+        const startColor = '#a855f7'; // Purple at center
+
+        let endColor;
+        if (absPoints < 50) {
+            // Light negative: purple to light red
+            const blend = absPoints / 50;
+            endColor = this.interpolateColor('#a855f7', '#f87171', blend);
+        } else {
+            // Strong negative: purple to deep red
+            const blend = Math.min((absPoints - 50) / 50, 1);
+            endColor = this.interpolateColor('#f87171', '#ef4444', blend);
+        }
+
+        return `linear-gradient(to left, ${startColor}, ${endColor})`;
+    }
+
     /**
      * Clear all cached elements (for cleanup)
      */
@@ -1273,7 +1561,143 @@ class UIManager {
             }
         });
 
+        // Set up table sorting
+        this.setupCashflowTableSorting(game);
+
         console.log('✅ DCF functionality initialized in UIManager');
+    }
+
+    /**
+     * Setup demographic tooltip for residents display
+     */
+    setupResidentsTooltip(game) {
+        const residentsRow = document.getElementById('residents-row');
+        if (!residentsRow || !game) return;
+
+        let hoverTimeout;
+
+        residentsRow.addEventListener('mouseenter', () => {
+            clearTimeout(hoverTimeout);
+            hoverTimeout = setTimeout(() => {
+                this.showDemographicTooltip(game, residentsRow);
+            }, 300);
+        });
+
+        residentsRow.addEventListener('mouseleave', () => {
+            clearTimeout(hoverTimeout);
+            this.hideDemographicTooltip(game);
+        });
+
+        console.log('✅ Residents demographic tooltip initialized');
+    }
+
+    /**
+     * Show demographic tooltip with population data and top needs
+     */
+    showDemographicTooltip(game, element) {
+        if (!game || !game.tooltipManager) return;
+
+        // Get demographic data from economic client
+        const totalResidents = game.economicClient?.totalResidents || 0;
+        const demographics = game.economicClient?.gameState?.demographics || {};
+        const jeefhh = game.economicClient?.jeefhh || {};
+
+        // Calculate top 2 citywide needs based on supply/demand ratio
+        const needs = [];
+        Object.entries(jeefhh).forEach(([domain, data]) => {
+            if (data.supply !== undefined && data.demand !== undefined) {
+                const ratio = data.demand > 0 ? data.supply / data.demand : 1;
+                const shortage = Math.max(0, data.demand - data.supply);
+                needs.push({
+                    name: domain.charAt(0).toUpperCase() + domain.slice(1),
+                    ratio: ratio,
+                    shortage: shortage,
+                    demand: data.demand,
+                    supply: data.supply
+                });
+            }
+        });
+
+        // Sort by lowest ratio (highest need) and take top 2
+        const topNeeds = needs
+            .filter(need => need.ratio < 1) // Only show actual shortages
+            .sort((a, b) => a.ratio - b.ratio)
+            .slice(0, 2);
+
+        const tooltipContent = `
+            <div style="display: flex; flex-direction: column; gap: 8px; min-width: 250px;">
+                <div style="border-bottom: 1px solid #444; padding-bottom: 6px;">
+                    <span style="color: #4A90E2; font-weight: 600; font-size: 14px;">Population Demographics</span>
+                </div>
+
+                <div style="display: flex; justify-content: space-between;">
+                    <span style="color: #ccc;">Total Residents:</span>
+                    <span style="color: #FFD700; font-weight: 600;">${totalResidents.toLocaleString()}</span>
+                </div>
+
+                ${demographics.ageGroups ? this.renderAgeGroups(demographics.ageGroups) : ''}
+
+                ${topNeeds.length > 0 ? `
+                    <div style="border-top: 1px solid #444; padding-top: 6px;">
+                        <div style="color: #E74C3C; font-weight: 600; margin-bottom: 4px;">🚨 Top Citywide Needs</div>
+                        ${topNeeds.map(need => `
+                            <div style="display: flex; justify-content: space-between; margin-bottom: 2px;">
+                                <span style="color: #ccc;">${need.name}:</span>
+                                <span style="color: #E74C3C; font-weight: 600;">${need.shortage} shortage</span>
+                            </div>
+                        `).join('')}
+                    </div>
+                ` : `
+                    <div style="border-top: 1px solid #444; padding-top: 6px;">
+                        <div style="color: #4CAF50; font-weight: 600;">✅ All basic needs met</div>
+                    </div>
+                `}
+            </div>
+        `;
+
+        const rect = element.getBoundingClientRect();
+        const x = rect.left + rect.width / 2;
+        const y = rect.bottom + 10;
+
+        game.tooltipManager.show(tooltipContent, x, y, {
+            html: true,
+            delay: 0,
+            maxWidth: 300
+        });
+    }
+
+    /**
+     * Render age group demographics
+     */
+    renderAgeGroups(ageGroups) {
+        if (!ageGroups || Object.keys(ageGroups).length === 0) return '';
+
+        const total = Object.values(ageGroups).reduce((sum, count) => sum + count, 0);
+        if (total === 0) return '';
+
+        return `
+            <div style="border-top: 1px solid #444; padding-top: 6px;">
+                <div style="color: #8B7FE5; font-weight: 600; margin-bottom: 4px;">Age Distribution</div>
+                ${Object.entries(ageGroups).map(([group, count]) => {
+                    const percentage = ((count / total) * 100).toFixed(1);
+                    return `
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 2px;">
+                            <span style="color: #ccc;">${group}:</span>
+                            <span style="color: #8B7FE5;">${count} (${percentage}%)</span>
+                        </div>
+                    `;
+                }).join('')}
+            </div>
+        `;
+    }
+
+    /**
+     * Hide demographic tooltip
+     */
+    hideDemographicTooltip(game) {
+        if (game && game.tooltipManager) {
+            game.tooltipManager.hide();
+        }
     }
 
     /**
@@ -1406,6 +1830,115 @@ class UIManager {
         netElement.className = `summary-value ${netDaily >= 0 ? 'positive' : 'negative'}`;
 
         // Update table
+        const tbody = document.getElementById('cashflow-tbody');
+        tbody.innerHTML = '';
+
+        breakdown.forEach(item => {
+            const row = document.createElement('tr');
+
+            const formatCurrency = (value) => {
+                const rounded = Math.round(value);
+                return rounded >= 0 ? `$${rounded.toLocaleString()}` : `-$${Math.abs(rounded).toLocaleString()}`;
+            };
+
+            const getValueClass = (value) => {
+                return Math.round(value) > 0 ? 'positive' : Math.round(value) < 0 ? 'negative' : 'neutral';
+            };
+
+            row.innerHTML = `
+                <td>${item.coordinates || 'N/A'}</td>
+                <td>${item.buildingName || 'Unknown'}</td>
+                <td>${Math.floor(item.buildingAge || 0)} days</td>
+                <td>${item.decay ? item.decay.toFixed(1) + '%' : 'N/A'}</td>
+                <td>$${Math.round(item.landValue || 0).toLocaleString()}</td>
+                <td class="${getValueClass(item.revenue || 0)}">${formatCurrency(item.revenue || 0)}</td>
+                <td class="${getValueClass(-(item.maintenance || 0))}">${formatCurrency(-(item.maintenance || 0))}</td>
+                <td class="${getValueClass(-(item.lvt || 0))}">${formatCurrency(-(item.lvt || 0))}</td>
+                <td class="${getValueClass(item.netCashflow || 0)}">${formatCurrency(item.netCashflow || 0)}</td>
+            `;
+
+            tbody.appendChild(row);
+        });
+    }
+
+    /**
+     * Set up sorting functionality for cashflow table
+     */
+    setupCashflowTableSorting(game) {
+        const table = document.getElementById('cashflow-table');
+        if (!table) return;
+
+        const headers = table.querySelectorAll('th.sortable');
+        let currentSort = { column: null, direction: 'asc' };
+
+        headers.forEach(header => {
+            header.addEventListener('click', () => {
+                const sortBy = header.getAttribute('data-sort');
+                if (!sortBy) return;
+
+                // Toggle direction if clicking same column, otherwise default to asc
+                if (currentSort.column === sortBy) {
+                    currentSort.direction = currentSort.direction === 'asc' ? 'desc' : 'asc';
+                } else {
+                    currentSort.direction = 'asc';
+                }
+                currentSort.column = sortBy;
+
+                // Update visual indicators
+                headers.forEach(h => h.classList.remove('sorted-asc', 'sorted-desc'));
+                header.classList.add(`sorted-${currentSort.direction}`);
+
+                // Sort the data and repopulate
+                this.sortCashflowData(game, sortBy, currentSort.direction);
+            });
+        });
+    }
+
+    /**
+     * Sort cashflow data and repopulate table
+     */
+    sortCashflowData(game, sortBy, direction) {
+        if (!game.cashflowBreakdown || !Array.isArray(game.cashflowBreakdown)) return;
+
+        const sortedData = [...game.cashflowBreakdown].sort((a, b) => {
+            let aVal = a[sortBy];
+            let bVal = b[sortBy];
+
+            // Handle different data types
+            if (typeof aVal === 'string' && typeof bVal === 'string') {
+                aVal = aVal.toLowerCase();
+                bVal = bVal.toLowerCase();
+            } else if (typeof aVal === 'number' && typeof bVal === 'number') {
+                // Numbers - direct comparison
+            } else {
+                // Convert to numbers for other comparisons
+                aVal = parseFloat(aVal) || 0;
+                bVal = parseFloat(bVal) || 0;
+            }
+
+            if (direction === 'asc') {
+                return aVal < bVal ? -1 : aVal > bVal ? 1 : 0;
+            } else {
+                return aVal > bVal ? -1 : aVal < bVal ? 1 : 0;
+            }
+        });
+
+        // Temporarily replace the breakdown data
+        const originalBreakdown = game.cashflowBreakdown;
+        game.cashflowBreakdown = sortedData;
+
+        // Repopulate table
+        this.populateCashflowTableOnly(game);
+
+        // Restore original data
+        game.cashflowBreakdown = originalBreakdown;
+    }
+
+    /**
+     * Populate only the table portion of cashflow modal (used for sorting)
+     */
+    populateCashflowTableOnly(game) {
+        const breakdown = game.cashflowBreakdown || [];
         const tbody = document.getElementById('cashflow-tbody');
         tbody.innerHTML = '';
 

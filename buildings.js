@@ -47,6 +47,9 @@ class BuildingManager {
             const jsonData = await response.json();
             this.buildings = jsonData;
 
+            // Preload all building images for smooth rendering
+            await this.preloadBuildingImages();
+
             this.initialized = true;
 
             // Notify other systems that buildings are ready
@@ -59,6 +62,58 @@ class BuildingManager {
             this.buildings = this.createFallbackBuildings();
             this.initialized = true;
         }
+    }
+
+    /**
+     * Preload all building images for smooth rendering
+     */
+    async preloadBuildingImages() {
+        console.log('🎨 Preloading building images...');
+
+        // Initialize shared image cache for rendering system
+        if (!window.buildingImageCache) {
+            window.buildingImageCache = new Map();
+        }
+
+        const imagePromises = [];
+        const imagePaths = new Set();
+
+        // Collect all unique image paths from building definitions
+        Object.values(this.buildings).forEach(category => {
+            if (Array.isArray(category)) {
+                category.forEach(building => {
+                    // Get image path from graphics data
+                    const imagePath = building.graphicsFile || building.images?.built;
+                    if (imagePath && !imagePaths.has(imagePath)) {
+                        imagePaths.add(imagePath);
+
+                        // Create promise for each image
+                        const imagePromise = new Promise((resolve, reject) => {
+                            const img = new Image();
+                            img.onload = () => {
+                                window.buildingImageCache.set(imagePath, img);
+                                console.log(`✅ Preloaded: ${imagePath}`);
+                                resolve(img);
+                            };
+                            img.onerror = () => {
+                                console.warn(`❌ Failed to preload: ${imagePath}`);
+                                resolve(null); // Resolve with null instead of rejecting
+                            };
+                            img.src = imagePath;
+                        });
+
+                        imagePromises.push(imagePromise);
+                    }
+                });
+            }
+        });
+
+        // Wait for all images to load (or fail)
+        const results = await Promise.all(imagePromises);
+        const successCount = results.filter(img => img !== null).length;
+        const totalCount = imagePromises.length;
+
+        console.log(`🎨 Preloaded ${successCount}/${totalCount} building images`);
     }
 
     parseCSV(csvData) {

@@ -2398,26 +2398,129 @@ body {
     /* background will be set by JavaScript for center-balanced display */
 }
 
-/* Balance indicator dot (optional) */
-.jeefhh-bar .balance-dot,
-.carens-bar .balance-dot {
+/* Balance indicator dot with pulsing animation */
+.jeefhh-bar .balance-dot {
     position: absolute;
     top: 50%;
     left: 50%;
-    width: 6px;
-    height: 6px;
+    width: 8px;
+    height: 8px;
     border-radius: 50%;
-    background: #00ff00;
+    background: #4A90E2;
     transform: translate(-50%, -50%);
     z-index: 3;
     opacity: 0;
     transition: opacity 0.3s ease;
 }
 
-.jeefhh-bar.balanced .balance-dot,
-.carens-bar.balanced .balance-dot {
+.carens-bar .balance-dot {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #a855f7 !important; /* Purple for CARENS neutral */
+    transform: translate(-50%, -50%);
+    z-index: 3;
+    opacity: 1 !important; /* Always visible for CARENS */
+    transition: opacity 0.3s ease;
+}
+
+.jeefhh-bar.balanced .balance-dot {
     opacity: 1;
 }
+
+/* CARENS dot color changes based on state */
+.carens-bar.positive .balance-dot {
+    background: #4A90E2; /* Blue for positive trending toward optimal */
+}
+
+.carens-bar.negative .balance-dot {
+    background: #ef4444; /* Red for negative values */
+}
+
+/* Add streaming dots container for balanced state */
+.jeefhh-bar.balanced::before,
+.jeefhh-bar.balanced::after,
+.carens-bar.balanced::before,
+.carens-bar.balanced::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    width: 4px;
+    height: 4px;
+    border-radius: 50%;
+    background: #4A90E2;
+    z-index: 2;
+    animation-duration: 3s;
+    animation-iteration-count: infinite;
+    animation-timing-function: ease-out;
+}
+
+/* Left streaming dot */
+.jeefhh-bar.balanced::before,
+.carens-bar.balanced::before {
+    left: 50%;
+    animation-name: streamLeft;
+}
+
+/* Right streaming dot */
+.jeefhh-bar.balanced::after,
+.carens-bar.balanced::after {
+    right: 50%;
+    animation-name: streamRight;
+}
+
+/* Stream left animation - dots move left, shrink and fade */
+@keyframes streamLeft {
+    0% {
+        transform: translate(0, -50%) scale(0.5);
+        opacity: 0.8;
+    }
+    50% {
+        transform: translate(-30px, -50%) scale(0.3);
+        opacity: 0.4;
+    }
+    100% {
+        transform: translate(-60px, -50%) scale(0.1);
+        opacity: 0;
+    }
+}
+
+/* Stream right animation - dots move right, shrink and fade */
+@keyframes streamRight {
+    0% {
+        transform: translate(0, -50%) scale(0.5);
+        opacity: 0.8;
+    }
+    50% {
+        transform: translate(30px, -50%) scale(0.3);
+        opacity: 0.4;
+    }
+    100% {
+        transform: translate(60px, -50%) scale(0.1);
+        opacity: 0;
+    }
+}
+
+/* Enhanced progress bar styling for gradients */
+.jeefhh-progress,
+.carens-progress {
+    height: 100%;
+    border-radius: 4px;
+    transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+    position: relative;
+    z-index: 2;
+    /* Gradient backgrounds will be set by JavaScript */
+}
+
+/* Tooltip color classes for supply/demand numbers */
+.tooltip-balanced { color: #4A90E2 !important; }
+.tooltip-surplus-light { color: #8B7FE5 !important; }
+.tooltip-surplus-heavy { color: #E74C3C !important; }
+.tooltip-deficit-light { color: #8B7FE5 !important; }
+.tooltip-deficit-heavy { color: #E74C3C !important; }
 
 
 

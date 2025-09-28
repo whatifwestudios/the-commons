@@ -32,7 +32,10 @@ class ActionManager {
      */
     calculateMonthlyActionAllowance() {
         const monthOrder = ['SEPT', 'OCT', 'NOV', 'DEC', 'JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG'];
-        const currentMonthIndex = monthOrder.indexOf(this.game.gameDate.month);
+
+        // Handle case where gameDate is not yet available (before server sync)
+        const gameDate = this.game.gameDate || { month: 'SEPT', day: 1 };
+        const currentMonthIndex = monthOrder.indexOf(gameDate.month);
         const baseActions = 20;
         const reduction = currentMonthIndex * 2;
         const minimumActions = 10;

@@ -10,7 +10,6 @@
 
 class ParcelHoverV2 {
     constructor(game) {
-        console.log('🎯 ParcelHoverV2: Initializing with game:', game);
         this.game = game;
 
         // Simple state tracking
@@ -22,13 +21,11 @@ class ParcelHoverV2 {
         this.hoverOpacity = 0.3;
         this.adjacentOpacity = 0.15;
 
-        console.log('🎨 ParcelHoverV2: Initial player color:', this._playerColor);
 
         // Debug counter for renderEffects calls
         this.renderCallCount = 0;
 
         this.setupMouseHandling();
-        console.log('🎯 ParcelHoverV2: Initialization complete');
     }
 
     /**
@@ -39,7 +36,6 @@ class ParcelHoverV2 {
     }
 
     set playerColor(color) {
-        console.log('🎨 ParcelHoverV2: Player color updated from', this._playerColor, 'to', color);
         this._playerColor = color;
         // Force re-render to show new color
         if (this.game.scheduleRender) {
@@ -51,7 +47,6 @@ class ParcelHoverV2 {
      * Setup simple, reliable mouse handling
      */
     setupMouseHandling() {
-        console.log('🎯 ParcelHoverV2: Setting up mouse handling on canvas:', this.game.canvas);
 
         // Remove complex debug handlers from game.js
         this.clearExistingHandlers();
@@ -71,9 +66,6 @@ class ParcelHoverV2 {
             // Debug logging (only when tile changes)
             const newTile = tile ? `${tile.row},${tile.col}` : null;
             const currentTile = this.currentHover ? `${this.currentHover.row},${this.currentHover.col}` : null;
-            if (newTile !== currentTile) {
-                console.log(`🎯 ParcelHoverV2: Tile changed from ${currentTile} to ${newTile}`);
-            }
 
             this.updateHover(tile);
         });
@@ -90,7 +82,6 @@ class ParcelHoverV2 {
     clearExistingHandlers() {
         // Skip canvas cloning to preserve other event handlers
         // The V2 system should work alongside existing handlers
-        console.log('🎯 ParcelHoverV2: Skipping canvas cloning - preserving existing handlers');
     }
 
     /**
@@ -200,11 +191,6 @@ class ParcelHoverV2 {
      * Render hover effects during tile rendering
      */
     renderEffects(row, col, ctx, isoX, isoY, tileWidth, tileHeight) {
-        // Debug: Log first 10 calls to verify integration
-        this.renderCallCount++;
-        if (this.renderCallCount <= 10) {
-            console.log(`🎨 ParcelHoverV2: renderEffects called #${this.renderCallCount} for tile ${row},${col}`);
-        }
 
         const key = `${row},${col}`;
         const isHovered = this.currentHover &&

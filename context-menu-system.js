@@ -58,8 +58,8 @@ class ContextMenuSystem {
         contentEl.innerHTML = '';
         statusEl.className = 'context-status';
 
-        if (!parcel.owner) {
-            // Unowned parcel
+        if (!parcel.owner || parcel.owner === 'City' || parcel.owner === 'unclaimed') {
+            // Unowned parcel (includes City-owned)
             this.createUnownedParcelMenu(statusEl, contentEl, row, col, price);
         } else if (this.game.isCurrentPlayer(parcel.owner)) {
             // Player-owned parcel
@@ -145,8 +145,13 @@ class ContextMenuSystem {
      * Create menu for player-owned parcel
      */
     createPlayerOwnedParcelMenu(statusEl, contentEl, row, col, parcel) {
-        const playerName = (this.game.playerSettings && this.game.playerSettings.name) || 'PLAYER';
-        statusEl.textContent = `OWNED BY ${playerName.toUpperCase()}`;
+        // Get player name from beer hall lobby (user's chosen name) or fallback
+        const playerName = window.beerHallLobby?.playerName ||
+                          (this.game.playerSettings && this.game.playerSettings.name) ||
+                          'PLAYER';
+        // Get player color and apply to status text
+        const playerColor = window.beerHallLobby?.selectedColor || '#4CAF50';
+        statusEl.innerHTML = `OWNED BY <span style="color: ${playerColor}; font-weight: 600;">${playerName.toUpperCase()}</span>`;
         statusEl.classList.add('owned');
 
 
@@ -374,8 +379,12 @@ class ContextMenuSystem {
         destroyBtn.textContent = `DESTROY BUILDING - $${demolitionFee}`;
         destroyBtn.onclick = () => this.game.buildingSystem.demolishBuilding(row, col);
 
-        // Disable if player can't afford demolition fee
-        if (this.game.playerCash < demolitionFee) {
+        // Disable if player can't afford demolition fee - use server-authoritative balance
+        const currentBalance = (this.game.economicClient && typeof this.game.economicClient.serverBalance === 'number')
+            ? this.game.economicClient.serverBalance
+            : this.game.playerCash;
+
+        if (currentBalance < demolitionFee) {
             destroyBtn.disabled = true;
             destroyBtn.classList.add('disabled');
         }
@@ -444,8 +453,12 @@ class ContextMenuSystem {
             repairBtn.textContent = `Repair Building - $${repairCost}`;
             repairBtn.onclick = () => this.game.buildingSystem.repairBuilding(row, col);
 
-            // Disable if player can't afford
-            if (this.game.playerCash < repairCost) {
+            // Disable if player can't afford - use server-authoritative balance
+            const currentBalance = (this.game.economicClient && typeof this.game.economicClient.serverBalance === 'number')
+                ? this.game.economicClient.serverBalance
+                : this.game.playerCash;
+
+            if (currentBalance < repairCost) {
                 repairBtn.disabled = true;
                 repairBtn.classList.add('disabled');
             }

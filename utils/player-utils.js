@@ -4,15 +4,21 @@
 
 window.PlayerUtils = {
     /**
-     * Get current player ID (from session or fallback to 'player')
+     * Get current player ID - UNIFIED SYSTEM (server-authoritative)
+     * Priority: 1) game.currentPlayerId (server-assigned) 2) session 3) localStorage
      */
     getCurrentPlayerId() {
-        // Try to get from session/auth if available
+        // PRIORITY 1: Try to get from session/auth if available
         if (window.currentUser && window.currentUser.id) {
             return window.currentUser.id;
         }
 
-        // Generate or retrieve anonymous session ID for guests
+        // PRIORITY 2: Use server-assigned player ID from game instance (for fresh sessions)
+        if (window.game && window.game.currentPlayerId) {
+            return window.game.currentPlayerId;
+        }
+
+        // PRIORITY 3: Generate or retrieve anonymous session ID for guests (fallback only)
         if (!localStorage.getItem('anonymousPlayerId')) {
             const anonymousId = 'guest_' + Math.random().toString(36).substr(2, 9);
             localStorage.setItem('anonymousPlayerId', anonymousId);

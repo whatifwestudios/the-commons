@@ -150,7 +150,7 @@ class TooltipSystemV2 {
             const parcel = this.game.grid[row][col];
             if (!parcel) return null;
 
-            const building = parcel.building ? this.game.getBuildingDataByName(parcel.building) : null;
+            const building = parcel.building ? this.game.getBuildingDataByName(parcel.building.type || parcel.building.id || parcel.building) : null;
             const coord = this.game.getParcelCoordinate(row, col);
 
             const data = {
@@ -165,11 +165,34 @@ class TooltipSystemV2 {
             if (!parcel.building) {
                 // Empty parcel
                 data.price = this.game.getParcelPrice(row, col);
-                data.isOwned = !!parcel.owner;
+                // Server-authoritative ownership: treat "City" and "unclaimed" as unowned for player interaction
+                data.isOwned = !!(parcel.owner && parcel.owner !== 'City' && parcel.owner !== 'unclaimed');
                 data.owner = parcel.owner;
             } else {
-                // Building data
-                data.buildingName = building?.name || parcel.building;
+                // Building data - fix [object Object] issue with debug
+                console.log('🔍 Building debug:', {
+                    parcelBuilding: parcel.building,
+                    buildingObject: building,
+                    buildingName: building?.name,
+                    buildingId: building?.id,
+                    buildingType: typeof building
+                });
+
+                let buildingName = parcel.building; // fallback to building ID
+                if (building) {
+                    // More thorough name extraction
+                    if (typeof building.name === 'string' && building.name.length > 0) {
+                        buildingName = building.name;
+                    } else if (typeof building.id === 'string' && building.id.length > 0) {
+                        buildingName = building.id;
+                    } else if (typeof building === 'object' && building.constructor?.name) {
+                        buildingName = building.constructor.name;
+                    } else {
+                        // Last resort: use parcel.building ID and clean it up
+                        buildingName = parcel.building.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+                    }
+                }
+                data.buildingName = buildingName;
                 data.isUnderConstruction = parcel._isUnderConstruction || false;
                 data.constructionProgress = parcel._constructionProgress || 1.0;
 
@@ -207,27 +230,42 @@ class TooltipSystemV2 {
     }
 
     renderBuildingTooltipContent(data) {
-        const jeefhhSatisfied = this.areJeefhhNeedsSatisfied(data.needs);
+        if (data.isUnderConstruction) {
+            return `
+                ${this.renderBuildingHeader(data)}
+                ${this.renderConstructionStatus(data)}
+            `;
+        }
 
         return `
             ${this.renderBuildingHeader(data)}
-            ${this.renderConstructionStatus(data)}
-            ${this.renderPerformanceMetrics(data)}
-            ${jeefhhSatisfied ?
-                this.renderCarensOpportunities(data.carens) :
-                this.renderJeefhhNeeds(data.needs)
-            }
+            ${this.renderCompactPerformance(data)}
+            ${this.renderCompactResources(data)}
         `;
     }
 
     renderEmptyParcelTooltipContent(data) {
         if (data.isOwned) {
-            const ownerText = this.game.isCurrentPlayer(data.owner) ? 'You own this parcel' : 'Owned by competitor';
+            const isPlayerOwned = this.game.isCurrentPlayer(data.owner);
+            const currentId = window.PlayerUtils?.getCurrentPlayerId();
+            console.log('🔍 OWNERSHIP CHECK: parcel.owner:', data.owner, 'getCurrentPlayerId():', currentId, 'isCurrentPlayer:', isPlayerOwned);
+
+            // Handle different ownership types
+            let ownerText;
+            if (isPlayerOwned) {
+                ownerText = 'You own this parcel';
+            } else if (data.owner === 'City' || data.owner === 'unclaimed') {
+                ownerText = 'Available for purchase';
+            } else {
+                ownerText = 'Owned by competitor';
+            }
             return `
                 <div class="empty-parcel owned">
                     <div class="ownership-status">${ownerText}</div>
                     ${this.game.isCurrentPlayer(data.owner) ?
-                        '<div class="action-hint">Click to build something here</div>' : ''
+                        '<div class="action-hint">Click to build something here</div>' :
+                        (data.owner === 'City' || data.owner === 'unclaimed') ?
+                        '<div class="action-hint">Click to purchase from City</div>' : ''
                     }
                 </div>
             `;
@@ -241,11 +279,74 @@ class TooltipSystemV2 {
     }
 
     renderBuildingHeader(data) {
+        const playerDisplay = this.getPlayerDisplayInfo(data);
+
         return `
             <div class="building-header">
                 <div class="building-name">${data.buildingName}</div>
+                ${playerDisplay ? `<div class="player-badge" style="background-color: ${playerDisplay.color}; color: ${playerDisplay.textColor};">${playerDisplay.name}</div>` : ''}
             </div>
         `;
+    }
+
+    /**
+     * Get player display info with color and auto-contrast text
+     */
+    getPlayerDisplayInfo(data) {
+        if (!data.owner) return null;
+
+        // Get player data from game state
+        const playerData = this.game?.gameState?.players?.[data.owner];
+        if (!playerData) return null;
+
+        const playerColor = playerData.color || '#4A90E2';
+        const playerName = playerData.name || `Player ${data.owner.slice(-4)}`;
+
+        return {
+            name: playerName,
+            color: playerColor,
+            textColor: this.getContrastTextColor(playerColor)
+        };
+    }
+
+    /**
+     * Calculate contrasting text color for background
+     */
+    getContrastTextColor(backgroundColor) {
+        // Remove # if present
+        const hex = backgroundColor.replace('#', '');
+
+        // Convert hex to RGB
+        const r = parseInt(hex.substr(0, 2), 16);
+        const g = parseInt(hex.substr(2, 2), 16);
+        const b = parseInt(hex.substr(4, 2), 16);
+
+        // Calculate relative luminance
+        const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+
+        // Return white for dark backgrounds, black for light backgrounds
+        return luminance > 0.5 ? '#000000' : '#ffffff';
+    }
+
+    /**
+     * Get performance-based color from optimal blue to red
+     * @param {number} value - Performance value (0-100)
+     * @return {string} - Hex color code
+     */
+    getPerformanceColor(value) {
+        // Optimal blue at 100%, descending to red at 0%
+        const optimalBlue = { r: 74, g: 144, b: 226 }; // #4A90E2
+        const red = { r: 244, g: 67, b: 54 }; // #f44336
+
+        // Normalize value to 0-1 range
+        const normalized = Math.max(0, Math.min(1, value / 100));
+
+        // Interpolate between red (0) and blue (1)
+        const r = Math.round(red.r + (optimalBlue.r - red.r) * normalized);
+        const g = Math.round(red.g + (optimalBlue.g - red.g) * normalized);
+        const b = Math.round(red.b + (optimalBlue.b - red.b) * normalized);
+
+        return `rgb(${r}, ${g}, ${b})`;
     }
 
     renderConstructionStatus(data) {
@@ -267,21 +368,443 @@ class TooltipSystemV2 {
         `;
     }
 
+    renderOwnerInfo(data) {
+        // Get the actual player name from beer hall lobby or game state
+        let ownerName = 'Unknown Player';
+        let playerColor = '#4CAF50';
+
+        // Check if this is the current player
+        if (this.game.isCurrentPlayer(data.parcel.owner)) {
+            // Get name from beer hall lobby
+            if (window.beerHallLobby?.playerName) {
+                ownerName = window.beerHallLobby.playerName;
+            }
+            // Get color from beer hall lobby
+            if (window.beerHallLobby?.selectedColor) {
+                playerColor = window.beerHallLobby.selectedColor;
+            }
+        } else {
+            // For other players, try to get from game state
+            ownerName = this.getPlayerName(data.parcel.owner);
+            playerColor = this.getPlayerColor(data.parcel.owner);
+        }
+
+        const contrastColor = this.getContrastingColor(playerColor);
+
+        return `
+            <div class="owner-info">
+                <span style="color: #aaa; font-weight: 300;">Owned by </span>
+                <span class="owner-badge" style="background: ${playerColor}; color: ${contrastColor}; padding: 2px 6px; border-radius: 3px; font-weight: 500;">${ownerName}</span>
+            </div>
+        `;
+    }
+
+    renderCompactPerformance(data) {
+        // Get enhanced performance data from server with JEEFHH/CARENS
+        const performance = this.getEnhancedBuildingPerformance(data.row, data.col);
+
+        const efficiency = performance.efficiency || data.condition || 90;
+        const efficiencyPercent = Math.round(efficiency);
+        const condition = performance.condition || data.condition || 100;
+        const netRevenue = Math.round(performance.netIncome || data.netRevenue) || 0;
+
+        // Use performance-based blue-to-red color system
+        const efficiencyColor = this.getPerformanceColor(efficiency);
+        const conditionColor = this.getPerformanceColor(condition);
+
+        // Net revenue uses a different scale - positive revenue gets full blue, negative gets red
+        const revenuePerformance = netRevenue >= 0 ? 100 : 0;
+        const revenueColor = this.getPerformanceColor(revenuePerformance);
+
+        return `
+            <div class="compact-performance">
+                <div class="perf-line">
+                    <span style="color: #ccc; font-weight: 300;">Performance: </span>
+                    <span style="color: ${efficiencyColor}; font-weight: 400;">${efficiencyPercent}%</span>
+                </div>
+                <div class="perf-line">
+                    <span style="color: #ccc; font-weight: 300;">Net Revenue: </span>
+                    <span style="color: ${revenueColor}; font-weight: 400;">
+                        ${netRevenue >= 0 ? '+' : ''}$${netRevenue}/day
+                    </span>
+                </div>
+                <div class="perf-line">
+                    <span style="color: #ccc; font-weight: 300;">Condition: </span>
+                    <span style="color: ${conditionColor}; font-weight: 400;">${Math.round(condition)}%</span>
+                </div>
+            </div>
+        `;
+    }
+
+    renderCompactResources(data) {
+        const buildingData = data.building; // Use pre-fetched building data
+        if (!buildingData) return '';
+
+        const resources = buildingData.resources;
+        const performance = data.performance || {};
+        const needsSatisfaction = this.getBuildingNeedsSatisfaction(data.row, data.col);
+
+        // Get production data
+        const production = this.getBuildingProduction(resources);
+
+        // Get top 2 needs for performance improvement
+        const topNeeds = this.getTopBuildingNeeds(resources, needsSatisfaction);
+
+        // Check if all JEEFHH needs are satisfied for CARENS display
+        const allJeefhhSatisfied = this.areAllJeefhhNeedsSatisfied(topNeeds);
+
+        let html = '';
+
+        // Show production
+        if (production.length > 0) {
+            html += `
+                <div class="tooltip-section production-section">
+                    <div class="section-header">🏭 Produces</div>
+                    <div class="production-list">
+                        ${production.map(item => `
+                            <div class="production-item">${item.amount} ${item.resource}</div>
+                        `).join('')}
+                    </div>
+                </div>
+            `;
+        }
+
+        // Show top needs for performance improvement
+        if (topNeeds.length > 0 && !allJeefhhSatisfied) {
+            html += `
+                <div class="tooltip-section needs-section">
+                    <div class="section-header">⚡ Needs</div>
+                    <div class="needs-list">
+                        ${topNeeds.slice(0, 2).map(need => `
+                            <div class="need-item">
+                                <span class="need-resource">${need.resource}</span>
+                                <span class="need-satisfaction ${this.getNeedSatisfactionClass(need.satisfaction)}">
+                                    ${Math.ceil(need.amount || 1)} units
+                                </span>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+            `;
+        }
+
+        // Show CARENS impacts when JEEFHH needs are satisfied
+        if (allJeefhhSatisfied && buildingData.livability) {
+            html += this.renderCarensImpacts(buildingData.livability);
+        }
+
+        return html;
+    }
+
+    /**
+     * Get building production from resources data
+     */
+    getBuildingProduction(resources) {
+        if (!resources) return [];
+
+        const production = [];
+        const resourceTypes = [
+            { key: 'jobsProvided', name: 'jobs' },
+            { key: 'energyProvided', name: 'energy' },
+            { key: 'educationProvided', name: 'education' },
+            { key: 'foodProvided', name: 'food' },
+            { key: 'housingProvided', name: 'housing' },
+            { key: 'healthcareProvided', name: 'healthcare' }
+        ];
+
+        resourceTypes.forEach(type => {
+            const amount = resources[type.key];
+            if (amount && amount > 0) {
+                production.push({ resource: type.name, amount });
+            }
+        });
+
+        return production;
+    }
+
+    /**
+     * Get top building needs sorted by satisfaction level
+     */
+    getTopBuildingNeeds(resources, needsSatisfaction) {
+        if (!resources) return [];
+
+        const needs = [];
+        const needTypes = [
+            { key: 'energyRequired', name: 'energy' },
+            { key: 'jobsRequired', name: 'workers' },
+            { key: 'foodRequired', name: 'food' },
+            { key: 'educationRequired', name: 'education' },
+            { key: 'housingRequired', name: 'housing' },
+            { key: 'healthcareRequired', name: 'healthcare' }
+        ];
+
+        needTypes.forEach(type => {
+            const amount = resources[type.key];
+            if (amount && amount > 0) {
+                const satisfaction = needsSatisfaction[type.name] || 0;
+                needs.push({
+                    resource: type.name,
+                    amount,
+                    satisfaction
+                });
+            }
+        });
+
+        // Sort by satisfaction level (lowest first)
+        return needs.sort((a, b) => a.satisfaction - b.satisfaction);
+    }
+
+    /**
+     * Check if all JEEFHH needs are satisfied
+     */
+    areAllJeefhhNeedsSatisfied(needs) {
+        const jeefhhResources = ['energy', 'workers', 'food', 'education', 'housing', 'healthcare'];
+        const jeefhhNeeds = needs.filter(need => jeefhhResources.includes(need.resource));
+
+        if (jeefhhNeeds.length === 0) return true; // No JEEFHH needs
+
+        return jeefhhNeeds.every(need => need.satisfaction >= 0.8); // 80% threshold
+    }
+
+    /**
+     * Get building needs satisfaction data
+     */
+    getBuildingNeedsSatisfaction(row, col) {
+        // This would get actual satisfaction data from the economic engine
+        // For now, return mock data based on current game state
+        try {
+            if (this.game.economicClient) {
+                const jeefhh = this.game.economicClient.getJEEFHHStatus();
+
+                return {
+                    energy: Math.min(1.0, jeefhh.energy?.multiplier || 1.0),
+                    workers: Math.min(1.0, jeefhh.jobs?.multiplier || 1.0),
+                    food: Math.min(1.0, jeefhh.food?.multiplier || 1.0),
+                    education: Math.min(1.0, jeefhh.education?.multiplier || 1.0),
+                    housing: Math.min(1.0, jeefhh.housing?.multiplier || 1.0),
+                    healthcare: Math.min(1.0, jeefhh.healthcare?.multiplier || 1.0)
+                };
+            }
+        } catch (error) {
+            console.warn('Error getting needs satisfaction:', error);
+        }
+
+        // Fallback
+        return {
+            energy: 0.8,
+            workers: 0.8,
+            food: 0.8,
+            education: 0.8,
+            housing: 0.8,
+            healthcare: 0.8
+        };
+    }
+
+    /**
+     * Get CSS class for need satisfaction level
+     */
+    getNeedSatisfactionClass(satisfaction) {
+        if (satisfaction >= 0.8) return 'satisfied';
+        if (satisfaction >= 0.6) return 'moderate';
+        return 'unsatisfied';
+    }
+
+    /**
+     * Render CARENS impacts when JEEFHH needs are satisfied
+     */
+    renderCarensImpacts(livability) {
+        const impacts = [];
+        const carensTypes = [
+            { key: 'culture', name: 'Culture', emoji: '🎭' },
+            { key: 'affordability', name: 'Affordability', emoji: '💰' },
+            { key: 'resilience', name: 'Resilience', emoji: '🛡️' },
+            { key: 'environment', name: 'Environment', emoji: '🌿' },
+            { key: 'noise', name: 'Noise', emoji: '🔊' },
+            { key: 'safety', name: 'Safety', emoji: '🚨' }
+        ];
+
+        carensTypes.forEach(type => {
+            const value = livability[type.key];
+            if (value && Math.abs(value) >= 2) { // Only show meaningful impacts
+                impacts.push({
+                    name: type.name,
+                    emoji: type.emoji,
+                    value: value,
+                    isPositive: value > 0
+                });
+            }
+        });
+
+        if (impacts.length === 0) return '';
+
+        return `
+            <div class="tooltip-section carens-section">
+                <div class="section-header">🏛️ CARENS Impact</div>
+                <div class="carens-list">
+                    ${impacts.map(impact => `
+                        <div class="carens-item">
+                            <span class="carens-emoji">${impact.emoji}</span>
+                            <span class="carens-name">${impact.name}</span>
+                            <span class="carens-value ${impact.isPositive ? 'positive' : 'negative'}">
+                                ${impact.isPositive ? '+' : ''}${impact.value}
+                            </span>
+                        </div>
+                    `).join('')}
+                </div>
+            </div>
+        `;
+    }
+
+    renderBuildingValues(data) {
+        if (data.isUnderConstruction) return '';
+
+        const buildingData = this.game.getBuildingDataByName(data.parcel.building);
+        const buildingValue = buildingData?.cost || 0;
+        const landValue = this.game.getParcelPrice(data.row, data.col);
+
+        return `
+            <div class="building-values">
+                <div class="value-header">Property Values</div>
+                <div class="value-row">
+                    <span class="value-label">Building Value:</span>
+                    <span class="value-amount">$${buildingValue.toLocaleString()}</span>
+                </div>
+                <div class="value-row">
+                    <span class="value-label">Land Value:</span>
+                    <span class="value-amount">$${landValue.toLocaleString()}</span>
+                </div>
+            </div>
+        `;
+    }
+
     renderPerformanceMetrics(data) {
         if (data.isUnderConstruction) return '';
 
+        // Get performance data from server
+        const performance = data.performance || {};
+        const efficiency = performance.efficiency || data.condition || 90;
+        const efficiencyPercent = Math.round(efficiency);
+
+        const efficiencyColor = efficiency >= 80 ? '#4CAF50' : efficiency >= 60 ? '#FF9800' : '#f44336';
+
         return `
-            <div class="performance-metrics">
+            <div class="performance-section">
+                <div class="performance-header">Performance Metrics</div>
+                <div class="metric-row">
+                    <span class="metric-label">Operating Efficiency:</span>
+                    <span class="metric-value" style="color: ${efficiencyColor};">${efficiencyPercent}%</span>
+                </div>
                 <div class="metric-row">
                     <span class="metric-label">Net Revenue:</span>
                     <span class="metric-value ${data.netRevenue >= 0 ? 'positive' : 'negative'}">
-                        ${data.netRevenue >= 0 ? '+' : ''}$${data.netRevenue}/day
+                        ${data.netRevenue >= 0 ? '+' : ''}$${Math.round(data.netRevenue)}/day
                     </span>
                 </div>
-                <div class="metric-row">
-                    <span class="metric-label">Condition:</span>
-                    <span class="metric-value">${data.condition}%</span>
+                ${performance.residents ? `
+                    <div class="metric-row">
+                        <span class="metric-label">Residents:</span>
+                        <span class="metric-value">${performance.residents}</span>
+                    </div>
+                ` : ''}
+                ${performance.workers ? `
+                    <div class="metric-row">
+                        <span class="metric-label">Workers:</span>
+                        <span class="metric-value">${performance.workers}</span>
+                    </div>
+                ` : ''}
+            </div>
+        `;
+    }
+
+    renderBuildingResources(data) {
+        if (data.isUnderConstruction) return '';
+
+        const buildingData = this.game.getBuildingDataByName(data.parcel.building);
+        if (!buildingData || !buildingData.resources) return '';
+
+        const resources = buildingData.resources;
+        const provides = [];
+        const needs = [];
+
+        // What this building provides
+        if (resources.jobsProvided > 0) provides.push(`${resources.jobsProvided} jobs`);
+        if (resources.energyProvided > 0) provides.push(`${resources.energyProvided} energy`);
+        if (resources.educationProvided > 0) provides.push(`${resources.educationProvided} education`);
+        if (resources.foodProvided > 0) provides.push(`${resources.foodProvided} food`);
+        if (resources.housingProvided > 0) provides.push(`${resources.housingProvided} housing`);
+        if (resources.healthcareProvided > 0) provides.push(`${resources.healthcareProvided} healthcare`);
+
+        // What this building needs
+        if (resources.jobsRequired > 0) needs.push(`${resources.jobsRequired} jobs`);
+        if (resources.energyRequired > 0) needs.push(`${resources.energyRequired} energy`);
+        if (resources.educationRequired > 0) needs.push(`${resources.educationRequired} education`);
+        if (resources.foodRequired > 0) needs.push(`${resources.foodRequired} food`);
+        if (resources.housingRequired > 0) needs.push(`${resources.housingRequired} housing`);
+        if (resources.healthcareRequired > 0) needs.push(`${resources.healthcareRequired} healthcare`);
+
+        // Check connectivity and supply status
+        const connectivityStatus = this.analyzeConnectivity(data.row, data.col, buildingData);
+
+        let html = '';
+
+        if (provides.length > 0) {
+            html += `
+                <div class="resource-section provides">
+                    <div class="resource-header">
+                        <span style="color: #4CAF50; margin-right: 6px;">⚡</span>Provides
+                    </div>
+                    <div class="resource-list">${provides.join(', ')}</div>
                 </div>
+            `;
+        }
+
+        if (needs.length > 0) {
+            html += `
+                <div class="resource-section needs">
+                    <div class="resource-header">
+                        <span style="color: #FF9800; margin-right: 6px;">🔋</span>Requires
+                    </div>
+                    <div class="resource-list">${needs.join(', ')}</div>
+                    ${connectivityStatus}
+                </div>
+            `;
+        }
+
+        return html;
+    }
+
+    renderConditionAndDecay(data) {
+        if (data.isUnderConstruction) return '';
+
+        const condition = data.condition || 100;
+        const conditionColor = condition >= 80 ? '#4CAF50' : condition >= 60 ? '#FF9800' : '#f44336';
+
+        // Get decay rate from building data
+        const buildingData = this.game.getBuildingDataByName(data.parcel.building);
+        const decayRate = buildingData?.decayRate || 0.5; // Default 0.5% per day
+
+        const dailyDecay = decayRate;
+        const daysUntilMaintenance = Math.ceil((condition - 60) / dailyDecay); // Maintenance needed at 60%
+
+        return `
+            <div class="condition-section">
+                <div class="condition-header">Building Condition</div>
+                <div class="metric-row">
+                    <span class="metric-label">Current Condition:</span>
+                    <span class="metric-value" style="color: ${conditionColor};">${Math.round(condition)}%</span>
+                </div>
+                <div class="metric-row">
+                    <span class="metric-label">Daily Decay:</span>
+                    <span class="metric-value" style="color: #999;">-${dailyDecay}%/day</span>
+                </div>
+                ${condition < 80 ? `
+                    <div class="maintenance-warning">
+                        <span style="color: ${condition < 60 ? '#f44336' : '#FF9800'};">
+                            ${condition < 60 ? '⚠️ Urgent maintenance needed!' :
+                              `🔧 Maintenance in ~${daysUntilMaintenance} days`}
+                        </span>
+                    </div>
+                ` : ''}
             </div>
         `;
     }
@@ -635,7 +1158,15 @@ class TooltipSystemV2 {
     getParcelStatusText(data) {
         if (!data.hasBuilding) {
             if (data.isOwned) {
-                return this.game.isCurrentPlayer(data.owner) ? 'OWNED BY YOU' : 'COMPETITOR OWNED';
+                if (this.game.isCurrentPlayer(data.owner)) {
+                    const playerColor = this.getPlayerColor(data.owner);
+                    const contrastColor = this.getContrastingColor(playerColor);
+                    return `<span style="color: ${contrastColor}">OWNED BY YOU</span>`;
+                } else if (data.owner === 'City' || data.owner === 'unclaimed') {
+                    return `AVAILABLE FOR $${data.price.toLocaleString()}`;
+                } else {
+                    return 'COMPETITOR OWNED';
+                }
             }
             return `AVAILABLE FOR $${data.price.toLocaleString()}`;
         }
@@ -644,17 +1175,34 @@ class TooltipSystemV2 {
             return 'UNDER CONSTRUCTION';
         }
 
-        return 'OPERATIONAL';
+        // Show player name with contrasting color for buildings
+        const ownerName = this.getPlayerName(data.parcel.owner);
+        const playerColor = this.getPlayerColor(data.parcel.owner);
+        const contrastColor = this.getContrastingColor(playerColor);
+
+        return `<span style="color: ${contrastColor}">${ownerName.toUpperCase()}</span>`;
     }
 
     calculateTimeRemaining(data) {
         // Simplified time calculation - implement based on your construction system
         if (!data.isUnderConstruction) return null;
 
-        const remaining = 1 - data.constructionProgress;
-        const days = Math.ceil(remaining * 3); // Assuming 3 days max construction
+        // Get building definition to calculate actual remaining time
+        const buildingData = this.game.buildingDefinitions?.[data.building.id];
+        if (!buildingData) return 'Calculating...';
 
-        return days > 0 ? `${days}d` : 'Almost ready';
+        const totalConstructionTime = buildingData.constructionTime || 7; // Default 7 days
+        const remaining = 1 - data.constructionProgress;
+        const remainingDays = remaining * totalConstructionTime;
+
+        // Convert to seconds for more precise display
+        const gameSpeed = this.game.gameSpeed || 1; // 1 second = 1 day by default
+        const secondsRemaining = Math.ceil(remainingDays / gameSpeed);
+
+        if (secondsRemaining <= 0) return 'Almost ready';
+        if (secondsRemaining < 60) return `${secondsRemaining}s`;
+        if (secondsRemaining < 3600) return `${Math.ceil(secondsRemaining / 60)}m`;
+        return `${Math.ceil(secondsRemaining / 3600)}h`;
     }
 
     getBuildingNeeds(row, col) {
@@ -882,6 +1430,151 @@ class TooltipSystemV2 {
 
         return 0;
     }
+
+    analyzeConnectivity(row, col, buildingData) {
+        // Get efficiency data from the game
+        const key = `${row},${col}`;
+        const efficiencyData = this.game.buildingEfficiencies?.get(key);
+
+        if (!efficiencyData || !efficiencyData.needs) {
+            return '<div class="connectivity-status">🔍 Analyzing connectivity...</div>';
+        }
+
+        const issues = [];
+        const satisfied = [];
+
+        Object.keys(efficiencyData.needs).forEach(resource => {
+            const need = efficiencyData.needs[resource];
+            if (need.satisfaction < 0.8) {
+                if (need.connectivityIssue) {
+                    issues.push(`🚫 ${resource} (no road access)`);
+                } else if (need.supplyShortage) {
+                    issues.push(`📉 ${resource} (insufficient supply)`);
+                }
+            } else {
+                satisfied.push(resource);
+            }
+        });
+
+        if (issues.length > 0) {
+            return `
+                <div class="connectivity-issues">
+                    <div class="issue-header">Resource Issues:</div>
+                    <div class="issue-list">${issues.join(', ')}</div>
+                    <div class="issue-hint">Build roads and suppliers to improve performance</div>
+                </div>
+            `;
+        } else if (satisfied.length > 0) {
+            return `
+                <div class="connectivity-good">
+                    <span style="color: #4CAF50;">✅ All needs satisfied via road network</span>
+                </div>
+            `;
+        }
+
+        return '';
+    }
+
+    getEnhancedBuildingPerformance(row, col) {
+        // Try to get from server-side building data first
+        if (this.game.economicClient?.gameState?.buildings) {
+            const buildings = this.game.economicClient.gameState.buildings;
+            const building = buildings.find(b => b.location && b.location[0] === row && b.location[1] === col);
+
+            if (building && building.performance) {
+                return {
+                    efficiency: building.performance.efficiency || building.condition || 90,
+                    condition: building.condition || 100,
+                    netIncome: building.performance.netIncome || 0,
+                    residents: building.performance.residents || 0,
+                    workers: building.performance.workers || 0,
+                    jeefhhMultiplier: building.performance.jeefhhMultiplier || 1.0,
+                    carensMultiplier: building.performance.carensMultiplier || 1.0
+                };
+            }
+        }
+
+        // Fallback to basic performance calculation
+        const key = `${row},${col}`;
+        const efficiencyData = this.game.buildingEfficiencies?.get(key);
+
+        if (efficiencyData) {
+            return {
+                efficiency: efficiencyData.overallEfficiency * 100 || 90,
+                condition: efficiencyData.condition || 100,
+                netIncome: efficiencyData.netRevenue || 0,
+                residents: efficiencyData.residents || 0,
+                workers: efficiencyData.workers || 0,
+                jeefhhMultiplier: efficiencyData.jeefhhMultiplier || 1.0,
+                carensMultiplier: efficiencyData.carensMultiplier || 1.0
+            };
+        }
+
+        // Default fallback
+        return {
+            efficiency: 90,
+            condition: 100,
+            netIncome: 0,
+            residents: 0,
+            workers: 0,
+            jeefhhMultiplier: 1.0,
+            carensMultiplier: 1.0
+        };
+    }
+
+    // ==================== PLAYER COLOR HELPERS ====================
+
+    getPlayerName(playerId) {
+        // For current player, always use beer hall lobby name first
+        if (this.game.isCurrentPlayer(playerId)) {
+            if (window.beerHallLobby?.playerName) {
+                return window.beerHallLobby.playerName;
+            }
+        }
+
+        // Get player name from game state for other players
+        if (this.game?.economicClient?.gameState?.players) {
+            const players = this.game.economicClient.gameState.players;
+            if (players && players[playerId] && players[playerId].name) {
+                return players[playerId].name;
+            }
+        }
+
+        // Fallback to player ID
+        return playerId || 'Unknown Player';
+    }
+
+    getPlayerColor(playerId) {
+        // Get player color from game state
+        if (this.game?.economicClient?.gameState?.players) {
+            const player = this.game.economicClient.gameState.players[playerId];
+            if (player && player.color) {
+                return player.color;
+            }
+        }
+
+        // Try to get from beer hall lobby for current player
+        if (window.beerHallLobby?.selectedColor && this.game.isCurrentPlayer(playerId)) {
+            return window.beerHallLobby.selectedColor;
+        }
+
+        // Fallback color
+        return '#4CAF50';
+    }
+
+    getContrastingColor(backgroundColor) {
+        // Convert hex to RGB
+        const hex = backgroundColor.replace('#', '');
+        const r = parseInt(hex.substr(0, 2), 16);
+        const g = parseInt(hex.substr(2, 2), 16);
+        const b = parseInt(hex.substr(4, 2), 16);
+
+        // Calculate luminance
+        const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+
+        // Return white for dark colors, dark for light colors
+        return luminance > 0.5 ? '#000000' : '#ffffff';
+    }
 }
 
 // Auto-attach CSS styles
@@ -920,12 +1613,25 @@ if (typeof document !== 'undefined') {
         .tooltip-status.built { background: #4CAF50; color: #fff; }
 
         .building-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
             margin-bottom: 6px;
         }
 
         .building-name {
             font-weight: bold;
             color: #e0e0e0;
+        }
+
+        .player-badge {
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 10px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.3);
         }
 
         .construction-status {
@@ -1175,6 +1881,148 @@ if (typeof document !== 'undefined') {
             font-size: 10px;
             color: #e0e0e0;
             max-width: 200px;
+        }
+
+        /* Compact building tooltip styles */
+        .owner-info {
+            font-size: 10px;
+            margin-bottom: 6px;
+            padding-bottom: 4px;
+            border-bottom: 1px solid #333;
+        }
+
+        .compact-performance {
+            margin: 6px 0;
+            padding: 4px 0;
+            border-bottom: 1px solid #1a1a1a;
+        }
+
+        .perf-line {
+            font-size: 11px;
+            margin: 3px 0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .compact-resources {
+            font-size: 11px;
+            margin: 4px 0;
+            line-height: 1.3;
+        }
+
+        /* Enhanced building tooltip sections */
+        .tooltip-section {
+            margin: 8px 0;
+            padding: 6px 0;
+            border-top: 1px solid #333;
+        }
+
+        .tooltip-section:first-child {
+            border-top: none;
+            margin-top: 0;
+        }
+
+        .section-header {
+            font-size: 10px;
+            font-weight: 600;
+            color: #4A90E2;
+            margin-bottom: 6px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .production-list {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+
+        .production-item {
+            background: rgba(76, 175, 80, 0.1);
+            color: #4CAF50;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-size: 10px;
+            font-weight: 500;
+            text-align: left;
+        }
+
+        .needs-list {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .need-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 10px;
+        }
+
+        .need-resource {
+            color: #ccc;
+            text-transform: capitalize;
+        }
+
+        .need-satisfaction {
+            font-weight: 600;
+            padding: 1px 4px;
+            border-radius: 2px;
+            font-size: 9px;
+        }
+
+        .need-satisfaction.satisfied {
+            background: rgba(76, 175, 80, 0.2);
+            color: #4CAF50;
+        }
+
+        .need-satisfaction.moderate {
+            background: rgba(255, 152, 0, 0.2);
+            color: #FF9800;
+        }
+
+        .need-satisfaction.unsatisfied {
+            background: rgba(244, 67, 54, 0.2);
+            color: #f44336;
+        }
+
+        .carens-list {
+            display: flex;
+            flex-direction: column;
+            gap: 3px;
+        }
+
+        .carens-item {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 10px;
+        }
+
+        .carens-emoji {
+            font-size: 12px;
+            width: 16px;
+            text-align: center;
+        }
+
+        .carens-name {
+            flex: 1;
+            color: #ccc;
+        }
+
+        .carens-value {
+            font-weight: 600;
+            font-size: 10px;
+        }
+
+        .carens-value.positive {
+            color: #4CAF50;
+        }
+
+        .carens-value.negative {
+            color: #f44336;
         }
     `;
 

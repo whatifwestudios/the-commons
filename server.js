@@ -95,11 +95,11 @@ wss.on('connection', (ws, req) => {
     console.log('🔌 Client connected to WebSocket');
     connectedClients.add(ws);
 
-    // Generate temporary player ID
+    // Generate unique player ID for this session
     const playerId = `player_${Math.random().toString(36).substr(2, 9)}`;
     ws.playerId = playerId;
 
-    // Send welcome without auto-joining any room
+    // Send welcome with assigned player ID
     ws.send(JSON.stringify({
         type: 'CONNECTED',
         message: 'Connected to The Commons multiplayer server',
@@ -138,6 +138,23 @@ function handleWebSocketMessage(ws, data) {
     const room = roomManager.getPlayerRoom(playerId);
 
     switch (data.type) {
+        case 'IDENTIFY_PLAYER':
+            // 🔧 FIX: Allow client to identify itself with existing player ID
+            if (data.playerId) {
+                console.log(`🔄 Client requesting to use existing player ID: ${data.playerId} (was: ${ws.playerId})`);
+                ws.playerId = data.playerId;
+
+                // Send confirmation with the assigned player ID
+                ws.send(JSON.stringify({
+                    type: 'PLAYER_IDENTIFIED',
+                    playerId: data.playerId,
+                    message: `Successfully identified as ${data.playerId}`
+                }));
+
+                console.log(`✅ WebSocket connection reassigned to player: ${data.playerId}`);
+            }
+            break;
+
         case 'READY':
             if (!room) {
                 console.error('Player not in a room for READY:', playerId);
@@ -259,14 +276,15 @@ console.log('🏭 Server-side Economic Engine initialized');
 // V2 Beer Hall API - Table finder with preferences
 app.post('/api/beer-hall/find-table', (req, res) => {
     try {
-        const { playerId, playerName, preferences } = req.body;
+        const { playerId, playerName, playerColor, preferences } = req.body;
 
         if (!playerId) {
             return res.status(400).json({ error: 'playerId required' });
         }
 
         const playerData = {
-            name: playerName || `Player ${Math.floor(Math.random() * 1000)}`
+            name: playerName || `Player ${Math.floor(Math.random() * 1000)}`,
+            color: playerColor || '#4CAF50'
         };
 
         // Find player's WebSocket connection (simplified for now)

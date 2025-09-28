@@ -21,8 +21,8 @@ class RenderingSystemV2 {
         // Visual config
         this.hoverOpacity = 0.4;
         this.adjacentOpacity = 0.2;
-        this.tileWidth = 64;
-        this.tileHeight = 32;
+        this.tileWidth = 100.0;
+        this.tileHeight = 55.0;
 
         // Performance
         this.renderScheduled = false;
@@ -320,7 +320,7 @@ class RenderingSystemV2 {
 
         // Complete V2 rendering pipeline
         this.renderGrid();
-        // Buildings are handled by V1 system to avoid artifacts
+        this.renderBuildings(); // ✅ FIX: Add building rendering to V2 pipeline
         this.renderHoverEffects();
 
         this.ctx.restore();
@@ -431,7 +431,7 @@ class RenderingSystemV2 {
         }
 
         // Based on owner
-        if (!parcel.owner) {
+        if (!parcel.owner || parcel.owner === 'City' || parcel.owner === 'unclaimed') {
             return '#2a2a2a'; // Unowned - charcoal gray
         } else {
             return this.getPlayerColor(parcel.owner);
@@ -486,41 +486,159 @@ class RenderingSystemV2 {
         if (!parcel?.building) return;
 
         const iso = this.toIsometric(col, row);
-        const buildingY = iso.y - this.tileHeight / 4; // Lift building up
+
+        // Apply dynamic offsets from position adjuster (if active)
+        const baseYOffset = 36;
+        const dynamicXOffset = this.buildingXOffset || 0;
+        const dynamicYOffset = this.buildingYOffset || baseYOffset;
+
+        const buildingY = iso.y + dynamicYOffset;
+        const buildingX = iso.x + dynamicXOffset;
 
         // Simple building representation
         this.ctx.save();
 
+        // Get building graphics from building data
+        // parcel.building is now just the building ID, need to look up full data
+        const buildingId = parcel.building;
+        const locationKey = `${row},${col}`;
+        const building = this.game.economicClient?.buildings?.get(locationKey);
+
+        if (!building) {
+            console.log(`⚠️ No building data found for ${buildingId} at [${row},${col}]`);
+            return;
+        }
+
+        let imagePath = building.graphicsFile || building.images?.built;
+
+        if (imagePath) {
+            // Try to load and draw building image
+            this.drawBuildingImage(imagePath, buildingX, buildingY, row, col);
+        } else {
+            // Fallback: draw simple rectangle if no graphics found
+            console.log(`⚠️ No graphics found for building: ${building.id || building.type}`);
+
+            const tint = this.getBuildingTint(row, col);
+            if (tint === 'yellow') {
+                this.ctx.fillStyle = this.hexToRgba(this.playerColor, 0.7);
+            } else {
+                this.ctx.fillStyle = '#666';
+            }
+
+            const buildingWidth = this.tileWidth * 0.8;
+            const buildingHeight = this.tileHeight * 1.5;
+
+            this.ctx.fillRect(
+                iso.x - buildingWidth / 2,
+                buildingY - buildingHeight,
+                buildingWidth,
+                buildingHeight
+            );
+
+            // Building border
+            this.ctx.strokeStyle = '#333';
+            this.ctx.lineWidth = 1;
+            this.ctx.strokeRect(
+                iso.x - buildingWidth / 2,
+                buildingY - buildingHeight,
+                buildingWidth,
+                buildingHeight
+            );
+        }
+
+        this.ctx.restore();
+    }
+
+    /**
+     * Draw building image from assets
+     */
+    drawBuildingImage(imagePath, x, y, row, col) {
+        // Use global preloaded image cache
+        if (window.buildingImageCache && window.buildingImageCache.has(imagePath)) {
+            const img = window.buildingImageCache.get(imagePath);
+            if (img && img.complete) {
+                this.drawImageAtPosition(img, x, y, row, col);
+                return;
+            }
+        }
+
+        // Fallback: draw warning if image not preloaded
+        console.warn(`⚠️ Building image not preloaded: ${imagePath}`);
+        this.drawImageNotFoundPlaceholder(x, y, row, col);
+    }
+
+    /**
+     * Draw placeholder for missing building images
+     */
+    drawImageNotFoundPlaceholder(x, y, row, col) {
+        // Match precise alignment: width exactly matches parcel width
+        const buildingWidth = this.tileWidth;
+        const buildingHeight = this.tileHeight * 2; // Default height for placeholder
+
+        // Position building so bottom aligns with diamond bottom point
+        // x,y parameters are already the center point from toIsometric, so true bottom is y + halfHeight
+        const diamondBottomY = y + (this.tileHeight / 2);
+        const finalY = diamondBottomY - buildingHeight;
+
+        // Draw a simple colored rectangle as fallback
+        this.ctx.fillStyle = '#888'; // Gray fallback
+        this.ctx.fillRect(
+            x - buildingWidth / 2,
+            finalY,
+            buildingWidth,
+            buildingHeight
+        );
+
+        // Add a "?" symbol to indicate missing image
+        this.ctx.fillStyle = '#fff';
+        this.ctx.font = `${this.tileWidth * 0.4}px Arial`;
+        this.ctx.textAlign = 'center';
+        this.ctx.textBaseline = 'middle';
+        this.ctx.fillText('?', x, finalY + buildingHeight / 2);
+    }
+
+    /**
+     * Draw the loaded image at the building position
+     */
+    drawImageAtPosition(img, x, y, row, col) {
+        // PRECISE ALIGNMENT: Building width exactly matches diamond parcel width
+        // Left/right edges align with diamond left/right points
+        const buildingWidth = this.tileWidth; // Exactly match parcel width
+
+        // Height maintains aspect ratio, unbounded vertically for tall cities
+        const aspectRatio = img.naturalWidth / img.naturalHeight;
+        const buildingHeight = buildingWidth / aspectRatio;
+
+        // Apply final positioning with user's +9 adjustment
+        const buildingY = y + 9;
+        const buildingX = x;
+
+        // Apply dynamic offsets from position adjuster (if active)
+        const finalX = buildingX + (this.buildingXOffset || 0);
+        const finalY = buildingY - buildingHeight + (this.buildingYOffset || 0);
+
         // Apply building tint if this parcel is connected
         const tint = this.getBuildingTint(row, col);
         if (tint === 'yellow') {
-            this.ctx.fillStyle = this.hexToRgba(this.playerColor, 0.7);
-        } else {
-            this.ctx.fillStyle = '#666';
+            this.ctx.globalCompositeOperation = 'multiply';
+            this.ctx.fillStyle = this.hexToRgba(this.playerColor, 0.8);
+            this.ctx.fillRect(
+                finalX - buildingWidth / 2,
+                finalY,
+                buildingWidth,
+                buildingHeight
+            );
+            this.ctx.globalCompositeOperation = 'source-over';
         }
 
-        // Draw simple building rectangle
-        const buildingWidth = this.tileWidth * 0.8;
-        const buildingHeight = this.tileHeight * 1.5;
-
-        this.ctx.fillRect(
-            iso.x - buildingWidth / 2,
-            buildingY - buildingHeight,
-            buildingWidth,
-            buildingHeight
+        // Draw building with edges perfectly aligned to diamond parcel
+        this.ctx.drawImage(
+            img,
+            finalX - buildingWidth / 2,  // Center horizontally on diamond
+            finalY,                      // Bottom-align with diamond bottom
+            buildingWidth,               // Exactly match parcel width
+            buildingHeight               // Maintain aspect ratio
         );
-
-        // Building border
-        this.ctx.strokeStyle = '#333';
-        this.ctx.lineWidth = 1;
-        this.ctx.strokeRect(
-            iso.x - buildingWidth / 2,
-            buildingY - buildingHeight,
-            buildingWidth,
-            buildingHeight
-        );
-
-        this.ctx.restore();
     }
 
     /**
@@ -643,7 +761,7 @@ class RenderingSystemV2 {
         }
 
         // Based on owner
-        if (!parcel.owner) {
+        if (!parcel.owner || parcel.owner === 'City' || parcel.owner === 'unclaimed') {
             return '#2a2a2a'; // Unowned - charcoal gray
         } else {
             return this.getPlayerColor(parcel.owner);

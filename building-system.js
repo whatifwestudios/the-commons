@@ -68,9 +68,13 @@ class BuildingSystem {
             return false;
         }
 
-        // Check affordability (quick client-side check before server transaction)
+        // Check affordability using server-authoritative balance
         const cost = fundingInfo ? fundingInfo.playerCost : this.calculateBuildingCostWithFunding(building);
-        if (this.game.isCurrentPlayer(owner) && this.game.playerCash < cost) {
+        const currentBalance = (this.game.economicClient && typeof this.game.economicClient.serverBalance === 'number')
+            ? this.game.economicClient.serverBalance
+            : this.game.playerCash;
+
+        if (this.game.isCurrentPlayer(owner) && currentBalance < cost) {
             this.game.showNotification('Insufficient funds!', 'error');
             return false;
         }
@@ -98,10 +102,9 @@ class BuildingSystem {
 
             // Update local cash immediately (server has already deducted)
             if (this.game.isCurrentPlayer(playerId)) {
-                this.game.playerCash = result.result.playerCash;
-                if (this.game.cashManager) {
-                    this.game.cashManager.updateBalance(result.result.playerCash);
-                }
+                // ✅ CLEANED: Server balance is authoritative via Economic Client
+                // Cash updates arrive via WebSocket in GAME_STATE messages
+                console.log('💰 Building purchase: Server handled cash, awaiting state update');
             }
 
         } catch (error) {
@@ -302,19 +305,9 @@ class BuildingSystem {
             }
         }
         
-        // Clear parcel
-        parcel.building = null;
-        parcel.owner = null;
-        parcel.buildingAge = 0;
-        parcel.decay = 0;
-        parcel.population = 0;
-        parcel.maxPopulation = 0;
-        
-        // Clear construction if in progress
-        parcel._isUnderConstruction = false;
-        delete parcel._constructionStartTime;
-        delete parcel._constructionDays;
-        delete parcel._constructionProgress;
+        // SERVER AUTHORITATIVE: Demolition state handled by server
+        // Client will receive parcel state updates via WebSocket
+        console.log(`🏗️ Demolition request sent - awaiting server confirmation`);
         
         // Update systems
         this.markBuildingEconomicsDirty(row, col);
@@ -883,7 +876,7 @@ class BuildingSystem {
         for (let row = 0; row < this.game.gridSize; row++) {
             for (let col = 0; col < this.game.gridSize; col++) {
                 const parcel = this.game.grid[row][col];
-                if (parcel && parcel.building && parcel.owner && parcel.owner !== 'unclaimed') {
+                if (parcel && parcel.building && parcel.owner && parcel.owner !== 'City' && parcel.owner !== 'unclaimed') {
                     buildings.push({ row, col, parcel });
                 }
             }
@@ -905,8 +898,12 @@ class BuildingSystem {
             return false;
         }
         
-        // Check if player has enough cash
-        if (this.game.playerCash < price) {
+        // Check if player has enough cash - use server-authoritative balance
+        const currentBalance = (this.game.economicClient && typeof this.game.economicClient.serverBalance === 'number')
+            ? this.game.economicClient.serverBalance
+            : this.game.playerCash;
+
+        if (currentBalance < price) {
             // Refund the action since purchase failed
             this.game.actionManager.currentActions += this.game.actionManager.actionCosts.purchaseParcel;
             this.game.actionManager.usedThisMonth -= this.game.actionManager.actionCosts.purchaseParcel;
@@ -916,7 +913,7 @@ class BuildingSystem {
         }
 
         // Check if parcel is already owned
-        if (this.game.grid[row][col].owner && this.game.grid[row][col].owner !== 'unclaimed') {
+        if (this.game.grid[row][col].owner && this.game.grid[row][col].owner !== 'City' && this.game.grid[row][col].owner !== 'unclaimed') {
             // Refund the action since purchase failed
             this.game.actionManager.currentActions += this.game.actionManager.actionCosts.purchaseParcel;
             this.game.actionManager.usedThisMonth -= this.game.actionManager.actionCosts.purchaseParcel;
@@ -924,13 +921,15 @@ class BuildingSystem {
             return false;
         }
         
-        // Process purchase through CashManager (server-authoritative)
+        // Process purchase through server: single atomic transaction
         try {
-            await this.game.cashManager.spend(price, 'Parcel Purchase', {
-                coordinate: coord,
-                row: row,
-                col: col
-            });
+            // Send unified parcel purchase transaction (handles payment + ownership + treasury)
+            if (this.game.economicClient) {
+                await this.game.economicClient.purchaseParcel(this.game.currentPlayerId, price, [row, col], 'Parcel Purchase');
+                console.log(`🏡 Parcel purchase transaction sent: ${coord} by ${this.game.currentPlayerId} for $${price}`);
+            } else {
+                throw new Error('Economic client not available');
+            }
         } catch (error) {
             console.error('❌ Parcel purchase failed:', error);
             // Refund the action since purchase failed
@@ -941,31 +940,19 @@ class BuildingSystem {
             return false;
         }
 
-        // Add land purchase price to governance budget
-        if (this.game.governanceSystem) {
-            this.game.governanceSystem.addFunds(price, 'land sales');
-        }
+        // Treasury update handled by server - client receives updates via WebSocket
 
-        // Use current player ID from PlayerUtils (supports both single and multiplayer)
-        this.game.grid[row][col].owner = this.game.currentPlayerId;
-        this.game.grid[row][col].landValue.paidPrice = price;
-        this.game.grid[row][col].landValue.lastAuctionDay = this.game.currentDay;
+        // SERVER AUTHORITATIVE: Ownership updates will arrive via WebSocket
+        // Do not update client grid state directly - await server confirmation
+        console.log('💰 PURCHASE: Transaction completed - awaiting ownership update from server');
         
         // Broadcast parcel purchase to other players and handle conflicts
         if (this.game.multiplayerManager) {
             const success = await this.game.multiplayerManager.onParcelPurchased(row, col, null, price);
 
             if (!success) {
-                // Purchase was rejected - need to refund via CashManager
-                try {
-                    await this.game.cashManager.earn(price, 'Parcel Purchase Rollback', {
-                        coordinate: coord,
-                        row: row,
-                        col: col
-                    });
-                } catch (refundError) {
-                    console.error('❌ Failed to refund parcel purchase:', refundError);
-                }
+                // ✅ CLEANED: Server handles refunds automatically - no client-side rollback needed
+                console.log('💰 Parcel purchase rejected by server - balance maintained server-side');
 
                 // Refund the action since purchase failed
                 this.game.actionManager.currentActions += this.game.actionManager.actionCosts.purchaseParcel;
@@ -979,10 +966,12 @@ class BuildingSystem {
         // Update calculated land values for all parcels
         this.game.updateAllLandValues();
 
-        // Use server-authoritative calculation instead of direct vitality display
-        this.game.calculateCityVitality();
-        this.game.updateDemographicsDisplay();
-        this.game.calculateCurrentCashflow();
+        // V2: Use ui-manager for display updates
+        if (this.game.uiManager && this.game.economicClient) {
+            this.game.uiManager.updateEconomicDisplays(this.game.economicClient);
+        }
+        // V2: Cashflow handled by economic client
+        this.game.updateCashflowAsync();
         this.game.updatePlayerStats();
         this.game.scheduleRender();
         
@@ -1026,8 +1015,12 @@ class BuildingSystem {
             return false;
         }
 
-        // Check if player has enough cash for their portion
-        if (this.game.playerCash < playerCostRequired) {
+        // Check if player has enough cash for their portion - use server-authoritative balance
+        const currentBalance = (this.game.economicClient && typeof this.game.economicClient.serverBalance === 'number')
+            ? this.game.economicClient.serverBalance
+            : this.game.playerCash;
+
+        if (currentBalance < playerCostRequired) {
             // Refund the action since construction failed
             this.game.actionManager.currentActions += this.game.actionManager.actionCosts.constructBuilding;
             this.game.actionManager.usedThisMonth -= this.game.actionManager.actionCosts.constructBuilding;
@@ -1061,72 +1054,39 @@ class BuildingSystem {
         const originalConstructionStartDay = this.game.grid[row][col].constructionStartDay;
         const originalConstructionDays = this.game.grid[row][col].constructionDays;
 
-        // Use CashManager for transaction safety
-        let spendResult = null;
-        if (this.game.cashManager) {
+        // ✅ CLEANED: Direct server-authoritative transaction via Economic Client
+        let spendResult = false;
+        if (this.game.economicClient) {
             try {
-                // CashManager handles optimistic updates and server validation
-                spendResult = await this.game.cashManager.spend(playerCostRequired, 'Building construction', {
-                    buildingId: buildingId,
-                    coordinates: `${row},${col}`,
-                    publicFunding: publicFunding
-                });
+                console.log(`🏗️ Sending BUILD_START transaction: ${buildingId} at (${row},${col})`);
+                const buildStartResult = await this.game.economicClient.startConstruction(
+                    buildingId,
+                    [row, col],
+                    this.game.currentPlayerId,
+                    playerCostRequired
+                );
 
-                // Send BUILD_START transaction to economic engine
-                try {
-                    console.log(`🏗️ Sending BUILD_START transaction: ${buildingId} at (${row},${col})`);
-                    const buildStartResult = await this.game.economicClient.startConstruction(
-                        buildingId,
-                        [row, col],
-                        this.game.currentPlayerId,
-                        playerCostRequired
-                    );
-
-                    if (!buildStartResult.success) {
-                        console.error('❌ BUILD_START transaction failed:', buildStartResult.error);
-                        // Note: Cash has already been spent, but building won't be tracked by economic engine
-                    } else {
-                        console.log('✅ BUILD_START transaction successful');
-                    }
-                } catch (buildStartError) {
-                    console.error('❌ BUILD_START transaction failed:', buildStartError);
-                    // Note: Cash has already been spent, but building won't be tracked by economic engine
+                if (!buildStartResult.success) {
+                    console.error('❌ BUILD_START transaction failed:', buildStartResult.error);
+                    return false;
+                } else {
+                    console.log('✅ BUILD_START transaction successful');
+                    spendResult = true; // For compatibility with rest of function
                 }
-            } catch (error) {
-                console.warn('Building construction payment failed:', error.message);
+            } catch (buildStartError) {
+                console.error('❌ BUILD_START transaction failed:', buildStartError);
                 return false;
             }
         } else {
-            // Fallback to legacy system
-            this.game.playerCash -= playerCostRequired;
+            console.error('❌ Economic Client not available for server transactions');
+            return false;
         }
-        this.game.grid[row][col].building = buildingId;
+        // SERVER AUTHORITATIVE: Building placement handled by server
+        // Client will receive building state updates via WebSocket
 
-        // Set construction start day and duration
-        if (building && building.economics) {
-            // OLD SYSTEM: Game day based (keep for compatibility)
-            this.game.grid[row][col].constructionStartDay = this.game.currentDay;
-            this.game.grid[row][col].constructionDays = building.economics.constructionDays || 14;
-            this.game.grid[row][col].buildingAge = 0;
-
-            // Force minimum 3 days for construction animation
-            if (this.game.grid[row][col].constructionDays < 3) {
-                this.game.grid[row][col].constructionDays = 3;
-            }
-
-            // NEW SYSTEM: Real-time based (for unified building state)
-            this.game.grid[row][col]._isUnderConstruction = true;
-            this.game.grid[row][col]._constructionStartTime = Date.now();
-            this.game.grid[row][col]._constructionDays = building.economics.constructionDays || 14;
-            this.game.grid[row][col]._constructionProgress = 0;
-
-            console.log(`🏗️ Construction started at (${row},${col}):`, {
-                buildingId,
-                startTime: this.game.grid[row][col]._constructionStartTime,
-                constructionDays: this.game.grid[row][col]._constructionDays,
-                expectedDuration: (this.game.grid[row][col]._constructionDays * (3600000 / 365)) / 1000 + ' seconds'
-            });
-        }
+        // SERVER AUTHORITATIVE: Construction timing handled by server
+        // Client will receive construction state updates via WebSocket
+        console.log(`🏗️ Construction request sent for ${buildingId} at (${row},${col}) - awaiting server confirmation`);
 
         // Broadcast to server and await response
         if (this.game.multiplayerManager) {
@@ -1138,8 +1098,7 @@ class BuildingSystem {
 
             if (!success) {
                 // Server rejected - rollback optimistic changes
-                // Note: CashManager handles cash rollback automatically
-                // CashManager always handles rollback automatically
+                // ✅ CLEANED: Server handles transaction rollback automatically
                 this.game.grid[row][col].building = originalBuilding;
                 this.game.grid[row][col].amenities = originalAmenities;
                 this.game.grid[row][col].constructionStartDay = originalConstructionStartDay;
@@ -1165,9 +1124,12 @@ class BuildingSystem {
         
         // Update land values, vitality, cashflow and re-render
         this.game.updateAllLandValues();
-        this.game.calculateCityVitality(); // Server-authoritative
-        this.game.updateDemographicsDisplay();
-        this.game.calculateCurrentCashflow();
+        // V2: Use ui-manager for display updates
+        if (this.game.uiManager && this.game.economicClient) {
+            this.game.uiManager.updateEconomicDisplays(this.game.economicClient);
+        }
+        // V2: Cashflow handled by economic client
+        this.game.updateCashflowAsync();
         this.game.updatePlayerStats();
         this.game.scheduleRender();
         
@@ -1190,22 +1152,26 @@ class BuildingSystem {
         const currentValue = this.game.calculateCurrentBuildingValue(parcel, building);
         const demolitionFee = Math.round(currentValue * 0.1);
         
-        // Check if player can afford demolition fee
-        if (this.game.playerCash < demolitionFee) {
+        // Check if player can afford demolition fee - use server-authoritative balance
+        const currentBalance = (this.game.economicClient && typeof this.game.economicClient.serverBalance === 'number')
+            ? this.game.economicClient.serverBalance
+            : this.game.playerCash;
+
+        if (currentBalance < demolitionFee) {
             this.game.showInsufficientFundsFeedback();
             this.game.hideContextMenu();
             return false;
         }
         
-        // Deduct demolition fee from player
-        if (this.game.cashManager) {
-            await this.game.cashManager.spend(demolitionFee, 'Building demolition fee', {
-                building: buildingId,
-                location: `${row},${col}`
-            });
-        } else {
-            // Legacy fallback only if CashManager unavailable
-            this.game.playerCash -= demolitionFee;
+        // ✅ CLEANED: Server-authoritative demolition transaction
+        if (this.game.economicClient) {
+            try {
+                await this.game.economicClient.spendCash(this.game.currentPlayerId, demolitionFee, 'Building demolition fee');
+                console.log('💰 Demolition fee processed by server');
+            } catch (error) {
+                console.error('❌ Demolition payment failed:', error);
+                return false;
+            }
         }
         
         // Add demolition fee to city treasury
@@ -1244,8 +1210,12 @@ class BuildingSystem {
         this.game.markRegionDirty(row, col, 3);
         
         // Update vitality, cashflow and re-render
-        this.game.calculateCityVitality(); // Server-authoritative
-        this.game.calculateCurrentCashflow();
+        // V2: Use ui-manager for display updates
+        if (this.game.uiManager && this.game.economicClient) {
+            this.game.uiManager.updateEconomicDisplays(this.game.economicClient);
+        }
+        // V2: Cashflow handled by economic client
+        this.game.updateCashflowAsync();
         this.game.updatePlayerStats();
         this.game.scheduleRender();
         this.game.hideContextMenu();
@@ -1259,8 +1229,9 @@ class BuildingSystem {
     upgradeBuilding(row, col, upgradeId) {
         const coord = this.game.getParcelCoordinate(row, col);
         
-        // Replace the building
-        this.game.grid[row][col].building = upgradeId;
+        // SERVER AUTHORITATIVE: Building upgrade handled by server
+        // Client will receive building state updates via WebSocket
+        console.log(`🔧 Building upgrade request sent for ${upgradeId} at (${row},${col})`);
         
         // Broadcast building upgrade to other players
         if (this.game.multiplayerManager) {
@@ -1275,7 +1246,10 @@ class BuildingSystem {
         this.markBuildingEconomicsDirty(row, col);
         
         // Update vitality and re-render
-        this.game.calculateCityVitality(); // Server-authoritative
+        // V2: Use ui-manager for display updates
+        if (this.game.uiManager && this.game.economicClient) {
+            this.game.uiManager.updateEconomicDisplays(this.game.economicClient);
+        }
         this.game.scheduleRender();
         this.game.hideContextMenu();
         
@@ -1288,10 +1262,9 @@ class BuildingSystem {
     addAmenityToBuilding(row, col, amenityId) {
         const coord = this.game.getParcelCoordinate(row, col);
         
-        // Add amenity to parcel
-        if (!this.game.grid[row][col].amenities.includes(amenityId)) {
-            this.game.grid[row][col].amenities.push(amenityId);
-        }
+        // SERVER AUTHORITATIVE: Amenity addition handled by server
+        // Client will receive amenity state updates via WebSocket
+        console.log(`🎯 Amenity addition request sent for ${amenityId} at (${row},${col})`);
         
         // Broadcast amenity addition to other players
         if (this.game.multiplayerManager) {
@@ -1303,7 +1276,10 @@ class BuildingSystem {
         }
         
         // Update vitality and re-render
-        this.game.calculateCityVitality(); // Server-authoritative
+        // V2: Use ui-manager for display updates
+        if (this.game.uiManager && this.game.economicClient) {
+            this.game.uiManager.updateEconomicDisplays(this.game.economicClient);
+        }
         this.game.scheduleRender();
         this.game.hideContextMenu();
         
@@ -1319,20 +1295,25 @@ class BuildingSystem {
         
         const building = this.buildingManager.getBuildingById(parcel.building);
         const repairCost = this.game.calculateRepairCost(parcel, building);
-        
-        if (this.game.playerCash < repairCost) {
+
+        // Use server-authoritative balance for repair cost check
+        const currentBalance = (this.game.economicClient && typeof this.game.economicClient.serverBalance === 'number')
+            ? this.game.economicClient.serverBalance
+            : this.game.playerCash;
+
+        if (currentBalance < repairCost) {
             return false;
         }
         
-        // Deduct repair cost
-        if (this.game.cashManager) {
-            await this.game.cashManager.spend(repairCost, 'Building repair', {
-                building: parcel.building,
-                location: `${row},${col}`
-            });
-        } else {
-            // Legacy fallback only if CashManager unavailable
-            this.game.playerCash -= repairCost;
+        // ✅ CLEANED: Server-authoritative repair transaction
+        if (this.game.economicClient) {
+            try {
+                await this.game.economicClient.spendCash(this.game.currentPlayerId, repairCost, 'Building repair');
+                console.log('💰 Repair cost processed by server');
+            } catch (error) {
+                console.error('❌ Repair payment failed:', error);
+                return false;
+            }
         }
         
         // Reset decay to 0 (fully repaired) but keep building age for history
@@ -1346,7 +1327,8 @@ class BuildingSystem {
         this.markBuildingEconomicsDirty(row, col);
         
         // Update cashflow preview immediately
-        this.game.calculateCurrentCashflow();
+        // V2: Cashflow handled by economic client
+        this.game.updateCashflowAsync();
         this.game.updatePlayerStats();
         
         
@@ -1457,4 +1439,6 @@ class BuildingSystem {
 // Export for use
 if (typeof module !== 'undefined' && module.exports) {
     module.exports = BuildingSystem;
+} else if (typeof window !== 'undefined') {
+    window.BuildingSystem = BuildingSystem;
 }

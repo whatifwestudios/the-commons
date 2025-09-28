@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Building Position Adjuster</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background: #f0f0f0;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .controls {
+            margin-bottom: 20px;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 5px;
+        }
+        .control-group {
+            display: inline-block;
+            margin-right: 20px;
+            margin-bottom: 10px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        input[type="range"] {
+            width: 150px;
+        }
+        input[type="number"] {
+            width: 80px;
+            padding: 5px;
+        }
+        .value-display {
+            color: #007bff;
+            font-weight: bold;
+        }
+        canvas {
+            border: 2px solid #ddd;
+            background: #e8f5e8;
+            display: block;
+            margin: 20px auto;
+        }
+        .code-output {
+            background: #f8f9fa;
+            border: 1px solid #ddd;
+            padding: 15px;
+            border-radius: 5px;
+            font-family: monospace;
+            margin-top: 20px;
+        }
+        .copy-btn {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-bottom: 10px;
+        }
+        .copy-btn:hover {
+            background: #0056b3;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🏠 Building Position Adjuster</h1>
+        <p>Adjust the building position in real-time to get the perfect alignment!</p>
+
+        <div class="controls">
+            <div class="control-group">
+                <label>Y Offset: <span class="value-display" id="yOffsetValue">0</span>px</label>
+                <input type="range" id="yOffset" min="-100" max="100" value="0" step="1">
+            </div>
+
+            <div class="control-group">
+                <label>X Offset: <span class="value-display" id="xOffsetValue">0</span>px</label>
+                <input type="range" id="xOffset" min="-100" max="100" value="0" step="1">
+            </div>
+
+            <div class="control-group">
+                <label>Building Scale: <span class="value-display" id="scaleValue">1.0</span></label>
+                <input type="range" id="scale" min="0.5" max="2.0" value="1.0" step="0.1">
+            </div>
+
+            <div class="control-group">
+                <label>Tile Height Factor: <span class="value-display" id="tileFactorValue">0.0</span></label>
+                <input type="range" id="tileFactor" min="-1.0" max="1.0" value="0.0" step="0.1">
+                <small>Multiplier of tileHeight for positioning</small>
+            </div>
+        </div>
+
+        <canvas id="canvas" width="800" height="600"></canvas>
+
+        <div class="code-output">
+            <button class="copy-btn" onclick="copyCode()">📋 Copy Code</button>
+            <div><strong>Current positioning code:</strong></div>
+            <pre id="codeOutput">const buildingY = iso.y;</pre>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+
+        // Isometric tile dimensions
+        const tileWidth = 60;
+        const tileHeight = 30;
+
+        // Controls
+        const yOffsetSlider = document.getElementById('yOffset');
+        const xOffsetSlider = document.getElementById('xOffset');
+        const scaleSlider = document.getElementById('scale');
+        const tileFactorSlider = document.getElementById('tileFactor');
+
+        // Value displays
+        const yOffsetValue = document.getElementById('yOffsetValue');
+        const xOffsetValue = document.getElementById('xOffsetValue');
+        const scaleValue = document.getElementById('scaleValue');
+        const tileFactorValue = document.getElementById('tileFactorValue');
+        const codeOutput = document.getElementById('codeOutput');
+
+        // Convert grid coordinates to isometric
+        function toIsometric(col, row) {
+            const x = (col - row) * (tileWidth / 2);
+            const y = (col + row) * (tileHeight / 2);
+            return {
+                x: x + canvas.width / 2,
+                y: y + 150
+            };
+        }
+
+        // Draw isometric diamond tile
+        function drawTile(x, y, color = '#90EE90') {
+            ctx.fillStyle = color;
+            ctx.strokeStyle = '#228B22';
+            ctx.lineWidth = 1;
+
+            ctx.beginPath();
+            ctx.moveTo(x, y - tileHeight / 2);
+            ctx.lineTo(x + tileWidth / 2, y);
+            ctx.lineTo(x, y + tileHeight / 2);
+            ctx.lineTo(x - tileWidth / 2, y);
+            ctx.closePath();
+            ctx.fill();
+            ctx.stroke();
+        }
+
+        // Draw building placeholder
+        function drawBuilding(x, y, offsetX, offsetY, scale, tileFactor) {
+            const adjustedX = x + offsetX;
+            const adjustedY = y + offsetY + (tileFactor * tileHeight);
+
+            const buildingWidth = tileWidth * 0.8 * scale;
+            const buildingHeight = tileHeight * 1.5 * scale;
+
+            // Building shadow
+            ctx.fillStyle = 'rgba(0,0,0,0.2)';
+            ctx.fillRect(
+                adjustedX - buildingWidth / 2 + 3,
+                adjustedY - buildingHeight + tileHeight / 2 + 3,
+                buildingWidth,
+                buildingHeight
+            );
+
+            // Building body
+            ctx.fillStyle = '#8B4513';
+            ctx.strokeStyle = '#654321';
+            ctx.lineWidth = 2;
+            ctx.fillRect(
+                adjustedX - buildingWidth / 2,
+                adjustedY - buildingHeight + tileHeight / 2,
+                buildingWidth,
+                buildingHeight
+            );
+            ctx.strokeRect(
+                adjustedX - buildingWidth / 2,
+                adjustedY - buildingHeight + tileHeight / 2,
+                buildingWidth,
+                buildingHeight
+            );
+
+            // Building roof
+            ctx.fillStyle = '#A0522D';
+            ctx.beginPath();
+            ctx.moveTo(adjustedX - buildingWidth / 2, adjustedY - buildingHeight + tileHeight / 2);
+            ctx.lineTo(adjustedX, adjustedY - buildingHeight + tileHeight / 2 - 20);
+            ctx.lineTo(adjustedX + buildingWidth / 2, adjustedY - buildingHeight + tileHeight / 2);
+            ctx.closePath();
+            ctx.fill();
+            ctx.stroke();
+
+            // Door
+            const doorWidth = buildingWidth * 0.2;
+            const doorHeight = buildingHeight * 0.4;
+            ctx.fillStyle = '#654321';
+            ctx.fillRect(
+                adjustedX - doorWidth / 2,
+                adjustedY + tileHeight / 2 - doorHeight,
+                doorWidth,
+                doorHeight
+            );
+
+            // Window
+            const windowSize = buildingWidth * 0.15;
+            ctx.fillStyle = '#87CEEB';
+            ctx.fillRect(
+                adjustedX + buildingWidth / 4 - windowSize / 2,
+                adjustedY - buildingHeight / 2,
+                windowSize,
+                windowSize
+            );
+        }
+
+        function render() {
+            // Clear canvas
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Get current values
+            const yOffset = parseInt(yOffsetSlider.value);
+            const xOffset = parseInt(xOffsetSlider.value);
+            const scale = parseFloat(scaleSlider.value);
+            const tileFactor = parseFloat(tileFactorSlider.value);
+
+            // Update displays
+            yOffsetValue.textContent = yOffset;
+            xOffsetValue.textContent = xOffset;
+            scaleValue.textContent = scale;
+            tileFactorValue.textContent = tileFactor;
+
+            // Draw 3x3 grid of tiles
+            for (let row = 0; row < 3; row++) {
+                for (let col = 0; col < 3; col++) {
+                    const iso = toIsometric(col, row);
+                    const isCenter = row === 1 && col === 1;
+                    drawTile(iso.x, iso.y, isCenter ? '#98FB98' : '#90EE90');
+
+                    // Draw building only on center tile
+                    if (isCenter) {
+                        drawBuilding(iso.x, iso.y, xOffset, yOffset, scale, tileFactor);
+                    }
+                }
+            }
+
+            // Update code output
+            updateCodeOutput(yOffset, xOffset, tileFactor);
+        }
+
+        function updateCodeOutput(yOffset, xOffset, tileFactor) {
+            let code = 'const iso = this.toIsometric(col, row);\n';
+
+            if (tileFactor !== 0) {
+                if (yOffset !== 0) {
+                    code += `const buildingY = iso.y + ${tileFactor} * this.tileHeight + ${yOffset};`;
+                } else {
+                    code += `const buildingY = iso.y + ${tileFactor} * this.tileHeight;`;
+                }
+            } else if (yOffset !== 0) {
+                code += `const buildingY = iso.y + ${yOffset};`;
+            } else {
+                code += 'const buildingY = iso.y;';
+            }
+
+            if (xOffset !== 0) {
+                code += `\nconst buildingX = iso.x + ${xOffset};`;
+            } else {
+                code += '\nconst buildingX = iso.x;';
+            }
+
+            codeOutput.textContent = code;
+        }
+
+        function copyCode() {
+            navigator.clipboard.writeText(codeOutput.textContent).then(() => {
+                const btn = document.querySelector('.copy-btn');
+                const originalText = btn.textContent;
+                btn.textContent = '✅ Copied!';
+                setTimeout(() => {
+                    btn.textContent = originalText;
+                }, 2000);
+            });
+        }
+
+        // Event listeners
+        yOffsetSlider.addEventListener('input', render);
+        xOffsetSlider.addEventListener('input', render);
+        scaleSlider.addEventListener('input', render);
+        tileFactorSlider.addEventListener('input', render);
+
+        // Initial render
+        render();
+    </script>
+</body>
+</html>
