@@ -257,7 +257,10 @@ class TooltipSystemV2 {
             } else if (data.owner === 'City' || data.owner === 'unclaimed') {
                 ownerText = 'Available for purchase';
             } else {
-                ownerText = 'Owned by competitor';
+                // Get actual player name from synchronized multiplayer data
+                const playerName = this.getPlayerName(data.owner);
+                const playerColor = this.getPlayerColor(data.owner);
+                ownerText = `<span style="color: ${playerColor};">Owned by ${playerName}</span>`;
             }
             return `
                 <div class="empty-parcel owned">

@@ -72,8 +72,9 @@ class ActionMarketplaceV2 {
             this.updateModal();
             this.refreshListings();
 
-            // Start real-time updates
-            this.startRefreshTimer();
+            // Update display immediately from server data (no client timer)
+            this.updateMarketplaceButton();
+            this.updateModal();
         }
     }
 
@@ -83,20 +84,14 @@ class ActionMarketplaceV2 {
             modal.classList.remove('visible');
             this.isVisible = false;
 
-            // Stop real-time updates
-            this.stopRefreshTimer();
+            // No timer to stop - using server-authoritative updates only
         }
     }
 
     startRefreshTimer() {
-        if (this.refreshInterval) return;
-
-        this.refreshInterval = setInterval(() => {
-            if (this.isVisible) {
-                this.updateCountdowns();
-                this.updateModal();
-            }
-        }, 1000); // Update every second
+        // REMOVED: Client-side timer for server-authoritative timing
+        // Timer updates now handled only via server broadcasts
+        console.log('📅 Action Market now uses server-authoritative timing only');
     }
 
     stopRefreshTimer() {
@@ -170,68 +165,50 @@ class ActionMarketplaceV2 {
             return;
         }
 
-        // Calculate time remaining in current month
+        // Server-authoritative calculation only when called from server update
         const gameDay = Math.floor(this.game.economicClient.gameTime);
-        const dayProgress = this.game.economicClient.gameTime - gameDay; // 0.0 to 0.999...
-
-        // Days remaining in current month (30 days per month)
         const dayInMonth = (gameDay % 30) + 1; // 1-30
         const daysLeftInMonth = 30 - dayInMonth;
 
-        // Add remaining time in current day
-        const hoursLeftInDay = (1 - dayProgress) * 24;
-        const minutesLeftInDay = (hoursLeftInDay % 1) * 60;
-        const secondsLeftInDay = (minutesLeftInDay % 1) * 60;
+        console.log(`📅 Server time update: Day ${gameDay}, ${daysLeftInMonth} days left in month`);
 
-        // Total seconds until month end
-        const totalSecondsLeft = (daysLeftInMonth * 24 * 60 * 60) +
-                                (hoursLeftInDay * 60 * 60) +
-                                (minutesLeftInDay * 60) +
-                                secondsLeftInDay;
-
-        // Convert to real time (server uses GAME_DAY_MS for timing)
-        const GAME_DAY_MS = this.game.economicClient.GAME_DAY_MS || 10000; // 10 seconds per game day
-        const realSecondsLeft = (totalSecondsLeft / (24 * 60 * 60)) * (GAME_DAY_MS / 1000);
-
-        // Format countdown
-        let countdownText = '';
-        if (daysLeftInMonth > 0) {
-            // Show days remaining
-            if (realSecondsLeft > 3600) {
-                const hours = Math.floor(realSecondsLeft / 3600);
-                const minutes = Math.floor((realSecondsLeft % 3600) / 60);
-                countdownText = `${daysLeftInMonth}d ${hours}h ${minutes}m`;
-            } else if (realSecondsLeft > 60) {
-                const minutes = Math.floor(realSecondsLeft / 60);
-                const seconds = Math.floor(realSecondsLeft % 60);
-                countdownText = `${daysLeftInMonth}d ${minutes}m ${seconds}s`;
-            } else {
-                const seconds = Math.floor(realSecondsLeft);
-                countdownText = `${daysLeftInMonth}d ${seconds}s`;
-            }
+        // Simple display - no complex real-time calculations
+        let countdownText;
+        if (daysLeftInMonth <= 0) {
+            countdownText = 'Market closing...';
+        } else if (daysLeftInMonth === 1) {
+            countdownText = 'Final day';
         } else {
-            // Final day
-            if (realSecondsLeft > 60) {
-                const minutes = Math.floor(realSecondsLeft / 60);
-                const seconds = Math.floor(realSecondsLeft % 60);
-                countdownText = `${minutes}m ${seconds}s`;
-            } else {
-                const seconds = Math.floor(realSecondsLeft);
-                countdownText = `${seconds}s`;
-            }
+            countdownText = `${daysLeftInMonth} days left`;
         }
 
-        // Update display with appropriate styling
-        if (daysLeftInMonth === 0 && realSecondsLeft < 60) {
-            // Final minute - red highlight
-            countdownElement.innerHTML = `<span style="color: #ff6b6b; font-weight: bold;">Month ends in ${countdownText}</span>`;
-        } else if (daysLeftInMonth <= 1) {
-            // Final day - orange highlight
-            countdownElement.innerHTML = `<span style="color: #ffa500; font-weight: bold;">Month ends in ${countdownText}</span>`;
+        // Update both modal and button
+        countdownElement.innerHTML = `<span style="color: #74B9FF;">Month ends in ${countdownText}</span>`;
+        this.updateMarketplaceButton(countdownText);
+    }
+
+    /**
+     * Update Action Market button with countdown text
+     */
+    updateMarketplaceButton(countdownText = null) {
+        const button = document.getElementById('open-action-marketplace');
+        if (!button) return;
+
+        if (countdownText) {
+            button.textContent = `ACTION MARKET (${countdownText})`;
         } else {
-            // Normal countdown - blue text
-            countdownElement.innerHTML = `<span style="color: #74B9FF;">Month ends in ${countdownText}</span>`;
+            button.textContent = 'ACTION MARKET';
         }
+    }
+
+    /**
+     * Called when server sends gameTime updates - this is the ONLY place countdown should update
+     */
+    onServerTimeUpdate() {
+        if (this.isVisible) {
+            this.updateModal(); // Updates modal countdown
+        }
+        this.updateMarketplaceButton(); // Always update button
     }
 
     /**

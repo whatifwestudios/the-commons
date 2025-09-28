@@ -228,6 +228,29 @@ function handleWebSocketMessage(ws, data) {
             }));
             break;
 
+        case 'chat_message':
+            // Handle chat messages and broadcast to other players in the room
+            console.log('💬 Chat message from', data.playerName + ':', data.message);
+            if (room) {
+                // Broadcast to all players in the room except the sender
+                room.players.forEach(player => {
+                    if (player.id !== playerId) {
+                        const playerWs = Array.from(connectedClients).find(client => client.playerId === player.id);
+                        if (playerWs && playerWs.readyState === 1) { // WebSocket.OPEN
+                            playerWs.send(JSON.stringify({
+                                type: 'chat_message',
+                                playerId: data.playerId,
+                                playerName: data.playerName,
+                                playerColor: data.playerColor,
+                                message: data.message,
+                                timestamp: data.timestamp
+                            }));
+                        }
+                    }
+                });
+            }
+            break;
+
         default:
             console.log('Unknown WebSocket message type:', data.type);
     }

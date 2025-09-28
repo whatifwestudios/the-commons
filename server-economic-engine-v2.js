@@ -17,6 +17,7 @@ class ServerEconomicEngine {
         this.gameState = {
             gameTime: 0,           // Game time in days (0-365 = 1 game year = 1 real hour)
             gameStartTime: Date.now(),
+            gameStarted: false,    // Track pre-game vs in-game state globally
 
             // Global JEEFHH supply/demand state
             jeefhh: {
@@ -1484,7 +1485,9 @@ class ServerEconomicEngine {
 
             // Initialize in server-authoritative playerBalances Map
             this.gameState.playerBalances.set(playerId, 6000);
-            console.log(`💰 Player ${playerId} starts with $6,000 and 2 governance points`);
+            const initialPoints = this.gameState.gameStarted ? 2 : 4;
+            playerState.governance.votingPoints = initialPoints;
+            console.log(`💰 Player ${playerId} starts with $6,000 and ${initialPoints} governance points`);
         }
         return this.gameState.players.get(playerId);
     }
@@ -1831,7 +1834,7 @@ class ServerEconomicEngine {
                 buildings: [],
                 lastCashflowUpdate: 0,
                 governance: {
-                    votingPoints: 2, // Always start with 2 points for regular gameplay (pre-game gets 4 separately)
+                    votingPoints: 4, // Start with 4 points for pre-game setup
                     allocations: {
                         education: 0, healthcare: 0, infrastructure: 0, housing: 0,
                         culture: 0, recreation: 0, commercial: 0, civic: 0,
@@ -1846,7 +1849,9 @@ class ServerEconomicEngine {
             // Set player balance
             this.gameState.playerBalances.set(playerId, roomPlayerData.balance || 6000);
 
-            console.log(`💰 Player ${playerId} initialized with $${roomPlayerData.balance || 6000} and ${roomPlayerData.governance?.votingPoints || 4} governance points`);
+            const initialPoints = this.gameState.gameStarted ? 2 : 4;
+            playerState.governance.votingPoints = initialPoints;
+            console.log(`💰 Player ${playerId} initialized with $${roomPlayerData.balance || 6000} and ${initialPoints} governance points`);
         }
     }
 
@@ -1952,20 +1957,24 @@ class ServerEconomicEngine {
         }
 
         if (action === 'add') {
-            // Check if player has voting points
-            if (player.governance.votingPoints < 1) {
+            // Check if player can allocate more points (has unallocated points)
+            const totalAllocated = Object.values(player.governance.votes || {}).reduce((sum, votes) => sum + votes, 0);
+            const maxPoints = player.governance.votingPoints; // votingPoints now represents total allocation capacity
+
+            if (totalAllocated >= maxPoints) {
                 return {
                     success: false,
-                    error: 'Not enough voting points',
-                    votingPoints: player.governance.votingPoints
+                    error: `Cannot allocate more points. You have ${totalAllocated}/${maxPoints} points allocated.`,
+                    votingPoints: maxPoints,
+                    allocated: totalAllocated
                 };
             }
 
-            // Spend point and add vote
-            player.governance.votingPoints -= 1;
+            // Allocate point (no spending - just tracking allocation)
             player.governance.votes[category] = (player.governance.votes[category] || 0) + 1;
 
-            console.log(`🗳️ Added vote for ${category}. Player ${playerId} now has ${player.governance.votingPoints} points and ${player.governance.votes[category]} votes for ${category}`);
+            const newTotalAllocated = totalAllocated + 1;
+            console.log(`🗳️ Allocated vote to ${category}. Player ${playerId} now has ${newTotalAllocated}/${maxPoints} points allocated, ${player.governance.votes[category]} to ${category}`);
 
         } else if (action === 'remove') {
             // Check if player has votes to remove
@@ -1977,11 +1986,11 @@ class ServerEconomicEngine {
                 };
             }
 
-            // Refund point and remove vote
-            player.governance.votingPoints += 1;
+            // Deallocate point (no refunding - just tracking allocation)
             player.governance.votes[category] -= 1;
 
-            console.log(`🗳️ Removed vote from ${category}. Player ${playerId} now has ${player.governance.votingPoints} points and ${player.governance.votes[category]} votes for ${category}`);
+            const totalAllocated = Object.values(player.governance.votes || {}).reduce((sum, votes) => sum + votes, 0);
+            console.log(`🗳️ Deallocated vote from ${category}. Player ${playerId} now has ${totalAllocated}/${player.governance.votingPoints} points allocated, ${player.governance.votes[category]} to ${category}`);
         }
 
         return {
@@ -1999,54 +2008,85 @@ class ServerEconomicEngine {
     async processLVTVote(playerId, voteType, action) {
         const player = this.getOrCreatePlayer(playerId);
 
+        // Check if we're in pre-game mode (range-based allocation) or in-game mode (spending-based)
+        const isPreGame = !this.gameState.gameStarted;
+
         if (action === 'add') {
-            // Calculate current and projected net LVT votes
             const currentIncrease = player.governance.lvtVotesIncrease || 0;
             const currentDecrease = player.governance.lvtVotesDecrease || 0;
-            const currentNetLVT = Math.abs(currentIncrease - currentDecrease);
 
-            let projectedIncrease = currentIncrease;
-            let projectedDecrease = currentDecrease;
+            if (isPreGame) {
+                // PRE-GAME: Range-based allocation system
+                const currentNetLVT = currentIncrease - currentDecrease; // Net can be negative
+                const maxRange = player.governance.votingPoints; // e.g., 4 points = range -4 to +4
 
-            if (voteType === 'lvt_increase') {
-                projectedIncrease += 1;
+                let projectedNetLVT = currentNetLVT;
+                if (voteType === 'lvt_increase') {
+                    projectedNetLVT += 1;
+                } else {
+                    projectedNetLVT -= 1;
+                }
+
+                // Check if within allowed range
+                if (Math.abs(projectedNetLVT) > maxRange) {
+                    return {
+                        success: false,
+                        error: `LVT vote outside allowed range (±${maxRange})`,
+                        votingPoints: player.governance.votingPoints
+                    };
+                }
+
+                // In pre-game, voting points don't change - they represent the range
+                if (voteType === 'lvt_increase') {
+                    player.governance.lvtVotesIncrease += 1;
+                } else {
+                    player.governance.lvtVotesDecrease += 1;
+                }
+
+                console.log(`🗳️ Pre-game: Added ${voteType} vote. Net LVT: ${projectedNetLVT}, Range: ±${maxRange}`);
             } else {
-                projectedDecrease += 1;
-            }
+                // IN-GAME: Allocation-based system (same as pre-game)
+                const currentNetLVT = currentIncrease - currentDecrease; // Net can be negative
+                const totalBudgetVotes = Object.values(player.governance.votes || {}).reduce((sum, votes) => sum + votes, 0);
+                const totalLVTVotes = Math.abs(currentNetLVT);
+                const totalAllocated = totalBudgetVotes + totalLVTVotes;
+                const maxPoints = player.governance.votingPoints; // Total allocation capacity
 
-            const projectedNetLVT = Math.abs(projectedIncrease - projectedDecrease);
+                let projectedNetLVT = currentNetLVT;
+                if (voteType === 'lvt_increase') {
+                    projectedNetLVT += 1;
+                } else {
+                    projectedNetLVT -= 1;
+                }
 
-            // Only charge if net LVT votes increase
-            const pointCost = projectedNetLVT > currentNetLVT ? 1 : 0;
+                const projectedLVTVotes = Math.abs(projectedNetLVT);
+                const projectedTotalAllocated = totalBudgetVotes + projectedLVTVotes;
 
-            if (pointCost > 0 && player.governance.votingPoints < 1) {
-                return {
-                    success: false,
-                    error: 'Not enough voting points',
-                    votingPoints: player.governance.votingPoints
-                };
-            }
+                if (projectedTotalAllocated > maxPoints) {
+                    return {
+                        success: false,
+                        error: `Cannot allocate more points. You have ${totalAllocated}/${maxPoints} points allocated. LVT vote would make it ${projectedTotalAllocated}/${maxPoints}.`,
+                        votingPoints: maxPoints,
+                        allocated: totalAllocated
+                    };
+                }
 
-            // Spend point only if net LVT increased
-            if (pointCost > 0) {
-                player.governance.votingPoints -= pointCost;
-            }
+                // Allocate LVT vote (no point spending)
+                if (voteType === 'lvt_increase') {
+                    player.governance.lvtVotesIncrease += 1;
+                } else {
+                    player.governance.lvtVotesDecrease += 1;
+                }
 
-            if (voteType === 'lvt_increase') {
-                player.governance.lvtVotesIncrease = projectedIncrease;
-            } else {
-                player.governance.lvtVotesDecrease = projectedDecrease;
+                console.log(`🗳️ In-game: Allocated ${voteType} vote. Net LVT: ${projectedNetLVT}, Total allocated: ${projectedTotalAllocated}/${maxPoints}`);
             }
 
             // Calculate new LVT rate based on all player votes
             this.calculateLVTRate();
 
-            console.log(`🗳️ Added ${voteType} vote (cost: ${pointCost}). Player ${playerId} now has ${player.governance.votingPoints} points`);
-
         } else if (action === 'remove') {
             const currentIncrease = player.governance.lvtVotesIncrease || 0;
             const currentDecrease = player.governance.lvtVotesDecrease || 0;
-
             const currentVotes = voteType === 'lvt_increase' ? currentIncrease : currentDecrease;
 
             if (currentVotes <= 0) {
@@ -2057,38 +2097,34 @@ class ServerEconomicEngine {
                 };
             }
 
-            // Calculate current and projected net LVT votes
-            const currentNetLVT = Math.abs(currentIncrease - currentDecrease);
+            if (isPreGame) {
+                // PRE-GAME: Simple vote removal, no point refunding needed
+                if (voteType === 'lvt_increase') {
+                    player.governance.lvtVotesIncrease -= 1;
+                } else {
+                    player.governance.lvtVotesDecrease -= 1;
+                }
 
-            let projectedIncrease = currentIncrease;
-            let projectedDecrease = currentDecrease;
-
-            if (voteType === 'lvt_increase') {
-                projectedIncrease -= 1;
+                const newNetLVT = (player.governance.lvtVotesIncrease || 0) - (player.governance.lvtVotesDecrease || 0);
+                console.log(`🗳️ Pre-game: Removed ${voteType} vote. Net LVT: ${newNetLVT}`);
             } else {
-                projectedDecrease -= 1;
-            }
+                // IN-GAME: Allocation-based system (same as pre-game)
+                // Simple vote removal, no point refunding needed
+                if (voteType === 'lvt_increase') {
+                    player.governance.lvtVotesIncrease -= 1;
+                } else {
+                    player.governance.lvtVotesDecrease -= 1;
+                }
 
-            const projectedNetLVT = Math.abs(projectedIncrease - projectedDecrease);
-
-            // Only refund if net LVT votes decrease
-            const pointRefund = projectedNetLVT < currentNetLVT ? 1 : 0;
-
-            // Refund point only if net LVT decreased
-            if (pointRefund > 0) {
-                player.governance.votingPoints += pointRefund;
-            }
-
-            if (voteType === 'lvt_increase') {
-                player.governance.lvtVotesIncrease = projectedIncrease;
-            } else {
-                player.governance.lvtVotesDecrease = projectedDecrease;
+                const newNetLVT = (player.governance.lvtVotesIncrease || 0) - (player.governance.lvtVotesDecrease || 0);
+                const totalBudgetVotes = Object.values(player.governance.votes || {}).reduce((sum, votes) => sum + votes, 0);
+                const totalLVTVotes = Math.abs(newNetLVT);
+                const totalAllocated = totalBudgetVotes + totalLVTVotes;
+                console.log(`🗳️ In-game: Deallocated ${voteType} vote. Net LVT: ${newNetLVT}, Total allocated: ${totalAllocated}/${player.governance.votingPoints}`);
             }
 
             // Recalculate LVT rate
             this.calculateLVTRate();
-
-            console.log(`🗳️ Removed ${voteType} vote (refund: ${pointRefund}). Player ${playerId} now has ${player.governance.votingPoints} points`);
         }
 
         return {
@@ -2134,6 +2170,30 @@ class ServerEconomicEngine {
      */
     getCurrentLVTRate() {
         return this.currentLVTRate || 0.5; // Default to 50%
+    }
+
+    /**
+     * Transition game from pre-game to in-game state
+     * This should be called when the first building is placed or game officially starts
+     */
+    startGame() {
+        if (this.gameState.gameStarted) {
+            console.log('🎮 Game already started, ignoring startGame call');
+            return;
+        }
+
+        console.log('🎮 Starting game: transitioning from pre-game to in-game state');
+        this.gameState.gameStarted = true;
+
+        // Update all players' governance points from 4 (pre-game) to 2 (in-game)
+        this.gameState.players.forEach((player, playerId) => {
+            if (player.governance && player.governance.votingPoints === 4) {
+                player.governance.votingPoints = 2;
+                console.log(`🏛️ Player ${playerId} voting points reduced from 4 to 2 for in-game state`);
+            }
+        });
+
+        console.log('🎮 Game started successfully - all players now in in-game governance mode');
     }
 
     /**

@@ -1359,6 +1359,90 @@
             font-size: 13px;
         }
 
+        /* In-game Chat Panel Styles */
+        .chat-section .section-content {
+            padding: 10px;
+        }
+
+        .chat-messages-small {
+            height: 200px;
+            overflow-y: auto;
+            padding: 8px;
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 4px;
+            margin-bottom: 10px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .chat-message-small {
+            margin-bottom: 8px;
+            font-size: 12px;
+        }
+
+        .chat-message-small .message-time {
+            color: rgba(255, 255, 255, 0.3);
+            font-size: 10px;
+            margin-right: 5px;
+        }
+
+        .chat-message-small .message-player {
+            font-weight: 500;
+            margin-right: 5px;
+        }
+
+        .chat-message-small .message-text {
+            color: rgba(255, 255, 255, 0.8);
+        }
+
+        .chat-input-container {
+            display: flex;
+            gap: 5px;
+        }
+
+        #in-game-chat-input {
+            flex: 1;
+            padding: 6px 8px;
+            background: rgba(0, 0, 0, 0.4);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 3px;
+            color: white;
+            font-size: 12px;
+        }
+
+        #in-game-chat-input::placeholder {
+            color: rgba(255, 255, 255, 0.4);
+        }
+
+        #in-game-chat-input:focus {
+            outline: none;
+            border-color: rgba(255, 255, 255, 0.3);
+        }
+
+        #in-game-chat-send {
+            padding: 6px 12px;
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 3px;
+            color: white;
+            font-size: 12px;
+            cursor: pointer;
+        }
+
+        #in-game-chat-send:hover {
+            background: rgba(255, 255, 255, 0.15);
+            border-color: rgba(255, 255, 255, 0.3);
+        }
+
+        .unread-count {
+            background: white;
+            color: #333;
+            padding: 2px 6px;
+            border-radius: 10px;
+            font-size: 10px;
+            margin-left: 5px;
+            font-weight: bold;
+        }
+
         /* Game UI blur effect when chat is open */
         .game-blurred #main-area,
         .game-blurred #sidebar {
@@ -1718,7 +1802,24 @@
                     <button class="action-btn" id="open-action-marketplace">ACTION MARKET</button>
                 </div>
             </div>
-            
+
+            <!-- Chat Section -->
+            <div class="sidebar-section collapsible chat-section" id="chat-section">
+                <div class="section-header" data-target="chat-content">
+                    <span>CHAT <span id="unread-count" class="unread-count" style="display: none;"></span></span>
+                    <span class="collapse-icon"></span>
+                </div>
+                <div id="chat-content" class="section-content chat-content">
+                    <div class="chat-messages-small" id="in-game-chat-messages">
+                        <!-- Messages will be populated here -->
+                    </div>
+                    <div class="chat-input-container">
+                        <input type="text" id="in-game-chat-input" placeholder="Type a message..." maxlength="200">
+                        <button id="in-game-chat-send">Send</button>
+                    </div>
+                </div>
+            </div>
+
             <div id="building-info-panel" class="building-info-panel">
                 <div class="building-info-header">
                     <h3 id="building-info-title">Building Info</h3>
@@ -2648,6 +2749,132 @@
                 console.error('❌ CLEAN MULTIPLAYER: Failed to initialize Beer Hall Lobby system:', error);
                 console.error('❌ Error details:', error.message, error.stack);
                 alert('Failed to initialize beer hall: ' + error.message);
+            }
+        });
+
+        // In-game chat functionality
+        let unreadMessages = 0;
+        let chatMessages = [];
+        let chatPanelCollapsed = true; // Start collapsed
+
+        function initializeInGameChat() {
+            const chatInput = document.getElementById('in-game-chat-input');
+            const chatSend = document.getElementById('in-game-chat-send');
+            const chatMessages = document.getElementById('in-game-chat-messages');
+            const unreadCountElement = document.getElementById('unread-count');
+            const chatSection = document.getElementById('chat-section');
+
+            if (!chatInput || !chatSend) {
+                console.log('💬 In-game chat elements not found, will initialize later');
+                return;
+            }
+
+            console.log('💬 Initializing in-game chat system');
+
+            // Initialize as collapsed
+            chatSection.classList.add('collapsed');
+
+            // Send message function
+            function sendMessage() {
+                const message = chatInput.value.trim();
+                if (!message) return;
+
+                // Get current player info
+                const playerName = window.beerHallLobby?.playerName || 'You';
+                const playerColor = window.beerHallLobby?.selectedColor || '#4CAF50';
+
+                // Add message to chat
+                window.addChatMessage(playerName, message, playerColor, true);
+
+                // Send to other players via WebSocket if connected
+                if (window.game?.economicClient?.ws?.readyState === WebSocket.OPEN) {
+                    window.game.economicClient.ws.send(JSON.stringify({
+                        type: 'chat_message',
+                        playerId: window.playerConfig?.id,
+                        playerName: playerName,
+                        playerColor: playerColor,
+                        message: message,
+                        timestamp: Date.now()
+                    }));
+                }
+
+                chatInput.value = '';
+            }
+
+            // Event listeners
+            chatSend.addEventListener('click', sendMessage);
+            chatInput.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    sendMessage();
+                }
+            });
+
+            // Monitor chat panel visibility for unread count
+            const observer = new MutationObserver((mutations) => {
+                mutations.forEach((mutation) => {
+                    if (mutation.type === 'attributes' && mutation.attributeName === 'class') {
+                        const isCollapsed = chatSection.classList.contains('collapsed');
+                        if (!isCollapsed && unreadMessages > 0) {
+                            // Chat opened, reset unread count
+                            unreadMessages = 0;
+                            updateUnreadCount();
+                        }
+                    }
+                });
+            });
+            observer.observe(chatSection, { attributes: true });
+        }
+
+        // Make addChatMessage globally accessible
+        window.addChatMessage = function(playerName, message, playerColor, isOwnMessage = false) {
+            const chatMessages = document.getElementById('in-game-chat-messages');
+            const chatSection = document.getElementById('chat-section');
+
+            if (!chatMessages) return;
+
+            const messageDiv = document.createElement('div');
+            messageDiv.className = 'chat-message-small';
+
+            const now = new Date();
+            const time = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+            messageDiv.innerHTML = `
+                <span class="message-time">${time}</span>
+                <span class="message-player" style="color: ${playerColor};">${playerName}:</span>
+                <span class="message-text">${message}</span>
+            `;
+
+            chatMessages.appendChild(messageDiv);
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+
+            // Update unread count if chat is collapsed and not own message
+            if (!isOwnMessage && chatSection.classList.contains('collapsed')) {
+                unreadMessages++;
+                updateUnreadCount();
+            }
+        }
+
+        function updateUnreadCount() {
+            const unreadCountElement = document.getElementById('unread-count');
+            if (!unreadCountElement) return;
+
+            if (unreadMessages > 0) {
+                unreadCountElement.textContent = unreadMessages;
+                unreadCountElement.style.display = 'inline';
+            } else {
+                unreadCountElement.style.display = 'none';
+            }
+        }
+
+        // Initialize chat when game is ready
+        setTimeout(initializeInGameChat, 1000);
+
+        // Listen for incoming chat messages from other players
+        window.addEventListener('message', (event) => {
+            if (event.data.type === 'chat_message_received') {
+                const data = event.data;
+                addChatMessage(data.playerName, data.message, data.playerColor, false);
             }
         });
 

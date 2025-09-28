@@ -2602,7 +2602,14 @@ class IsometricGrid {
             this.actionMarketplace.closeMarketplace();
         }
     }
-    
+
+    listActionsForSale() {
+        // Delegate to action marketplace
+        if (this.actionMarketplace) {
+            this.actionMarketplace.listActionsForSale();
+        }
+    }
+
     updateGovernanceUI() {
         console.log('🔄 updateGovernanceUI called, delegating to new governance system');
         this.updateGovernanceModal();

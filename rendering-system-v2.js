@@ -442,22 +442,36 @@ class RenderingSystemV2 {
      * Get player color
      */
     getPlayerColor(playerId) {
+        // First, try to get color from synchronized multiplayer game state
+        if (this.game?.economicClient?.gameState?.players) {
+            const player = this.game.economicClient.gameState.players[playerId];
+            if (player && player.color) {
+                console.log(`🎨 Found synced color for ${playerId}: ${player.color}`);
+                return player.color;
+            }
+        }
+
+        // Second, check if this is the current player (use local settings as fallback)
+        if (playerId === 'player' ||
+            playerId === 1 ||
+            playerId === this.game.currentPlayerId) {
+            const localColor = this.game.playerSettings?.color || '#10AC84';
+            console.log(`🎨 Using local color for current player ${playerId}: ${localColor}`);
+            return localColor;
+        }
+
+        // Fallback to default colors for unknown players
         const colors = [
             '#10AC84', '#3498DB', '#E74C3C', '#F39C12',
             '#9B59B6', '#1ABC9C', '#E67E22', '#34495E',
             '#2ECC71', '#E91E63', '#FF5722', '#795548'
         ];
 
-        // Check if this is the current player (support multiple ID formats)
-        if (playerId === 'player' ||
-            playerId === 1 ||
-            playerId === this.game.currentPlayerId) {
-            return this.game.playerSettings?.color || '#10AC84';
-        }
-
         // Handle numeric player IDs for competitors
         if (typeof playerId === 'number') {
-            return colors[(playerId - 1) % colors.length];
+            const fallbackColor = colors[(playerId - 1) % colors.length];
+            console.warn(`🎨 No synced color for player ${playerId}, using fallback: ${fallbackColor}`);
+            return fallbackColor;
         }
 
         // For unknown player IDs, return default but log a warning
@@ -601,16 +615,16 @@ class RenderingSystemV2 {
      * Draw the loaded image at the building position
      */
     drawImageAtPosition(img, x, y, row, col) {
-        // PRECISE ALIGNMENT: Building width exactly matches diamond parcel width
-        // Left/right edges align with diamond left/right points
-        const buildingWidth = this.tileWidth; // Exactly match parcel width
+        // PRECISE ALIGNMENT: Building width slightly smaller than diamond parcel width
+        // Left/right edges align with diamond left/right points, reduced by 4px
+        const buildingWidth = this.tileWidth - 4; // 4px smaller than parcel width
 
         // Height maintains aspect ratio, unbounded vertically for tall cities
         const aspectRatio = img.naturalWidth / img.naturalHeight;
         const buildingHeight = buildingWidth / aspectRatio;
 
-        // Apply final positioning with user's +9 adjustment
-        const buildingY = y + 9;
+        // Apply final positioning with user's +19 adjustment
+        const buildingY = y + 19;
         const buildingX = x;
 
         // Apply dynamic offsets from position adjuster (if active)
@@ -815,8 +829,8 @@ class RenderingSystemV2 {
         // minX = -gridSpan * tileWidth/2, maxX = gridSpan * tileWidth/2
         // minY = 0, maxY = gridSpan * tileHeight
 
-        // Center the grid properly, shifted left by 1%:
-        this.game.offsetX = (this.canvas.width / 2) - (this.canvas.width * 0.01);  // Centers the diamond horizontally, shifted left by 1%
+        // Center the grid properly, shifted left by 2%:
+        this.game.offsetX = (this.canvas.width / 2) - (this.canvas.width * 0.02);  // Centers the diamond horizontally, shifted left by 2%
         this.game.offsetY = (this.canvas.height - gridSpan * this.tileHeight) / 2;  // Centers vertically
 
         // Set tile dimensions on game object for backwards compatibility

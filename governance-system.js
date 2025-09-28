@@ -1426,6 +1426,23 @@ class GovernanceSystem {
                 });
             }
 
+            // Return to Chat button
+            const saveBtn = document.getElementById('save-governance');
+            console.log('🏛️ DEBUG: save-governance button found:', saveBtn);
+            if (saveBtn) {
+                console.log('🏛️ DEBUG: Setting up save-governance event listener');
+                saveBtn.addEventListener('click', () => {
+                    try {
+                        console.log('🏛️ Returning to chat - all votes automatically synchronized');
+                        this.closeGovernanceModal();
+                    } catch (error) {
+                        console.error('Error in Return to Chat button:', error);
+                    }
+                });
+            } else {
+                console.error('🏛️ ERROR: save-governance button not found in DOM!');
+            }
+
         } catch (error) {
             console.error('Error setting up governance modal:', error);
         }

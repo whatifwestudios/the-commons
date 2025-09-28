@@ -1531,7 +1531,7 @@ body.beer-hall-active #top-bar {
 
 .section-header {
     padding: 10px 20px;
-    font-size: 12px;
+    font-size: 12px!important;
     font-weight: 500;
     letter-spacing: 1px;
     color: #ececec;

@@ -730,16 +730,31 @@ class EconomicClient {
 
         // Sync player data (server-authoritative)
         if (gameState.players) {
+            // Store complete player data for multiplayer rendering (names, colors, etc.)
+            if (!this.gameState) {
+                this.gameState = {};
+            }
+            this.gameState.players = gameState.players;
+            console.log('🎨 Synced complete player data for multiplayer:', Object.keys(gameState.players));
+
+            // Legacy support: extract specific data into separate properties
             this.playerBalances = {};
             this.playerActions = {};
             Object.values(gameState.players).forEach(player => {
                 this.playerBalances[player.id] = player.cash;
                 this.playerActions[player.id] = player.actions?.total || 0;
             });
+
             // Balance and action sync logging (reduced frequency)
             if (!this.lastBalanceLogTime || Date.now() - this.lastBalanceLogTime > 2000) {
                 console.log('💰 Balance sync check:', this.playerId, 'server balance:', gameState.players[this.playerId]?.cash);
                 console.log('🎯 Action sync check:', this.playerId, 'server actions:', gameState.players[this.playerId]?.actions?.total);
+
+                // DEBUG: Log player colors for multiplayer sync verification
+                Object.values(gameState.players).forEach(player => {
+                    console.log(`🎨 Player ${player.id} (${player.name}): ${player.color}`);
+                });
+
                 this.lastBalanceLogTime = Date.now();
             }
         }
@@ -1244,6 +1259,17 @@ class EconomicClient {
                     this.game.governanceSystem.updateGovernanceModal();
                     // Animate governance button with gold fade animation
                     this.game.governanceSystem.animateGovernanceButtonGold();
+                }
+                break;
+
+            case 'chat_message':
+                // Handle incoming chat messages from other players
+                console.log('💬 Chat message received:', update);
+                if (update.playerId !== this.playerId) { // Don't echo back own messages
+                    // Add message to in-game chat
+                    if (window.addChatMessage) {
+                        window.addChatMessage(update.playerName, update.message, update.playerColor, false);
+                    }
                 }
                 break;
 
