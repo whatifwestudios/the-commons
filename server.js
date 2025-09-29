@@ -10,7 +10,7 @@ const fs = require('fs');
 const http = require('http');
 const WebSocket = require('ws');
 const ServerEconomicEngine = require('./server-economic-engine-v2');
-const GameState = require('./game-state');
+// GameState removed - using v2 server-authoritative economic engine
 const RoomManager = require('./server-room-manager');
 
 const app = express();
@@ -21,8 +21,7 @@ const noAuth = (req, res, next) => {
     next();
 };
 
-// Initialize game state and room manager
-const gameState = new GameState();
+// Initialize room manager with v2 economic engine
 const roomManager = new RoomManager();
 
 // Clean multiplayer-only server - no legacy default rooms
@@ -133,16 +132,29 @@ wss.on('connection', (ws, req) => {
 });
 
 // Handle WebSocket messages
-function handleWebSocketMessage(ws, data) {
+async function handleWebSocketMessage(ws, data) {
     const playerId = ws.playerId;
     const room = roomManager.getPlayerRoom(playerId);
 
     switch (data.type) {
         case 'IDENTIFY_PLAYER':
-            // 🔧 FIX: Allow client to identify itself with existing player ID
+            // 🔧 FIX: Allow client to identify itself with existing player ID and metadata
             if (data.playerId) {
                 console.log(`🔄 Client requesting to use existing player ID: ${data.playerId} (was: ${ws.playerId})`);
+                console.log(`👤 Player metadata:`, {
+                    name: data.playerName,
+                    color: data.playerColor
+                });
+
                 ws.playerId = data.playerId;
+
+                // DON'T create player here - let room.addPlayer() handle player creation with cityName
+                // Only update metadata if player already exists in economic engine
+                if (room?.economicEngine) {
+                    if (data.playerName || data.playerColor) {
+                        room.economicEngine.updatePlayerMetadata(data.playerId, data.playerName, data.playerColor);
+                    }
+                }
 
                 // Send confirmation with the assigned player ID
                 ws.send(JSON.stringify({
@@ -151,7 +163,7 @@ function handleWebSocketMessage(ws, data) {
                     message: `Successfully identified as ${data.playerId}`
                 }));
 
-                console.log(`✅ WebSocket connection reassigned to player: ${data.playerId}`);
+                console.log(`✅ WebSocket connection reassigned to player: ${data.playerId} with metadata`);
             }
             break;
 
@@ -251,6 +263,23 @@ function handleWebSocketMessage(ws, data) {
             }
             break;
 
+
+        case 'GOVERNANCE_VOTE':
+            // Handle governance allocation changes
+            if (room && room.economicEngine) {
+                const result = room.economicEngine.handleGovernanceVote(
+                    data.playerId,
+                    data.voteType,
+                    data
+                );
+
+                if (result.success) {
+                    // Broadcast updated governance state to all players in room
+                    room.economicEngine.broadcastGameStateUpdate('GOVERNANCE_UPDATE');
+                }
+            }
+            break;
+
         default:
             console.log('Unknown WebSocket message type:', data.type);
     }
@@ -282,10 +311,6 @@ setInterval(() => {
     // Update each room's game timer
     roomManager.rooms.forEach(room => {
         if (room.state === 'IN_PROGRESS') {
-            room.economicEngine.updateGameTime();
-        } else if (room.economicEngine && room.economicEngine.gameState.buildings.size > 0) {
-            console.log(`🚨 Room ${room.id} has ${room.economicEngine.gameState.buildings.size} buildings but state is '${room.state}', not 'IN_PROGRESS'`);
-            // Still update time for rooms with buildings, regardless of state
             room.economicEngine.updateGameTime();
         }
     });
@@ -523,7 +548,7 @@ app.post('/api/player/reset-balance', async (req, res) => {
     }
 });
 
-// Update player color endpoint
+// Update player color endpoint - V2: Handled by room-based WebSocket system
 app.post('/api/player/color', noAuth, (req, res) => {
     try {
         const { playerId, color } = req.body;
@@ -536,14 +561,16 @@ app.post('/api/player/color', noAuth, (req, res) => {
             });
         }
 
-        // Use actual GameState instance for color management
+        // V2: Color management is handled by room system via WebSocket
+        // Return success for compatibility but actual updates happen via room WebSocket
         const result = {
             success: true,
-            assignedColor: gameState.updatePlayerColor(actualPlayerId, color),
-            playerId: actualPlayerId
+            assignedColor: color, // V2: Accept provided color, room validates
+            playerId: actualPlayerId,
+            message: 'V2: Color managed by room system'
         };
 
-        console.log(`🎨 Player ${actualPlayerId} color updated to ${result.assignedColor}`);
+        console.log(`🎨 V2: Player ${actualPlayerId} color update request for ${color} (handled by room system)`);
 
         res.json(result);
     } catch (error) {
@@ -589,27 +616,31 @@ app.get('/api/player/:playerId', noAuth, (req, res) => {
     }
 });
 
-// Get all players endpoint (for multiplayer)
+// Get all players endpoint - V2: Room-based player data
 app.get('/api/players', noAuth, (req, res) => {
     try {
-        // Use actual GameState instance for player data
-        const players = {};
+        // V2: Players are managed by individual rooms
+        const allPlayers = {};
 
-        // Convert GameState players to API format
-        for (const [playerId, playerData] of Object.entries(gameState.state.players)) {
-            players[playerId] = {
-                id: playerId,
-                name: playerData.name || 'Player',
-                color: playerData.color || '#10AC84',
-                cash: playerData.cash || 6000,
-                actions: playerData.actions || 20,
-                votingPoints: playerData.votingPoints || 0
-            };
-        }
+        // Aggregate players from all rooms
+        roomManager.rooms.forEach((room, roomId) => {
+            room.players.forEach((playerData, playerId) => {
+                allPlayers[playerId] = {
+                    id: playerId,
+                    name: playerData.name || 'Player',
+                    color: playerData.color || '#10AC84',
+                    cash: playerData.balance || 6000,
+                    actions: 20, // V2: Actions handled by room economic engine
+                    votingPoints: playerData.governance?.votingPoints || 0,
+                    roomId: roomId,
+                    cityName: playerData.cityName // V2: Include server-generated city name
+                };
+            });
+        });
 
         res.json({
             success: true,
-            players: players
+            players: allPlayers
         });
     } catch (error) {
         console.error('❌ Get players failed:', error);
@@ -677,40 +708,93 @@ app.get('/api/leaderboard', (req, res) => {
     });
 });
 
-// Test endpoint to manually complete all buildings (for debugging)
-app.post('/api/test/complete-all-buildings', async (req, res) => {
+// =============================================================================
+// CLEAN GOVERNANCE API - Simple and working
+// =============================================================================
+
+// Get governance state for a player
+app.get('/api/governance/state', (req, res) => {
+    const playerId = req.query.playerId;
+
+    if (!playerId) {
+        return res.status(400).json({ success: false, error: 'playerId required' });
+    }
+
     try {
-        const rooms = roomManager.getAllRooms();
-        let completedCount = 0;
+        const room = roomManager.findRoomByPlayerId(playerId);
 
-        for (const room of rooms) {
-            const buildings = room.economicEngine.gameState.buildings;
-            for (const [locationKey, building] of buildings) {
-                if (building.isUnderConstruction) {
-                    // Force completion
-                    const [row, col] = locationKey.split(',').map(Number);
-                    const result = await room.economicEngine.processTransaction({
-                        type: 'BUILD_COMPLETE',
-                        buildingId: building.id,
-                        location: [row, col],
-                        playerId: building.ownerId,
-                        timestamp: Date.now()
-                    });
-
-                    if (result.success) {
-                        completedCount++;
-                        console.log(`🔧 TEST: Force completed ${building.id} at ${locationKey}`);
-                    }
-                }
-            }
+        if (!room) {
+            // Player not in room - return default state
+            return res.json({
+                success: true,
+                votingPoints: 0,
+                allocations: {}
+            });
         }
 
-        res.json({ success: true, completedCount });
+        // Get player data from economic engine
+        const playerData = room.economicEngine.getPlayerData(playerId);
+
+        if (!playerData) {
+            // Player exists in room but no data - return default
+            return res.json({
+                success: true,
+                votingPoints: 0,
+                allocations: {}
+            });
+        }
+
+        // Get actual governance data
+        const governance = playerData.governance || { votingPoints: 0, votes: {} };
+
+        res.json({
+            success: true,
+            votingPoints: governance.votingPoints || 0,
+            allocations: governance.votes || {}
+        });
+
     } catch (error) {
-        console.error('❌ Force completion failed:', error);
+        console.error('❌ Governance state error:', error);
         res.status(500).json({ success: false, error: error.message });
     }
 });
+
+// Submit governance vote
+app.post('/api/governance/vote', async (req, res) => {
+    const { playerId, category, amount } = req.body;
+
+    if (!playerId || !category || amount === undefined) {
+        return res.status(400).json({ success: false, error: 'Missing required fields' });
+    }
+
+    try {
+        const room = roomManager.findRoomByPlayerId(playerId);
+
+        if (!room) {
+            return res.status(404).json({ success: false, error: 'Player not found' });
+        }
+
+        // Submit vote through economic engine
+        const result = await room.economicEngine.processTransaction({
+            type: 'budget_vote',
+            playerId: playerId,
+            category: category,
+            amount: amount,
+            timestamp: Date.now()
+        });
+
+        if (result.success) {
+            res.json({ success: true, result: result });
+        } else {
+            res.status(400).json({ success: false, error: result.error || 'Vote failed' });
+        }
+
+    } catch (error) {
+        console.error('❌ Governance vote error:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
 
 // Serve index.html for all non-API routes
 app.get('*', (req, res) => {

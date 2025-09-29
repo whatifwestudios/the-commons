@@ -27,6 +27,29 @@ class RenderingSystemV2 {
         // Performance
         this.renderScheduled = false;
 
+        // Event cleanup manager for memory leak prevention
+        if (typeof window !== 'undefined' && window.EventCleanupManager) {
+            this.eventManager = new window.EventCleanupManager();
+        } else if (typeof require !== 'undefined') {
+            const EventCleanupManager = require('./event-cleanup-manager');
+            this.eventManager = new EventCleanupManager();
+        } else {
+            // Fallback: basic event tracking for browser environments without EventCleanupManager
+            this.eventManager = {
+                listeners: [],
+                addEventListener: function(element, event, handler, options) {
+                    element.addEventListener(event, handler, options);
+                    this.listeners.push({ element, event, handler, options });
+                },
+                cleanup: function() {
+                    this.listeners.forEach(({ element, event, handler, options }) => {
+                        element.removeEventListener(event, handler, options);
+                    });
+                    this.listeners = [];
+                }
+            };
+        }
+
         this.init();
     }
 
@@ -67,33 +90,42 @@ class RenderingSystemV2 {
     }
 
     /**
-     * Single, clean mouse handling system
+     * Single, clean mouse handling system with proper cleanup
      */
     setupCleanMouseHandling() {
         // Main mouse handler - routes all interactions
-        this.canvas.addEventListener('mousemove', (e) => {
+        this.eventManager.addEventListener(this.canvas, 'mousemove', (e) => {
             const coords = this.getCleanCoordinates(e);
             this.handleHover(coords);
             this.handlePanning(e, coords);
         });
 
-        this.canvas.addEventListener('mousedown', (e) => {
+        this.eventManager.addEventListener(this.canvas, 'mousedown', (e) => {
             const coords = this.getCleanCoordinates(e);
             this.handleMouseDown(e, coords);
         });
 
-        this.canvas.addEventListener('mouseup', (e) => {
+        this.eventManager.addEventListener(this.canvas, 'mouseup', (e) => {
             this.handleMouseUp(e);
         });
 
-        this.canvas.addEventListener('mouseleave', () => {
+        this.eventManager.addEventListener(this.canvas, 'mouseleave', () => {
             this.clearHover();
             this.endPanning();
         });
 
-        this.canvas.addEventListener('contextmenu', (e) => {
+        this.eventManager.addEventListener(this.canvas, 'contextmenu', (e) => {
             e.preventDefault(); // Clean context menu handling
         });
+    }
+
+    /**
+     * Clean up all event listeners (for multiplayer room changes)
+     */
+    destroy() {
+        if (this.eventManager) {
+            this.eventManager.cleanup();
+        }
     }
 
     /**
@@ -313,10 +345,14 @@ class RenderingSystemV2 {
         // Clear canvas
         this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
 
-        // Apply transformations
+        // Apply transformations with defensive checks
         this.ctx.save();
-        this.ctx.translate(this.game.panOffset.x || 0, this.game.panOffset.y || 0);
-        this.ctx.scale(this.game.zoomScale || 1, this.game.zoomScale || 1);
+        const panX = this.game.panOffset?.x || 0;
+        const panY = this.game.panOffset?.y || 0;
+        const zoom = this.game.zoomScale || 1;
+
+        this.ctx.translate(panX, panY);
+        this.ctx.scale(zoom, zoom);
 
         // Complete V2 rendering pipeline
         this.renderGrid();
@@ -444,9 +480,17 @@ class RenderingSystemV2 {
     getPlayerColor(playerId) {
         // First, try to get color from synchronized multiplayer game state
         if (this.game?.economicClient?.gameState?.players) {
-            const player = this.game.economicClient.gameState.players[playerId];
+            let player = null;
+
+            // Handle both Map and Object structures for compatibility
+            if (this.game.economicClient.gameState.players instanceof Map) {
+                player = this.game.economicClient.gameState.players.get(playerId);
+            } else {
+                player = this.game.economicClient.gameState.players[playerId];
+            }
+
             if (player && player.color) {
-                console.log(`🎨 Found synced color for ${playerId}: ${player.color}`);
+                console.log(`🎨 Found synced color for ${playerId} (${player.name}): ${player.color}`);
                 return player.color;
             }
         }
@@ -477,6 +521,41 @@ class RenderingSystemV2 {
         // For unknown player IDs, return default but log a warning
         console.warn('🎨 Unknown player ID in getPlayerColor:', playerId, 'using default color');
         return '#10AC84'; // Default green
+    }
+
+    /**
+     * Get player name (for consistent name display)
+     */
+    getPlayerName(playerId) {
+        // First, try to get name from synchronized multiplayer game state
+        if (this.game?.economicClient?.gameState?.players) {
+            let player = null;
+
+            // Handle both Map and Object structures for compatibility
+            if (this.game.economicClient.gameState.players instanceof Map) {
+                player = this.game.economicClient.gameState.players.get(playerId);
+            } else {
+                player = this.game.economicClient.gameState.players[playerId];
+            }
+
+            if (player && player.name) {
+                return player.name;
+            }
+        }
+
+        // Second, check if this is the current player (use local settings as fallback)
+        if (playerId === 'player' ||
+            playerId === 1 ||
+            playerId === this.game.currentPlayerId) {
+            return this.game.playerSettings?.name || 'You';
+        }
+
+        // Fallback to friendlier default names
+        if (typeof playerId === 'string' && playerId.startsWith('player_')) {
+            return `Player ${playerId.slice(-4)}`;
+        }
+
+        return `Player ${playerId}`;
     }
 
     /**

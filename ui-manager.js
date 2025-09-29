@@ -978,8 +978,11 @@ class UIManager {
         const governanceBtn = document.getElementById('governance-btn');
         if (governanceBtn) {
             governanceBtn.addEventListener('click', () => {
-                if (game && game.governanceSystem) {
-                    game.governanceSystem.openGovernanceModal();
+                // Use global openGovernanceModal function from governance-v3.js
+                if (typeof openGovernanceModal === 'function') {
+                    openGovernanceModal();
+                } else {
+                    console.error('Governance system not initialized');
                 }
                 playerMenu?.classList.remove('active');
             });
@@ -1258,10 +1261,9 @@ class UIManager {
                 transportMultiplier = hasRoadConnectivity ? 1.0 : 0.2;
                 transportType = 'Road Connectivity';
             } else if (game.buildingCategories.needsTransportAccess(building)) {
-                const accessiblePop = game.calculateAccessiblePopulation(row, col);
-                const optimalPop = building.jobs ? building.jobs * 10 : 100;
-                transportMultiplier = Math.max(0.1, Math.min(1.0, accessiblePop / optimalPop));
-                transportType = 'Population Access';
+                // V2: Transport calculations handled by server economic engine
+                transportMultiplier = 1.0; // Default multiplier - server handles actual calculations
+                transportType = 'Server Calculated';
             }
 
             content += `
@@ -2060,6 +2062,48 @@ class UIManager {
 
             tbody.appendChild(row);
         });
+    }
+
+    /**
+     * Update player button UI (moved from game.js)
+     */
+    updatePlayerButton(playerSettings) {
+        const playerBtn = document.getElementById('player-btn');
+        if (playerBtn) {
+            // Get player name and color from beer hall lobby first, then fallback to player settings
+            const playerName = window.beerHallLobby?.playerName || playerSettings?.name || 'PLAYER';
+            const playerColor = window.beerHallLobby?.selectedColor || playerSettings?.color || '#4CAF50';
+
+            // Update button with colored name
+            playerBtn.innerHTML = `
+                <span style="color: ${playerColor}; font-weight: bold;">${playerName.toUpperCase()}</span>
+                <span class="indicator">⌄</span>
+            `;
+        }
+    }
+
+    /**
+     * Update player name throughout UI (moved from game.js)
+     */
+    updatePlayerNameInUI(playerSettings) {
+        // Update player button
+        this.updatePlayerButton(playerSettings);
+
+        // Update cashflow modal player tab
+        const playerTab = document.querySelector('[data-player="current"]');
+        if (playerTab) {
+            const playerName = playerSettings?.name || 'Player';
+            playerTab.textContent = playerName;
+        }
+
+        // Update any other UI elements that should show player name
+        const playerElements = document.querySelectorAll('.player-name-display');
+        const playerName = playerSettings?.name || 'Player';
+        playerElements.forEach(element => {
+            element.textContent = playerName;
+        });
+
+        console.log('🎮 Updated player name in UI elements:', playerName);
     }
 }
 

@@ -9,8 +9,8 @@ class IsometricGrid {
         this.currentTool = 'grass';
         this.contextMenu = document.getElementById('context-menu');
         
-        // Initialize state management system
-        this.gameState = new GameState(this);
+        // Legacy v1 GameState removed - conflicts with v2 server authority
+        // this.gameState = new GameState(this);
         
         
         
@@ -32,29 +32,6 @@ class IsometricGrid {
         // Initialize V2 Rendering System (now the standard)
         this.renderingSystem = new RenderingSystemV2(this);
 
-        // Initialize Governance System - SINGLE SOURCE OF TRUTH
-        this.governanceSystem = new GovernanceSystem(this);
-
-        // Define legacy governance/budget proxies that delegate to GovernanceSystem
-        Object.defineProperty(this, 'cityTreasury', {
-            get: function() {
-                return this.governanceSystem ? this.governanceSystem.governance.treasuryBalance : 0;
-            },
-            set: function(value) {
-                console.warn('⚠️ Direct cityTreasury assignment blocked - use GovernanceSystem instead');
-                console.trace();
-            }
-        });
-
-        Object.defineProperty(this, 'totalBudget', {
-            get: function() {
-                return this.governanceSystem ? this.governanceSystem.governance.totalBudget : 0;
-            },
-            set: function(value) {
-                console.warn('⚠️ Direct totalBudget assignment blocked - use GovernanceSystem instead');
-                console.trace();
-            }
-        });
 
 
         // Initialize unified tooltip system
@@ -78,8 +55,7 @@ class IsometricGrid {
         // Initialize parcel selector manager for hover effects
         this.parcelHover = new ParcelHoverV2(this);
 
-        // Mobility tooltip timer
-        this.mobilityTooltipTimer = null;
+        // REMOVED: mobilityTooltipTimer - mobility layer completely disabled in V2
         
         // Performance optimizations
         this.isRenderScheduled = false;
@@ -87,11 +63,9 @@ class IsometricGrid {
         this.targetFPS = 60;
         this.frameInterval = 1000 / this.targetFPS;
         
-        // Performance caching system
-        this.landValueCache = new Map(); // Cache calculated land values
-        this.accessibilityCache = new Map(); // Cache accessibility scores
+        // Performance tracking
         this.dirtyRegions = new Set(); // Track regions that need recalculation
-        this.selectedStreetEdges = new Set(); // Track selected street edges for mobility layer
+        // REMOVED: selectedStreetEdges - mobility layer completely disabled in V2
         this.lastCacheUpdate = 0; // Track when caches were last cleared
         
         // Event throttling
@@ -110,56 +84,7 @@ class IsometricGrid {
             dirty: new Set() // Only recalculate changed buildings
         };
         
-        // Standardized building category mapping
-        this.buildingCategories = {
-            // Normalize case and naming differences between CSV and code
-            normalize: (category) => {
-                const mapping = {
-                    'Utilities': 'utilities',
-                    'utilities': 'utilities',
-                    'infrastructure': 'utilities',
-                    'Housing': 'housing', 
-                    'housing': 'housing',
-                    'residential': 'housing',
-                    'Commercial': 'commercial',
-                    'commercial': 'commercial',
-                    'Education': 'education',
-                    'education': 'education',
-                    'Civic': 'culture',
-                    'culture': 'culture',
-                    'Recreation': 'recreation',
-                    'recreation': 'recreation',
-                    'Healthcare': 'healthcare',
-                    'healthcare': 'healthcare',
-                    'office': 'commercial', // Treat office as commercial
-                    'industrial': 'commercial', // Treat industrial as commercial  
-                    'mixed': 'commercial' // Treat mixed as commercial
-                };
-                return mapping[category] || category.toLowerCase();
-            },
-            
-            // Check if a building is an energy producer
-            isEnergyProducer: (building) => {
-                return (building.resources?.energyProvided || 0) > (building.resources?.energyRequired || 0);
-            },
-            
-            // Check if a building needs transport accessibility for revenue
-            needsTransportAccess: (building) => {
-                const normalizedCategory = this.buildingCategories.normalize(building.category);
-                return (normalizedCategory === 'commercial' || normalizedCategory === 'education') 
-                       && !this.buildingCategories.isEnergyProducer(building);
-            },
-            
-            // Check if a building needs road connectivity (different from population access)
-            needsRoadConnectivity: (building) => {
-                // Energy producers need roads for power distribution
-                // Commercial/education buildings need roads for customer/worker access
-                const normalizedCategory = this.buildingCategories.normalize(building.category);
-                return this.buildingCategories.isEnergyProducer(building) || 
-                       normalizedCategory === 'commercial' || 
-                       normalizedCategory === 'education';
-            }
-        };
+        // Building categories moved to BuildingSystem
         
         // Vitality calculation caching
         this.vitalityCache = {
@@ -199,7 +124,7 @@ class IsometricGrid {
             ENERGY: 0,
             FOOD: 0,
             HOUSING: 0,
-            MOBILITY: 0,
+            // REMOVED: MOBILITY - mobility layer completely disabled in V2
             JOBS: 0,
             EDUCATION: 0,
             HEALTH: 0,
@@ -221,7 +146,7 @@ class IsometricGrid {
 
         console.log('💰 DEBUG: Client initialized with $0, waiting for server sync...');
 
-        // Legacy cityTreasury removed - now using governanceSystem.totalBudget
+        // Legacy cityTreasury removed
         console.log('💰 Client cash tracking initialized (server-authoritative)');
 
         // Define playerCash as getter/setter for compatibility
@@ -340,41 +265,10 @@ class IsometricGrid {
 
         // Transport capacity system removed - was 75% dead code
 
-        // Mobility Layer - Legacy system (being replaced by v2)
-        // this.mobilityLayer = new MobilityLayer(this); // Disabled: Replaced by v2
-        this.mobilityLayer = null; // Will be replaced by v2 integration
+        // REMOVED: mobilityLayer - mobility layer completely disabled in V2
 
-        // Initialize Mobility Layer v2 - Clean Replacement System
-        // DISABLED: Testing without any mobility systems
-        // this.mobilityV2 = new MobilityV2Integration(this);
-        // this.mobilityV2.initialize().then(success => {
-        //     if (success) {
-        //         console.log('🚀 Mobility Layer v2 initialized successfully!');
-        //         console.log('🎯 Ready to replace legacy transportation.js system');
-        //         console.log('📋 Use mobilityV2.replaceLegacySystems() to fully replace legacy');
-        //     } else {
-        //         console.error('❌ Mobility v2 initialization failed - keeping legacy systems');
-        //     }
-        // });
-        this.mobilityV2 = null; // DISABLED: Testing without mobility
         
-        // Parcel selector fade system
-        // REMOVED: Legacy hover timing - ParcelHoverV2 handles animations
-        // REMOVED: Legacy selectorOpacity - ParcelHoverV2 handles opacity
-        this.completionAnimations = new Map(); // Map of "row,col" -> animation data
-        
-        // Simple hover with bouncing ball physics
-        this.hoverElevation = 10; // Target elevation for hovered buildings
-        this.currentElevation = 0; // Current animated elevation
-        this.bounceAnimation = null; // Animation ID
-        this.elevationVelocity = 0; // Physics: velocity for bounce
-        
-        // Hover effect system (simplified, no blur)
-        this.bobAmount = 0.5; // Bob amount in pixels
-        this.bobSpeed = 0.009; // Bob animation speed
-        this.liftAmount = 3; // Base elevation for hovered buildings
-        
-        this.constructionAnimations = new Set(); // Set of buildings currently animating construction
+        // REMOVED: All legacy animation systems - ParcelHoverV2 and building system handle animations
         // V2: Removed client-side day tracking - using server-authoritative time
         this.pixelRowTimestamps = new Map(); // Track when each pixel row was revealed: "row,col" -> [timestamps]
         
@@ -400,7 +294,7 @@ class IsometricGrid {
             'competitor6': 'Teal Associates'
         };
         
-        // Legacy governance object removed - now using GovernanceSystem class
+        // Legacy governance object removed
         
         // Transportation building state
         this.selectedRoadType = 'local_street';
@@ -459,8 +353,7 @@ class IsometricGrid {
         if (this.uiManager && this.economicClient) {
             this.uiManager.updateEconomicDisplays(this.economicClient);
         }
-        // V2: Cashflow handled by economic client - initialize through updateCashflowAsync()
-        this.updateCashflowAsync();
+        // V2: Cashflow will be handled by economic client initialization below
 
         // Initialize V2 Economic System
         this.initializeEconomicClientV2();
@@ -551,11 +444,7 @@ class IsometricGrid {
         this.buildingEfficiencies?.clear();
         this.pixelRowTimestamps?.clear();
         
-        // Clear mobility layer if it exists (legacy v1 - disabled for v2)
-        // if (this.mobilityLayer) {
-        //     this.mobilityLayer.roads?.clear();
-        //     this.mobilityLayer.reset?.();
-        // }
+        // REMOVED: mobility layer cleanup - completely disabled in V2
         
         // Reset zoom and pan to default clean state
         this.zoomLevel = 0.4;
@@ -572,27 +461,25 @@ class IsometricGrid {
     async startGame() {
         // Reset all game state for clean start
         this.resetGameState();
-        
+
         // Initialize building system
         this.buildingSystem.initialize();
-        
-        // DISABLED: Legacy client-side economic engine - using server-authoritative system
-        // this.economicEngine.reset();
-        // this.economicEngine.initialize();
-        
+
+        // Initialize governance V3
+        if (typeof initializeGovernanceV3 !== 'undefined') {
+            initializeGovernanceV3(this.economicClient);
+            this.governanceSystem = window.governanceV3; // For UI compatibility
+        }
+
         // Initialize rendering system
         this.renderingSystem.initialize();
         
-        // Reset and initialize governance system for new game
-        this.governanceSystem.reset();
-        this.governanceSystem.initialize();
         
         
         this.startGameTime();
         this.scheduleRender();
 
-        // Start construction animation manager
-        this.startConstructionAnimationManager();
+        // REMOVED: Construction animation manager - handled by building system now
 
         // Start live tooltip updates for time-based tooltips
         this.startLiveTooltipUpdates();
@@ -609,8 +496,7 @@ class IsometricGrid {
         // Update player button with current settings (including beer hall lobby data)
         this.updatePlayerButton();
 
-        // Initialize panel states - ensure players panel is collapsed by default
-        this.initializePanelStates();
+        // V2: Panel states initialized by UIManager
 
         // Initialize UI displays with current values
         this.updatePlayerStats(); // Async call - don't await to avoid blocking
@@ -672,7 +558,7 @@ class IsometricGrid {
 
         // Save to localStorage for consistency
         localStorage.setItem('theCommons_playerSettings', JSON.stringify(this.playerSettings));
-        // Also save individual color for governance system
+        // Also save individual color
         localStorage.setItem('playerColor', playerConfig.color);
 
         // V2: Onboarding complete
@@ -684,6 +570,13 @@ class IsometricGrid {
             if (actionManagerSection) {
                 actionManagerSection.style.display = 'none';
                 console.log('🎮 Action Manager hidden in solo mode');
+            }
+
+            // Hide Chat section in solo mode
+            const chatSection = document.getElementById('chat-section');
+            if (chatSection) {
+                chatSection.style.display = 'none';
+                console.log('🎮 Chat section hidden in solo mode');
             }
         } else {
             console.log('🍺 V2: Multiplayer mode onboarding complete - no legacy server reset needed');
@@ -703,19 +596,7 @@ class IsometricGrid {
         // Force re-render to show updated player colors
         this.scheduleRender();
 
-        // Sync player color with server (essential for multiplayer consistency)
-        try {
-            await fetch('/api/player/color', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    playerId: 'player', // Solo game always uses 'player' as ID
-                    color: playerConfig.color
-                })
-            });
-        } catch (error) {
-            console.warn('Could not sync player color with server:', error);
-        }
+        // V2: Player color managed by WebSocket room system - no legacy API needed
 
         // Force cash reset to ensure clean start
         localStorage.setItem('theCommons_forceReset', 'true');
@@ -723,12 +604,8 @@ class IsometricGrid {
         // Update UI with player info
         this.updatePlayerNameInUI();
 
-        // Generate and set city name - make it persistent per player ID
-        let cityName = localStorage.getItem(`cityName_${playerConfig.id}`);
-        if (!cityName) {
-            cityName = generateCityName().toUpperCase();
-            localStorage.setItem(`cityName_${playerConfig.id}`, cityName);
-        }
+        // V2: City name provided by server in player configuration or updated from server state
+        const cityName = playerConfig.cityName || `${playerConfig.name?.toUpperCase() || 'PLAYER'} CITY`;
 
         const cityNameElement = document.getElementById('city-name');
         if (cityNameElement) {
@@ -770,34 +647,11 @@ class IsometricGrid {
 
     }
     
-    initializePanelStates() {
-        // Hide players panel completely on game start (only shown on players layer)
-        const playersSection = document.querySelector('[data-target="players-panel"]');
-        if (playersSection) {
-            const parentSection = playersSection.parentElement;
-            if (parentSection) {
-                parentSection.style.display = 'none';
-            }
-        }
-        
-        // Ensure vitality panel is open by default (main panel for normal layer)
-        const vitalitySection = document.querySelector('[data-target="vitality"]');
-        if (vitalitySection) {
-            const parentSection = vitalitySection.parentElement;
-            if (parentSection && parentSection.classList.contains('collapsed')) {
-                this.openSidebarSection(parentSection);
-            }
-        }
-    }
+    // REMOVED: initializePanelStates() - UIManager handles all panel state management
     
     
 
-    async resetServerForOnboarding() {
-        // V2: Multiplayer mode - no legacy server resets
-        console.log('🍺 V2: resetServerForOnboarding() disabled in multiplayer mode');
-        return; // Early return - no legacy reset in multiplayer
-
-    }
+    // Legacy V1 resetServerForOnboarding() removed - V2 multiplayer doesn't need server resets
 
     async loadPlayerSettings() {
         try {
@@ -822,39 +676,31 @@ class IsometricGrid {
     }
     
     updatePlayerButton() {
-        const playerBtn = document.getElementById('player-btn');
-        if (playerBtn) {
-            // Get player name and color from beer hall lobby first, then fallback to player settings
-            const playerName = window.beerHallLobby?.playerName || this.playerSettings?.name || 'PLAYER';
-            const playerColor = window.beerHallLobby?.selectedColor || this.playerSettings?.color || '#4CAF50';
-
-            // Update button with colored name
-            playerBtn.innerHTML = `
-                <span style="color: ${playerColor}; font-weight: bold;">${playerName.toUpperCase()}</span>
-                <span class="indicator">⌄</span>
-            `;
+        // Delegate to UI Manager for proper modularity
+        if (this.uiManager) {
+            this.uiManager.updatePlayerButton(this.playerSettings);
         }
     }
 
     updatePlayerNameInUI() {
-        // Update player button
-        this.updatePlayerButton();
-
-        // Update cashflow modal player tab
-        const playerTab = document.querySelector('[data-player="current"]');
-        if (playerTab) {
-            const playerName = this.playerSettings?.name || 'Player';
-            playerTab.textContent = playerName;
+        // Delegate to UI Manager for proper modularity
+        if (this.uiManager) {
+            this.uiManager.updatePlayerNameInUI(this.playerSettings);
         }
+    }
 
-        // Update any other UI elements that should show player name
-        const playerElements = document.querySelectorAll('.player-name-display');
-        const playerName = this.playerSettings?.name || 'Player';
-        playerElements.forEach(element => {
-            element.textContent = playerName;
-        });
+    /**
+     * Update city name display from server-generated city name
+     * @param {string} cityName - Server-generated city name
+     */
+    updateCityNameFromServer(cityName) {
+        if (!cityName) return;
 
-        console.log('🎮 Updated player name in UI elements:', playerName);
+        const cityNameElement = document.getElementById('city-name');
+        if (cityNameElement) {
+            cityNameElement.textContent = cityName;
+            console.log(`🏙️ City name updated to: ${cityName}`);
+        }
     }
     
     
@@ -1011,7 +857,7 @@ class IsometricGrid {
         }
         if (this.edgeParcels.vertical[0]) {
             this.edgeParcels.vertical[0][0].infrastructure.roadway = 'highway';
-            this.edgeParcels.vertical[0][0].infrastructure.busStop = {type: 'standard', direction: 'both', builtBy: 'player'};
+            this.edgeParcels.vertical[0][0].infrastructure.busStop = {type: 'standard', direction: 'both', builtBy: this.playerId || this.currentPlayerId};
         }
         if (this.edgeParcels.intersections[0]) {
             this.edgeParcels.intersections[0][0].infrastructure.crosswalks = ['north', 'south'];
@@ -1027,9 +873,6 @@ class IsometricGrid {
     startGameTime() {
         // Solo game - client controls time advancement
         
-        // DISABLED: Client-side day progression (SERVER AUTHORITATIVE TIME)
-        // Server manages game time via economicClient updates
-        // Client receives time updates and only renders current state
 
         // setInterval(async () => {
         //     this.currentDay++;
@@ -1065,7 +908,7 @@ class IsometricGrid {
         const parentRow = actionsElement.closest('.action-stat-row');
         if (!parentRow) return;
         
-        // Apply governance-style glow effect
+        // Apply glow effect
         parentRow.style.transition = 'all 0.3s ease';
         parentRow.style.backgroundColor = 'rgba(34, 197, 94, 0.15)'; // Green glow
         parentRow.style.border = '1px solid rgba(34, 197, 94, 0.4)';
@@ -1358,11 +1201,7 @@ class IsometricGrid {
     }
     
     // Helper method: Update player parcel tracking and mark aging buildings as dirty
-    calculateRoadMaintenance() {
-        // TODO: Move to server-side calculation
-        console.log('⚠️ calculateRoadMaintenance() - placeholder for server migration');
-        return 0;
-    }
+    // Legacy V1 calculateRoadMaintenance() removed - server handles road maintenance calculations
     
     updatePlayerParcelsAndAging() {
         this.economicCache.playerParcels.clear();
@@ -1384,86 +1223,12 @@ class IsometricGrid {
         }
     }
     
-    // Helper method: Update economic cache for dirty buildings only
-    updateEconomicCache() {
-        // DISABLED: Legacy client-side economic cache - using server-authoritative system
-        return Promise.resolve();
-    }
     
-    // Helper method: Calculate economics for a single building/parcel
-    calculateBuildingEconomics(parcel, row, col) {
-        // Delegate to the building system
-        return this.buildingSystem.calculateBuildingEconomics(parcel, row, col);
-    }
+    // REMOVED: calculateBuildingEconomics() - server handles all economic calculations in V2
     
-    // Helper method: Get localized livability scores around a building location
-    getLivabilityScores(row, col) {
-        const livabilityScores = {};
-        // Use new CARENS system domains (Culture, Affordability, Resilience, Environment, Noise, Safety)
-        const livabilityDomains = ['culture', 'affordability', 'resilience', 'environment', 'noise', 'safety'];
-        const searchRadius = 3; // Check buildings within 3 tiles for livability impacts
-
-        livabilityDomains.forEach(domain => {
-            let totalImpact = 0;
-
-            // Sum impacts from nearby buildings
-            for (let dr = -searchRadius; dr <= searchRadius; dr++) {
-                for (let dc = -searchRadius; dc <= searchRadius; dc++) {
-                    const checkRow = row + dr;
-                    const checkCol = col + dc;
-
-                    if (checkRow >= 0 && checkRow < this.gridSize &&
-                        checkCol >= 0 && checkCol < this.gridSize) {
-
-                        const parcel = this.grid[checkRow][checkCol];
-                        if (parcel && parcel.building) {
-                            const building = this.buildingManager.getBuildingById(parcel.building);
-                            if (building && building.livability && building.livability[domain]) {
-                                const livabilityData = building.livability[domain];
-                                const impact = livabilityData.impact || 0;
-                                const attenuation = livabilityData.attenuation || 1;
-
-                                // Distance-based attenuation as specified in building data
-                                const distance = Math.sqrt(dr*dr + dc*dc);
-                                const attenuationMultiplier = Math.max(0.1, 1 - distance / attenuation);
-                                totalImpact += impact * attenuationMultiplier;
-                            }
-                        }
-                    }
-                }
-            }
-            
-            livabilityScores[domain] = totalImpact;
-        });
-        
-        return livabilityScores;
-    }
+    // REMOVED: getLivabilityScores() - server handles all livability calculations in V2
     
-    // Helper method: Check if a parcel has road connectivity
-    checkRoadConnectivity(row, col) {
-        // Check all 8 adjacent cells for roads
-        const directions = [
-            [-1, -1], [-1, 0], [-1, 1],
-            [0, -1],           [0, 1],
-            [1, -1],  [1, 0],  [1, 1]
-        ];
-        
-        for (const [dr, dc] of directions) {
-            const checkRow = row + dr;
-            const checkCol = col + dc;
-            
-            if (checkRow >= 0 && checkRow < this.gridSize && 
-                checkCol >= 0 && checkCol < this.gridSize) {
-                
-                const parcel = this.grid[checkRow][checkCol];
-                if (parcel && parcel.roadType) {
-                    return true; // Found adjacent road
-                }
-            }
-        }
-        
-        return false; // No adjacent roads found
-    }
+    // REMOVED: checkRoadConnectivity() - server handles road connectivity in V2
     
     // Delegation method for demographic calculation
     async calculateDemographics(totalPopulation) {
@@ -1481,45 +1246,8 @@ class IsometricGrid {
         }
     }
     
-    // Helper method: Calculate livability-based multipliers for revenue and decay
-    calculateLivabilityMultipliers(row, col) {
-        // Get livability scores for this location
-        const livabilityScores = this.getLivabilityScores(row, col);
-        
-        // Calculate overall livability score (-1 to 1 range)
-        const livabilityDomains = ['health', 'education', 'safety', 'culture', 'mobility', 'environment', 'affordability', 'resilience', 'noise'];
-        let totalScore = 0;
-        let domainCount = 0;
-        
-        livabilityDomains.forEach(domain => {
-            if (livabilityScores[domain] !== undefined) {
-                totalScore += livabilityScores[domain];
-                domainCount++;
-            }
-        });
-        
-        const averageLivability = domainCount > 0 ? totalScore / domainCount : 0;
-        
-        // Convert to multipliers
-        // Revenue: 0.9x (max negative) to 1.15x (max positive)
-        const revenueMultiplier = 1.0 + (averageLivability * 0.125); // Range: 0.875 to 1.125
-        const clampedRevenueMultiplier = Math.max(0.9, Math.min(1.15, revenueMultiplier));
-        
-        // Decay: 1.1x (max negative livability = faster decay) to 0.9x (max positive = slower decay)  
-        const decayMultiplier = 1.0 - (averageLivability * 0.1); // Range: 1.1 to 0.9
-        const clampedDecayMultiplier = Math.max(0.9, Math.min(1.1, decayMultiplier));
-        
-        return {
-            revenue: clampedRevenueMultiplier,
-            decay: clampedDecayMultiplier
-        };
-    }
+    // REMOVED: calculateLivabilityMultipliers() - server handles multipliers in V2
     
-    // Helper method: Build cashflow breakdown from cached stats for UI
-    buildCashflowBreakdown() {
-        // DISABLED: Legacy client-side cashflow breakdown - using server-authoritative system
-        return { breakdown: [], totalRevenue: 0, totalMaintenance: 0, totalLVT: 0, netCashflow: 0 };
-    }
     
     // Mark building for economic recalculation
     markBuildingEconomicsDirty(row, col) {
@@ -1574,45 +1302,7 @@ class IsometricGrid {
 
     // REMOVED: calculateCurrentCashflow() - V2 architecture uses updateCashflowAsync() directly
 
-    async updateCashflowAsync() {
-        // Skip cashflow calculation if no player ID is available
-        if (!this.currentPlayerId) {
-            console.log('🔄 Cashflow: Skipping calculation, no player ID available');
-            return;
-        }
-
-        try {
-            // Use server-side cashflow calculation (consolidated economic flow)
-            const cashflow = this.economicClient.getPlayerCashflow(this.currentPlayerId);
-
-            if (cashflow && cashflow.totalRevenue !== undefined) {
-                // Update local cache
-                this.cache = this.cache || {};
-                this.cache.cashflowBreakdown = cashflow;
-
-                // Update UI if needed
-                this.cashflowBreakdown = cashflow.breakdown;
-                this.currentCashflowPreview = {
-                    revenue: cashflow.totalRevenue,
-                    maintenance: cashflow.totalMaintenance,
-                    lvt: cashflow.totalLVT,
-                    netCashflow: cashflow.netCashflow
-                };
-                this.dailyCashflowTotals = this.currentCashflowPreview;
-
-                // Update UI displays with fresh cashflow data
-                this.updateCashflowDisplay();
-            } else {
-                // Cashflow data not yet available - this is normal during initial loading
-                // Use cached values if available
-                if (this.currentCashflowPreview) {
-                    this.dailyCashflowTotals = this.currentCashflowPreview;
-                }
-            }
-        } catch (error) {
-            console.error('Async cashflow update failed:', error);
-        }
-    }
+    // REMOVED: updateCashflowAsync() - V2 economic client handles all cashflow calculations
 
     updateCashflowDisplay() {
         const totals = this.dailyCashflowTotals || { revenue: 0, maintenance: 0, lvt: 0, netCashflow: 0 };
@@ -1633,38 +1323,29 @@ class IsometricGrid {
     // Calculate cashflow for a specific player (for multiplayer DCF modal)
     async calculatePlayerCashflow(playerId) {
         try {
-            // Use economic engine to calculate cashflow for specific player
-            const result = await fetch('/api/economics/player-cashflow', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    gameState: this.gameState || this.getGameState(),
-                    playerId: playerId
-                })
-            });
-
-            if (result.ok) {
-                const cashflow = await result.json();
-
-                // Update the cached data for this player
-                this.cashflowBreakdown = cashflow.breakdown;
-                this.dailyCashflowTotals = {
-                    revenue: cashflow.totalRevenue,
-                    maintenance: cashflow.totalMaintenance,
-                    lvt: cashflow.totalLVT,
-                    netCashflow: cashflow.netCashflow
-                };
-
-                return cashflow;
-            } else {
-                throw new Error('Failed to calculate player cashflow');
+            // V2: Use economic client instead of legacy API
+            if (this.economicClient && this.economicClient.getPlayerData) {
+                const playerData = this.economicClient.getPlayerData(playerId);
+                if (playerData && playerData.cashflow) {
+                    // Update the cached data for this player
+                    this.cashflowBreakdown = playerData.cashflow.breakdown;
+                    this.dailyCashflowTotals = {
+                        revenue: playerData.cashflow.totalRevenue,
+                        maintenance: playerData.cashflow.totalMaintenance,
+                        lvt: playerData.cashflow.totalLVT,
+                        netCashflow: playerData.cashflow.netCashflow
+                    };
+                    return playerData.cashflow;
+                }
             }
+
+            // Fallback if economic client not available
+            console.warn('Economic client not available for player cashflow calculation');
+            return null;
         } catch (error) {
             console.error('Error calculating player cashflow:', error);
-            // V2: Fallback to economic client async calculation
-            this.updateCashflowAsync();
+            // V2: Economic client handles all cashflow calculations
+            return null;
         }
     }
 
@@ -1675,10 +1356,6 @@ class IsometricGrid {
 
 
 
-    calculatePopulation() {
-        // DISABLED: Legacy client-side population calculation - using server-authoritative system
-        return 0;
-    }
     
     // Solo game - no state drift checking needed
     
@@ -1693,6 +1370,11 @@ class IsometricGrid {
             }
         }
         return count;
+    }
+
+    calculatePopulation() {
+        // ELIMINATED: Client-side population calculation has been blocked - using server-authoritative system
+        return 0;
     }
 
     calculateTotalWealth() {
@@ -1812,7 +1494,6 @@ class IsometricGrid {
                 currentDay: this.currentDay,
                 gameDate: this.gameDate,
                 grid: this.grid,
-                governance: this.governanceSystem ? this.governanceSystem.exportData() : null,
                 economicMultipliers: this.economicMultipliers,
                 actionManager: this.actionManager
             },
@@ -1924,41 +1605,9 @@ class IsometricGrid {
         return totalNetWorth;
     }
     
-    // Construction animation manager - ensures smooth construction progress updates
-    startConstructionAnimationManager() {
-        // Check for buildings under construction and schedule regular updates
-        this.constructionAnimationInterval = setInterval(async () => {
-            if (this.hasConstructionInProgress()) {
-                this.scheduleRender();
-            }
-        }, 100); // Update every 100ms for smooth 10fps construction animation
-    }
+    // REMOVED: startConstructionAnimationManager() - handled by building system now
     
-    // Check if any buildings are currently under construction
-    hasConstructionInProgress() {
-        if (!this.grid) return false;
-        
-        for (let row = 0; row < this.gridSize; row++) {
-            for (let col = 0; col < this.gridSize; col++) {
-                const parcel = this.grid[row][col];
-                if (parcel && parcel.building &&
-                    parcel._constructionStartTime !== null &&
-                    parcel._constructionDays > 0) {
-                    
-                    // Check if construction is still in progress
-                    const constructionDurationPerDay = 3600000 / 365; // ~9.86 seconds per construction day
-                    const totalConstructionTimeMs = parcel._constructionDays * constructionDurationPerDay;
-                    const elapsedTimeMs = Date.now() - parcel._constructionStartTime;
-                    
-                    if (elapsedTimeMs < totalConstructionTimeMs) {
-                        return true; // Found at least one building under construction
-                    }
-                }
-            }
-        }
-        
-        return false;
-    }
+    // REMOVED: hasConstructionInProgress() - handled by building system now
     
     
     // Live tooltip updates for time-based content
@@ -2104,39 +1753,24 @@ class IsometricGrid {
 
         // Demographics are now calculated by server and included in population update
         
-        // Use treasury balance directly from governance system
+        // Treasury display - governance removed
         let totalTreasury = 0;
-        if (this.governanceSystem) {
-            totalTreasury = this.governanceSystem.governance.treasuryBalance || 0;
-        }
-        
-        // Update city treasury display with detailed breakdown
+
+        // Update city treasury display
         const cityTreasuryEl = document.getElementById('city-treasury');
         if (cityTreasuryEl) {
             cityTreasuryEl.textContent = `$${Math.round(totalTreasury).toLocaleString()}`;
             
-            // Create detailed treasury breakdown for tooltip
-            const totalAllocated = this.governanceSystem ?
-                Object.values(this.governanceSystem.governance.allocations).reduce((sum, val) => sum + val, 0) : 0;
-            const unallocatedAmount = totalTreasury - totalAllocated;
-            
             const treasuryRow = document.getElementById('treasury-row');
             if (treasuryRow) {
                 treasuryRow.setAttribute('data-tooltip',
-                    `<strong>City Treasury Breakdown</strong><br><br>` +
-                    `💰 Total Treasury: $${Math.round(totalTreasury).toLocaleString()}<br>` +
-                    `📂 Allocated to Budgets: $${Math.round(totalAllocated).toLocaleString()}<br>` +
-                    `🏛️ Unallocated Funds: $${Math.round(unallocatedAmount).toLocaleString()}<br><br>` +
-                    `💡 Click to open Governance!`);
-                
-                // Always make treasury clickable and gold
-                treasuryRow.style.cursor = 'pointer';
+                    `<strong>City Treasury</strong><br><br>` +
+                    `💰 Total Treasury: $${Math.round(totalTreasury).toLocaleString()}`);
+
+                // Basic treasury styling
                 treasuryRow.style.color = '#FFD700'; // Gold color for text
-                treasuryRow.style.backgroundColor = 'rgba(255, 215, 0, 0.1)'; // Subtle gold highlight
-                treasuryRow.style.border = '1px solid rgba(255, 215, 0, 0.3)';
                 treasuryRow.onclick = () => {
-                    // Open governance modal/section
-                    this.showGovernanceModal();
+                    // Governance removed - no action
                 };
             }
         }
@@ -2163,26 +1797,26 @@ class IsometricGrid {
     }
     
     getParcelPrice(row, col) {
-        // Updated pricing: $500 at center, $100 at perimeter
-        // Scales based on distance from center
-        
-        const centerRow = 6.5;
-        const centerCol = 6.5;
-        
-        // Calculate Chebyshev distance (max of row/col distance)
+        // Server-authoritative pricing - get from economic engine
+        if (this.economicClient) {
+            const serverPrice = this.economicClient.getParcelPrice(row, col);
+            if (serverPrice !== undefined) {
+                return serverPrice;
+            }
+        }
+
+        // Fallback for solo mode or connection issues
+        const centerRow = 5.5;
+        const centerCol = 5.5;
         const distanceFromCenter = Math.max(
             Math.abs(row - centerRow),
             Math.abs(col - centerCol)
         );
-        
-        // Maximum distance is about 6.5 (from center to corner)
-        const maxDistance = 6.5;
-        
-        // Linear interpolation from $500 (center) to $100 (perimeter)
-        const priceRange = 500 - 100; // $400 range
+        const maxDistance = 5.5;
+        const priceRange = 200 - 100;
         const priceReduction = (distanceFromCenter / maxDistance) * priceRange;
-        
-        return Math.round(500 - priceReduction);
+
+        return Math.round(200 - priceReduction);
     }
     
     showBuildingDataInsights(row, col) {
@@ -2204,162 +1838,13 @@ class IsometricGrid {
     }
     
     
-    showMobilityTooltip(row, col, mouseX, mouseY) {
-        // Don't show tooltip if context menu is open
-        if (this.contextMenu && this.contextMenu.classList && this.contextMenu.classList.contains('visible')) {
-            return;
-        }
-        
-        if (!this.simpleTooltip) {
-            return;
-        }
-        
-        const parcel = this.grid[row][col];
-        const coord = this.getParcelCoordinate(row, col);
-        let content = '';
-        
-        if (parcel.building) {
-            // Show mobility-focused building information
-            const building = this.buildingManager.getBuildingById(parcel.building);
-            if (building) {
-                content += `<strong>${building.name}</strong> (${coord})<br>`;
-                
-                // Supply type and category
-                const supplyType = this.getMobilitySupplyType(building.category);
-                content += `🚛 Supply: ${supplyType}<br>`;
-                
-                // Connectivity info (legacy v1 - disabled for v2)
-                try {
-                    // const connectivity = this.mobilityLayer.getParcelConnectivity(row, col);
-                    // const connectStatus = connectivity.connected ? '✅ Connected' : '❌ Isolated';
-                    // content += `🛣️ Road Access: ${connectStatus}<br>`;
-                    //
-                    // if (connectivity.connected && connectivity.networkDistance) {
-                    //     content += `📏 Network Distance: ${connectivity.networkDistance}<br>`;
-                    // }
-                } catch (e) {
-                    content += `🛣️ Road Access: Checking...<br>`;
-                }
-                
-                // Transportation info (legacy v1 - disabled for v2)
-                try {
-                    // const nearbyRoads = this.mobilityLayer.getNearbyRoads(row, col);
-                    // if (nearbyRoads.length > 0) {
-                    //     content += `🔗 Adjacent Roads: ${nearbyRoads.length}<br>`;
-                    // }
-                } catch (e) {
-                    // Skip if error
-                }
-                
-                // Owner information
-                if (this.isCurrentPlayer(parcel.owner)) {
-                    const emoji = (this.playerSettings && this.playerSettings.emoji) || '🏠';
-                    content += `${emoji} <span style="color: #4CAF50">OWNED</span>`;
-                } else if (parcel.owner) {
-                    content += `🏢 <span style="color: #9E9E9E">${parcel.owner.toUpperCase()}</span>`;
-                }
-            }
-        } else {
-            // Show empty parcel with mobility info
-            const price = this.getParcelPrice(row, col);
-            content += `<strong>Empty Parcel</strong> (${coord})<br>`;
-            content += `💰 Price: $${price}<br>`;
-            
-            // Add connectivity info for empty parcels (legacy v1 - disabled for v2)
-            try {
-                // const connectivity = this.mobilityLayer.getParcelConnectivity(row, col);
-                // const connectStatus = connectivity.connected ? '✅ Connected to road network' : '❌ No road access';
-                // content += `🛣️ ${connectStatus}`;
-            } catch (e) {
-                // content += `🛣️ Checking connectivity...`;
-            }
-        }
-        
-        // Use unified tooltip manager with proper positioning
-        this.tooltipManager.show(content, mouseX, mouseY, {
-            html: true,
-            delay: 0, // No delay since this is triggered by timer
-            priority: 10 // High priority for mobility mode
-        });
-    }
+    // REMOVED: showMobilityTooltip() - mobility layer completely disabled in V2
     
-    handleMobilityTooltips(tile, mouseEvent) {
-        // Clear any existing tooltip timer
-        if (this.mobilityTooltipTimer) {
-            clearTimeout(this.mobilityTooltipTimer);
-            this.mobilityTooltipTimer = null;
-        }
-        
-        // Always hide tooltip immediately when mouse moves
-        // REMOVED: Legacy crispTooltip - TooltipSystemV2 handles all tooltips
-        
-        // Update selected tile display
-        if (tile && tile.row >= 0 && tile.row < this.gridSize &&
-            tile.col >= 0 && tile.col < this.gridSize) {
-            
-            this.selectedTile = tile;
-            const coord = this.getParcelCoordinate(tile.row, tile.col);
-            if (this.domCache.selectedTile) {
-                this.domCache.selectedTile.textContent = coord;
-            }
-            
-            // Set timer to show tooltip after mouse stops for 1000ms
-            this.mobilityTooltipTimer = setTimeout(() => {
-                // Double-check we're still in mobility mode and on the same tile
-                if (this.currentLayer === 'mobility' && 
-                    this.selectedTile && 
-                    this.selectedTile.row === tile.row && 
-                    this.selectedTile.col === tile.col) {
-                    
-                    this.showMobilityTooltip(tile.row, tile.col, mouseEvent.clientX, mouseEvent.clientY);
-                }
-            }, 1000); // 1000ms delay
-            
-        } else {
-            this.selectedTile = null;
-            if (this.domCache.selectedTile) {
-                this.domCache.selectedTile.textContent = '--';
-            }
-        }
-    }
+    // REMOVED: handleMobilityTooltips() - mobility layer completely disabled in V2
     
-    getMobilitySupplyType(category) {
-        const supplyTypes = {
-            'housing': 'Housing',
-            'commercial': 'Food/Goods',
-            'utilities': 'Energy',
-            'office': 'Jobs/Workers',
-            'education': 'Jobs/Workers',
-            'civic': 'Jobs/Workers',
-            'industrial': 'Mixed Supply',
-            'recreation': 'Culture/Recreation',
-            'emergency': 'Emergency Services'
-        };
-        return supplyTypes[category] || 'Other';
-    }
+    // REMOVED: getMobilitySupplyType() - mobility layer completely disabled in V2
     
-    // Calculate and visualize parcel reach
-    calculateParcelReach(row, col) {
-        const reachableParcels = new Set();
-        const transportNetwork = this.buildTransportNetwork();
-        
-        // Check all parcels to see if they're reachable
-        for (let r = 0; r < this.gridSize; r++) {
-            for (let c = 0; c < this.gridSize; c++) {
-                if (r === row && c === col) continue;
-                
-                const distance = this.calculateEffectiveDistance(row, col, r, c, transportNetwork);
-                
-                // Only highlight parcels within walking distance (1) for visual clarity
-                // Transport connections work in the background but aren't highlighted
-                if (distance <= 1) {
-                    reachableParcels.add(`${r},${c}`);
-                }
-            }
-        }
-        
-        return reachableParcels;
-    }
+    // REMOVED: Legacy V1 calculateParcelReach() - V2 architecture uses server-side reach calculations
     
     // drawParcelReach() moved to RenderingSystem
     // drawReachPerimeter() moved to RenderingSystem
@@ -2545,9 +2030,7 @@ class IsometricGrid {
         this.updateSubwayRoutesList();
     }
     
-    drawTopDownMap(ctx, type) {
-        return this.renderingSystem.drawTopDownMap(ctx, type);
-    }
+    // REMOVED: drawTopDownMap() - use renderingSystem directly
     
     hasTransitStop(row, col, type) {
         // Check if this parcel has a bus stop or subway entrance
@@ -2578,16 +2061,6 @@ class IsometricGrid {
     
     
     
-    // Governance System Methods
-    showGovernanceModal() {
-        // Delegate to governance system
-        this.governanceSystem.openGovernanceModal();
-    }
-    
-    hideGovernanceModal() {
-        // Delegate to governance system
-        this.governanceSystem.closeGovernanceModal();
-    }
     
     showActionMarketplace() {
         // Delegate to action marketplace
@@ -2610,67 +2083,15 @@ class IsometricGrid {
         }
     }
 
-    updateGovernanceUI() {
-        console.log('🔄 updateGovernanceUI called, delegating to new governance system');
-        this.updateGovernanceModal();
-    }
-
-    updateGovernanceModal() {
-        // Delegate to governance system for modal updates
-        if (this.governanceSystem) {
-            this.governanceSystem.updateGovernanceModal();
-        }
-    }
     
 
-    getUnallocatedPoints() {
-        // Legacy method - now delegated to governance system
-        if (this.governanceSystem) {
-            return this.governanceSystem.governance.votingPoints;
-        }
-        return 0;
-    }
-    
-    calculateBudgetAllocations() {
-        // Legacy method - budget allocations now handled by GovernanceSystem
-        // This method is no longer needed as the governance system
-        // handles allocations directly
-    }
-    
-    
-    
-    // Called at the beginning of each month
-    awardMonthlyVotingPoints() {
-        // Delegate to new governance system
-        if (this.governanceSystem) {
-            this.governanceSystem.awardVotingPoints(2); // Award 2 points per month
-            this.updateGovernanceModal(); // Update UI
-        }
-    }
-    
-    highlightGovernanceButton() {
-        const governanceBtn = document.getElementById('governance-btn');
-        if (governanceBtn) {
-            // Remove any existing animation class first
-            governanceBtn.classList.remove('governance-highlight-animation');
-            // Force reflow to restart animation
-            void governanceBtn.offsetWidth;
-            // Add the animation class
-            governanceBtn.classList.add('governance-highlight-animation');
-            
-            // Remove the class after animation completes
-            setTimeout(() => {
-                governanceBtn.classList.remove('governance-highlight-animation');
-            }, 5000);
-        }
-    }
     
     
     calculateMonthlyLVT() {
-        // Fixed to use governance system for tax rate
+        // Fixed to use standard tax rate
         let totalLVT = 0;
 
-        const currentLVTRate = this.governanceSystem ? this.governanceSystem.getCurrentLVTRate() : 0.50;
+        const currentLVTRate = 0.50;
 
         for (let row = 0; row < this.gridSize; row++) {
             for (let col = 0; col < this.gridSize; col++) {
@@ -2688,8 +2109,8 @@ class IsometricGrid {
     
     // Check if public funds can cover building cost
     canPublicFundsCover(buildingCategory, cost) {
-        // Now use governance system funding
-        const availableFunds = this.governanceSystem ? this.governanceSystem.getCategoryFunding(buildingCategory) : 0;
+        // Governance removed - no category funding available
+        const availableFunds = 0;
         return {
             canCover: availableFunds >= cost,
             availableFunds: availableFunds,
@@ -2743,13 +2164,9 @@ class IsometricGrid {
             reasons.push(`Requires ${requiredPopulation} population (current: ${Math.floor(currentPopulation)})`);
         }
         
-        // Check cash requirement - now use governance system discounts
+        // Check cash requirement - governance removed, use base cost
         const baseBuildingCost = this.buildingManager.getBuildingCost(buildingId);
-        const discountedCost = this.governanceSystem ?
-            this.governanceSystem.getBuildingCostWithFunding(building, baseBuildingCost) :
-            baseBuildingCost;
-
-        const playerCostRequired = discountedCost;
+        const playerCostRequired = baseBuildingCost;
 
         // Use server-authoritative balance for affordability check
         const currentBalance = (this.economicClient && typeof this.economicClient.serverBalance === 'number')
@@ -2782,7 +2199,7 @@ class IsometricGrid {
     }
 
     /**
-     * Get building cost with governance discounts
+     * Get building cost - governance removed
      */
     getBuildingCost(buildingId) {
         const building = this.buildingManager.getBuildingById(buildingId);
@@ -2792,39 +2209,19 @@ class IsometricGrid {
         }
 
         const baseCost = this.buildingManager.getBuildingCost(buildingId);
-        const finalCost = this.governanceSystem ?
-            this.governanceSystem.getBuildingCostWithFunding(building, baseCost) :
-            baseCost;
-
-        console.log('💰 Building cost calculation:', { buildingId, baseCost, finalCost });
-        return finalCost;
+        console.log('💰 Building cost calculation:', { buildingId, baseCost });
+        return baseCost;
     }
 
     /**
      * Update building description in UI (placeholder for now)
      */
-    updateBuildingDescription(buildingName) {
-        // This could update a UI element showing building info
-        // For now, it's a no-op to prevent the error
-        console.log('Building selected:', buildingName);
-    }
+    // Legacy V1 updateBuildingDescription() removed - context menu system handles building UI
 
     /**
      * Update building requirements display (placeholder for now)
      */
-    updateBuildingRequirements(buildingData) {
-        // This could update a UI element showing building requirements
-        // For now, it's a no-op to prevent the error
-        if (buildingData) {
-            console.log('🏗️ Building requirements for', buildingData.name || buildingData.id, ':', {
-                cost: buildingData.cost || 'unknown',
-                population: buildingData.population || 'none',
-                prerequisites: buildingData.prerequisites || 'none'
-            });
-        } else {
-            console.log('Building requirements: no data provided');
-        }
-    }
+    // Legacy V1 updateBuildingRequirements() removed - context menu system handles building requirements UI
 
     // Moved to BuildingSystem.demolishBuilding()
 
@@ -3347,10 +2744,6 @@ class IsometricGrid {
         }
     }
 
-    calculateAccessibilityScoresLocal(row, col) {
-        // DISABLED: Legacy client-side accessibility calculation - using server-authoritative system
-        return { accessibility: 0, transport: 0, commerce: 0, entertainment: 0 };
-    }
     
     getNearbyPopulation(row, col, maxDistance) {
         let population = 0;
@@ -3362,7 +2755,7 @@ class IsometricGrid {
                     const parcel = this.grid[r][c];
                     if (parcel.building) {
                         const building = this.buildingManager.getBuildingById(parcel.building);
-                        if (building && this.buildingCategories.normalize(building.category) === 'housing') {
+                        if (building && this.buildingSystem.buildingCategories.normalize(building.category) === 'housing') {
                             // Weight population by inverse distance
                             const weight = 1.0 / (1 + distance * 0.5);
                             population += (building.bedrooms || 0) * weight;
@@ -3509,53 +2902,9 @@ class IsometricGrid {
 
     // Legacy supply/demand calculation removed - using server-authoritative economic engine
     
-    buildTransportNetwork() {
-        // Legacy transportation system disabled - using mobility v2 instead
-        // Return empty network for compatibility
-        return {
-            nodes: [],
-            roads: new Map(),
-            connections: new Map()
-        };
-    }
+    // REMOVED: Legacy V1 buildTransportNetwork() - V2 architecture eliminates client-side transport calculations
     
-    // NEW: Calculate how much population can access a building through transport
-    calculateAccessiblePopulation(row, col) {
-        let totalAccessible = 0;
-        const transportNetwork = this.buildTransportNetwork();
-        
-        // Check all parcels in the grid
-        for (let r = 0; r < this.gridSize; r++) {
-            for (let c = 0; c < this.gridSize; c++) {
-                const parcel = this.grid[r][c];
-                
-                // Look for residential buildings
-                if (parcel.building) {
-                    const building = this.buildingManager.getBuildingById(parcel.building);
-                    if (building && building.category === 'residential') {
-                        // Calculate effective distance considering transport
-                        const distance = this.calculateEffectiveDistance(row, col, r, c, transportNetwork);
-                        
-                        // People can only access if within reasonable distance
-                        let accessibility = 0;
-                        if (distance <= 1) {
-                            accessibility = 1.0; // Walking distance - full access
-                        } else if (distance <= 10) {
-                            // Need transport, exponential decay
-                            accessibility = Math.exp(-0.3 * (distance - 1));
-                        }
-                        // Beyond 10 effective distance = no access
-                        
-                        // Add accessible population from this building
-                        const buildingPop = building.bedrooms ? building.bedrooms * 2 : 0; // 2 people per bedroom
-                        totalAccessible += buildingPop * accessibility;
-                    }
-                }
-            }
-        }
-        
-        return Math.round(totalAccessible);
-    }
+    // REMOVED: Legacy V1 calculateAccessiblePopulation() - V2 architecture uses server-side population calculations
     
     hasRoadConnection(row1, col1, row2, col2, roads) {
         // Enhanced BFS to find connection and track the best road type in the path
@@ -3688,6 +3037,7 @@ class IsometricGrid {
         return chebyshevDistance;
     }
 
+
     // Initialize economic data structures with safe defaults
     initializeEconomicDefaults() {
         // Initialize vitality supply/demand with zero values for all domains
@@ -3778,8 +3128,7 @@ class IsometricGrid {
         };
         
         // ENERGY EFFECTS - smooth curves instead of cliffs
-        // DISABLED: Legacy client-side multiplier calculation - using server-authoritative system
-        this.economicEffects.energyMultiplier = 1.0; // Default neutral multiplier
+        this.economicEffects.energyMultiplier = 1.0;
         
         // Business efficiency affected by severe energy shortages only
         if (energyRatio < 0.3) {
@@ -3788,8 +3137,7 @@ class IsometricGrid {
         }
         
         // FOOD EFFECTS - smooth curves
-        // DISABLED: Legacy client-side multiplier calculation - using server-authoritative system
-        this.economicEffects.foodMultiplier = 1.0; // Default neutral multiplier
+        this.economicEffects.foodMultiplier = 1.0;
         
         // Population effects only for severe food shortages
         if (foodRatio < 0.4) {
@@ -3798,8 +3146,7 @@ class IsometricGrid {
         }
         
         // HOUSING EFFECTS - smooth curves
-        // DISABLED: Legacy client-side multiplier calculation - using server-authoritative system
-        this.economicEffects.housingMultiplier = 1.0; // Default neutral multiplier
+        this.economicEffects.housingMultiplier = 1.0;
         
         // Business and population effects for severe housing shortages only
         if (housingRatio < 0.5) {
@@ -3808,8 +3155,7 @@ class IsometricGrid {
         }
         
         // JOBS EFFECTS - smooth curves
-        // DISABLED: Legacy client-side multiplier calculation - using server-authoritative system
-        this.economicEffects.jobsMultiplier = 1.0; // Default neutral multiplier
+        this.economicEffects.jobsMultiplier = 1.0;
         
         // Population and business effects for severe job shortages only
         if (jobsRatio < 0.4) {
@@ -3910,7 +3256,8 @@ class IsometricGrid {
         
         // Solo game - just track the main player
         const allPlayers = new Map();
-        allPlayers.set('player', {
+        const currentPlayerId = this.playerId || this.currentPlayerId || window.PlayerUtils?.getCurrentPlayerId();
+        allPlayers.set(currentPlayerId, {
             name: this.playerSettings?.name || 'Player',
             isCurrent: true
         });
@@ -4068,15 +3415,6 @@ class IsometricGrid {
             this.uiManager.updateVitalityFromEconomicClient(this.economicClient);
         }
     }
-
-
-    
-    // REMOVED: updateNetScoreBar() - V2 architecture uses ui-manager.updateNetScoreBar() instead
-
-    // REMOVED: updateBalanceBasedBar() - V2 architecture uses ui-manager.updateBalanceBasedBar() instead
-
-
-    
     
     
     updateDemographicsDisplay() {
@@ -4177,24 +3515,11 @@ class IsometricGrid {
         }
     }
     
-    
-    // Legacy coordinate methods removed - all coordinate conversion now handled by V2 rendering system
-    
-    // drawTile method removed - now delegated to rendering system
-    
-
-    // Draw only the elevated building portion (no ground tile) - delegates to rendering system
-    drawBuildingOnly(col, row, elevation) {
-        return this.renderingSystem.drawBuildingOnly(col, row, elevation);
-    }
-
-
-
-
 
 
     // Infrastructure building methods with cost validation
-    buildInfrastructure(edgeType, row, col, infrastructureType, value, playerId = 'player') {
+    buildInfrastructure(edgeType, row, col, infrastructureType, value, playerId = null) {
+        playerId = playerId || this.playerId || this.currentPlayerId;
         // Only allow infrastructure building in mobility layer
         if (this.currentLayer !== 'mobility') {
             this.showNotification('Switch to Mobility View to build infrastructure', 'error');
@@ -4330,8 +3655,6 @@ class IsometricGrid {
         return true;
     }
 
-    // REMOVED: calculateConstructionProgress() - Now using unified getBuildingState() from buildings.js
-
     /**
      * Handle construction completion cleanup and notifications
      * @param {number} row - Row index
@@ -4385,7 +3708,7 @@ class IsometricGrid {
                 
                 // For commercial/education buildings, "housing" need means "workers" need
                 const building = this.buildingManager.getBuildingById(efficiencyData.building);
-                const isWorkplace = building && (this.buildingCategories.normalize(building.category) === 'commercial' || building.category === 'education');
+                const isWorkplace = building && (this.buildingSystem.buildingCategories.normalize(building.category) === 'commercial' || building.category === 'education');
                 const needsWorkers = category === 'housing' && isWorkplace;
                 
                 let displayName, reason;
@@ -4522,36 +3845,7 @@ class IsometricGrid {
     }
     
     
-    getMobilityLayerColor(row, col) {
-        const parcel = this.grid[row][col];
-        
-        // Show ownership with clear colors for better visibility
-        if (!parcel.owner) {
-            return '#1a1a1a'; // Dark gray for unowned
-        } else if (this.isCurrentPlayer(parcel.owner)) {
-            // Use player's selected color with higher opacity for better visibility
-            if (this.playerSettings && this.playerSettings.color) {
-                const hex = this.playerSettings.color.replace('#', '');
-                const r = parseInt(hex.substring(0, 2), 16);
-                const g = parseInt(hex.substring(2, 4), 16);
-                const b = parseInt(hex.substring(4, 6), 16);
-                return `rgba(${r}, ${g}, ${b}, 0.6)`;
-            }
-            return 'rgba(255, 255, 255, 0.6)'; // Fallback
-        } else {
-            // Competitor colors with better visibility
-            const competitorColor = this.getCompetitorColor(parcel.owner);
-            // Convert hex to rgba with 0.6 opacity for consistency
-            if (competitorColor.startsWith('#')) {
-                const hex = competitorColor.replace('#', '');
-                const r = parseInt(hex.substring(0, 2), 16);
-                const g = parseInt(hex.substring(2, 4), 16);
-                const b = parseInt(hex.substring(4, 6), 16);
-                return `rgba(${r}, ${g}, ${b}, 0.6)`;
-            }
-            return competitorColor;
-        }
-    }
+    // REMOVED: getMobilityLayerColor() - mobility layer completely disabled in V2
     
     getLandValueHeatmapColor(row, col) {
         const parcel = this.grid[row][col];
@@ -4682,8 +3976,8 @@ class IsometricGrid {
         // Calculate land tax if owned by player
         let landTax = 0;
         if (this.isCurrentPlayer(parcel.owner)) {
-            // Use dynamic LVT rate from governance system
-            const annualLVTRate = this.governanceSystem ? this.governanceSystem.getCurrentLVTRate() : 0.50;
+            // Use fixed LVT rate - governance removed
+            const annualLVTRate = 0.50;
             const dailyLVTRate = annualLVTRate / 365;
             landTax = parcel.landValue.paidPrice * dailyLVTRate;
         }
@@ -4724,20 +4018,6 @@ class IsometricGrid {
         this.renderingSystem.scheduleRender();
     }
     
-    // Delegate other rendering methods
-    drawTile(col, row, color, elevation) {
-        return this.renderingSystem.drawTile(col, row, color, elevation);
-    }
-    
-    toIsometric(col, row) {
-        return this.renderingSystem.toIsometric(col, row);
-    }
-    
-    fromIsometric(x, y) {
-        return this.renderingSystem.fromIsometric(x, y);
-    }
-    
-    // renderOld method removed - functionality moved to rendering system
     
     // Performance optimization methods
     markRegionDirty(row, col, radius = 2) {
@@ -4746,8 +4026,7 @@ class IsometricGrid {
             for (let c = Math.max(0, col - radius); c <= Math.min(this.gridSize - 1, col + radius); c++) {
                 const key = `${r}-${c}`;
                 this.dirtyRegions.add(key);
-                this.landValueCache.delete(key);
-                this.accessibilityCache.delete(key);
+                // Cache clearing removed - using server-authoritative pricing
             }
         }
     }
@@ -4756,21 +4035,12 @@ class IsometricGrid {
         const now = performance.now();
         // Clear all caches every 30 seconds to prevent memory leaks
         if (now - this.lastCacheUpdate > 30000) {
-            this.landValueCache.clear();
-            this.accessibilityCache.clear();
             this.dirtyRegions.clear();
             this.lastCacheUpdate = now;
         }
     }
     
-    // Legacy drawScene method removed - now handled by rendering system delegation
-    
-    
-    // Optimized tile drawing with reduced save/restore calls - delegates to rendering system
-    drawTileOptimized(col, row, color, elevation = 0) {
-        return this.renderingSystem.drawTileOptimized(col, row, color, elevation);
-    }
-    
+        
     // Update parcel illumination to show building influence radius
     updateParcelIllumination(cursorTile) {
         if (!cursorTile) {
@@ -4804,58 +4074,10 @@ class IsometricGrid {
                 }
             }
         }
-        
-        // Get all parcels connected via roads using a simpler approach
-        const roadConnectedParcels = this.getRoadConnectedParcels(row, col);
-        
-        // Add road-connected parcels that aren't already in basic radius
-        roadConnectedParcels.forEach(parcelKey => {
-            if (!influencedTiles.has(parcelKey)) {
-                influencedTiles.add(`${parcelKey}:extended`);
-            }
-        });
-        
+                
         return influencedTiles;
     }
     
-    // Get all parcels connected to this position via roads (simplified)
-    getRoadConnectedParcels(startRow, startCol) {
-        const connectedParcels = new Set();
-        const transportNetwork = this.buildTransportNetwork();
-        
-        // If no roads exist, return empty set
-        if (!transportNetwork.roads || transportNetwork.roads.size === 0) {
-            return connectedParcels;
-        }
-        
-        // Use BFS to find all connected parcels via roads
-        const visited = new Set();
-        const queue = [`${startRow},${startCol}`];
-        visited.add(`${startRow},${startCol}`);
-        
-        while (queue.length > 0) {
-            const currentKey = queue.shift();
-            const [currentRow, currentCol] = currentKey.split(',').map(Number);
-            
-            // Check all parcels in the grid to see if they're connected to current position
-            for (let r = 0; r < this.gridSize; r++) {
-                for (let c = 0; c < this.gridSize; c++) {
-                    const targetKey = `${r},${c}`;
-                    
-                    if (visited.has(targetKey)) continue;
-                    
-                    // Check if there's a direct road connection
-                    if (this.hasDirectRoadConnection(currentRow, currentCol, r, c, transportNetwork.roads)) {
-                        visited.add(targetKey);
-                        queue.push(targetKey);
-                        connectedParcels.add(targetKey);
-                    }
-                }
-            }
-        }
-        
-        return connectedParcels;
-    }
     
     // Check if two parcels have a direct road connection
     hasDirectRoadConnection(row1, col1, row2, col2, roads) {
@@ -4870,114 +4092,6 @@ class IsometricGrid {
                connections2.some(conn => conn.row === row1 && conn.col === col1);
     }
     
-
-    // Draw green attenuation visualization for Data Insights - delegates to rendering system
-    drawAttenuationVisualization() {
-        return this.renderingSystem.drawAttenuationVisualization();
-    }
-
-    // Simple bouncing ball physics for hover elevation
-    startBounceAnimation() {
-        if (this.bounceAnimation) {
-            cancelAnimationFrame(this.bounceAnimation);
-        }
-        
-        // Reset to ground level when starting new animation
-        this.currentElevation = 0;
-        
-        // Initial upward velocity (like a ball being dropped upward)
-        this.elevationVelocity = 0.8; // Start with upward velocity
-        
-        const animate = () => {
-            if (!this.hoveredTile) {
-                this.currentElevation = 0;
-                this.bounceAnimation = null;
-                return;
-            }
-            
-            // Physics simulation
-            const gravity = 0.05; // Gravity pulls down
-            const damping = 0.85; // Energy loss on bounce
-            const ground = 0; // Ground level
-            
-            // Update velocity and position
-            this.elevationVelocity -= gravity; // Gravity
-            this.currentElevation += this.elevationVelocity;
-            
-            // Bounce when hitting the target elevation (like a rubber ball)
-            if (this.currentElevation >= this.hoverElevation) {
-                this.currentElevation = this.hoverElevation;
-                this.elevationVelocity = -Math.abs(this.elevationVelocity) * damping; // Reverse and dampen
-            }
-            
-            // Settle when velocity is very small
-            if (Math.abs(this.elevationVelocity) < 0.02 && 
-                Math.abs(this.currentElevation - this.hoverElevation) < 0.5) {
-                this.currentElevation = this.hoverElevation;
-                this.elevationVelocity = 0;
-                // Start continuous bobbing
-                this.startContinuousBob();
-                return;
-            }
-            
-            this.scheduleRender();
-            
-            // Continue animation if still bouncing
-            if (Math.abs(this.elevationVelocity) > 0.01) {
-                this.bounceAnimation = requestAnimationFrame(animate);
-            } else {
-                // Start continuous bobbing when done bouncing
-                this.startContinuousBob();
-            }
-        };
-        
-        this.bounceAnimation = requestAnimationFrame(animate);
-    }
-    
-    // Gentle continuous bobbing while hovering
-    startContinuousBob() {
-        if (this.bounceAnimation) {
-            cancelAnimationFrame(this.bounceAnimation);
-        }
-        
-        const startTime = performance.now();
-        
-        const bob = () => {
-            if (!this.hoveredTile) {
-                return;
-            }
-            
-            const elapsed = performance.now() - startTime;
-            const bobOffset = Math.sin(elapsed * this.bobSpeed) * this.bobAmount;
-            this.currentElevation = this.liftAmount + bobOffset; // Lift + bob motion
-            
-            this.scheduleRender();
-            this.bounceAnimation = requestAnimationFrame(bob);
-        };
-        
-        this.bounceAnimation = requestAnimationFrame(bob);
-    }
-    
-    stopBounceAnimation() {
-        if (this.bounceAnimation) {
-            cancelAnimationFrame(this.bounceAnimation);
-            this.bounceAnimation = null;
-        }
-        
-        // Smoothly return to ground
-        const returnToGround = () => {
-            if (this.currentElevation > 0.1) {
-                this.currentElevation *= 0.9; // Exponential decay
-                this.scheduleRender();
-                requestAnimationFrame(returnToGround);
-            } else {
-                this.currentElevation = 0;
-                this.scheduleRender();
-            }
-        };
-        
-        requestAnimationFrame(returnToGround);
-    }
     
     // Update pixel row timestamps for fade-in effect
     updatePixelRowTimestamps(row, col, pixelRowsToShow, totalPixelRows) {
@@ -4998,24 +4112,9 @@ class IsometricGrid {
         }
     }
 
-    // Construction animation methods removed - keeping core game lean until everything works properly
-    // Previously: drawConstructionWithFadeIn, drawConstructionWithGradientMask, calculateAverageOpacity, scheduleConstructionAnimation
-
-    // Restore mouse movement debouncing for performance
-    // REMOVED: Legacy mouse handling - ParcelHoverV2 handles all mouse events now
-
-
-    // Draw tile highlight effect - delegates to rendering system
-    drawTileHighlight(col, row, color, elevation = 0) {
-        return this.renderingSystem.drawTileHighlight(col, row, color, elevation);
-    }
-    
     
     setupEventListeners() {
         console.log('🎯 setupEventListeners called');
-
-        // REMOVED: Legacy debouncedMouseMove - ParcelHoverV2 handles all mouse events
-        // Mousemove handling delegated to ParcelHoverV2 - no duplicate handlers needed
 
         // Add mouse down handler for panning and 3D rotation
         this.canvas.addEventListener('mousedown', (e) => {
@@ -5044,8 +4143,6 @@ class IsometricGrid {
                 this.canvas.style.cursor = this.zoomScale > 1.1 ? 'grab' : 'default';
             }
         });
-
-        // Removed conflicting mousemove handler - using debouncedMouseMove instead
 
         // SOLUTION: Use mouseenter/mouseleave with position tracking
         let mouseOverCanvas = false;
@@ -5083,15 +4180,6 @@ class IsometricGrid {
 
             
             // Handle mobility layer clicks first (including UI areas)
-            // DISABLED: Testing without mobility
-            // if (this.currentLayer === 'mobility') {
-            //     const handled = this.mobilityLayer.handleClickEnhanced(worldCoords.x, worldCoords.y, screenX, screenY);
-            //     if (handled) {
-            //         this.scheduleRender(); // Update the display
-            //         return; // Only return early if mobility layer actually handled the click
-            //     }
-            //     // If mobility layer didn't handle the click, fall through to normal canvas click processing
-            // }
 
             // ParcelHoverV2 doesn't handle clicks - preserve context menu functionality
 
@@ -5251,7 +4339,7 @@ class IsometricGrid {
 
             for (let row = 0; row < this.rows; row++) {
                 for (let col = 0; col < this.cols; col++) {
-                    const parcel = this.gameState.parcels[row][col];
+                    const parcel = this.grid[row][col];
                     if (parcel && parcel.building && parcel._constructionProgress >= 1.0) {
                         // Use economicClient v2 for building performance
                         promises.push(
@@ -5305,13 +4393,7 @@ class IsometricGrid {
         // Server manages construction via BUILD_COMPLETE_AUTO messages
         // Server manages cash accrual via economic engine
 
-        // this.constructionInterval = setInterval(() => {
-        //     this.updateConstructionProgress(); // Server handles this
-        // }, 1000);
-
-        // this.cashAccrualInterval = setInterval(() => {
-        //     this.applyCashAccrual(); // Server handles this
-        // }, 5000);
+        // REMOVED: client-side construction and cash intervals - server-authoritative in V2
     }
 
     updateConstructionProgress() {
@@ -5319,7 +4401,7 @@ class IsometricGrid {
 
         for (let row = 0; row < this.rows; row++) {
             for (let col = 0; col < this.cols; col++) {
-                const parcel = this.gameState.parcels[row][col];
+                const parcel = this.grid[row][col];
                 if (parcel && parcel.building && parcel._constructionProgress < 1.0) {
                     // Progress construction by 2% per second (50 seconds total)
                     const progressIncrement = 0.02;
@@ -5358,21 +4440,8 @@ class IsometricGrid {
                 this.cash += cashflowResponse.netCashflow;
                 this.updateCashDisplay();
 
-                // Update server balance
-                try {
-                    await fetch('/api/cash', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            action: 'earn',
-                            amount: cashflowResponse.netCashflow,
-                            playerId: this.playerId,
-                            description: 'Building revenue'
-                        })
-                    });
-                } catch (error) {
-                    console.warn('Failed to sync cash with server:', error);
-                }
+                // V2: Economic client handles server balance management automatically
+                // No manual sync needed - server balance updated through economic client
             }
         } catch (error) {
             console.warn('Cash accrual failed:', error);
@@ -5474,8 +4543,7 @@ class IsometricGrid {
                 break;
 
             case 'DAILY_UPDATE':
-                // V2: Cashflow handled by economic client
-                this.updateCashflowAsync();
+                // V2: Economic client already handles cashflow updates via server sync
                 this.updatePlayerStats();
                 // Refresh building performances daily
                 this.refreshAllBuildingPerformances();
@@ -5489,8 +4557,7 @@ class IsometricGrid {
                     if (this.uiManager && this.economicClient) {
                         this.uiManager.updateEconomicDisplays(this.economicClient);
                     }
-                    // V2: Cashflow handled by economic client
-                    this.updateCashflowAsync();
+                    // V2: Economic client already updated via getEconomicState() above
                     this.updatePlayerStats();
                     this.refreshAllBuildingPerformances();
                 }).catch(error => {
@@ -5705,728 +4772,6 @@ class IsometricGrid {
     }
 
 }
-
-// Global functions for market dashboard
-function applyMarketSettings() {
-    if (!window.game) return;
-    
-    // Update elasticity settings
-    const elasticityInputs = ['jobs', 'energy', 'education', 'food', 'housing', 'healthcare'];
-    elasticityInputs.forEach(market => {
-        const input = document.getElementById(`${market}-elasticity`);
-        if (input) {
-            window.game.marketSettings.elasticity[market] = parseFloat(input.value);
-        }
-    });
-    
-    // Update radius settings
-    const radiusInputs = ['jobs', 'energy', 'education', 'food', 'housing', 'healthcare'];
-    radiusInputs.forEach(market => {
-        const input = document.getElementById(`${market}-radius`);
-        if (input) {
-            window.game.marketSettings.radius[market] = parseInt(input.value);
-        }
-    });
-    
-    // Update price bounds
-    const minPriceInput = document.getElementById('min-price');
-    const maxPriceInput = document.getElementById('max-price');
-    if (minPriceInput) window.game.marketSettings.priceBounds.min = parseFloat(minPriceInput.value);
-    if (maxPriceInput) window.game.marketSettings.priceBounds.max = parseFloat(maxPriceInput.value);
-    
-    // Force recalculation - V2: Use ui-manager for display updates
-    if (window.game.uiManager && window.game.economicClient) {
-        window.game.uiManager.updateEconomicDisplays(window.game.economicClient);
-    }
-}
-
-function resetMarketDefaults() {
-    if (!window.game) return;
-    
-    // Reset to defaults
-    window.game.marketSettings = {
-        elasticity: { jobs: 1.2, energy: 0.3, education: 0.6, food: 0.5, housing: 0.7, healthcare: 0.8 },
-        radius: { jobs: 4, energy: 999, education: 6, food: 5, housing: 3, healthcare: 5 },
-        priceBounds: { min: 0.25, max: 4.0 }
-    };
-    
-    // Update UI controls
-    document.getElementById('energy-elasticity').value = 0.3;
-    document.getElementById('energy-elasticity-val').textContent = '0.3';
-    document.getElementById('food-elasticity').value = 0.5;
-    document.getElementById('food-elasticity-val').textContent = '0.5';
-    document.getElementById('housing-elasticity').value = 0.7;
-    document.getElementById('housing-elasticity-val').textContent = '0.7';
-    document.getElementById('jobs-elasticity').value = 1.2;
-    document.getElementById('jobs-elasticity-val').textContent = '1.2';
-    
-    document.getElementById('energy-radius').value = 999;
-    document.getElementById('energy-radius-val').textContent = '999';
-    document.getElementById('food-radius').value = 5;
-    document.getElementById('food-radius-val').textContent = '5';
-    document.getElementById('housing-radius').value = 3;
-    document.getElementById('housing-radius-val').textContent = '3';
-    document.getElementById('jobs-radius').value = 4;
-    document.getElementById('jobs-radius-val').textContent = '4';
-    
-    document.getElementById('min-price').value = 0.25;
-    document.getElementById('min-price-val').textContent = '0.25x';
-    document.getElementById('max-price').value = 4.0;
-    document.getElementById('max-price-val').textContent = '4.0x';
-    
-}
-
-function generateCityName() {
-    const prefixes = ['New', 'North', 'South', 'East', 'West', 'Port', 'Mount', 'Fort', 'Saint'];
-    const bases = ['Haven', 'Ridge', 'Vale', 'Shore', 'Field', 'Brook', 'Gate', 'Hill', 'Peak', 'Cross'];
-    const suffixes = ['ton', 'burg', 'ville', 'shire', 'ford', 'worth', 'land', 'stead', 'hurst', 'crest'];
-    
-    const r = Math.random();
-    if (r < 0.3) {
-        return prefixes[Math.floor(Math.random() * prefixes.length)] + ' ' + 
-               bases[Math.floor(Math.random() * bases.length)];
-    } else if (r < 0.6) {
-        return bases[Math.floor(Math.random() * bases.length)] + 
-               suffixes[Math.floor(Math.random() * suffixes.length)];
-    } else {
-        return prefixes[Math.floor(Math.random() * prefixes.length)] + ' ' +
-               bases[Math.floor(Math.random() * bases.length)] +
-               suffixes[Math.floor(Math.random() * suffixes.length)];
-    }
-}
-
-
-// Governance button functionality - only set up after game starts
-    window.setupGovernanceButton = function() {
-        const governanceBtn = document.getElementById('governance-btn');
-        if (governanceBtn && game) {
-            governanceBtn.addEventListener('click', () => {
-                if (game.governanceSystem) {
-                    game.governanceSystem.openGovernanceModal();
-                } else {
-                    console.error('Governance system not initialized');
-                }
-            });
-        }
-    };
-    
-    // Market Dashboard button
-    const openMarketDashboardBtn = document.getElementById('open-market-dashboard');
-    if (openMarketDashboardBtn) {
-        openMarketDashboardBtn.addEventListener('click', () => {
-            const modal = document.getElementById('market-dashboard-modal');
-            if (modal) {
-                modal.style.display = 'block';
-                game.updateMarketDashboard();
-                
-                // Set up real-time updates
-                if (!game.marketDashboardInterval) {
-                    game.marketDashboardInterval = setInterval(async () => {
-                        game.updateMarketDashboard();
-                    }, 1000); // Update every second
-                }
-            }
-        });
-    }
-    
-    // Route configuration modal functionality
-    const createRouteBtn = document.getElementById('create-route');
-    const cancelRouteBtn = document.getElementById('cancel-route');
-    const routeModal = document.getElementById('route-modal');
-    
-    if (createRouteBtn) {
-        createRouteBtn.addEventListener('click', () => {
-            const ticketPrice = parseFloat(document.getElementById('ticket-price').value) || 2.50;
-            const serviceLevel = document.querySelector('input[name="service-level"]:checked')?.value || 'daytime';
-            
-            // Get route configuration from mobility layer
-            if (window.game.mobilityLayer && window.game.mobilityLayer.pendingRoute) {
-                const routeConfig = {
-                    ticketPrice: ticketPrice,
-                    serviceLevel: serviceLevel
-                };
-                
-                // Create the route
-                window.game.mobilityLayer.createRoute(routeConfig);
-                
-                // Hide the modal
-                if (routeModal) {
-                    routeModal.style.display = 'none';
-                }
-            }
-        });
-    }
-    
-    if (cancelRouteBtn) {
-        cancelRouteBtn.addEventListener('click', () => {
-            // Reset route creation state
-            if (window.game.mobilityLayer) {
-                window.game.mobilityLayer.isCreatingRoute = false;
-                window.game.mobilityLayer.selectedTransitStops = [];
-                window.game.mobilityLayer.pendingRoute = null;
-                window.game.mobilityLayer.transitMode = null;
-            }
-            
-            // Hide the modal
-            if (routeModal) {
-                routeModal.style.display = 'none';
-            }
-        });
-    }
-    
-    // Optimal pricing functionality
-    const optimalPricingBtn = document.getElementById('optimal-pricing');
-    if (optimalPricingBtn) {
-        optimalPricingBtn.addEventListener('click', () => {
-            // Calculate optimal price based on demand/supply economics
-            const baseDemand = 200; // Base daily ridership
-            const optimalPrice = 2.75; // Sweet spot for supply/demand balance
-            
-            // Update the ticket price input
-            const ticketPriceInput = document.getElementById('ticket-price');
-            if (ticketPriceInput) {
-                ticketPriceInput.value = optimalPrice.toFixed(2);
-                
-                // Update revenue projections
-                const ridership = Math.max(50, baseDemand - (optimalPrice - 1.0) * 60);
-                const dailyRevenue = ridership * optimalPrice;
-                const dailyCosts = 25;
-                const dailyProfit = dailyRevenue - dailyCosts;
-                
-                // Update displays
-                document.getElementById('daily-ridership').textContent = Math.round(ridership);
-                document.getElementById('daily-revenue').textContent = `$${Math.round(dailyRevenue)}`;
-                document.getElementById('daily-profit').textContent = `$${Math.round(dailyProfit)}`;
-                document.getElementById('monthly-profit').textContent = `$${Math.round(dailyProfit * 30).toLocaleString()}`;
-                
-                // Visual feedback
-                optimalPricingBtn.textContent = '✓ Optimal Price Applied';
-                optimalPricingBtn.style.backgroundColor = '#4CAF50';
-                setTimeout(() => {
-                    optimalPricingBtn.textContent = 'Suggest Optimal Price';
-                    optimalPricingBtn.style.backgroundColor = '';
-                }, 2000);
-            }
-        });
-    }
-    
-    // Market dashboard slider event listeners
-    const marketSliders = [
-        'jobs-elasticity', 'energy-elasticity', 'education-elasticity', 'food-elasticity', 'housing-elasticity', 'healthcare-elasticity',
-        'jobs-radius', 'energy-radius', 'education-radius', 'food-radius', 'housing-radius', 'healthcare-radius',
-        'min-price', 'max-price'
-    ];
-    
-    marketSliders.forEach(sliderId => {
-        const slider = document.getElementById(sliderId);
-        if (slider) {
-            slider.addEventListener('input', () => {
-                const value = parseFloat(slider.value);
-                const valueDisplay = document.getElementById(sliderId + '-val');
-                if (valueDisplay) {
-                    if (sliderId.includes('price')) {
-                        valueDisplay.textContent = value.toFixed(2) + 'x';
-                    } else if (sliderId.includes('radius')) {
-                        valueDisplay.textContent = value + (value === 999 ? ' (City-wide)' : '');
-                    } else {
-                        valueDisplay.textContent = value.toFixed(1);
-                    }
-                }
-            });
-        }
-    });
-    
-    // Update revenue projections when ticket price changes
-    const ticketPriceInput = document.getElementById('ticket-price');
-    if (ticketPriceInput) {
-        ticketPriceInput.addEventListener('input', () => {
-            const price = parseFloat(ticketPriceInput.value) || 2.50;
-            const baseDemand = 200;
-            const ridership = Math.max(50, baseDemand - (price - 1.0) * 60);
-            const dailyRevenue = ridership * price;
-            const dailyCosts = 25;
-            const dailyProfit = dailyRevenue - dailyCosts;
-            
-            // Update displays
-            document.getElementById('daily-ridership').textContent = Math.round(ridership);
-            document.getElementById('daily-revenue').textContent = `$${Math.round(dailyRevenue)}`;
-            document.getElementById('daily-profit').textContent = `$${Math.round(dailyProfit)}`;
-            document.getElementById('monthly-profit').textContent = `$${Math.round(dailyProfit * 30).toLocaleString()}`;
-        });
-    }
-    
-    // Player menu options
-
-
-    const saveGameBtn = document.getElementById('save-game');
-    if (saveGameBtn) {
-        saveGameBtn.addEventListener('click', () => {
-            if (window.game) {
-                window.game.showSaveGameModal();
-            }
-            // Close player menu
-            const playerMenu = document.getElementById('player-menu');
-            if (playerMenu) {
-                playerMenu.classList.remove('active');
-            }
-        });
-    }
-
-
-
-    const confirmSaveBtn = document.getElementById('confirm-save');
-    if (confirmSaveBtn) {
-        confirmSaveBtn.addEventListener('click', () => {
-            if (window.game) {
-                window.game.saveGame();
-            }
-        });
-    }
-    
-    // Global modal functions with smooth animations
-    window.showModal = function(modalId) {
-        const modal = document.getElementById(modalId);
-        if (modal) {
-            modal.classList.add('visible');
-        }
-    };
-    
-    window.closeModal = function(modalId) {
-        const modal = document.getElementById(modalId);
-        if (modal) {
-            modal.classList.remove('visible');
-        }
-    };
-    
-    
-    // CSV refresh button functionality
-    const refreshCsvBtn = document.getElementById('refresh-csv-btn');
-    if (refreshCsvBtn) {
-        refreshCsvBtn.addEventListener('click', async () => {
-        const btn = document.getElementById('refresh-csv-btn');
-        const originalText = btn.innerHTML;
-        
-        try {
-            btn.innerHTML = '⏳ Refreshing...';
-            btn.disabled = true;
-            
-            if (window.refreshBuildingsFromCSV) {
-                await window.refreshBuildingsFromCSV();
-                btn.innerHTML = '✅ Refreshed!';
-                
-                if (game && game.populateBuildingCategories) {
-                    game.populateBuildingCategories();
-                }
-                
-                setTimeout(() => {
-                    btn.innerHTML = originalText;
-                    btn.disabled = false;
-                }, 2000);
-            } else {
-                throw new Error('Refresh function not available');
-            }
-        } catch (error) {
-            console.error('Failed to refresh buildings:', error);
-            btn.innerHTML = '❌ Failed';
-            setTimeout(() => {
-                btn.innerHTML = originalText;
-                btn.disabled = false;
-            }, 2000);
-        }
-        });
-    }
-    
-    // Initialize building position controls
-    window.buildingPositionControls = {
-        yOffset: 22,
-        heightMultiplier: 1.0,
-        widthMultiplier: 1.0
-    };
-    
-    // Building position control event listeners
-    const yOffsetSlider = document.getElementById('building-y-offset');
-    const heightSlider = document.getElementById('building-height-multiplier');
-    const widthSlider = document.getElementById('building-width-multiplier');
-
-    const yOffsetValue = document.getElementById('y-offset-value');
-    const heightValue = document.getElementById('height-multiplier-value');
-    const widthValue = document.getElementById('width-multiplier-value');
-
-    const debugYOffset = document.getElementById('debug-y-offset');
-    const debugHeight = document.getElementById('debug-height');
-    const debugWidth = document.getElementById('debug-width');
-
-    function updateBuildingPositionDisplay() {
-        if (yOffsetValue && yOffsetSlider) yOffsetValue.textContent = yOffsetSlider.value + 'px';
-        if (heightValue && heightSlider) heightValue.textContent = heightSlider.value + 'x';
-        if (widthValue && widthSlider) widthValue.textContent = widthSlider.value + 'x';
-
-        if (debugYOffset && yOffsetSlider) debugYOffset.textContent = yOffsetSlider.value;
-        if (debugHeight && heightSlider) debugHeight.textContent = heightSlider.value;
-        if (debugWidth && widthSlider) debugWidth.textContent = widthSlider.value;
-    }
-
-    if (yOffsetSlider) {
-        yOffsetSlider.addEventListener('input', () => {
-            window.buildingPositionControls.yOffset = parseInt(yOffsetSlider.value);
-            updateBuildingPositionDisplay();
-            game.scheduleRender();
-        });
-    }
-
-    if (heightSlider) {
-        heightSlider.addEventListener('input', () => {
-            window.buildingPositionControls.heightMultiplier = parseFloat(heightSlider.value);
-            updateBuildingPositionDisplay();
-            game.scheduleRender();
-        });
-    }
-
-    if (widthSlider) {
-        widthSlider.addEventListener('input', () => {
-            window.buildingPositionControls.widthMultiplier = parseFloat(widthSlider.value);
-            updateBuildingPositionDisplay();
-            game.scheduleRender();
-        });
-    }
-    
-    // Building position controls removed - handled by dedicated building modules
-
-    const applyPositionBtn = document.getElementById('apply-position');
-    if (applyPositionBtn) {
-        applyPositionBtn.addEventListener('click', () => {
-        // Position applied (removed alert)
-        });
-    }
-
-    // Initialize display
-    updateBuildingPositionDisplay();
-    
-    // Initialize collapsible sections
-    document.querySelectorAll('.section-header[data-target]').forEach(header => {
-        header.addEventListener('click', () => {
-            const section = header.parentElement;
-            section.classList.toggle('collapsed');
-        });
-    });
-    
-    // Setup tooltips - now handled by external tooltip-manager.js
-    if (typeof setupVitalityTooltips === 'function') {
-        if (window.game && window.game.tooltipManager && window.game.tooltipManager.setupVitalityTooltips) {
-            window.game.tooltipManager.setupVitalityTooltips();
-        }
-    }
-    if (window.game && window.game.tooltipManager && window.game.tooltipManager.setupGameTooltips) {
-        window.game.tooltipManager.setupGameTooltips();
-    }
-    
-    // Tab switching
-    document.querySelectorAll('.tab-btn').forEach(btn => {
-        btn.addEventListener('click', () => {
-            // Remove active from all tabs
-            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-            document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
-            
-            // Add active to clicked tab
-            btn.classList.add('active');
-            document.getElementById(btn.dataset.tab).classList.add('active');
-        });
-    });
-    
-    // Legacy Building Creator removed - now using CSV→JSON upload system
-    
-    // Legacy Building Export and Form Reset removed - now using CSV→JSON upload system
-
-    // Legacy Amenity Creator removed - now using CSV→JSON upload system
-
-    // Building creator form removed - handled by dedicated building modules
-
-    // Load saved data on startup
-
-    // Building manager setup removed - handled by dedicated building modules
-
-    // Legacy DCF functions removed - now handled by UIManager
-
-    // Transportation modal functions removed - now using modular transportation system
-
-
-    // Setup economic multiplier controls
-    function setupMultiplierControls() {
-        // Get all slider elements and their corresponding value displays
-        const sliders = {
-            'energy-multiplier': 'energy',
-            'food-multiplier': 'food',
-            'housing-multiplier': 'housing',
-            'jobs-multiplier': 'jobs',
-            'population-growth-rate': 'populationGrowthRate',
-            'shortage-threshold': 'shortageThreshold',
-            'oversupply-threshold': 'oversupplyThreshold',
-            'base-revenue-multiplier': 'baseRevenue',
-            'maintenance-multiplier': 'maintenance'
-        };
-        
-        // Setup each slider
-        Object.entries(sliders).forEach(([sliderId, propertyName]) => {
-            const slider = document.getElementById(sliderId);
-            if (!slider) {
-                return;
-            }
-
-            const valueDisplay = slider.parentElement.querySelector('.multiplier-value');
-            if (!valueDisplay) {
-                console.warn(`Value display not found for slider: ${sliderId}`);
-                return;
-            }
-            
-            // Load saved value or use current game value
-            const savedValue = localStorage.getItem(`multiplier_${propertyName}`);
-            if (savedValue) {
-                slider.value = savedValue;
-                window.game.economicMultipliers[propertyName] = parseFloat(savedValue);
-            }
-            
-            // Update display
-            updateValueDisplay(slider, valueDisplay, propertyName);
-            
-            // Add event listener for real-time updates
-            slider.addEventListener('input', () => {
-                const value = parseFloat(slider.value);
-                window.game.economicMultipliers[propertyName] = value;
-                updateValueDisplay(slider, valueDisplay, propertyName);
-                
-                // Save to localStorage
-                localStorage.setItem(`multiplier_${propertyName}`, value);
-                
-                // Sync with sidebar panel if it exists
-                // syncSidebarSlider(propertyName, value); // Removed - sidebar economic controls no longer exist
-                
-                // Recalculate vitality in real-time - V2: Use ui-manager for display updates
-                if (window.game.uiManager && window.game.economicClient) {
-                    window.game.uiManager.updateEconomicDisplays(window.game.economicClient);
-                }
-            });
-        });
-        
-        // Reset button
-        const resetMultipliersBtn = document.getElementById('reset-multipliers');
-        if (resetMultipliersBtn) {
-            resetMultipliersBtn.addEventListener('click', () => {
-            if (confirm('Reset all multipliers to default values?')) {
-                Object.keys(sliders).forEach(sliderId => {
-                    const slider = document.getElementById(sliderId);
-                    const propertyName = sliders[sliderId];
-                    const defaultValue = getDefaultMultiplier(propertyName);
-                    
-                    slider.value = defaultValue;
-                    window.game.economicMultipliers[propertyName] = defaultValue;
-                    
-                    const valueDisplay = slider.parentElement.querySelector('.multiplier-value');
-                    updateValueDisplay(slider, valueDisplay, propertyName);
-                    
-                    // Clear localStorage
-                    localStorage.removeItem(`multiplier_${propertyName}`);
-                });
-                
-                // Recalculate - V2: Use ui-manager for display updates
-                if (window.game.uiManager && window.game.economicClient) {
-                    window.game.uiManager.updateEconomicDisplays(window.game.economicClient);
-                }
-            }
-            });
-        }
-
-        // Apply button (mainly for feedback, changes are already applied in real-time)
-        const applyBtn = document.getElementById('apply-multipliers');
-        if (applyBtn) {
-            applyBtn.addEventListener('click', () => {
-            // Force recalculation - V2: Use ui-manager for display updates
-            // V2: Force recalculation - Use ui-manager for display updates
-            if (window.game.uiManager && window.game.economicClient) {
-                window.game.uiManager.updateEconomicDisplays(window.game.economicClient);
-            }
-
-            // Visual feedback
-            const btn = document.getElementById('apply-multipliers');
-            const originalText = btn.textContent;
-            btn.textContent = 'Applied!';
-            btn.style.background = '#42B96E';
-
-            setTimeout(() => {
-                btn.textContent = originalText;
-                btn.style.background = '';
-            }, 1000);
-            });
-        }
-
-        // Server reset button
-        const resetServerBtn = document.getElementById('reset-server');
-        if (resetServerBtn) {
-            resetServerBtn.addEventListener('click', async () => {
-            if (confirm('⚠️ This will reset the server and disconnect all players. Are you sure?')) {
-                const btn = document.getElementById('reset-server');
-                const statusDiv = document.getElementById('server-status');
-
-                btn.textContent = 'Resetting...';
-                btn.disabled = true;
-                statusDiv.textContent = 'Sending reset request...';
-
-                try {
-                    const response = await fetch('/reset', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' }
-                    });
-                    const result = await response.json();
-
-                    if (result.success) {
-                        statusDiv.textContent = `✅ Server reset at ${new Date(result.timestamp).toLocaleTimeString()}`;
-
-                        // Show reset success message
-                        btn.textContent = '✅ Reset Complete';
-                        btn.style.background = '#28a745';
-
-                        setTimeout(() => {
-                            alert('Server has been reset. Please refresh the page to reconnect.');
-                            window.location.reload();
-                        }, 1000);
-                    } else {
-                        statusDiv.textContent = `❌ Reset failed: ${result.message || 'Unknown error'}`;
-                    }
-                } catch (error) {
-                    console.error('Reset failed:', error);
-                    statusDiv.textContent = `❌ Reset failed: ${error.message}`;
-                } finally {
-                    btn.disabled = false;
-                    setTimeout(() => {
-                        btn.textContent = '🔄 Reset Server';
-                        btn.style.background = '';
-                    }, 3000);
-                }
-            }
-            });
-        }
-
-        // Update server status periodically
-        async function updateServerStatus() {
-            const statusDiv = document.getElementById('server-status');
-            if (!statusDiv) return;
-
-            try {
-                const response = await fetch('/health');
-                const data = await response.json();
-                statusDiv.textContent = `✅ Online | Players: ${data.players} | Connections: ${data.connections} | Uptime: ${Math.floor(data.uptime)}s`;
-            } catch (error) {
-                statusDiv.textContent = `❌ Server unreachable`;
-            }
-        }
-
-        // Update status every 5 seconds
-        updateServerStatus();
-        setInterval(updateServerStatus, 5000);
-    }
-
-    function updateValueDisplay(slider, valueDisplay, propertyName) {
-        const value = parseFloat(slider.value);
-        
-        // Format display based on property type
-        if (propertyName === 'populationGrowthRate') {
-            valueDisplay.textContent = `${(value * 100).toFixed(1)}%`;
-        } else if (propertyName.includes('threshold')) {
-            valueDisplay.textContent = value.toFixed(2);
-        } else {
-            valueDisplay.textContent = `${value.toFixed(1)}x`;
-        }
-    }
-
-    function getDefaultMultiplier(propertyName) {
-        const defaults = {
-            energy: 1.0,
-            food: 1.0,
-            housing: 1.0,
-            jobs: 1.0,
-            populationGrowthRate: 0.02,
-            shortageThreshold: 0.8,
-            oversupplyThreshold: 2.0,
-            baseRevenue: 1.0,
-            maintenance: 1.0
-        };
-        return defaults[propertyName] || 1.0;
-    }
-
-    // Setup road adjustment controls
-    const roadAngle = document.getElementById('road-angle');
-    const roadAngleValue = document.getElementById('road-angle-value');
-    const roadWidthMultiplier = document.getElementById('road-width-multiplier');
-    const roadWidthValue = document.getElementById('road-width-value');
-    const roadOffsetX = document.getElementById('road-offset-x');
-    const roadOffsetXValue = document.getElementById('road-offset-x-value');
-    const roadOffsetY = document.getElementById('road-offset-y');
-    const roadOffsetYValue = document.getElementById('road-offset-y-value');
-
-    const resetRoadBtn = document.getElementById('reset-road-controls');
-
-    // Helper function to update road values and trigger redraw (roads only!)
-    function updateRoadAdjustment(property, value, displayElement, suffix = '') {
-        game.roadAdjustments[property] = parseFloat(value);
-        displayElement.textContent = value + suffix;
-        game.scheduleRender();
-    }
-
-    // Road angle control
-    if (roadAngle) {
-        roadAngle.addEventListener('input', (e) => {
-            updateRoadAdjustment('angle', e.target.value, roadAngleValue, '°');
-        });
-    }
-
-    // Road width multiplier control
-    if (roadWidthMultiplier) {
-        roadWidthMultiplier.addEventListener('input', (e) => {
-            updateRoadAdjustment('widthMultiplier', e.target.value, roadWidthValue, 'x');
-        });
-    }
-
-    // Road X offset control
-    if (roadOffsetX) {
-        roadOffsetX.addEventListener('input', (e) => {
-            updateRoadAdjustment('offsetX', e.target.value, roadOffsetXValue, 'px');
-        });
-    }
-
-    // Road Y offset control
-    if (roadOffsetY) {
-        roadOffsetY.addEventListener('input', (e) => {
-            updateRoadAdjustment('offsetY', e.target.value, roadOffsetYValue, 'px');
-        });
-    }
-
-    // Reset button
-    if (resetRoadBtn) {
-        resetRoadBtn.addEventListener('click', () => {
-        // Reset all road adjustment values to defaults
-        game.roadAdjustments = {
-            angle: 0,
-            widthMultiplier: 1.0,
-            offsetX: 0,
-            offsetY: 0,
-        };
-
-        // Update UI controls
-        roadAngle.value = 0;
-        roadAngleValue.textContent = '0°';
-        roadWidthMultiplier.value = 1.0;
-        roadWidthValue.textContent = '1.0x';
-        roadOffsetX.value = 0;
-        roadOffsetXValue.textContent = '0px';
-        roadOffsetY.value = 0;
-        roadOffsetYValue.textContent = '0px';
-
-        game.scheduleRender();
-        });
-    }
-
-// REMOVED - Economic balance controls are now only in dev tools
-
-// REMOVED - Part of sidebar economic balance controls
 
 // Export IsometricGrid to global scope
 window.IsometricGrid = IsometricGrid;

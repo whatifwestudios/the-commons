@@ -233,11 +233,24 @@ const buildingData = ${JSON.stringify(buildingCategories, null, 2)};
 // Export for use in the game
 if (typeof module !== 'undefined' && module.exports) {
     module.exports = buildingData;
-} else if (typeof window !== 'undefined') {
+}
+
+// Controlled exposure in browser
+if (typeof window !== 'undefined') {
     window.buildingData = buildingData;
 }
 `;
 
         return js;
     }
+}
+
+// Export for module systems
+if (typeof module !== 'undefined' && module.exports) {
+    module.exports = CSVConverter;
+}
+
+// Controlled exposure in browser
+if (typeof window !== 'undefined') {
+    window.CSVConverter = CSVConverter;
 }

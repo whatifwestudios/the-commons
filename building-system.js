@@ -31,6 +31,57 @@ class BuildingSystem {
         // Selected building for placement
         this.selectedBuildingId = null;
         this.selectedBuildingCategory = 'all';
+
+        // Standardized building category mapping (moved from game.js)
+        this.buildingCategories = {
+            // Normalize case and naming differences between CSV and code
+            normalize: (category) => {
+                const mapping = {
+                    'Utilities': 'utilities',
+                    'utilities': 'utilities',
+                    'infrastructure': 'utilities',
+                    'Housing': 'housing',
+                    'housing': 'housing',
+                    'residential': 'housing',
+                    'Commercial': 'commercial',
+                    'commercial': 'commercial',
+                    'Education': 'education',
+                    'education': 'education',
+                    'Civic': 'culture',
+                    'culture': 'culture',
+                    'Recreation': 'recreation',
+                    'recreation': 'recreation',
+                    'Healthcare': 'healthcare',
+                    'healthcare': 'healthcare',
+                    'office': 'commercial', // Treat office as commercial
+                    'industrial': 'commercial', // Treat industrial as commercial
+                    'mixed': 'commercial' // Treat mixed as commercial
+                };
+                return mapping[category] || category.toLowerCase();
+            },
+
+            // Check if a building is an energy producer
+            isEnergyProducer: (building) => {
+                return (building.resources?.energyProvided || 0) > (building.resources?.energyRequired || 0);
+            },
+
+            // Check if a building needs transport accessibility for revenue
+            needsTransportAccess: function(building) {
+                const normalizedCategory = this.normalize(building.category);
+                return (normalizedCategory === 'commercial' || normalizedCategory === 'education')
+                       && !this.isEnergyProducer(building);
+            },
+
+            // Check if a building needs road connectivity (different from population access)
+            needsRoadConnectivity: function(building) {
+                // Energy producers need roads for power distribution
+                // Commercial/education buildings need roads for customer/worker access
+                const normalizedCategory = this.normalize(building.category);
+                return this.isEnergyProducer(building) ||
+                       normalizedCategory === 'commercial' ||
+                       normalizedCategory === 'education';
+            }
+        };
     }
     
     /**
@@ -359,12 +410,10 @@ class BuildingSystem {
                 // Apply supply/demand multipliers
                 revenue *= this.getSupplyDemandMultiplier(building, row, col);
                 
-                // Base maintenance with exponential decay
+                // Condition-based maintenance (worse condition = higher maintenance)
                 const baseMaintenance = building.economics.maintenanceCost || 0;
-                const decayRate = building.economics.decayRatePercent ? 
-                    building.economics.decayRatePercent / 100 : 0.001;
-                const buildingAgeInDays = parcel.buildingAge || 0;
-                const maintenanceMultiplier = Math.pow(1 + decayRate, buildingAgeInDays);
+                const buildingCondition = this.calculateBuildingCondition(building, parcel.buildingAge || 0);
+                const maintenanceMultiplier = 1 / buildingCondition; // Inverse relationship
                 maintenance = baseMaintenance * maintenanceMultiplier;
                 
                 netIncome = revenue - maintenance - landTax;
@@ -661,6 +710,23 @@ class BuildingSystem {
     }
 
     /**
+     * Calculate building condition (0-1 scale based on age and decay rate)
+     */
+    calculateBuildingCondition(building, ageInDays = 0) {
+        if (!building || !building.economics) {
+            return 1.0; // Perfect condition if no building data
+        }
+
+        const dailyDecayRate = (building.economics.decayRatePercent || 0) / 100;
+
+        // Condition decreases over time based on decay rate
+        const condition = Math.pow(1 - dailyDecayRate, ageInDays);
+
+        // Minimum 10% condition (buildings never become completely worthless)
+        return Math.max(0.1, condition);
+    }
+
+    /**
      * Get supply/demand multiplier for building revenue
      */
     getSupplyDemandMultiplier(building, row, col) {
@@ -855,10 +921,8 @@ class BuildingSystem {
         for (let row = 0; row < this.game.gridSize; row++) {
             for (let col = 0; col < this.game.gridSize; col++) {
                 const parcel = this.game.grid[row][col];
-                // Handle both legacy 'player' and actual player IDs
-                const isTargetOwner = (owner === 'player') ? 
-                    this.game.isCurrentPlayer(parcel.owner) : 
-                    parcel.owner === owner;
+                // Check if parcel is owned by the specified owner
+                const isTargetOwner = parcel.owner === owner;
                     
                 if (parcel && parcel.building && isTargetOwner) {
                     buildings.push({ row, col, parcel });
@@ -970,8 +1034,7 @@ class BuildingSystem {
         if (this.game.uiManager && this.game.economicClient) {
             this.game.uiManager.updateEconomicDisplays(this.game.economicClient);
         }
-        // V2: Cashflow handled by economic client
-        this.game.updateCashflowAsync();
+        // V2: Economic client automatically handles cashflow updates via server sync
         this.game.updatePlayerStats();
         this.game.scheduleRender();
         
@@ -1128,8 +1191,7 @@ class BuildingSystem {
         if (this.game.uiManager && this.game.economicClient) {
             this.game.uiManager.updateEconomicDisplays(this.game.economicClient);
         }
-        // V2: Cashflow handled by economic client
-        this.game.updateCashflowAsync();
+        // V2: Economic client automatically handles cashflow updates via server sync
         this.game.updatePlayerStats();
         this.game.scheduleRender();
         
@@ -1214,8 +1276,7 @@ class BuildingSystem {
         if (this.game.uiManager && this.game.economicClient) {
             this.game.uiManager.updateEconomicDisplays(this.game.economicClient);
         }
-        // V2: Cashflow handled by economic client
-        this.game.updateCashflowAsync();
+        // V2: Economic client automatically handles cashflow updates via server sync
         this.game.updatePlayerStats();
         this.game.scheduleRender();
         this.game.hideContextMenu();
@@ -1327,8 +1388,7 @@ class BuildingSystem {
         this.markBuildingEconomicsDirty(row, col);
         
         // Update cashflow preview immediately
-        // V2: Cashflow handled by economic client
-        this.game.updateCashflowAsync();
+        // V2: Economic client automatically handles cashflow updates via server sync
         this.game.updatePlayerStats();
         
         

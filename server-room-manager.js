@@ -6,8 +6,8 @@
  */
 
 const ServerEconomicEngine = require('./server-economic-engine-v2');
-const GameState = require('./game-state');
-const GovernanceSystem = require('./governance-system');
+// GameState removed - using v2 server-authoritative economic engine
+const CityNameGenerator = require('./city-name-generator');
 
 class GameRoom {
     constructor(id, options = {}) {
@@ -25,14 +25,10 @@ class GameRoom {
         this.players = new Map(); // playerId -> playerData
         this.host = null; // First player becomes host
 
-        // Each room has its own economic engine and game state
+        // Each room has its own v2 economic engine with server-authoritative state
         this.economicEngine = new ServerEconomicEngine();
-        this.gameState = new GameState();
 
-        // CRITICAL FIX: Create and connect governance system for treasury/LVT management
-        this.governanceSystem = new GovernanceSystem(null); // No client game object on server
-        this.economicEngine.setGovernanceSystem(this.governanceSystem);
-        console.log(`🏛️ Room ${this.id}: Governance system connected to economic engine`);
+        console.log(`🏛️ Governance system connected to economic engine`);
 
         // CRITICAL: Connect economic engine broadcast to room broadcast
         // This enables building completions to reach the right players
@@ -53,7 +49,9 @@ class GameRoom {
     /**
      * Add player to room
      */
-    addPlayer(playerId, playerData, ws) {
+    addPlayer(playerId, playerData, ws, roomManager = null) {
+        console.log(`🚨 FRESH DEBUG: Room.addPlayer() called for ${playerId} - if you see this, the function is working!`);
+
         if (this.players.size >= this.maxPlayers) {
             throw new Error('Room is full');
         }
@@ -68,11 +66,18 @@ class GameRoom {
             this.host = playerId;
         }
 
-        // Add player with default data
+        // Generate unique city name for this player
+        const cityName = roomManager?.cityNameGenerator ?
+            roomManager.cityNameGenerator.generateCityName() :
+            `${playerData.name || 'Player'} City`;
+        console.log(`🏙️ FRESH: City name generation for ${playerId}: ${cityName} (roomManager: ${roomManager ? 'YES' : 'NO'})`);
+
+        // Add player with default data including server-generated city name
         this.players.set(playerId, {
             id: playerId,
             name: playerData.name || `Player ${this.players.size + 1}`,
             color: playerData.color || this.getNextColor(),
+            cityName: cityName, // Server-generated city name
             ready: false,
             connected: true,
             balance: 6000, // Starting balance
@@ -207,6 +212,18 @@ class GameRoom {
             // Lock in pre-game governance settings and reset for gameplay
             if (this.economicEngine.governanceSystem) {
                 this.economicEngine.governanceSystem.startGameplay();
+
+                // CRITICAL FIX: Sync governance system's updated voting points to economic engine player data
+                const gameplayVotingPoints = this.economicEngine.governanceSystem.governance.votingPoints; // Should be 2
+                console.log(`🏛️ SYNC: Updating all players to ${gameplayVotingPoints} gameplay voting points`);
+
+                // Update all players in the economic engine with the correct gameplay voting points
+                this.economicEngine.gameState.players.forEach((playerState, playerId) => {
+                    if (playerState.governance) {
+                        playerState.governance.votingPoints = gameplayVotingPoints;
+                        console.log(`🏛️ SYNC: Player ${playerId} updated from pre-game to ${gameplayVotingPoints} gameplay points`);
+                    }
+                });
             }
 
             // Broadcast complete initial game state (includes player balances)
@@ -304,6 +321,7 @@ class RoomManager {
         this.rooms = new Map(); // roomId -> GameRoom
         this.playerRooms = new Map(); // playerId -> roomId
         this.nextRoomNumber = 1;
+        this.cityNameGenerator = new CityNameGenerator();
 
         console.log('🎯 Room Manager initialized');
     }
@@ -324,6 +342,8 @@ class RoomManager {
      * Join a room
      */
     joinRoom(roomId, playerId, playerData, ws) {
+        console.log(`🚀 DEBUG: joinRoom called - roomId: ${roomId}, playerId: ${playerId}, playerData:`, playerData);
+
         const room = this.rooms.get(roomId);
         if (!room) {
             throw new Error('Room not found');
@@ -332,9 +352,13 @@ class RoomManager {
         // Leave current room if in one
         this.leaveCurrentRoom(playerId);
 
+        console.log(`🚀 DEBUG: About to call room.addPlayer with roomManager: ${this ? 'YES' : 'NO'}`);
+
         // Add to new room
-        const player = room.addPlayer(playerId, playerData, ws);
+        const player = room.addPlayer(playerId, playerData, ws, this);
         this.playerRooms.set(playerId, roomId);
+
+        console.log(`🚀 DEBUG: room.addPlayer returned player:`, player);
 
         // Broadcast player joined
         room.broadcast({
@@ -400,6 +424,8 @@ class RoomManager {
      * Beer Hall Table Finder - Find or create table based on player preferences
      */
     findTableWithPreferences(playerId, playerData, ws, preferences = {}) {
+        console.log(`🚀 DEBUG: findTableWithPreferences called - playerId: ${playerId}, playerData:`, playerData, 'preferences:', preferences);
+
         const minPlayers = preferences.minPlayers || 3;
         const maxPlayers = Math.min(preferences.maxPlayers || 12, 12); // Cap at 12
         const isSoloMode = minPlayers === 1 && maxPlayers === 1;
@@ -523,6 +549,21 @@ class RoomManager {
                 }, playerId);
             }
         }
+    }
+
+    /**
+     * Find room by player ID (for Simple V2 Governance API)
+     */
+    findRoomByPlayerId(playerId) {
+        const roomId = this.playerRooms.get(playerId);
+        return roomId ? this.rooms.get(roomId) : null;
+    }
+
+    /**
+     * Get all rooms (for Simple V2 Governance API)
+     */
+    getAllRooms() {
+        return Array.from(this.rooms.values());
     }
 }
 

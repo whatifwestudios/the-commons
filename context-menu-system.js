@@ -31,8 +31,8 @@ class ContextMenuSystem {
         this.selectedParcel = { row, col };
         this.game.selectedTile = { row, col };
         this.game.selectedParcel = { row, col };
-        this.game.parcelReach = this.game.calculateParcelReach(row, col);
-        this.game.scheduleRender(); // Redraw to show reach visualization
+        // V2: Reach visualization removed - server handles connectivity calculations
+        this.game.scheduleRender();
 
         // Update the selected tile display
         const coord = this.game.getParcelCoordinate(row, col);
@@ -145,13 +145,14 @@ class ContextMenuSystem {
      * Create menu for player-owned parcel
      */
     createPlayerOwnedParcelMenu(statusEl, contentEl, row, col, parcel) {
-        // Get player name from beer hall lobby (user's chosen name) or fallback
-        const playerName = window.beerHallLobby?.playerName ||
-                          (this.game.playerSettings && this.game.playerSettings.name) ||
-                          'PLAYER';
-        // Get player color and apply to status text
-        const playerColor = window.beerHallLobby?.selectedColor || '#4CAF50';
-        statusEl.innerHTML = `OWNED BY <span style="color: ${playerColor}; font-weight: 600;">${playerName.toUpperCase()}</span>`;
+        // Use unified player ownership formatter from tooltip system
+        const currentPlayerId = this.game.currentPlayerId || window.PlayerUtils?.getCurrentPlayerId() || this.game.playerId;
+        const ownershipHtml = this.game.tooltipSystemV2.formatPlayerOwnership(currentPlayerId);
+        if (ownershipHtml) {
+            statusEl.innerHTML = ownershipHtml;
+        } else {
+            statusEl.innerHTML = 'OWNED BY YOU';
+        }
         statusEl.classList.add('owned');
 
 
@@ -175,7 +176,13 @@ class ContextMenuSystem {
             ownerName = this.game.competitorNames[parcel.owner].toUpperCase();
         }
 
-        statusEl.textContent = `OWNED BY ${ownerName}`;
+        // Use unified player ownership formatter from tooltip system
+        const ownershipHtml = this.game.tooltipSystemV2.formatPlayerOwnership(parcel.owner);
+        if (ownershipHtml) {
+            statusEl.innerHTML = ownershipHtml;
+        } else {
+            statusEl.textContent = `OWNED BY ${ownerName}`;
+        }
         statusEl.classList.add('competitor');
 
         // Show what building they have if any
@@ -925,6 +932,20 @@ class ContextMenuSystem {
             }
         });
         this.eventListeners = [];
+    }
+
+    getContrastingColor(backgroundColor) {
+        // Convert hex to RGB
+        const hex = backgroundColor.replace('#', '');
+        const r = parseInt(hex.substr(0, 2), 16);
+        const g = parseInt(hex.substr(2, 2), 16);
+        const b = parseInt(hex.substr(4, 2), 16);
+
+        // Calculate luminance
+        const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+
+        // Return white for dark colors, dark for light colors
+        return luminance > 0.5 ? '#000000' : '#ffffff';
     }
 }
 

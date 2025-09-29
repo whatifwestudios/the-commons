@@ -73,7 +73,7 @@ class TooltipSystemV2 {
             border-radius: 4px;
             padding: 12px;
             font-family: 'SF Mono', Monaco, monospace;
-            font-size: 12px;
+            font-size: 14px;
             line-height: 1.4;
             color: white;
             z-index: 10000;
@@ -247,25 +247,9 @@ class TooltipSystemV2 {
     renderEmptyParcelTooltipContent(data) {
         if (data.isOwned) {
             const isPlayerOwned = this.game.isCurrentPlayer(data.owner);
-            const currentId = window.PlayerUtils?.getCurrentPlayerId();
-            console.log('🔍 OWNERSHIP CHECK: parcel.owner:', data.owner, 'getCurrentPlayerId():', currentId, 'isCurrentPlayer:', isPlayerOwned);
-
-            // Handle different ownership types
-            let ownerText;
-            if (isPlayerOwned) {
-                ownerText = 'You own this parcel';
-            } else if (data.owner === 'City' || data.owner === 'unclaimed') {
-                ownerText = 'Available for purchase';
-            } else {
-                // Get actual player name from synchronized multiplayer data
-                const playerName = this.getPlayerName(data.owner);
-                const playerColor = this.getPlayerColor(data.owner);
-                ownerText = `<span style="color: ${playerColor};">Owned by ${playerName}</span>`;
-            }
             return `
                 <div class="empty-parcel owned">
-                    <div class="ownership-status">${ownerText}</div>
-                    ${this.game.isCurrentPlayer(data.owner) ?
+                    ${isPlayerOwned ?
                         '<div class="action-hint">Click to build something here</div>' :
                         (data.owner === 'City' || data.owner === 'unclaimed') ?
                         '<div class="action-hint">Click to purchase from City</div>' : ''
@@ -282,35 +266,16 @@ class TooltipSystemV2 {
     }
 
     renderBuildingHeader(data) {
-        const playerDisplay = this.getPlayerDisplayInfo(data);
+        const ownershipHtml = this.formatPlayerOwnership(data.owner);
 
         return `
             <div class="building-header">
                 <div class="building-name">${data.buildingName}</div>
-                ${playerDisplay ? `<div class="player-badge" style="background-color: ${playerDisplay.color}; color: ${playerDisplay.textColor};">${playerDisplay.name}</div>` : ''}
+                ${ownershipHtml ? `<div class="player-badge">${ownershipHtml}</div>` : ''}
             </div>
         `;
     }
 
-    /**
-     * Get player display info with color and auto-contrast text
-     */
-    getPlayerDisplayInfo(data) {
-        if (!data.owner) return null;
-
-        // Get player data from game state
-        const playerData = this.game?.gameState?.players?.[data.owner];
-        if (!playerData) return null;
-
-        const playerColor = playerData.color || '#4A90E2';
-        const playerName = playerData.name || `Player ${data.owner.slice(-4)}`;
-
-        return {
-            name: playerName,
-            color: playerColor,
-            textColor: this.getContrastTextColor(playerColor)
-        };
-    }
 
     /**
      * Calculate contrasting text color for background
@@ -372,34 +337,12 @@ class TooltipSystemV2 {
     }
 
     renderOwnerInfo(data) {
-        // Get the actual player name from beer hall lobby or game state
-        let ownerName = 'Unknown Player';
-        let playerColor = '#4CAF50';
-
-        // Check if this is the current player
-        if (this.game.isCurrentPlayer(data.parcel.owner)) {
-            // Get name from beer hall lobby
-            if (window.beerHallLobby?.playerName) {
-                ownerName = window.beerHallLobby.playerName;
-            }
-            // Get color from beer hall lobby
-            if (window.beerHallLobby?.selectedColor) {
-                playerColor = window.beerHallLobby.selectedColor;
-            }
-        } else {
-            // For other players, try to get from game state
-            ownerName = this.getPlayerName(data.parcel.owner);
-            playerColor = this.getPlayerColor(data.parcel.owner);
+        // Use unified player ownership formatter
+        const ownershipHtml = this.formatPlayerOwnership(data.parcel.owner);
+        if (ownershipHtml) {
+            return `<div class="owner-info">${ownershipHtml}</div>`;
         }
-
-        const contrastColor = this.getContrastingColor(playerColor);
-
-        return `
-            <div class="owner-info">
-                <span style="color: #aaa; font-weight: 300;">Owned by </span>
-                <span class="owner-badge" style="background: ${playerColor}; color: ${contrastColor}; padding: 2px 6px; border-radius: 3px; font-weight: 500;">${ownerName}</span>
-            </div>
-        `;
+        return '';
     }
 
     renderCompactPerformance(data) {
@@ -1161,15 +1104,13 @@ class TooltipSystemV2 {
     getParcelStatusText(data) {
         if (!data.hasBuilding) {
             if (data.isOwned) {
-                if (this.game.isCurrentPlayer(data.owner)) {
-                    const playerColor = this.getPlayerColor(data.owner);
-                    const contrastColor = this.getContrastingColor(playerColor);
-                    return `<span style="color: ${contrastColor}">OWNED BY YOU</span>`;
-                } else if (data.owner === 'City' || data.owner === 'unclaimed') {
-                    return `AVAILABLE FOR $${data.price.toLocaleString()}`;
-                } else {
-                    return 'COMPETITOR OWNED';
+                // Use unified formatter for player ownership
+                const ownershipHtml = this.formatPlayerOwnership(data.owner);
+                if (ownershipHtml) {
+                    return ownershipHtml;
                 }
+                // City/unclaimed parcels
+                return `AVAILABLE FOR $${data.price.toLocaleString()}`;
             }
             return `AVAILABLE FOR $${data.price.toLocaleString()}`;
         }
@@ -1178,12 +1119,13 @@ class TooltipSystemV2 {
             return 'UNDER CONSTRUCTION';
         }
 
-        // Show player name with contrasting color for buildings
-        const ownerName = this.getPlayerName(data.parcel.owner);
-        const playerColor = this.getPlayerColor(data.parcel.owner);
-        const contrastColor = this.getContrastingColor(playerColor);
+        // Use unified formatter for building ownership
+        const ownershipHtml = this.formatPlayerOwnership(data.parcel.owner);
+        if (ownershipHtml) {
+            return ownershipHtml;
+        }
 
-        return `<span style="color: ${contrastColor}">${ownerName.toUpperCase()}</span>`;
+        return 'CITY PROPERTY';
     }
 
     calculateTimeRemaining(data) {
@@ -1528,41 +1470,44 @@ class TooltipSystemV2 {
     // ==================== PLAYER COLOR HELPERS ====================
 
     getPlayerName(playerId) {
-        // For current player, always use beer hall lobby name first
-        if (this.game.isCurrentPlayer(playerId)) {
-            if (window.beerHallLobby?.playerName) {
-                return window.beerHallLobby.playerName;
-            }
+        // Delegate to rendering system for consistent player name handling
+        if (this.game?.renderer) {
+            return this.game.renderer.getPlayerName(playerId);
         }
 
-        // Get player name from game state for other players
-        if (this.game?.economicClient?.gameState?.players) {
-            const players = this.game.economicClient.gameState.players;
-            if (players && players[playerId] && players[playerId].name) {
-                return players[playerId].name;
-            }
-        }
-
-        // Fallback to player ID
+        // Fallback if no renderer available
         return playerId || 'Unknown Player';
     }
 
     getPlayerColor(playerId) {
-        // Get player color from game state
-        if (this.game?.economicClient?.gameState?.players) {
-            const player = this.game.economicClient.gameState.players[playerId];
-            if (player && player.color) {
-                return player.color;
-            }
+        // Delegate to rendering system for consistent player color handling
+        if (this.game?.renderer) {
+            return this.game.renderer.getPlayerColor(playerId);
         }
 
-        // Try to get from beer hall lobby for current player
-        if (window.beerHallLobby?.selectedColor && this.game.isCurrentPlayer(playerId)) {
-            return window.beerHallLobby.selectedColor;
-        }
-
-        // Fallback color
+        // Fallback color if no renderer available
         return '#4CAF50';
+    }
+
+    /**
+     * ✨ UNIFIED PLAYER OWNERSHIP FORMATTER ✨
+     * Single source of truth for all player ownership displays
+     * Always uses Beer Hall lobby color with accessible contrast
+     */
+    formatPlayerOwnership(playerId) {
+        if (!playerId || playerId === 'City' || playerId === 'unclaimed') {
+            return null; // Not owned by a player
+        }
+
+        const isCurrentPlayer = this.game.isCurrentPlayer(playerId);
+        const playerName = isCurrentPlayer ? 'YOU' : this.getPlayerName(playerId).toUpperCase();
+
+        // Always get color from Beer Hall lobby choice
+        const playerColor = window.beerHallLobby?.selectedColor ||
+                           this.getPlayerColor(playerId);
+        const contrastColor = this.getContrastingColor(playerColor);
+
+        return `<span style="color: #aaa; font-weight: 300;">OWNED BY </span><span style="background: ${playerColor}; color: ${contrastColor}; padding: 2px 6px; border-radius: 3px; font-weight: 500;">${playerName}</span>`;
     }
 
     getContrastingColor(backgroundColor) {
@@ -2005,7 +1950,7 @@ if (typeof document !== 'undefined') {
         }
 
         .carens-emoji {
-            font-size: 12px;
+            font-size: 14px;
             width: 16px;
             text-align: center;
         }

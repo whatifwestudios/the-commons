@@ -8,9 +8,15 @@
     "start": "node server.js",
     "dev": "node server.js",
     "build": "echo 'No build step required'",
-    "lint": "node lint-multiplayer.js",
-    "lint:check": "node lint-multiplayer.js",
-    "lint:full": "eslint *.js"
+    "lint": "node master-linter.js",
+    "lint:all": "node master-linter.js all --verbose",
+    "lint:multiplayer": "node master-linter.js multiplayer",
+    "lint:v2": "node lint-multiplayer-v2.js",
+    "lint:performance": "node master-linter.js performance",
+    "lint:security": "node master-linter.js security",
+    "lint:quality": "node master-linter.js quality",
+    "lint:fix": "node master-linter.js --fix",
+    "lint:report": "node master-linter.js --format=html all"
   },
   "keywords": [
     "game",

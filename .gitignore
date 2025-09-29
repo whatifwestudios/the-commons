@@ -48,6 +48,9 @@ __pycache__/
 env/
 venv/
 
+# Archives
+archive/
+
 # Logs
 logs/
 *.log

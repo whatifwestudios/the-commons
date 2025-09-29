@@ -22,6 +22,29 @@ class ActionMarketplaceV2 {
         // UI refresh timer
         this.refreshInterval = null;
 
+        // Event cleanup manager for memory leak prevention
+        if (typeof window !== 'undefined' && window.EventCleanupManager) {
+            this.eventManager = new window.EventCleanupManager();
+        } else if (typeof require !== 'undefined') {
+            const EventCleanupManager = require('./event-cleanup-manager');
+            this.eventManager = new EventCleanupManager();
+        } else {
+            // Fallback: basic event tracking for browser environments without EventCleanupManager
+            this.eventManager = {
+                listeners: [],
+                addEventListener: function(element, event, handler, options) {
+                    element.addEventListener(event, handler, options);
+                    this.listeners.push({ element, event, handler, options });
+                },
+                cleanup: function() {
+                    this.listeners.forEach(({ element, event, handler, options }) => {
+                        element.removeEventListener(event, handler, options);
+                    });
+                    this.listeners = [];
+                }
+            };
+        }
+
         this.setupMarketplace();
         console.log('🏪 Action Marketplace V2 initialized (server-authoritative)');
     }
@@ -30,13 +53,13 @@ class ActionMarketplaceV2 {
         // Setup open marketplace button
         const marketplaceBtn = document.getElementById('open-action-marketplace');
         if (marketplaceBtn) {
-            marketplaceBtn.addEventListener('click', () => this.openMarketplace());
+            this.eventManager.addEventListener(marketplaceBtn, 'click', () => this.openMarketplace());
         }
 
         // Setup backdrop click-to-close
         const modal = document.getElementById('action-marketplace-modal');
         if (modal) {
-            modal.addEventListener('click', (e) => {
+            this.eventManager.addEventListener(modal, 'click', (e) => {
                 if (e.target.id === 'action-marketplace-modal') {
                     this.closeMarketplace();
                 }
@@ -46,7 +69,7 @@ class ActionMarketplaceV2 {
         // Setup tab switching
         const tabs = document.querySelectorAll('.marketplace-tabs .tab-btn');
         tabs.forEach(tab => {
-            tab.addEventListener('click', (e) => {
+            this.eventManager.addEventListener(tab, 'click', (e) => {
                 const targetTab = e.target.getAttribute('data-tab');
                 this.switchTab(targetTab);
             });
@@ -624,6 +647,17 @@ class ActionMarketplaceV2 {
             this.refreshListings();
             this.updateModal();
         }
+    }
+
+    /**
+     * Clean up event listeners and resources
+     */
+    destroy() {
+        this.stopRefreshTimer();
+        if (this.eventManager) {
+            this.eventManager.cleanup();
+        }
+        console.log('🗑️ Action Marketplace V2 destroyed');
     }
 }
 

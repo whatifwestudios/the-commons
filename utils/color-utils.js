@@ -2,7 +2,7 @@
  * Color utilities for The Commons
  */
 
-window.ColorUtils = {
+const ColorUtils = {
     /**
      * Get color for building category
      */
@@ -23,3 +23,13 @@ window.ColorUtils = {
         return categoryColors[category] || '#666';
     }
 };
+
+// Export for module systems
+if (typeof module !== 'undefined' && module.exports) {
+    module.exports = ColorUtils;
+}
+
+// Controlled exposure in browser for backward compatibility
+if (typeof window !== 'undefined') {
+    window.ColorUtils = ColorUtils;
+}

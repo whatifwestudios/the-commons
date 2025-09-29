@@ -1334,6 +1334,17 @@
             background: #E6E6E6;
         }
 
+        /* Governance visual feedback */
+        .governance-glow {
+            animation: governanceGlow 0.5s ease-out;
+        }
+
+        @keyframes governanceGlow {
+            0% { box-shadow: 0 0 0 0 rgba(255, 215, 0, 0.7); }
+            50% { box-shadow: 0 0 10px 5px rgba(255, 215, 0, 0.5); }
+            100% { box-shadow: 0 0 0 0 rgba(255, 215, 0, 0); }
+        }
+
         .chat-players h3 {
             color: #fff;
             margin: 0 0 10px 0;
@@ -2662,8 +2673,8 @@
 
     <!-- Legacy economic files removed - replaced by v2 economic system -->
     <script src="parcel-hover-v2.js"></script>
-    <script src="governance-system.js?v=3"></script>
-    <script src="game-state.js"></script>
+    <script src="governance-v3.js?v=1"></script>
+    <!-- game-state.js archived - legacy v1 state management conflicted with v2 server authority -->
     <script src="ui-manager.js"></script>
     <script src="tooltip-system-v2.js"></script>
     <script src="position-adjuster.js"></script>

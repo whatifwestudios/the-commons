@@ -260,8 +260,6 @@ class EconomicClient {
             }
 
             console.log('✅ Transaction successful:', result);
-            console.log('🔍 DEBUG: Full server response structure:', JSON.stringify(result, null, 2));
-            console.log('🔍 DEBUG: result.newBalance value:', result.newBalance);
 
             // Sync game time
             if (result.gameTime) {
@@ -377,6 +375,77 @@ class EconomicClient {
             console.warn(`⚠️ No cashflow data available for player ${playerId} - WebSocket not connected`);
         }
         return null;
+    }
+
+    /**
+     * V2: Get player data from server state (for governance facade)
+     */
+    getPlayerData(playerId) {
+        // Use provided playerId or current player
+        const targetPlayerId = playerId || this.playerId;
+
+        // Return cached player data from WebSocket updates
+        if (this.gameState && this.gameState.players) {
+            return this.gameState.players[targetPlayerId];
+        }
+
+        // Only warn if WebSocket is connected but data still not available (actual error)
+        // During initialization, it's normal for data to not be available yet
+        if (this.ws && this.ws.readyState === WebSocket.OPEN && this.gameState) {
+            console.warn(`⚠️ No player data available for ${targetPlayerId} - player not found in game state`);
+        }
+        return null;
+    }
+
+    /**
+     * V2: Submit governance transaction to server
+     */
+    async submitGovernanceTransaction(type, data) {
+        if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+            console.error('Cannot submit governance transaction - WebSocket not connected');
+            return false;
+        }
+
+        const transaction = {
+            type: 'GOVERNANCE_TRANSACTION',
+            transactionType: type,
+            data: data,
+            playerId: this.playerId,
+            timestamp: Date.now()
+        };
+
+        try {
+            this.ws.send(JSON.stringify(transaction));
+            console.log(`🏛️ Submitted governance transaction: ${type}`, data);
+            return true;
+        } catch (error) {
+            console.error('Failed to submit governance transaction:', error);
+            return false;
+        }
+    }
+
+    /**
+     * Get current parcel price from server state
+     */
+    getParcelPrice(row, col) {
+        // Check if we have server grid state from WebSocket
+        if (this.gameState && this.gameState.grid &&
+            this.gameState.grid[row] && this.gameState.grid[row][col]) {
+            return this.gameState.grid[row][col].price;
+        }
+
+        // Fallback to client-side calculation if no server data
+        const centerRow = 5.5;
+        const centerCol = 5.5;
+        const distanceFromCenter = Math.max(
+            Math.abs(row - centerRow),
+            Math.abs(col - centerCol)
+        );
+        const maxDistance = 5.5;
+        const priceRange = 200 - 100;
+        const priceReduction = (distanceFromCenter / maxDistance) * priceRange;
+
+        return Math.round(200 - priceReduction);
     }
 
     /**
@@ -713,19 +782,17 @@ class EconomicClient {
 
         // Sync buildings (server-authoritative, includes performance data)
         if (gameState.buildings) {
-            console.log('🏗️ DEBUG: Raw buildings from server:', gameState.buildings);
             this.buildings = new Map();
+
+            // Server sends properly serialized array format
             gameState.buildings.forEach(building => {
-                console.log('🏗️ DEBUG: Processing building:', building);
                 this.buildings.set(building.locationKey, building);
             });
             console.log(`🏗️ Synced ${gameState.buildings.length} buildings from server state`);
-            console.log('🏗️ DEBUG: Buildings Map after sync:', Array.from(this.buildings.entries()));
 
             // Sync buildings to game grid for visual rendering
             this.syncBuildingsToGameGrid();
         } else {
-            console.log('🏗️ DEBUG: No buildings in gameState');
         }
 
         // Sync player data (server-authoritative)
@@ -792,8 +859,19 @@ class EconomicClient {
                         console.warn('⚠️ Cash display was overridden!', 'Expected:', `$${Math.round(newBalance).toLocaleString()}`, 'Actual:', currentDisplay);
                     }
                 }, 100);
+            }
+
+            // V2: Update city name from server if available
+            if (playerData.cityName && window.game && typeof window.game.updateCityNameFromServer === 'function') {
+                window.game.updateCityNameFromServer(playerData.cityName);
             } else {
-                console.warn('⚠️ DOM cache not found, using fallback');
+                // Only warn about missing city name during initial game state sync (not governance updates)
+                if (!playerData.cityName && eventType === 'GAME_STARTED') {
+                    console.warn('⚠️ City name not available from server data during game start');
+                } else if (!window.game || typeof window.game.updateCityNameFromServer !== 'function') {
+                    console.warn('⚠️ Game updateCityNameFromServer function not available');
+                }
+                console.log('⚠️ Using fallback cash display update');
                 const cashElement = document.querySelector('.player-cash, #player-cash, [class*="cash"]');
                 if (cashElement) {
                     cashElement.textContent = `$${Math.round(newBalance).toLocaleString()}`;
@@ -893,12 +971,6 @@ class EconomicClient {
                 };
 
                 console.log(`🎨 Building graphics: ${building.graphicsFile || 'no graphics found'}`);
-                console.log('🔍 DEBUG: Building object graphics data:', {
-                    graphicsFile: building.graphicsFile,
-                    graphics: building.graphics,
-                    images: building.images,
-                    allKeys: Object.keys(building)
-                });
                 syncedCount++;
             } else {
                 console.warn(`⚠️ Invalid building location: [${row},${col}]`);
@@ -1030,15 +1102,7 @@ class EconomicClient {
         // Set up our message handler that chains with the original
         this.ws.onmessage = (event) => {
             try {
-                console.log('🔌 DEBUG: Raw WebSocket message received:', event.data);
                 const update = JSON.parse(event.data);
-                console.log('🔌 DEBUG: Parsed WebSocket update:', {
-                    type: update.type,
-                    playersCount: update.gameState?.players ? Object.keys(update.gameState.players).length : 'N/A',
-                    buildingsCount: update.gameState?.buildings ? update.gameState.buildings.length : 'N/A',
-                    buildings: update.gameState?.buildings || 'N/A',
-                    fullUpdate: update
-                });
 
                 // Handle our economic updates
                 try {
@@ -1061,16 +1125,25 @@ class EconomicClient {
             this.ws.onopen = () => {
                 console.log('🔌 WebSocket connected - real-time multiplayer active');
 
-                // 🔧 FIX: Send existing player ID to prevent multiple player creation
+                // 🔧 FIX: Send existing player ID with name/color to prevent multiple player creation
                 if (this.game && this.game.currentPlayerId) {
-                    console.log(`🔄 Sending existing player ID to server: ${this.game.currentPlayerId}`);
+                    // Get player name and color from Beer Hall Lobby
+                    const playerName = window.beerHallLobby?.playerName || null;
+                    const playerColor = window.beerHallLobby?.selectedColor || null;
+
+                    console.log(`🔄 Sending player metadata to server: ${this.game.currentPlayerId}`, {
+                        name: playerName,
+                        color: playerColor
+                    });
 
                     // Small delay to ensure WebSocket is fully ready
                     setTimeout(() => {
                         if (this.ws && this.ws.readyState === WebSocket.OPEN) {
                             this.ws.send(JSON.stringify({
                                 type: 'IDENTIFY_PLAYER',
-                                playerId: this.game.currentPlayerId
+                                playerId: this.game.currentPlayerId,
+                                playerName: playerName,
+                                playerColor: playerColor
                             }));
                         }
                     }, 10); // 10ms delay
@@ -1080,10 +1153,20 @@ class EconomicClient {
             // WebSocket already open, send identify message immediately
             console.log('🔌 WebSocket already connected - reusing Beer Hall connection');
             if (this.game && this.game.currentPlayerId) {
-                console.log(`🔄 Sending existing player ID to server: ${this.game.currentPlayerId}`);
+                // Get player name and color from Beer Hall Lobby
+                const playerName = window.beerHallLobby?.playerName || null;
+                const playerColor = window.beerHallLobby?.selectedColor || null;
+
+                console.log(`🔄 Sending player metadata to server: ${this.game.currentPlayerId}`, {
+                    name: playerName,
+                    color: playerColor
+                });
+
                 this.ws.send(JSON.stringify({
                     type: 'IDENTIFY_PLAYER',
-                    playerId: this.game.currentPlayerId
+                    playerId: this.game.currentPlayerId,
+                    playerName: playerName,
+                    playerColor: playerColor
                 }));
             }
         }
@@ -1107,8 +1190,6 @@ class EconomicClient {
      */
     handleWebSocketUpdate(update) {
         console.log('📡 Real-time update received:', update.type);
-        console.log('🔍 DEBUG: update.type === "GAME_STATE":', update.type === 'GAME_STATE');
-        console.log('🔍 DEBUG: typeof update.type:', typeof update.type);
 
         switch (update.type) {
             case 'CONNECTED':
@@ -1176,6 +1257,16 @@ class EconomicClient {
                 console.log('📥 Room state sync response received');
                 if (update.roomState) {
                     console.log(`🏗️ Syncing ${update.roomState.buildings?.length || 0} buildings from server`);
+
+                    // V2: Extract and update city name for current player
+                    if (update.roomState.players && this.playerId) {
+                        const currentPlayer = update.roomState.players.find(p => p.id === this.playerId);
+                        if (currentPlayer && currentPlayer.cityName && window.game && typeof window.game.updateCityNameFromServer === 'function') {
+                            console.log(`🏙️ Updating city name from room state: ${currentPlayer.cityName}`);
+                            window.game.updateCityNameFromServer(currentPlayer.cityName);
+                        }
+                    }
+
                     this.triggerUIUpdate('ROOM_STATE_SYNC', update.roomState);
 
                     // Update game time
@@ -1213,8 +1304,26 @@ class EconomicClient {
             case 'GAME_STATE':
                 // 🔧 FIX: Handle GAME_STATE messages received from shared Beer Hall WebSocket
                 console.log('🎮 GAME_STATE received - syncing with server');
-                console.log('🔍 DEBUG: update.gameState exists:', !!update.gameState);
-                console.log('🔍 DEBUG: update.gameState.players:', update.gameState?.players);
+
+                // Special handling for GAME_STARTED events with city names
+                if (update.eventType === 'GAME_STARTED' && update.eventData?.players) {
+                    console.log('🏙️ GAME_STARTED detected - extracting city names');
+                    const players = update.eventData.players;
+                    const currentPlayer = players.find(p => p.id === this.playerId);
+
+                    if (currentPlayer && currentPlayer.cityName) {
+                        console.log(`🏙️ Your city name: ${currentPlayer.cityName}`);
+                        // Store city name for UI display
+                        localStorage.setItem('playerCityName', currentPlayer.cityName);
+                        // Update UI immediately if game exists
+                        if (window.game && window.game.updateCityNameFromServer) {
+                            window.game.updateCityNameFromServer(currentPlayer.cityName);
+                        }
+                    } else {
+                        console.warn('⚠️ City name not found in GAME_STARTED message');
+                    }
+                }
+
                 if (update.gameState) {
                     console.log('🔄 Calling syncGameState...');
                     this.syncGameState(update.gameState, update.eventType);
@@ -1252,14 +1361,41 @@ class EconomicClient {
             case 'MONTHLY_UPDATE':
                 console.log('🗳️ Monthly update received:', update.message);
                 // Update governance points in local game state
-                if (this.game && this.game.governanceSystem) {
+                // DISABLED: Legacy local governance point update - V2 uses server-authoritative governance
+                if (this.game && this.game.governanceSystem && false) {
                     this.game.governanceSystem.governance.votingPoints += 2;
                     console.log(`🗳️ Updated local governance points: ${this.game.governanceSystem.governance.votingPoints}`);
                     // Update the governance modal if it's open
-                    this.game.governanceSystem.updateGovernanceModal();
+                    // DISABLED: Legacy governance modal update - V2 facade handles this via WebSocket sync
+                    // this.game.governanceSystem.updateGovernanceModal();
                     // Animate governance button with gold fade animation
                     this.game.governanceSystem.animateGovernanceButtonGold();
                 }
+                break;
+
+            case 'GOVERNANCE_UPDATE':
+                // Handle governance transaction results
+                console.log('🏛️ Governance update received:', update);
+                if (update.gameState) {
+                    console.log('🔄 Syncing game state after governance update...');
+                    this.syncGameState(update.gameState, 'GOVERNANCE_UPDATE');
+                }
+                if (update.transaction && this.game.governanceSystem) {
+                    console.log('🏛️ Updating governance UI after transaction:', update.transaction.type);
+                    // Refresh governance modal to show updated state
+                    this.game.governanceSystem.updateGovernanceModal();
+                }
+                break;
+
+            case 'GOVERNANCE_ERROR':
+                // Handle governance transaction errors
+                console.log('🏛️ Governance error received:', update);
+                if (update.error) {
+                    console.error('❌ Governance transaction failed:', update.error);
+                } else {
+                    console.error('❌ Unknown governance error occurred');
+                }
+                // Could show user feedback here if needed
                 break;
 
             case 'chat_message':

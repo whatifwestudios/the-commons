@@ -2,7 +2,7 @@
  * Player utilities for The Commons
  */
 
-window.PlayerUtils = {
+const PlayerUtils = {
     /**
      * Get current player ID - UNIFIED SYSTEM (server-authoritative)
      * Priority: 1) game.currentPlayerId (server-assigned) 2) session 3) localStorage
@@ -85,3 +85,13 @@ window.PlayerUtils = {
         return playerIcons[playerId] || '🏘️';
     }
 };
+
+// Export for module systems
+if (typeof module !== 'undefined' && module.exports) {
+    module.exports = PlayerUtils;
+}
+
+// Controlled exposure in browser for backward compatibility
+if (typeof window !== 'undefined') {
+    window.PlayerUtils = PlayerUtils;
+}

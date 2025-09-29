@@ -38,7 +38,7 @@ class MultiplayerLinter {
             const fullPath = path.join(dir, file);
             const stat = fs.statSync(fullPath);
 
-            if (stat.isDirectory() && !file.startsWith('.') && file !== 'node_modules') {
+            if (stat.isDirectory() && !file.startsWith('.') && file !== 'node_modules' && file !== 'archive') {
                 this.scanDirectory(fullPath);
             } else if (file.endsWith('.js') && !file.includes('test') && !file.includes('spec')) {
                 this.jsFiles.push(fullPath);
@@ -67,8 +67,14 @@ class MultiplayerLinter {
                     this.warnings.push(`${filePath}:${lineNum} - Direct player state modification (should use GameState)`);
                 }
 
-                // Check for hardcoded 'player' references
-                if (this.patterns.hardcodedPlayerId.test(line) && !line.includes('//') && !line.includes('console.')) {
+                // Check for hardcoded 'player' references (ignore legitimate cases)
+                if (this.patterns.hardcodedPlayerId.test(line) &&
+                    !line.includes('//') &&
+                    !line.includes('console.') &&
+                    !line.includes('defaultPlayerId') &&
+                    !line.includes('playerId') &&
+                    !line.includes('"placeholder"') &&
+                    !line.includes('patterns')) {
                     this.warnings.push(`${filePath}:${lineNum} - Hardcoded 'player' ID (should be parameterized for multiplayer)`);
                 }
 

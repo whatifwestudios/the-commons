@@ -2,7 +2,7 @@
  * Coordinate utilities for The Commons
  */
 
-window.CoordinateUtils = {
+const CoordinateUtils = {
     /**
      * Convert grid coordinates to isometric screen coordinates
      * Note: Takes col, row order to match rendering system expectations
@@ -39,3 +39,13 @@ window.CoordinateUtils = {
         return { row: roundedRow, col: roundedCol };
     }
 };
+
+// Export for module systems
+if (typeof module !== 'undefined' && module.exports) {
+    module.exports = CoordinateUtils;
+}
+
+// Controlled exposure in browser for backward compatibility
+if (typeof window !== 'undefined') {
+    window.CoordinateUtils = CoordinateUtils;
+}

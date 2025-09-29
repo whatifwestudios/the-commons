@@ -701,10 +701,39 @@ class BeerHallLobby {
                 break;
 
             case 'GAME_STATE':
+                // Check if this is a GAME_STARTED event with city names
+                if (update.eventType === 'GAME_STARTED' && update.eventData?.players) {
+                    console.log('🏙️ GAME_STARTED detected - extracting city names');
+                    const players = update.eventData.players;
+                    const currentPlayer = players.find(p => p.id === this.playerId);
+
+                    if (currentPlayer && currentPlayer.cityName) {
+                        console.log(`🏙️ Your city name: ${currentPlayer.cityName}`);
+                        // Store city name for UI display
+                        localStorage.setItem('playerCityName', currentPlayer.cityName);
+                        // Update UI immediately if game exists
+                        if (window.game && window.game.updateCityNameFromServer) {
+                            window.game.updateCityNameFromServer(currentPlayer.cityName);
+                        }
+                    } else {
+                        console.warn('⚠️ City name not found in GAME_STARTED message');
+                    }
+                }
+
                 // Forward GAME_STATE messages to Economic Client
                 console.log('📡 Beer Hall: Forwarding GAME_STATE to Economic Client');
                 if (window.game && window.game.economicClient) {
                     window.game.economicClient.handleWebSocketUpdate(update);
+                }
+                break;
+
+            case 'GOVERNANCE_UPDATE':
+                // Forward GOVERNANCE_UPDATE messages to Economic Client
+                console.log('📡 Beer Hall: Forwarding GOVERNANCE_UPDATE to Economic Client');
+                if (window.game && window.game.economicClient) {
+                    window.game.economicClient.handleWebSocketUpdate(update);
+                } else {
+                    console.warn('⚠️ Economic Client not available for GOVERNANCE_UPDATE');
                 }
                 break;
 
@@ -814,6 +843,7 @@ class BeerHallLobby {
      */
     startGameCinematic(update) {
         console.log('🎮 Starting game cinematic!');
+        console.log('📦 GAME_STARTED update:', update);
 
         // Hide ready check modal
         this.readyCheckModal.style.display = 'none';
@@ -821,11 +851,27 @@ class BeerHallLobby {
         // Show cinematic
         this.gameIntroModal.style.display = 'flex';
 
+        // V2: Extract city name for current player from GAME_STARTED message
+        const players = update.eventData?.players || update.players || [];
+        const currentPlayer = players.find(p => p.id === this.playerId);
+
+        if (currentPlayer && currentPlayer.cityName) {
+            console.log(`🏙️ Your city name: ${currentPlayer.cityName}`);
+            // Store city name for UI display
+            localStorage.setItem('playerCityName', currentPlayer.cityName);
+            // Update UI immediately if game exists
+            if (window.game && window.game.updateCityNameFromServer) {
+                window.game.updateCityNameFromServer(currentPlayer.cityName);
+            }
+        } else {
+            console.warn('⚠️ City name not found in GAME_STARTED message');
+        }
+
         // Populate players in cinematic
         const playersContainer = document.getElementById('cinematic-players');
         playersContainer.innerHTML = '';
 
-        update.players.forEach((player, index) => {
+        players.forEach((player, index) => {
             const playerDiv = document.createElement('div');
             playerDiv.className = 'cinematic-player';
             playerDiv.style.animationDelay = `${index * 0.1}s`;
