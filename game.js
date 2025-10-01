@@ -1,7 +1,6 @@
 
 class IsometricGrid {
     constructor(canvas, gridSize = 12) {
-        console.log('🎯 🎯 🎯 CONSTRUCTOR CALLED WITH CANVAS:', canvas);
         this.canvas = canvas;
         this.ctx = canvas.getContext('2d');
         this.gridSize = gridSize;
@@ -16,6 +15,7 @@ class IsometricGrid {
         
         // Initialize UI Manager for DOM caching
         this.uiManager = new UIManager();
+        window.uiManager = this.uiManager; // Make available globally for economic client
         
         // Initialize Building System
         this.buildingSystem = new BuildingSystem(this);
@@ -23,6 +23,7 @@ class IsometricGrid {
         // Initialize V2 Economic System (server-authoritative)
         // Enable WebSocket for real-time multiplayer state synchronization
         this.economicClient = new EconomicClient(this, true);
+        window.gameEconomicClient = this.economicClient; // Make available globally
 
         // Economic engines replaced by v2 server-authoritative system
 
@@ -49,8 +50,9 @@ class IsometricGrid {
 
         // V2 system is now the standard
 
-        // Initialize context menu system
+        // V1 Context Menu System (restored as primary)
         this.contextMenuSystem = new ContextMenuSystem(this);
+
 
         // Initialize parcel selector manager for hover effects
         this.parcelHover = new ParcelHoverV2(this);
@@ -109,15 +111,7 @@ class IsometricGrid {
             dirty: true
         };
         
-        // DOM element caching for performance
-        this.domCache = {
-            selectedTile: null,
-            gameDate: null,
-            playerCash: null,
-            playerWealth: null,
-            cityName: null,
-            totalResidents: null
-        };
+        // ✅ BANDAID ELIMINATED: domCache removed, using direct uiManager calls
         
         // City vitality tracking
         this.vitality = {
@@ -144,10 +138,10 @@ class IsometricGrid {
         this._playerCash = 0; // Will be set by server sync
         this._playerWealth = 0; // Will be calculated from server data
 
-        console.log('💰 DEBUG: Client initialized with $0, waiting for server sync...');
+        // Client initialized, waiting for server sync
 
         // Legacy cityTreasury removed
-        console.log('💰 Client cash tracking initialized (server-authoritative)');
+        console.log('✅ Client cash tracking initialized (server-authoritative)');
 
         // Define playerCash as getter/setter for compatibility
         Object.defineProperty(this, 'playerCash', {
@@ -250,8 +244,6 @@ class IsometricGrid {
         
         // Clean slate - all parcels start unowned
         
-        // Edge parcels system - buildable spaces on grid lines
-        this.initializeEdgeParcels();
         
         // Parcel selection and visualization
         // REMOVED: Legacy hoveredTile - ParcelHoverV2 handles hover state
@@ -260,8 +252,6 @@ class IsometricGrid {
         this.hoverInfluenceRadius = null; // Set of tiles influenced by hover
         
         // Transportation System - Clean slate
-        // this.transportationSystem = new TransportationSystem(this); // Disabled: Replaced by mobility-layer-v2.js
-        this.transportationSystem = null; // Will be replaced by v2 integration
 
         // Transport capacity system removed - was 75% dead code
 
@@ -278,35 +268,16 @@ class IsometricGrid {
         this.submenuTimer = null; // Timer for submenu hide delay
         
         // Map layer system
-        this.currentLayer = 'normal'; // 'normal', 'transportation'
+        this.currentLayer = 'normal';
         this.landValueMode = 'estimated'; // 'estimated' or 'paid' - toggle for LV view
         
         // Auction system - now handled by AuctionSystem module
         
         
-        // Competitor names
-        this.competitorNames = {
-            'competitor1': 'Red Corp',
-            'competitor2': 'Blue Industries',
-            'competitor3': 'Green Ventures',
-            'competitor4': 'Orange Holdings',
-            'competitor5': 'Purple Group',
-            'competitor6': 'Teal Associates'
-        };
         
         // Legacy governance object removed
         
-        // Transportation building state
-        this.selectedRoadType = 'local_street';
-        this.isBuilding = false;
-        this.buildStart = null;
         
-        // Zoom and pan functionality
-        this.zoomLevel = 0.4; // Default zoom at 1.1x (0.4 * 0.25 = 0.1 additional scale)
-        this.zoomScale = 1.1; // 1.1x scale
-        this.panOffset = { x: 0, y: 0 };
-        this.isPanning = false;
-        this.lastPanPoint = { x: 0, y: 0 };
         
         // Cashflow tracking
         this.cashflowBreakdown = [];
@@ -325,8 +296,6 @@ class IsometricGrid {
             netCashflow: 0
         };
 
-        // Attenuation visualization toggle for Data Insights overlay
-        this.showAttenuationVisualization = false;
         
         // Initialize unified Action Manager
         this.actionManager = new ActionManager(this);
@@ -335,9 +304,9 @@ class IsometricGrid {
         this.initDOMCache();
         this.populateBuildingCategories();
 
-        console.log('🎯 About to call setupEventListeners from constructor');
+        // Setting up event listeners
         this.setupEventListeners();
-        console.log('🎯 setupEventListeners completed from constructor');
+        // Event listeners setup completed
 
         this.setupZoomControls();
         this.setupLayerControls();
@@ -447,14 +416,6 @@ class IsometricGrid {
         // REMOVED: mobility layer cleanup - completely disabled in V2
         
         // Reset zoom and pan to default clean state
-        this.zoomLevel = 0.4;
-        this.zoomScale = 1.1;
-        this.panOffset = { x: 0, y: 0 };
-        
-        // Update zoom buttons to reflect clean state
-        if (this.updateZoomButtons) {
-            this.updateZoomButtons();
-        }
         
     }
 
@@ -473,9 +434,9 @@ class IsometricGrid {
 
         // Initialize rendering system
         this.renderingSystem.initialize();
-        
-        
-        
+
+        // Context menu system v1 ready to use (no initialization needed)
+
         this.startGameTime();
         this.scheduleRender();
 
@@ -509,9 +470,7 @@ class IsometricGrid {
      * @param {Object} playerConfig - Clean player configuration from onboarding
      */
     async initializeWithPlayerConfig(playerConfig) {
-        console.log('🎮 🎮 🎮 INITIALIZING WITH PLAYER CONFIG 🎮 🎮 🎮');
-        console.log('🎮 Initializing game with player config:', playerConfig);
-        console.log('🎨 DEBUG: Player config color:', playerConfig.color);
+        console.log('✅ Initializing game with player configuration');
 
 
         // Store clean player config
@@ -519,30 +478,30 @@ class IsometricGrid {
 
         // All modes (solo and multiplayer) use server-based economic system
         // Solo mode gets its own isolated table with one player
-        console.log('🔌 Initializing server connection for isolated game state');
+        // Initializing server connection
 
         // WebSocket should already be connected via V2 server-first player ID system
         if (playerConfig.waitingForPlayers) {
-            console.log('🔌 Multiplayer mode - WebSocket managed by beer hall system');
+            // Multiplayer mode - WebSocket managed by beer hall system
         } else if (playerConfig.mode === 'solo') {
-            console.log('🎮 Solo mode - isolated table with own economic engine');
+            // Solo mode - isolated table with own economic engine
         } else {
-            console.log('🔌 V2: WebSocket already managed by server-first player ID system');
+            // V2: WebSocket managed by server-first player ID system
         }
 
         // Force economic WebSocket initialization for all modes
         // Solo and multiplayer both need server-side economic calculations
-        console.log('🔌 FORCE: Initializing economic WebSocket for building performance data');
+        // Initializing economic WebSocket for building performance data
         this.economicClient.initializeWebSocket();
 
         // Set currentPlayerId for cash manager and transactions
         this.currentPlayerId = playerConfig.id;
-        console.log('🆔 Set currentPlayerId to:', this.currentPlayerId);
+        // Player ID set
 
         // Sync player ID to Economic Client immediately
         if (this.economicClient) {
             this.economicClient.playerId = this.currentPlayerId;
-            console.log('🔗 Economic Client player ID synced:', this.currentPlayerId);
+            // Economic Client player ID synced
         }
 
         // Convert to legacy playerSettings format for compatibility
@@ -563,34 +522,32 @@ class IsometricGrid {
 
         // V2: Onboarding complete
         if (playerConfig.mode === 'solo') {
-            console.log('🎮 V2: Solo mode onboarding complete - isolated table ready');
+            // Solo mode onboarding complete
 
             // Hide Action Manager in solo mode
             const actionManagerSection = document.getElementById('action-manager-section');
             if (actionManagerSection) {
                 actionManagerSection.style.display = 'none';
-                console.log('🎮 Action Manager hidden in solo mode');
+                // Action Manager hidden in solo mode
             }
 
             // Hide Chat section in solo mode
             const chatSection = document.getElementById('chat-section');
             if (chatSection) {
                 chatSection.style.display = 'none';
-                console.log('🎮 Chat section hidden in solo mode');
+                // Chat section hidden in solo mode
             }
         } else {
-            console.log('🍺 V2: Multiplayer mode onboarding complete - no legacy server reset needed');
+            // Multiplayer mode onboarding complete
         }
 
         // Update ParcelSelectorManager with player color (after playerSettings is set)
-        console.log('🎨 DEBUG: About to set parcelHover color. parcelHover exists:', !!this.parcelHover);
-        console.log('🎨 DEBUG: playerSettings:', this.playerSettings);
-        console.log('🎨 DEBUG: playerSettings.color:', this.playerSettings?.color);
+        // Setting parcel hover color
         if (this.parcelHover) {
             this.parcelHover.playerColor = this.playerSettings?.color || '#10AC84';
-            console.log('🎨 DEBUG: Set parcelHover.playerColor to:', this.parcelHover.playerColor);
+            // Parcel hover color set
         } else {
-            console.warn('🎨 DEBUG: parcelHover is null/undefined!');
+            console.warn('⚠️ parcelHover is null/undefined!');
         }
 
         // Force re-render to show updated player colors
@@ -637,7 +594,7 @@ class IsometricGrid {
             window.resetCash = () => {
                 // ✅ CLEANED: Using server-authoritative reset via Economic Client
                 if (this.economicClient) {
-                    console.log('🔄 Resetting to server-authoritative balance...');
+                    // Resetting to server-authoritative balance
                     this.economicClient.syncBalanceWithServer();
                 } else {
                     console.error('Economic Client not available');
@@ -661,10 +618,10 @@ class IsometricGrid {
                 const savedSettings = localStorage.getItem('theCommons_playerSettings');
                 if (savedSettings) {
                     this.playerSettings = JSON.parse(savedSettings);
-                    console.log('🔄 Loaded fallback playerSettings from localStorage');
+                    // Loaded fallback playerSettings from localStorage
                 }
             } else {
-                console.log('✅ PlayerSettings already set via modern initialization, skipping legacy load');
+                // PlayerSettings already set via modern initialization
             }
 
             if (this.playerSettings) {
@@ -699,7 +656,6 @@ class IsometricGrid {
         const cityNameElement = document.getElementById('city-name');
         if (cityNameElement) {
             cityNameElement.textContent = cityName;
-            console.log(`🏙️ City name updated to: ${cityName}`);
         }
     }
     
@@ -758,112 +714,9 @@ class IsometricGrid {
         // Setup UI event listeners via UI Manager
         this.uiManager.setupEventListeners(this);
         
-        // Keep backward compatibility with old domCache references
-        this.domCache.selectedTile = this.uiManager.get('selectedTile');
-        this.domCache.gameDate = this.uiManager.get('gameDate');
-        this.domCache.playerCash = this.uiManager.get('playerCash');
-        this.domCache.playerWealth = this.uiManager.get('playerWealth');
-        this.domCache.cityName = this.uiManager.get('cityName');
-        this.domCache.playerCashflow = this.uiManager.get('playerCashflow');
-        this.domCache.totalResidents = this.uiManager.get('totalResidents');
+        // ✅ BANDAID ELIMINATED: Direct uiManager usage, no compatibility layer needed
     }
 
-    initializeEdgeParcels() {
-        // Create buildable spaces on grid lines between parcels
-        this.edgeParcels = {
-            horizontal: [], // Horizontal edges between rows
-            vertical: [],   // Vertical edges between columns
-            intersections: [] // Where grid lines cross
-        };
-
-        // Horizontal edges (between rows)
-        for (let row = 0; row < this.gridSize - 1; row++) {
-            this.edgeParcels.horizontal[row] = [];
-            for (let col = 0; col < this.gridSize; col++) {
-                this.edgeParcels.horizontal[row][col] = {
-                    type: 'edge_horizontal',
-                    // Public infrastructure - no ownership or land value
-                    infrastructure: {
-                        roadway: null, // 'local', 'arterial', 'highway'
-                        sidewalks: false, // boolean
-                        bikelanes: false, // boolean
-                        busStop: null, // null or {type, direction, builtBy, cost}
-                        subwayEntrance: null, // null or {type, direction, builtBy, cost}
-                        totalInvestment: 0 // Total money spent on this edge parcel
-                    }
-                };
-            }
-        }
-
-        // Vertical edges (between columns)
-        for (let row = 0; row < this.gridSize; row++) {
-            this.edgeParcels.vertical[row] = [];
-            for (let col = 0; col < this.gridSize - 1; col++) {
-                this.edgeParcels.vertical[row][col] = {
-                    type: 'edge_vertical',
-                    // Public infrastructure - no ownership or land value
-                    infrastructure: {
-                        roadway: null, // 'local', 'arterial', 'highway'
-                        sidewalks: false, // boolean
-                        bikelanes: false, // boolean
-                        busStop: null, // null or {type, direction, builtBy, cost}
-                        subwayEntrance: null, // null or {type, direction, builtBy, cost}
-                        totalInvestment: 0 // Total money spent on this edge parcel
-                    }
-                };
-            }
-        }
-
-        // Intersections (where grid lines cross)
-        for (let row = 0; row < this.gridSize - 1; row++) {
-            this.edgeParcels.intersections[row] = [];
-            for (let col = 0; col < this.gridSize - 1; col++) {
-                this.edgeParcels.intersections[row][col] = {
-                    type: 'edge_intersection',
-                    // Public infrastructure - intersections handle crosswalks and connections
-                    infrastructure: {
-                        crosswalks: [], // Array of crosswalk directions: 'north', 'south', 'east', 'west'
-                        trafficControl: null, // 'stop_sign', 'traffic_light', 'roundabout'
-                        totalInvestment: 0 // Total money spent on this intersection
-                    }
-                };
-            }
-        }
-
-        // Infrastructure costs (no actions required, only money)
-        this.infrastructureCosts = {
-            roadway: {
-                local: 50,      // $50 per block
-                arterial: 200,  // $200 per block  
-                highway: 500    // $500 per block
-            },
-            sidewalks: 25,      // $25 per block
-            bikelanes: 75,      // $75 per block
-            busStop: 100,       // $100 per stop
-            subwayEntrance: 1000, // $1000 per entrance
-            trafficControl: {
-                stop_sign: 50,      // $50 per sign
-                traffic_light: 500,  // $500 per light
-                roundabout: 2000    // $2000 per roundabout
-            }
-        };
-
-        // Test: Add some infrastructure for demonstration
-        if (this.edgeParcels.horizontal[0]) {
-            this.edgeParcels.horizontal[0][0].infrastructure.roadway = 'local';
-            this.edgeParcels.horizontal[0][0].infrastructure.sidewalks = true;
-            this.edgeParcels.horizontal[0][1].infrastructure.roadway = 'arterial';
-            this.edgeParcels.horizontal[0][1].infrastructure.bikelanes = true;
-        }
-        if (this.edgeParcels.vertical[0]) {
-            this.edgeParcels.vertical[0][0].infrastructure.roadway = 'highway';
-            this.edgeParcels.vertical[0][0].infrastructure.busStop = {type: 'standard', direction: 'both', builtBy: this.playerId || this.currentPlayerId};
-        }
-        if (this.edgeParcels.intersections[0]) {
-            this.edgeParcels.intersections[0][0].infrastructure.crosswalks = ['north', 'south'];
-            this.edgeParcels.intersections[0][0].infrastructure.trafficControl = 'stop_sign';
-        }
-    }
 
     populateBuildingCategories() {
         // Delegate to building system
@@ -1096,7 +949,7 @@ class IsometricGrid {
             this.updateOptimisticCountdown();
         }, 1000); // Update every second
 
-        console.log('🕐 Started optimistic countdown timer');
+        // Started optimistic countdown timer
     }
 
     /**
@@ -1106,7 +959,7 @@ class IsometricGrid {
         if (this.optimisticCountdownInterval) {
             clearInterval(this.optimisticCountdownInterval);
             this.optimisticCountdownInterval = null;
-            console.log('🕐 Stopped optimistic countdown timer');
+            // Stopped optimistic countdown timer
         }
     }
 
@@ -1188,7 +1041,7 @@ class IsometricGrid {
     async updateGameDate() {
         // Simple date display for top bar - no countdown
         const currentDate = this.getGameDate();
-        this.domCache.gameDate.textContent = `${currentDate.month} ${currentDate.day}`;
+        this.uiManager.get('gameDate').textContent = `${currentDate.month} ${currentDate.day}`;
     }
 
     async processDailyCashflow() {
@@ -1196,7 +1049,7 @@ class IsometricGrid {
         // The server processes DAILY_TICK events and updates player balances automatically
         // No client-side daily processing needed
 
-        console.log('💰 V2: Daily cashflow handled by server economic engine');
+        // Daily cashflow handled by server economic engine
         return { totalRevenue: 0, totalMaintenance: 0, netCashflow: 0 };
     }
     
@@ -1340,7 +1193,7 @@ class IsometricGrid {
             }
 
             // Fallback if economic client not available
-            console.warn('Economic client not available for player cashflow calculation');
+            console.warn('Economic client not available for cashflow calculation');
             return null;
         } catch (error) {
             console.error('Error calculating player cashflow:', error);
@@ -1372,9 +1225,12 @@ class IsometricGrid {
         return count;
     }
 
+    // 🚫 CLIENT CALCULATION - DISABLED! BUSTED!
     calculatePopulation() {
-        // ELIMINATED: Client-side population calculation has been blocked - using server-authoritative system
-        return 0;
+        // CLIENT-SIDE CALCULATION DISABLED - RETURN GHOST PLACEHOLDER
+        // This function was calculating total city population!
+        // Server should handle population calculations for server authority!
+        return 'GHOST';
     }
 
     calculateTotalWealth() {
@@ -1390,14 +1246,7 @@ class IsometricGrid {
         // Setup UI event listeners via UI Manager
         this.uiManager.setupEventListeners(this);
         
-        // Keep backward compatibility with old domCache references
-        this.domCache.selectedTile = this.uiManager.get('selectedTile');
-        this.domCache.gameDate = this.uiManager.get('gameDate');
-        this.domCache.playerCash = this.uiManager.get('playerCash');
-        this.domCache.playerWealth = this.uiManager.get('playerWealth');
-        this.domCache.cityName = this.uiManager.get('cityName');
-        this.domCache.playerCashflow = this.uiManager.get('playerCashflow');
-        this.domCache.totalResidents = this.uiManager.get('totalResidents');
+        // ✅ BANDAID ELIMINATED: Direct uiManager usage, no compatibility layer needed
     }
 
     populateBuildingCategories() {
@@ -1517,92 +1366,11 @@ class IsometricGrid {
     }
     
     // Calculate player's total net worth (cash + asset value)
+    // 🚫 CLIENT CALCULATION - DISABLED! BUSTED!
     calculatePlayerNetWorth() {
-        console.log('=== DEBUG: calculatePlayerNetWorth() ===');
-
-        // Get current player ID for debugging
-        const currentPlayerId = window.PlayerUtils?.getCurrentPlayerId();
-        console.log('Current Player ID:', currentPlayerId);
-        console.log('Player Cash:', this.playerCash);
-
-        let assetValue = 0;
-        let ownedParcelsCount = 0;
-        let totalLandValue = 0;
-        let totalBuildingValue = 0;
-        let debugParcels = [];
-
-        // Calculate value of owned parcels and buildings
-        for (let row = 0; row < this.gridSize; row++) {
-            for (let col = 0; col < this.gridSize; col++) {
-                const parcel = this.grid[row][col];
-                if (parcel) {
-                    // Debug: Log parcel owner vs current player
-                    const isOwned = this.isCurrentPlayer(parcel.owner);
-                    if (parcel.owner) {
-                        console.log(`Parcel [${row},${col}] owner: "${parcel.owner}", isCurrentPlayer: ${isOwned}`);
-                    }
-
-                    if (isOwned) {
-                        ownedParcelsCount++;
-                        let parcelLandValue = 0;
-                        let parcelBuildingValue = 0;
-
-                        // Add land value
-                        if (parcel.landValue && parcel.landValue.current) {
-                            parcelLandValue = parcel.landValue.current;
-                            assetValue += parcelLandValue;
-                            totalLandValue += parcelLandValue;
-                        } else {
-                            console.log(`Parcel [${row},${col}] - Missing land value:`, parcel.landValue);
-                        }
-
-                        // Add building value
-                        if (parcel.building) {
-                            const building = this.buildingManager?.getBuildingById(parcel.building);
-                            if (building) {
-                                parcelBuildingValue = this.calculateCurrentBuildingValue(parcel, building);
-                                assetValue += parcelBuildingValue;
-                                totalBuildingValue += parcelBuildingValue;
-                            } else {
-                                console.log(`Parcel [${row},${col}] - Building not found:`, parcel.building);
-                            }
-                        }
-
-                        // Store debug info for this parcel
-                        debugParcels.push({
-                            position: `[${row},${col}]`,
-                            landValue: parcelLandValue,
-                            buildingValue: parcelBuildingValue,
-                            building: parcel.building || 'none'
-                        });
-                    }
-                }
-            }
-        }
-
-        const totalNetWorth = Math.round(this.playerCash + assetValue);
-
-        // Comprehensive debug output
-        console.log('=== NET WORTH CALCULATION BREAKDOWN ===');
-        console.log('Owned Parcels Found:', ownedParcelsCount);
-        console.log('Total Land Value:', totalLandValue);
-        console.log('Total Building Value:', totalBuildingValue);
-        console.log('Total Asset Value:', assetValue);
-        console.log('Player Cash:', this.playerCash);
-        console.log('Final Net Worth:', totalNetWorth);
-
-        if (debugParcels.length > 0) {
-            console.log('Owned Parcels Details:');
-            debugParcels.forEach(p => {
-                console.log(`  ${p.position}: Land=$${p.landValue}, Building=$${p.buildingValue} (${p.building})`);
-            });
-        } else {
-            console.log('No owned parcels found!');
-        }
-
-        console.log('=== END DEBUG ===');
-
-        return totalNetWorth;
+        // CLIENT-SIDE CALCULATION DISABLED - RETURN GHOST PLACEHOLDER
+        // This massive calculation was iterating through the entire grid!
+        return 'GHOST';
     }
     
     // REMOVED: startConstructionAnimationManager() - handled by building system now
@@ -1610,12 +1378,22 @@ class IsometricGrid {
     // REMOVED: hasConstructionInProgress() - handled by building system now
     
     
-    // Live tooltip updates for time-based content
+    // ✅ BANDAID ELIMINATED: Event-driven tooltip updates via WebSocket
     startLiveTooltipUpdates() {
-        // Update time-based tooltips frequently for smooth construction progress
-        this.liveTooltipInterval = setInterval(async () => {
-            this.updateLiveTooltips();
-        }, 250); // Update every 250ms for smooth construction progress
+        // Register for server events that require tooltip updates
+        if (this.economicClient && this.economicClient.onUpdate) {
+            this.economicClient.onUpdate((update) => {
+                // Update tooltips when server state changes
+                if (update.type === 'STATE_UPDATE' ||
+                    update.type === 'CONSTRUCTION_UPDATE' ||
+                    update.type === 'TIME_UPDATE') {
+                    this.updateLiveTooltips();
+                }
+            });
+        }
+
+        // Initial tooltip update
+        this.updateLiveTooltips();
     }
     
     // Update any visible tooltips that contain time information
@@ -1681,69 +1459,73 @@ class IsometricGrid {
         let population = 0;
         try {
             const serverState = await this.economicClient.getEconomicState();
-            if (serverState && serverState.statistics && serverState.statistics.totalPopulation !== undefined) {
-                population = serverState.statistics.totalPopulation;
+            if (serverState && serverState.totalResidents !== undefined) {
+                population = serverState.totalResidents;
             }
         } catch (error) {
-            console.warn('Failed to fetch population from server, using fallback:', error);
+            console.warn('Failed to fetch population from server:', error);
             // Keep population as 0 (fallback)
         }
 
-        // Server-authoritative cash display: Check Economic Client first, fallback to cashManager
+        // V2 Server-authoritative cash display ONLY - no fallbacks
         let currentCash = 0;
 
-        // First priority: Server balance from Economic Client (server-authoritative)
+        // ONLY source: Server balance from Economic Client
         if (this.economicClient) {
-            currentCash = this.economicClient.getCurrentPlayerBalance() || 0;
-            console.log('💰 Using server-authoritative balance from Economic Client:', currentCash);
+            currentCash = this.economicClient.getCurrentPlayerBalance();
+            // Server-authoritative balance applied
+        } else {
+            console.warn('⚠️ No Economic Client - balance unknown');
         }
 
-        const totalWealth = this._playerWealth || currentCash || 6000; // Start with same as cash
+        // V2 Server-authoritative wealth from Economic Client
+        const totalWealth = this.economicClient?.getCurrentPlayerWealth() || currentCash;
         // ✅ CLEANED: No more cashManager fallback - V2 server-authoritative only
 
-        console.log('💰 updatePlayerStats cash check:', {
-            currentCash,
-            hasEconomicClient: !!this.economicClient,
-            economicClientBalance: this.economicClient ? this.economicClient.getCurrentPlayerBalance() : 'N/A',
-            domCashDisplay: this.domCache.playerCash ? this.domCache.playerCash.textContent : 'N/A'
-        });
+        // updatePlayerStats cash check completed
         const safeWealth = isNaN(totalWealth) || totalWealth === null || totalWealth === undefined ? 0 : totalWealth;
 
+        // Update the actual playerCash property for gameplay logic
+        this.playerCash = currentCash;
+
         // Round cash and wealth to nearest dollar for display
-        this.domCache.playerCash.textContent = `$${Math.round(currentCash).toLocaleString()}`;
-        this.domCache.playerWealth.textContent = `$${Math.round(safeWealth).toLocaleString()}`;
+        this.uiManager.get('playerCash').textContent = `$${Math.round(currentCash).toLocaleString()}`;
+        this.uiManager.get('playerWealth').textContent = `$${Math.round(safeWealth).toLocaleString()}`;
 
         // Update cashflow with proper formatting and color coding
 
-        if (this.domCache.playerCashflow && this.dailyCashflowTotals) {
-            const rawNetCashflow = this.dailyCashflowTotals.netCashflow;
+        // V2 Server-authoritative: Use Economic Client cashflow data
+        const cashflowData = this.economicClient?.dailyCashflowTotals || this.dailyCashflowTotals;
+        const playerCashflowElement = this.uiManager.get('playerCashflow');
+        if (playerCashflowElement && cashflowData) {
+            const rawNetCashflow = cashflowData.netCashflow;
             const netCashflow = isNaN(rawNetCashflow) || rawNetCashflow === null || rawNetCashflow === undefined ? 0 : rawNetCashflow;
             const roundedCashflow = Math.round(netCashflow);
             const formattedCashflow = roundedCashflow >= 0 ?
                 `+$${roundedCashflow.toLocaleString()}` :
                 `-$${Math.abs(roundedCashflow).toLocaleString()}`;
 
-            this.domCache.playerCashflow.textContent = formattedCashflow;
+            playerCashflowElement.textContent = formattedCashflow;
             
             // Color coding: green for positive, red for negative, gray for zero
             if (roundedCashflow > 0) {
-                this.domCache.playerCashflow.style.color = '#4CAF50';
+                playerCashflowElement.style.color = '#4CAF50';
             } else if (roundedCashflow < 0) {
-                this.domCache.playerCashflow.style.color = '#f44336';
+                playerCashflowElement.style.color = '#f44336';
             } else {
-                this.domCache.playerCashflow.style.color = '#ccc';
+                playerCashflowElement.style.color = '#ccc';
             }
         } else {
             // Fallback - set to $0 if no data
-            if (this.domCache.playerCashflow) {
-                this.domCache.playerCashflow.textContent = '$0';
-                this.domCache.playerCashflow.style.color = '#ccc';
+            if (playerCashflowElement) {
+                playerCashflowElement.textContent = '$0';
+                playerCashflowElement.style.color = '#ccc';
             }
         }
         
         // Update residents count using both methods for consistency
-        if (this.domCache.totalResidents) {
-            this.domCache.totalResidents.textContent = population.toLocaleString();
+        if (this.uiManager.get('totalResidents')) {
+            this.uiManager.get('totalResidents').textContent = population.toLocaleString();
         }
 
         // Also use UIManager's updateCityStats method for consistency
@@ -1753,8 +1535,8 @@ class IsometricGrid {
 
         // Demographics are now calculated by server and included in population update
         
-        // Treasury display - governance removed
-        let totalTreasury = 0;
+        // Treasury display - connect to server governance data
+        let totalTreasury = this.economicClient?.governance?.treasury || 0;
 
         // Update city treasury display
         const cityTreasuryEl = document.getElementById('city-treasury');
@@ -1796,27 +1578,13 @@ class IsometricGrid {
         return `${letter}-${number}`;
     }
     
+    // 🚫 CLIENT CALCULATION - DISABLED! BUSTED!
+    // GHOST-BUSTING VICTORY: This function was disabled during server authority migration.
+    // It was causing cash balance issues by sending 'GHOST' prices to server transactions.
+    // All callers have been updated to use economicClient.getParcelPrice() instead.
     getParcelPrice(row, col) {
-        // Server-authoritative pricing - get from economic engine
-        if (this.economicClient) {
-            const serverPrice = this.economicClient.getParcelPrice(row, col);
-            if (serverPrice !== undefined) {
-                return serverPrice;
-            }
-        }
-
-        // Fallback for solo mode or connection issues
-        const centerRow = 5.5;
-        const centerCol = 5.5;
-        const distanceFromCenter = Math.max(
-            Math.abs(row - centerRow),
-            Math.abs(col - centerCol)
-        );
-        const maxDistance = 5.5;
-        const priceRange = 200 - 100;
-        const priceReduction = (distanceFromCenter / maxDistance) * priceRange;
-
-        return Math.round(200 - priceReduction);
+        // CLIENT-SIDE CALCULATION DISABLED - RETURN GHOST PLACEHOLDER
+        return 'GHOST';
     }
     
     showBuildingDataInsights(row, col) {
@@ -1852,64 +1620,16 @@ class IsometricGrid {
     
     showContextMenu(row, col, mouseX, mouseY) {
         this.contextMenuSystem.show(row, col, mouseX, mouseY);
-        // REMOVED: Legacy crispTooltip - TooltipSystemV2 handles all tooltips
     }
-    
+
     hideContextMenu() {
         this.contextMenuSystem.hide();
     }
     
     hideStreetEdgeContextMenu() {
-        // Hide street edge context menu if it exists
-        // This is called when switching layers to clear layer-specific UI
-        const streetEdgeMenu = document.getElementById('street-edge-context-menu');
-        if (streetEdgeMenu) {
-            streetEdgeMenu.classList.remove('visible');
-        }
-    }
-    
-    clearSelectedStreetEdges() {
-        // Clear selected street edges when switching layers
-        if (this.selectedStreetEdges) {
-            this.selectedStreetEdges.clear();
-        }
     }
     
     
-    generateTransitStopId() {
-        // Generate a simple incrementing ID
-        return Date.now().toString(36) + Math.random().toString(36).substr(2);
-    }
-    
-    
-    getTransitStopAt(row, col) {
-        return null; // Transit system redesign in progress
-    }
-    
-    selectAllStreetEdges() {
-        // Select all street edges in the grid
-        this.selectedStreetEdges.clear();
-        
-        const edges = ['northeast', 'northwest', 'southeast', 'southwest'];
-        
-        for (let row = 0; row < this.gridSize; row++) {
-            for (let col = 0; col < this.gridSize; col++) {
-                for (const edge of edges) {
-                    const edgeKey = `${row}-${col}-${edge}`;
-                    this.selectedStreetEdges.add(edgeKey);
-                }
-            }
-        }
-        
-        // Show context menu at center of screen if edges selected
-        if (this.selectedStreetEdges.size > 0) {
-            const centerX = window.innerWidth / 2;
-            const centerY = window.innerHeight / 2;
-            this.showStreetEdgeContextMenu(centerX, centerY);
-        }
-        
-        this.scheduleRender();
-    }
     
     makeDraggable(element) {
         const handle = element.querySelector('.draggable-handle');
@@ -2087,24 +1807,10 @@ class IsometricGrid {
 
     
     
+    // 🚫 CLIENT CALCULATION - DISABLED! BUSTED!
     calculateMonthlyLVT() {
-        // Fixed to use standard tax rate
-        let totalLVT = 0;
-
-        const currentLVTRate = 0.50;
-
-        for (let row = 0; row < this.gridSize; row++) {
-            for (let col = 0; col < this.gridSize; col++) {
-                const parcel = this.grid[row][col];
-                // Collect LVT from ALL owned parcels in the city
-                if (parcel && parcel.owner && parcel.owner !== 'City' && parcel.owner !== 'unclaimed') {
-                    const landValue = Math.max(parcel.landValue?.paidPrice || 0, parcel.landValue?.calculatedValue || 0);
-                    totalLVT += landValue * currentLVTRate / 12; // Monthly portion
-                }
-            }
-        }
-
-        return totalLVT;
+        // CLIENT-SIDE CALCULATION DISABLED - RETURN GHOST PLACEHOLDER
+        return 'GHOST';
     }
     
     // Check if public funds can cover building cost
@@ -2164,18 +1870,8 @@ class IsometricGrid {
             reasons.push(`Requires ${requiredPopulation} population (current: ${Math.floor(currentPopulation)})`);
         }
         
-        // Check cash requirement - governance removed, use base cost
-        const baseBuildingCost = this.buildingManager.getBuildingCost(buildingId);
-        const playerCostRequired = baseBuildingCost;
-
-        // Use server-authoritative balance for affordability check
-        const currentBalance = (this.economicClient && typeof this.economicClient.serverBalance === 'number')
-            ? this.economicClient.serverBalance
-            : this.playerCash;
-
-        if (currentBalance < playerCostRequired) {
-            reasons.push(`Insufficient funds: need $${playerCostRequired.toLocaleString()} (have $${Math.floor(currentBalance).toLocaleString()})`);
-        }
+        // Note: Cash requirements are validated server-side during transaction
+        // Client does not need to check balance - server will reject insufficient funds
         
         // Check prerequisites (if any) - use cache for performance
         if (building.prerequisites && building.prerequisites.length > 0) {
@@ -2209,7 +1905,7 @@ class IsometricGrid {
         }
 
         const baseCost = this.buildingManager.getBuildingCost(buildingId);
-        console.log('💰 Building cost calculation:', { buildingId, baseCost });
+        // Building cost calculation
         return baseCost;
     }
 
@@ -2257,29 +1953,38 @@ class IsometricGrid {
         if (!buildingData) return;
 
         const panel = document.getElementById('building-info-panel');
-        
-        // Update panel content
-        document.getElementById('building-info-title').textContent = buildingData.name;
-        
-        // Building description and requirements now handled by dedicated building modules
 
-        // Update supply/demand displays (includes cost and time)
-        this.updateSupplyDemandDisplay(buildingData);
+        // Clear and rebuild the entire panel content
+        const building = this.buildingManager.getAllBuildings().find(b => b.name === buildingData.name);
 
-        // Set building image
-        const img = document.getElementById('building-info-img');
-        if (buildingData.image) {
-            img.src = buildingData.image;
-            img.style.display = 'block';
-        } else {
-            img.style.display = 'none';
-        }
+        panel.innerHTML = `
+            <div class="building-info-header">
+                <h3 style="margin: 0; color: #ffffff; font-size: 16px; font-weight: 600;">${buildingData.name}</h3>
+            </div>
+            <div class="building-info-content" style="padding: 20px; display: flex; flex-direction: column; gap: 24px;">
+                ${buildingData.image ? `
+                    <div style="text-align: center;">
+                        <img src="${buildingData.image}" style="max-width: 75%; height: auto; border-radius: 6px;" />
+                    </div>
+                ` : ''}
 
-        // Update soft metric impacts (livability)
-        this.updateBuildingImpacts(buildingData.impacts);
+                <div class="investment-score-section">
+                    ${this.createInvestmentScoreHTML(buildingData)}
+                </div>
 
-        // Add Investment Score
-        this.updateInvestmentScore(buildingData);
+                <div class="construction-section">
+                    ${this.createConstructionDetailsHTML(buildingData, building)}
+                </div>
+
+                <div class="resources-section">
+                    ${this.createResourcesHTML(building)}
+                </div>
+
+                <div class="livability-section">
+                    ${this.createLivabilityImpactsHTML(buildingData.impacts)}
+                </div>
+            </div>
+        `;
 
         // Show panel
         panel.classList.add('visible');
@@ -2290,116 +1995,274 @@ class IsometricGrid {
         panel.classList.remove('visible');
     }
 
-    calculateInvestmentScore(buildingData) {
-        // Get all buildings to find max/min values for normalization
-        const allBuildings = this.buildingManager.getAllBuildings();
-        
-        // Extract financial metrics from all buildings
-        const revenues = allBuildings.map(b => b.economics?.maxRevenue || 0);
-        const maintenances = allBuildings.map(b => b.economics?.maintenanceCost || 0);
-        const decayRates = allBuildings.map(b => b.economics?.decayRate || 0);
-        
-        const maxRevenue = Math.max(...revenues);
-        const minRevenue = Math.min(...revenues);
-        const maxMaintenance = Math.max(...maintenances);
-        const minMaintenance = Math.min(...maintenances);
-        const maxDecayRate = Math.max(...decayRates);
-        const minDecayRate = Math.min(...decayRates);
-        
-        // Current building's metrics
-        const revenue = buildingData.economics?.maxRevenue || 0;
-        const maintenance = buildingData.economics?.maintenanceCost || 0;
-        const decayRate = buildingData.economics?.decayRate || 0;
-        
-        // Calculate normalized scores (0-1)
-        const revenueScore = maxRevenue > minRevenue ? 
-            (revenue - minRevenue) / (maxRevenue - minRevenue) : 0.5;
-        
-        // Lower maintenance is better, so invert the score
-        const maintenanceScore = maxMaintenance > minMaintenance ? 
-            1 - (maintenance - minMaintenance) / (maxMaintenance - minMaintenance) : 0.5;
-        
-        // Lower decay rate is better, so invert the score
-        const decayScore = maxDecayRate > minDecayRate ? 
-            1 - (decayRate - minDecayRate) / (maxDecayRate - minDecayRate) : 0.5;
-        
-        // Weighted average (revenue is most important, then maintenance, then decay)
-        const weightedScore = (revenueScore * 0.5) + (maintenanceScore * 0.3) + (decayScore * 0.2);
-        
-        // Convert to 1-100 scale
-        const investmentScore = Math.max(1, Math.min(100, Math.round(weightedScore * 100)));
-        
-        return {
-            score: investmentScore,
-            revenue: revenue,
-            maintenance: maintenance,
-            decayRate: decayRate
-        };
-    }
-
-    updateInvestmentScore(buildingData) {
-        // Find or create investment score container
-        let container = document.querySelector('.investment-score-container');
-        if (!container) {
-            container = document.createElement('div');
-            container.className = 'investment-score-container';
-            
-            // Insert after supply-demand section
-            const supplyDemandSection = document.querySelector('.building-supply-demand');
-            if (supplyDemandSection && supplyDemandSection.parentNode) {
-                supplyDemandSection.parentNode.insertBefore(container, supplyDemandSection.nextSibling);
-            } else {
-                // Fallback - add to building-info-content
-                const infoContent = document.querySelector('.building-info-content');
-                if (infoContent) infoContent.appendChild(container);
-            }
-        }
-        
+    createInvestmentScoreHTML(buildingData) {
         const scoreData = this.calculateInvestmentScore(buildingData);
-        
-        // Determine score color and label
+
         let scoreColor, scoreLabel;
         if (scoreData.score >= 80) {
-            scoreColor = '#4CAF50'; // Green
-            scoreLabel = 'EXCELLENT';
+            scoreColor = '#4CAF50';
+            scoreLabel = 'Excellent';
         } else if (scoreData.score >= 60) {
-            scoreColor = '#8BC34A'; // Light green
-            scoreLabel = 'GOOD';
+            scoreColor = '#8BC34A';
+            scoreLabel = 'Good';
         } else if (scoreData.score >= 40) {
-            scoreColor = '#FFC107'; // Amber
-            scoreLabel = 'FAIR';
+            scoreColor = '#FFC107';
+            scoreLabel = 'Fair';
         } else if (scoreData.score >= 20) {
-            scoreColor = '#FF9800'; // Orange
-            scoreLabel = 'POOR';
+            scoreColor = '#FF9800';
+            scoreLabel = 'Poor';
         } else {
-            scoreColor = '#F44336'; // Red
-            scoreLabel = 'VERY POOR';
+            scoreColor = '#F44336';
+            scoreLabel = 'Very Poor';
         }
-        
-        container.innerHTML = `
-            <div class="vitality-group-title">INVESTMENT SCORE</div>
-            <div class="investment-score-main">
-                <div class="investment-score-circle" style="border-color: ${scoreColor};">
-                    <div class="investment-score-number" style="color: ${scoreColor};">${scoreData.score}</div>
-                    <div class="investment-score-label" style="color: ${scoreColor};">${scoreLabel}</div>
+
+        // Convert decay rate to factor (multiply by 10000 to get basis points as a factor)
+        const decayFactor = Math.round(scoreData.decayRate * 10000);
+
+        return `
+            <div style="text-align: center; color: #cccccc;">
+                <h4 style="margin: 0 0 20px 0; font-size: 16px; font-weight: 400; color: #cccccc;">Investment Score</h4>
+                <div style="display: flex; justify-content: center; margin-bottom: 20px;">
+                    <div style="width: 160px; height: 160px; border: 4px solid ${scoreColor}; border-radius: 50%; display: flex; flex-direction: column; align-items: center; justify-content: center;">
+                        <div style="font-size: 48px; font-weight: bold; color: ${scoreColor}; line-height: 1;">${scoreData.score}</div>
+                        <div style="font-size: 16px; font-weight: 600; color: ${scoreColor}; text-transform: capitalize;">${scoreLabel}</div>
+                    </div>
                 </div>
-                <div class="investment-score-breakdown">
-                    <div class="investment-metric">
-                        <span class="metric-label">Max Revenue</span>
-                        <span class="metric-value">$${scoreData.revenue}/day</span>
+                <div style="display: flex; flex-direction: column; gap: 8px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <span style="font-size: 14px; color: #aaa; font-weight: 400;">Optimal Revenue</span>
+                        <span style="font-size: 14px; color: #fff; font-weight: 500;">$${scoreData.revenue}/day</span>
                     </div>
-                    <div class="investment-metric">
-                        <span class="metric-label">Maintenance</span>
-                        <span class="metric-value">$${scoreData.maintenance}/day</span>
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <span style="font-size: 14px; color: #aaa; font-weight: 400;">Maintenance</span>
+                        <span style="font-size: 14px; color: #fff; font-weight: 500;">$${scoreData.maintenance}/day</span>
                     </div>
-                    <div class="investment-metric">
-                        <span class="metric-label">Decay Rate</span>
-                        <span class="metric-value">${scoreData.decayRate}%/day</span>
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <div style="display: flex; align-items: center; gap: 4px;">
+                            <span style="font-size: 14px; color: #aaa; font-weight: 400;">Decay Factor</span>
+                            <span style="font-size: 11px; color: #888;">(lower is better)</span>
+                        </div>
+                        <span style="font-size: 14px; color: #fff; font-weight: 500;">${decayFactor}</span>
                     </div>
                 </div>
             </div>
         `;
     }
+
+    createResourcesHTML(building) {
+        const resources = building?.resources || {};
+        const resourceConfig = {
+            'jobs': { color: '#ec4899', label: 'Jobs', maxValue: 30 },
+            'energy': { color: '#f59e0b', label: 'Energy', maxValue: 500 },
+            'education': { color: '#8b5cf6', label: 'Education', maxValue: 30 },
+            'food': { color: '#84cc16', label: 'Food', maxValue: 50 },
+            'housing': { color: '#06b6d4', label: 'Housing', maxValue: 30 },
+            'healthcare': { color: '#ef4444', label: 'Healthcare', maxValue: 30 }
+        };
+
+        let resourcesHTML = '';
+        let hasResources = false;
+
+        Object.entries(resourceConfig).forEach(([key, config]) => {
+            const provided = resources[key + 'Provided'] || 0;
+            const required = resources[key + 'Required'] || 0;
+            const netValue = provided - required;
+
+            if (provided > 0 || required > 0) {
+                hasResources = true;
+                const normalizedValue = Math.min(Math.max(netValue / config.maxValue, -1), 1);
+                const absWidth = Math.abs(normalizedValue) * 50;
+
+                let barHtml = '';
+                let valueColor = '#888';
+                let displayValue = '0';
+
+                if (Math.abs(netValue) < 0.1) {
+                    barHtml = `<div style="position: absolute; left: 49%; width: 2%; height: 8px; top: -1px; border-radius: 50%; background: #3b82f6; border: 1px solid rgba(255,255,255,0.3);"></div>`;
+                    valueColor = '#3b82f6';
+                    displayValue = '0';
+                } else if (netValue > 0) {
+                    barHtml = `<div style="position: absolute; left: 50%; width: ${absWidth}%; height: 100%; background: linear-gradient(90deg, ${config.color}, #4CAF50); border-radius: 0 3px 3px 0; opacity: 0.8;"></div>`;
+                    valueColor = '#4CAF50';
+                    displayValue = `+${netValue}`;
+                } else {
+                    barHtml = `<div style="position: absolute; left: ${50 - absWidth}%; width: ${absWidth}%; height: 100%; background: #ef4444; border-radius: 3px 0 0 3px; opacity: 0.8;"></div>`;
+                    valueColor = '#ef4444';
+                    displayValue = `${netValue}`;
+                }
+
+                resourcesHTML += `
+                    <div style="margin-bottom: 12px;">
+                        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px;">
+                            <span style="color: ${config.color}; font-weight: 500; font-size: 14px;">${config.label}</span>
+                            <span style="color: ${valueColor}; font-weight: 500; font-size: 14px;">${displayValue}</span>
+                        </div>
+                        <div style="position: relative; width: 100%; height: 6px; background: #2a2a2a; border-radius: 3px;">
+                            <div style="position: absolute; left: 50%; width: 1px; height: 100%; background: #444;"></div>
+                            ${barHtml}
+                        </div>
+                    </div>
+                `;
+            }
+        });
+
+        if (!hasResources) {
+            resourcesHTML = '<div style="color: #666; font-size: 14px; font-style: italic; text-align: center;">No resource impacts</div>';
+        }
+
+        return `
+            <div style="text-align: center; color: #cccccc;">
+                <h4 style="margin: 0 0 16px 0; font-size: 16px; font-weight: 400; color: #cccccc;">Resources</h4>
+                <div style="text-align: left;">
+                    ${resourcesHTML}
+                </div>
+            </div>
+        `;
+    }
+
+    createConstructionDetailsHTML(buildingData, building) {
+        const fundingInfo = this.calculateBuildingCostWithFunding(building, buildingData.cost);
+        const playerCost = fundingInfo.playerCost;
+        const publicFunding = fundingInfo.publicFunding;
+        const availableFunds = fundingInfo.availableFunds;
+
+        let costHTML = '';
+        if (publicFunding > 0) {
+            costHTML = `
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                    <span style="font-size: 14px; color: #aaa; font-weight: 400;">Cost</span>
+                    <div style="display: flex; align-items: center; gap: 6px;">
+                        <span style="font-size: 14px; color: #fff; font-weight: 500;">$${playerCost.toLocaleString()}</span>
+                        <span style="font-size: 12px; color: #4CAF50; background: rgba(76, 175, 80, 0.15); padding: 2px 6px; border-radius: 3px; font-weight: 500;">Funded</span>
+                    </div>
+                </div>
+            `;
+        } else if (availableFunds > 0) {
+            costHTML = `
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                    <span style="font-size: 14px; color: #aaa; font-weight: 400;">Cost</span>
+                    <div style="display: flex; align-items: center; gap: 6px;">
+                        <span style="font-size: 14px; color: #fff; font-weight: 500;">$${playerCost.toLocaleString()}</span>
+                        <span style="font-size: 12px; color: #FFA726; background: rgba(255, 167, 38, 0.15); padding: 2px 6px; border-radius: 3px; font-weight: 500;">Partial</span>
+                    </div>
+                </div>
+            `;
+        } else {
+            costHTML = `
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                    <span style="font-size: 14px; color: #aaa; font-weight: 400;">Cost</span>
+                    <span style="font-size: 14px; color: #fff; font-weight: 500;">$${playerCost.toLocaleString()}</span>
+                </div>
+            `;
+        }
+
+        return `
+            <div style="text-align: center; color: #cccccc;">
+                <h4 style="margin: 0 0 16px 0; font-size: 16px; font-weight: 400; color: #cccccc;">Construction Details</h4>
+                <div style="text-align: left;">
+                    ${costHTML}
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <span style="font-size: 14px; color: #aaa; font-weight: 400;">Build Time</span>
+                        <span style="font-size: 14px; color: #fff; font-weight: 500;">${buildingData.buildTime} days</span>
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+
+    createLivabilityImpactsHTML(impacts) {
+
+        if (!impacts || Object.keys(impacts).length === 0) {
+            return `
+                <div style="text-align: center; color: #cccccc;">
+                    <h4 style="margin: 0 0 16px 0; font-size: 16px; font-weight: 400; color: #cccccc;">Livability Impacts</h4>
+                    <div style="color: #666; font-size: 14px; font-style: italic; text-align: center;">No livability impacts</div>
+                </div>
+            `;
+        }
+
+        const carensConfig = {
+            'safety': '#ef4444',
+            'culture': '#a855f7',
+            'affordability': '#f97316',
+            'resilience': '#14b8a6',
+            'environment': '#22c55e',
+            'noise': '#6b7280'
+        };
+
+        const sortedImpacts = Object.entries(impacts)
+            .filter(([_, value]) => value !== 0)
+            .sort(([a], [b]) => {
+                const aIndex = Object.keys(carensConfig).indexOf(a.toLowerCase());
+                const bIndex = Object.keys(carensConfig).indexOf(b.toLowerCase());
+                if (aIndex === -1 && bIndex === -1) return 0;
+                if (aIndex === -1) return 1;
+                if (bIndex === -1) return -1;
+                return aIndex - bIndex;
+            });
+
+        let impactsHTML = '';
+        sortedImpacts.forEach(([domain, value]) => {
+            const color = carensConfig[domain.toLowerCase()] || '#808080';
+            const maxImpact = 100;
+            const normalizedValue = Math.min(Math.max(value / maxImpact, -1), 1);
+            const absWidth = Math.abs(normalizedValue) * 50;
+
+            let barHtml = '';
+            let valueColor = '#888';
+
+            if (Math.abs(value) < 5) {
+                barHtml = `<div style="position: absolute; left: 49%; width: 2%; height: 8px; top: -1px; border-radius: 50%; background: #8b5cf6; border: 1px solid rgba(255,255,255,0.3);"></div>`;
+                valueColor = '#8b5cf6';
+            } else if (value > 0) {
+                barHtml = `<div style="position: absolute; left: 50%; width: ${absWidth}%; height: 100%; background: #3b82f6; border-radius: 0 3px 3px 0; opacity: 0.8;"></div>`;
+                valueColor = '#3b82f6';
+            } else {
+                barHtml = `<div style="position: absolute; left: ${50 - absWidth}%; width: ${absWidth}%; height: 100%; background: #ef4444; border-radius: 3px 0 0 3px; opacity: 0.8;"></div>`;
+                valueColor = '#ef4444';
+            }
+
+            impactsHTML += `
+                <div style="margin-bottom: 12px;">
+                    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px;">
+                        <span style="color: ${color}; font-weight: 500; font-size: 14px;">${domain.charAt(0).toUpperCase() + domain.slice(1).toLowerCase()}</span>
+                        <span style="color: ${valueColor}; font-weight: 500; font-size: 14px;">${value > 0 ? '+' : ''}${Math.round(value)}</span>
+                    </div>
+                    <div style="position: relative; width: 100%; height: 6px; background: #2a2a2a; border-radius: 3px;">
+                        <div style="position: absolute; left: 50%; width: 1px; height: 100%; background: #444;"></div>
+                        ${barHtml}
+                    </div>
+                </div>
+            `;
+        });
+
+        return `
+            <div style="text-align: center; color: #cccccc;">
+                <h4 style="margin: 0 0 16px 0; font-size: 16px; font-weight: 400; color: #cccccc;">Livability Impacts</h4>
+                <div style="text-align: left;">
+                    ${impactsHTML}
+                </div>
+            </div>
+        `;
+    }
+
+    // 🚫 CLIENT CALCULATION - DISABLED! BUSTED!
+    calculateInvestmentScore(buildingData) {
+        // CLIENT-SIDE CALCULATION DISABLED - RETURN GHOST PLACEHOLDER
+        // This function was doing complex financial calculations across ALL buildings!
+        // - Getting all buildings for max/min normalization
+        // - Extracting revenues, maintenances, decay rates from every building
+        // - Calculating weighted scores with Math operations
+        // - Converting to 1-100 scale with Math.max/min/round
+        // Server should handle investment scoring for server authority!
+        return {
+            score: 'GHOST',
+            revenue: 'GHOST',
+            maintenance: 'GHOST',
+            decayRate: 'GHOST'
+        };
+    }
+
 
     getBuildingDataByName(buildingName) {
         const building = this.buildingManager.getAllBuildings().find(b =>
@@ -2429,7 +2292,10 @@ class IsometricGrid {
             const livability = building.livability || {};
             if (livability) {
                 Object.entries(livability).forEach(([key, data]) => {
-                    if (data && typeof data.impact === 'number') {
+                    // Check both direct number values and nested impact property
+                    if (typeof data === 'number') {
+                        softMetrics[key.toUpperCase()] = data;
+                    } else if (data && typeof data.impact === 'number') {
                         softMetrics[key.toUpperCase()] = data.impact;
                     }
                 });
@@ -2462,154 +2328,156 @@ class IsometricGrid {
     updateSupplyDemandDisplay(buildingData) {
         const container = document.querySelector('.building-supply-demand');
         if (!container) return;
-        
-        // Clear and rebuild supply/demand section
-        container.innerHTML = '<div class="vitality-group-title">JEEFHH (SUPPLY & DEMAND)</div>';
 
-        // Define supply/demand metrics with colors (JEEFHH)
-        const supplyDemandConfig = {
-            'jobs': { color: '#ec4899', label: 'JOBS' },
-            'energy': { color: '#f59e0b', label: 'ENERGY' },
-            'education': { color: '#8b5cf6', label: 'EDUCATION' },
-            'food': { color: '#84cc16', label: 'FOOD' },
-            'housing': { color: '#06b6d4', label: 'HOUSING' },
-            'healthcare': { color: '#ef4444', label: 'HEALTHCARE' }
+        container.innerHTML = '';
+
+        // Define resource configs with descriptions
+        const resourceConfig = {
+            'jobs': { color: '#ec4899', label: 'Jobs', maxValue: 30, description: 'Employment positions' },
+            'energy': { color: '#f59e0b', label: 'Energy', maxValue: 500, description: 'Electrical power' },
+            'education': { color: '#8b5cf6', label: 'Education', maxValue: 30, description: 'Learning capacity' },
+            'food': { color: '#84cc16', label: 'Food', maxValue: 50, description: 'Nutrition access' },
+            'housing': { color: '#06b6d4', label: 'Housing', maxValue: 30, description: 'Living spaces' },
+            'healthcare': { color: '#ef4444', label: 'Healthcare', maxValue: 30, description: 'Medical services' }
         };
 
-        Object.entries(supplyDemandConfig).forEach(([key, config]) => {
-            const value = buildingData.supplyDemand?.[key] || 0;
-            if (value === 0 && key !== 'energy') return; // Skip if no impact (except energy which can be 0)
-
-            const row = document.createElement('div');
-            row.className = 'jeefhh-bar-row';
-
-            // Create label
-            const label = document.createElement('span');
-            label.className = 'jeefhh-label';
-            label.style.color = config.color;
-            label.textContent = config.label;
-
-            // Create bar container
-            const barContainer = document.createElement('div');
-            barContainer.className = 'jeefhh-bar';
-
-            // Create progress bar
-            const progress = document.createElement('div');
-            progress.className = 'jeefhh-progress';
-            
-            // Calculate width - supply goes right (green), demand goes left (red)
-            const maxValue = key === 'energy' ? 500 : key === 'food' ? 50 : 30;
-            const normalizedValue = Math.min(Math.max(value / maxValue, -1), 1);
-            
-            // Set position absolute for proper positioning
-            progress.style.position = 'absolute';
-            
-            // JEEFHH center-balanced bars: Blue dot when balanced, red when imbalanced
-            const isJEEFHH = ['jobs', 'energy', 'education', 'food', 'housing', 'healthcare'].includes(key);
-
-            if (Math.abs(value) < 0.1) {
-                // Nearly balanced - show satisfying blue dot in center
-                progress.style.left = '49%';
-                progress.style.width = '2%';
-                progress.style.height = '8px';
-                progress.style.borderRadius = '50%';
-                progress.style.background = isJEEFHH ? '#3b82f6' : '#8b5cf6'; // Blue for JEEFHH, Purple for CARENS
-                progress.style.border = '1px solid rgba(255,255,255,0.3)';
-            } else if (value > 0) {
-                // Supply - goes right from center
-                progress.style.left = '50%';
-                progress.style.width = `${Math.abs(normalizedValue) * 50}%`;
-                progress.style.height = '6px';
-                progress.style.borderRadius = '0';
-                progress.style.border = 'none';
-                if (isJEEFHH) {
-                    // Supply excess turns blue fading to red
-                    const intensity = Math.min(normalizedValue, 1);
-                    const redComponent = Math.floor(intensity * 255);
-                    progress.style.background = `rgb(${redComponent}, ${100 + redComponent}, 255)`;
-                } else {
-                    // CARENS: positive moves toward blue on right
-                    progress.style.background = '#3b82f6'; // Blue for positive CARENS
-                }
-            } else {
-                // Demand - goes left from center
-                const width = Math.abs(normalizedValue) * 50;
-                progress.style.left = `${50 - width}%`;
-                progress.style.width = `${width}%`;
-                progress.style.height = '6px';
-                progress.style.borderRadius = '0';
-                progress.style.border = 'none';
-                if (isJEEFHH) {
-                    // Demand excess turns red
-                    progress.style.background = '#ef4444';
-                } else {
-                    // CARENS: negative moves toward red on left
-                    progress.style.background = '#ef4444'; // Red for negative CARENS
-                }
-            }
-            
-            barContainer.appendChild(progress);
-            row.appendChild(label);
-            row.appendChild(barContainer);
-            
-            container.appendChild(row);
-        });
-        
-        // Add cost and build time at the bottom
-        const costRow = document.createElement('div');
-        costRow.className = 'jeefhh-bar-row';
-        
-        // Calculate public funding for this building
+        // Get provided and required resources separately
         const building = this.buildingManager.getAllBuildings().find(b => b.name === buildingData.name);
+        const resources = building?.resources || {};
+
+        // Create combined Resources section with center-based bars
+        const resourcesSection = document.createElement('div');
+        resourcesSection.innerHTML = '<div class="vitality-group-title">Resources</div>';
+
+        let hasResources = false;
+        Object.entries(resourceConfig).forEach(([key, config]) => {
+            const provided = resources[key + 'Provided'] || 0;
+            const required = resources[key + 'Required'] || 0;
+            const netValue = provided - required;
+
+            if (provided > 0 || required > 0) {
+                hasResources = true;
+                const row = document.createElement('div');
+                row.className = 'resource-row';
+
+                const normalizedValue = Math.min(Math.max(netValue / config.maxValue, -1), 1);
+                const absWidth = Math.abs(normalizedValue) * 50; // 50% max in each direction
+
+                let barHtml = '';
+                let valueColor = '#888';
+                let displayValue = '0';
+
+                if (Math.abs(netValue) < 0.1) {
+                    // Balanced - show center dot
+                    barHtml = `
+                        <div style="position: absolute; left: 49%; width: 2%; height: 8px; top: -1px; border-radius: 50%; background: #3b82f6; border: 1px solid rgba(255,255,255,0.3);"></div>
+                    `;
+                    valueColor = '#3b82f6';
+                    displayValue = '0';
+                } else if (netValue > 0) {
+                    // Surplus - bar goes right from center
+                    barHtml = `
+                        <div style="position: absolute; left: 50%; width: ${absWidth}%; height: 100%; background: linear-gradient(90deg, ${config.color}, #4CAF50); border-radius: 0 3px 3px 0; opacity: 0.8;"></div>
+                    `;
+                    valueColor = '#4CAF50';
+                    displayValue = `+${netValue}`;
+                } else {
+                    // Deficit - bar goes left from center
+                    barHtml = `
+                        <div style="position: absolute; left: ${50 - absWidth}%; width: ${absWidth}%; height: 100%; background: #ef4444; border-radius: 3px 0 0 3px; opacity: 0.8;"></div>
+                    `;
+                    valueColor = '#ef4444';
+                    displayValue = `${netValue}`;
+                }
+
+                row.innerHTML = `
+                    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px;">
+                        <span style="color: ${config.color}; font-weight: 600; font-size: 14px;">${config.label}</span>
+                        <span style="color: ${valueColor}; font-weight: 600; font-size: 14px;">${displayValue}</span>
+                    </div>
+                    <div style="position: relative; width: 100%; height: 6px; background: #2a2a2a; border-radius: 3px; margin-bottom: 4px;">
+                        <div style="position: absolute; left: 50%; width: 1px; height: 100%; background: #444;"></div>
+                        ${barHtml}
+                    </div>
+                    <div style="color: #888; font-size: 12px; margin-bottom: 12px;">
+                        ${provided > 0 && required > 0 ? `Provides ${provided}, needs ${required}` : config.description}
+                    </div>
+                `;
+                resourcesSection.appendChild(row);
+            }
+        });
+
+        if (!hasResources) {
+            const noResources = document.createElement('div');
+            noResources.style.cssText = 'color: #666; font-size: 14px; font-style: italic; margin-bottom: 12px;';
+            noResources.textContent = 'No resource impacts';
+            resourcesSection.appendChild(noResources);
+        }
+
+        container.appendChild(resourcesSection);
+
+        // Add cost and build time at the bottom
+        const metaSection = document.createElement('div');
+        metaSection.innerHTML = '<div class="vitality-group-title">Building Details</div>';
+
         const buildingCategory = building?.category;
         const fundingInfo = this.calculateBuildingCostWithFunding(building, buildingData.cost);
         const playerCost = fundingInfo.playerCost;
         const publicFunding = fundingInfo.publicFunding;
         const availableFunds = fundingInfo.availableFunds;
-        
-        // Show player cost and public funding indicator
+
+        // Cost row
+        const costRow = document.createElement('div');
+        costRow.style.cssText = 'display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;';
+
         if (publicFunding > 0) {
-            // Show actual player cost (could be $0) with public funding indicator
             costRow.innerHTML = `
-                <span class="jeefhh-label">COST</span>
-                <div style="display: flex; align-items: center; gap: 6px; margin-left: auto;">
-                    <span class="info-value">$${playerCost.toLocaleString()}</span>
-                    <span style="font-size: 8px; color: #4CAF50; background: rgba(76, 175, 80, 0.15); padding: 1px 4px; border-radius: 2px; font-weight: 600;">FUNDED</span>
+                <span style="color: #888; font-weight: 600; font-size: 14px;">Cost</span>
+                <div style="display: flex; align-items: center; gap: 6px;">
+                    <span style="color: #fff; font-weight: 600; font-size: 14px;">$${playerCost.toLocaleString()}</span>
+                    <span style="font-size: 14px; color: #4CAF50; background: rgba(76, 175, 80, 0.15); padding: 1px 4px; border-radius: 2px; font-weight: 600;">Funded</span>
                 </div>
             `;
         } else if (availableFunds > 0) {
-            // Public funds exist but not enough to cover full cost - show partial funding indicator
             costRow.innerHTML = `
-                <span class="jeefhh-label">COST</span>
-                <div style="display: flex; align-items: center; gap: 6px; margin-left: auto;">
-                    <span class="info-value">$${playerCost.toLocaleString()}</span>
-                    <span style="font-size: 8px; color: #FFA726; background: rgba(255, 167, 38, 0.15); padding: 1px 4px; border-radius: 2px; font-weight: 600;">PARTIAL</span>
+                <span style="color: #888; font-weight: 600; font-size: 14px;">Cost</span>
+                <div style="display: flex; align-items: center; gap: 6px;">
+                    <span style="color: #fff; font-weight: 600; font-size: 14px;">$${playerCost.toLocaleString()}</span>
+                    <span style="font-size: 14px; color: #FFA726; background: rgba(255, 167, 38, 0.15); padding: 1px 4px; border-radius: 2px; font-weight: 600;">Partial</span>
                 </div>
             `;
         } else {
-            // No public funding available
             costRow.innerHTML = `
-                <span class="jeefhh-label">COST</span>
-                <span class="info-value" style="margin-left: auto;">$${playerCost.toLocaleString()}</span>
+                <span style="color: #888; font-weight: 600; font-size: 14px;">Cost</span>
+                <span style="color: #fff; font-weight: 600; font-size: 14px;">$${playerCost.toLocaleString()}</span>
             `;
         }
-        container.appendChild(costRow);
-        
+
         const timeRow = document.createElement('div');
-        timeRow.className = 'jeefhh-bar-row';
+        timeRow.style.cssText = 'display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;';
         timeRow.innerHTML = `
-            <span class="jeefhh-label">BUILD TIME</span>
-            <span class="info-value" style="margin-left: auto;">${buildingData.buildTime} days</span>
+            <span style="color: #888; font-weight: 600; font-size: 14px;">Build Time</span>
+            <span style="color: #fff; font-weight: 600; font-size: 14px;">${buildingData.buildTime} days</span>
         `;
-        container.appendChild(timeRow);
+
+        metaSection.appendChild(costRow);
+        metaSection.appendChild(timeRow);
+        container.appendChild(metaSection);
     }
-    
+
     updateBuildingImpacts(impacts) {
         const impactsList = document.getElementById('building-impacts-list');
-        impactsList.innerHTML = '';
+
+        // Add section title
+        impactsList.innerHTML = '<div class="vitality-group-title">Livability Impacts</div>';
+
+        // Updating building impacts
 
         if (!impacts || Object.keys(impacts).length === 0) {
-            impactsList.innerHTML = '<div style="color: #666666; font-size: 10px; text-align: center;">No livability impacts</div>';
+            const noImpacts = document.createElement('div');
+            noImpacts.style.cssText = 'color: #666; font-size: 14px; font-style: italic; text-align: center;';
+            noImpacts.textContent = 'No livability impacts';
+            impactsList.appendChild(noImpacts);
             return;
         }
 
@@ -2622,7 +2490,7 @@ class IsometricGrid {
             'environment': '#22c55e', // Green to purple gradient
             'noise': '#6b7280'        // Gray to purple gradient
         };
-        
+
         // Sort impacts by livability order
         const sortedImpacts = Object.entries(impacts)
             .filter(([_, value]) => value !== 0)
@@ -2643,7 +2511,7 @@ class IsometricGrid {
             const label = document.createElement('span');
             label.className = 'carens-label';
             label.style.color = carensConfig[domain.toLowerCase()] || '#808080';
-            label.textContent = domain.toUpperCase();
+            label.textContent = domain.charAt(0).toUpperCase() + domain.slice(1).toLowerCase();
 
             // Create bar container
             const barContainer = document.createElement('div');
@@ -2652,10 +2520,10 @@ class IsometricGrid {
             // Create progress bar
             const progress = document.createElement('div');
             progress.className = 'carens-progress';
-            
+
             // Set position absolute for proper positioning
             progress.style.position = 'absolute';
-            
+
             // CARENS purple-centered visualization: purple center, red left, blue right
             const maxImpact = 100; // Use full range for faster color transitions
             const normalizedValue = Math.min(Math.max(value / maxImpact, -1), 1);
@@ -2698,16 +2566,81 @@ class IsometricGrid {
                 progress.style.background = `rgb(${redIntensity}, 68, 68)`;
                 progress.className = 'carens-progress' + pulseClass;
             }
-            
+
             barContainer.appendChild(progress);
             row.appendChild(label);
             row.appendChild(barContainer);
-            
+
             impactsList.appendChild(row);
         });
     }
 
-    // setupCategoryHover, showSubmenu, hideSubmenu, scheduleSubmenuHide, cancelSubmenuHide moved to ContextMenuSystem
+    updateInvestmentScore(buildingData) {
+        // Find or create investment score container
+        let container = document.querySelector('.investment-score-container');
+        if (!container) {
+            container = document.createElement('div');
+            container.className = 'investment-score-container';
+
+            // Insert after supply-demand section
+            const supplyDemandSection = document.querySelector('.building-supply-demand');
+            if (supplyDemandSection && supplyDemandSection.parentNode) {
+                supplyDemandSection.parentNode.insertBefore(container, supplyDemandSection.nextSibling);
+            } else {
+                // Fallback - add to building-info-content
+                const infoContent = document.querySelector('.building-info-content');
+                if (infoContent) infoContent.appendChild(container);
+            }
+        }
+
+        const scoreData = this.calculateInvestmentScore(buildingData);
+
+        // Determine score color and label
+        let scoreColor, scoreLabel;
+        if (scoreData.score >= 80) {
+            scoreColor = '#4CAF50'; // Green
+            scoreLabel = 'Excellent';
+        } else if (scoreData.score >= 60) {
+            scoreColor = '#8BC34A'; // Light green
+            scoreLabel = 'Good';
+        } else if (scoreData.score >= 40) {
+            scoreColor = '#FFC107'; // Amber
+            scoreLabel = 'Fair';
+        } else if (scoreData.score >= 20) {
+            scoreColor = '#FF9800'; // Orange
+            scoreLabel = 'Poor';
+        } else {
+            scoreColor = '#F44336'; // Red
+            scoreLabel = 'Very Poor';
+        }
+
+        // Format decay rate as basis points
+        const decayBasisPoints = (scoreData.decayRate * 100).toFixed(4);
+
+        container.innerHTML = `
+            <div class="vitality-group-title">Investment Score</div>
+            <div class="investment-score-main">
+                <div class="investment-score-circle" style="border-color: ${scoreColor};">
+                    <div class="investment-score-number" style="color: ${scoreColor};">${scoreData.score}</div>
+                    <div class="investment-score-label" style="color: ${scoreColor};">${scoreLabel}</div>
+                </div>
+                <div class="investment-score-breakdown">
+                    <div class="investment-metric">
+                        <span class="metric-label">Optimal Revenue</span>
+                        <span class="metric-value">$${scoreData.revenue}/day</span>
+                    </div>
+                    <div class="investment-metric">
+                        <span class="metric-label">Maintenance</span>
+                        <span class="metric-value">$${scoreData.maintenance}/day</span>
+                    </div>
+                    <div class="investment-metric">
+                        <span class="metric-label">Decay Rate</span>
+                        <span class="metric-value">${decayBasisPoints}%/day</span>
+                    </div>
+                </div>
+            </div>
+        `;
+    }
 
     // Land value calculation methods
     updateAllLandValues() {
@@ -2733,41 +2666,9 @@ class IsometricGrid {
         this.dirtyRegions.clear();
     }
 
-    
-    async calculateAccessibilityScores(row, col) {
-        // Use server-side accessibility calculation (consolidated economic flow)
-        try {
-            return await this.economicClient.getAccessibilityScores(row, col);
-        } catch (error) {
-            console.error('Server accessibility calculation failed:', error);
-            return null;
-        }
-    }
+    // setupCategoryHover, showSubmenu, hideSubmenu, scheduleSubmenuHide, cancelSubmenuHide moved to ContextMenuSystem
 
-    
-    getNearbyPopulation(row, col, maxDistance) {
-        let population = 0;
-        
-        for (let r = Math.max(0, row - maxDistance); r <= Math.min(this.gridSize - 1, row + maxDistance); r++) {
-            for (let c = Math.max(0, col - maxDistance); c <= Math.min(this.gridSize - 1, col + maxDistance); c++) {
-                const distance = Math.max(Math.abs(r - row), Math.abs(c - col));
-                if (distance <= maxDistance) {
-                    const parcel = this.grid[r][c];
-                    if (parcel.building) {
-                        const building = this.buildingManager.getBuildingById(parcel.building);
-                        if (building && this.buildingSystem.buildingCategories.normalize(building.category) === 'housing') {
-                            // Weight population by inverse distance
-                            const weight = 1.0 / (1 + distance * 0.5);
-                            population += (building.bedrooms || 0) * weight;
-                        }
-                    }
-                }
-            }
-        }
-        
-        return population;
-    }
-
+    // Land value helper methods
     getAdjacentDevelopedParcels(row, col) {
         let count = 0;
         const directions = [[-1,0], [1,0], [0,-1], [0,1], [-1,-1], [-1,1], [1,-1], [1,1]];
@@ -2906,135 +2807,10 @@ class IsometricGrid {
     
     // REMOVED: Legacy V1 calculateAccessiblePopulation() - V2 architecture uses server-side population calculations
     
-    hasRoadConnection(row1, col1, row2, col2, roads) {
-        // Enhanced BFS to find connection and track the best road type in the path
-        if (row1 === row2 && col1 === col2) return { connected: true, bestRoadType: 'highway' };
-        
-        const visited = new Set();
-        const queue = [{
-            key: `${row1},${col1}`,
-            depth: 0,
-            worstRoadType: 'highway' // Track the worst road in the path (bottleneck)
-        }];
-        const maxDepth = 20; // Prevent infinite loops
-        
-        // Road type hierarchy (higher number = better)
-        const roadHierarchy = { 'local': 1, 'arterial': 2, 'highway': 3 };
-        
-        while (queue.length > 0) {
-            const current = queue.shift();
-            const [row, col] = current.key.split(',').map(Number);
-            
-            if (row === row2 && col === col2) {
-                return { connected: true, bestRoadType: current.worstRoadType };
-            }
-            
-            if (visited.has(current.key) || current.depth >= maxDepth) continue;
-            visited.add(current.key);
-            
-            // Check all road connections from current position
-            const connections = roads.get(current.key) || [];
-            connections.forEach(conn => {
-                const connKey = `${conn.row},${conn.col}`;
-                if (!visited.has(connKey)) {
-                    // Track the worst road type in the path (bottleneck principle)
-                    const connRoadLevel = roadHierarchy[conn.roadType] || 1;
-                    const currentWorstLevel = roadHierarchy[current.worstRoadType] || 1;
-                    const newWorstLevel = Math.min(connRoadLevel, currentWorstLevel);
-                    
-                    // Convert back to road type name
-                    let newWorstType = 'local';
-                    if (newWorstLevel === 2) newWorstType = 'arterial';
-                    if (newWorstLevel === 3) newWorstType = 'highway';
-                    
-                    queue.push({
-                        key: connKey,
-                        depth: current.depth + 1,
-                        worstRoadType: newWorstType
-                    });
-                }
-            });
-        }
-        
-        return { connected: false, bestRoadType: null };
-    }
     
-    calculateEffectiveDistance(row1, col1, row2, col2, transportNetwork) {
-        // Use Chebyshev distance (max of row/col differences) for walking
-        // This makes all 8 surrounding parcels distance 1
-        const chebyshevDistance = Math.max(
-            Math.abs(row1 - row2), 
-            Math.abs(col1 - col2)
-        );
-        
-        // Manhattan distance for transport calculations
-        const manhattanDistance = Math.abs(row1 - row2) + Math.abs(col1 - col2);
-        
-        // Walking is limited to immediate neighbors (Chebyshev distance 1)
-        const WALKING_LIMIT = 1;
-        
-        // First check if there's a road connection path (basic pathfinding)
-        if (transportNetwork.roads) {
-            const roadConnection = this.hasRoadConnection(row1, col1, row2, col2, transportNetwork.roads);
-            if (roadConnection.connected) {
-                // Roads provide significant distance reduction for farther parcels
-                const roadDistance = Math.max(1, Math.floor(manhattanDistance * 0.5));
-                return roadDistance;
-            }
-        }
-        
-        // Check if both points are near transport nodes
-        let nearestToPoint1 = null;
-        let nearestToPoint2 = null;
-        let minDist1 = Infinity;
-        let minDist2 = Infinity;
-        
-        if (transportNetwork.nodes && transportNetwork.nodes.length > 0) {
-            transportNetwork.nodes.forEach(node => {
-            const dist1 = Math.max(Math.abs(row1 - node.row), Math.abs(col1 - node.col));
-            const dist2 = Math.max(Math.abs(row2 - node.row), Math.abs(col2 - node.col));
-            
-            if (dist1 < minDist1 && dist1 <= 2) { // Reduced from 3 to 2 - must be very close to transport
-                minDist1 = dist1;
-                nearestToPoint1 = node;
-            }
-            
-            if (dist2 < minDist2 && dist2 <= 2) {
-                minDist2 = dist2;
-                nearestToPoint2 = node;
-            }
-        });
-        }
-
-        // If both points are near transport and the nodes are connected
-        if (nearestToPoint1 && nearestToPoint2) {
-            const key1 = `${nearestToPoint1.row},${nearestToPoint1.col}`;
-            const connections = transportNetwork.connections.get(key1) || [];
-            
-            const connected = connections.some(conn => 
-                conn.row === nearestToPoint2.row && conn.col === nearestToPoint2.col
-            );
-            
-            if (connected) {
-                // Effective distance = walk to station + reduced transit distance + walk from station
-                const transitDistance = Math.max(
-                    Math.abs(nearestToPoint1.row - nearestToPoint2.row),
-                    Math.abs(nearestToPoint1.col - nearestToPoint2.col)
-                ) * 0.1; // Transit is 10x faster (was 5x)
-                
-                return minDist1 + transitDistance + minDist2;
-            }
-        }
-        
-        // Without transport, only immediate neighbors (Chebyshev distance 1) are accessible
-        if (chebyshevDistance > WALKING_LIMIT) {
-            // Beyond walking distance without transport = effectively unreachable
-            // Return a very high value to indicate no connection
-            return 999; // Effectively infinite distance without transport
-        }
-
-        // Within walking distance (the 8 surrounding parcels)
-        return chebyshevDistance;
+    calculateEffectiveDistance(row1, col1, row2, col2) {
+        // Use Manhattan distance for simple grid-based distance calculation
+        return Math.abs(row1 - row2) + Math.abs(col1 - col2);
     }
 
 
@@ -3107,79 +2883,30 @@ class IsometricGrid {
     }
 
 
+    // 🚫 CLIENT CALCULATION - DISABLED! BUSTED!
     // Update building revenues based on supply/demand satisfaction
     applySupplyDemandEffects() {
-        // V2: Economic client already has current data, just update UI
-        
-        // Calculate supply/demand ratios for JEFH
-        const energyRatio = this.vitalitySupply.ENERGY / Math.max(1, this.vitalityDemand.ENERGY);
-        const foodRatio = this.vitalitySupply.FOOD / Math.max(1, this.vitalityDemand.FOOD);
-        const housingRatio = this.vitalitySupply.HOUSING / Math.max(1, this.vitalityDemand.HOUSING);
-        const jobsRatio = this.vitalitySupply.JOBS / Math.max(1, this.vitalityDemand.JOBS);
-        
-        // Initialize economic modifiers
+        // CLIENT-SIDE CALCULATION DISABLED - RETURN GHOST PLACEHOLDER
+        // This massive function was doing complex economic calculations:
+        // - Math.max() operations for supply/demand ratios (6+ instances!)
+        // - Population change rate calculations with multiplication
+        // - Business efficiency calculations with Math.max()
+        // - Energy, food, housing, jobs ratio calculations
+        // - Cumulative population changes with Math.max() limits
+        // Server should handle all economic effect calculations for server authority!
         this.economicEffects = {
-            energyMultiplier: 1.0,
-            foodMultiplier: 1.0,
-            housingMultiplier: 1.0,
-            jobsMultiplier: 1.0,
-            populationChangeRate: 0.0, // Daily population change rate
-            businessEfficiency: 1.0 // Overall business performance
+            energyMultiplier: 'GHOST',
+            foodMultiplier: 'GHOST',
+            housingMultiplier: 'GHOST',
+            jobsMultiplier: 'GHOST',
+            populationChangeRate: 'GHOST',
+            businessEfficiency: 'GHOST'
         };
-        
-        // ENERGY EFFECTS - smooth curves instead of cliffs
-        this.economicEffects.energyMultiplier = 1.0;
-        
-        // Business efficiency affected by severe energy shortages only
-        if (energyRatio < 0.3) {
-            this.economicEffects.businessEfficiency = Math.max(0.4, energyRatio + 0.1);
-            this.economicEffects.populationChangeRate -= (0.3 - energyRatio) * 0.1; // Gradual exodus
-        }
-        
-        // FOOD EFFECTS - smooth curves
-        this.economicEffects.foodMultiplier = 1.0;
-        
-        // Population effects only for severe food shortages
-        if (foodRatio < 0.4) {
-            this.economicEffects.populationChangeRate -= (0.4 - foodRatio) * 0.15; // Gradual exodus
-            this.economicEffects.businessEfficiency *= Math.max(0.5, foodRatio + 0.3); // Less severe impact
-        }
-        
-        // HOUSING EFFECTS - smooth curves
-        this.economicEffects.housingMultiplier = 1.0;
-        
-        // Business and population effects for severe housing shortages only
-        if (housingRatio < 0.5) {
-            this.economicEffects.businessEfficiency *= Math.max(0.6, housingRatio + 0.3);
-            this.economicEffects.populationChangeRate -= (0.5 - housingRatio) * 0.08; // Gradual exodus
-        }
-        
-        // JOBS EFFECTS - smooth curves
-        this.economicEffects.jobsMultiplier = 1.0;
-        
-        // Population and business effects for severe job shortages only
-        if (jobsRatio < 0.4) {
-            this.economicEffects.populationChangeRate -= (0.4 - jobsRatio) * 0.12; // Gradual exodus
-            this.economicEffects.businessEfficiency *= Math.max(0.5, jobsRatio + 0.3); // Less severe impact
-        }
-        
-        // Apply cumulative population change (with limits)
-        // Initialize from single source of truth if not set, then apply economic effects
-        if (!this.currentPopulation) {
-            this.currentPopulation = this.calculatePopulation();
-        }
-        const populationChange = this.currentPopulation * this.economicEffects.populationChangeRate;
-        this.currentPopulation = Math.max(0, this.currentPopulation + populationChange);
-        
-        // Store effects for building revenue calculations
         this.supplyDemandEffects = this.economicEffects;
-        
         return this.economicEffects;
     }
 
     setupZoomControls() {
-        // Zoom controls now handled by UI Manager
-        this.updateZoomButtons();
     }
     
     setupLayerControls() {
@@ -3213,8 +2940,8 @@ class IsometricGrid {
         // Handle panel visibility based on layer
         this.handlePanelTransitions(layerName);
         
-        // Update cursor style based on layer - remove 3D rotation for cashflow now
-        this.canvas.style.cursor = this.zoomScale > 1.1 ? 'grab' : 'default';
+        // Update cursor style based on layer
+        this.canvas.style.cursor = 'default';
         
         // Re-render with new layer
         this.scheduleRender();
@@ -3229,7 +2956,7 @@ class IsometricGrid {
 
         // DISABLED: Mobility layer completely removed
         if (layerName === 'mobility') {
-            console.log('⚠️ Mobility layer completely disabled - redirecting to normal mode');
+            console.log('⚠️ Mobility layer disabled - using normal mode');
             layerName = 'normal'; // Override to normal mode
             this.currentLayer = 'normal'; // Ensure currentLayer is also updated
         }
@@ -3351,56 +3078,7 @@ class IsometricGrid {
         }
     }
 
-    updateZoom() {
-        // Linear zoom scaling: each tick is 0.25x
-        // Default 0.8 = 1.2x scale
-        this.zoomScale = 1.0 + (this.zoomLevel * 0.25);
-        
-        // Update cursor style based on zoom
-        // Only allow grabbing when zoomed in (beyond 1.1x)
-        if (this.zoomScale > 1.1) {
-            this.canvas.style.cursor = 'grab';
-        } else {
-            this.canvas.style.cursor = 'default';
-        }
-        
-        this.updateZoomButtons();
-        this.scheduleRender();
-    }
 
-    updateZoomButtons() {
-        // Zoom buttons have been removed - this method is now a no-op
-        const zoomIn = document.getElementById('zoom-in');
-        const zoomOut = document.getElementById('zoom-out');
-        if (zoomIn) zoomIn.disabled = this.zoomLevel >= 2.4;
-        if (zoomOut) zoomOut.disabled = this.zoomLevel <= 0.4;
-    }
-
-    // Convert screen coordinates to world coordinates accounting for zoom and pan
-    screenToWorldCoords(screenX, screenY) {
-        // Safety check to prevent errors during initialization
-        if (!this.panOffset || !this.zoomScale) {
-            return { x: screenX, y: screenY };
-        }
-
-        return {
-            x: (screenX - this.panOffset.x) / this.zoomScale,
-            y: (screenY - this.panOffset.y) / this.zoomScale
-        };
-    }
-    
-    // Convert world coordinates to screen coordinates accounting for zoom and pan
-    worldToScreenCoords(worldX, worldY) {
-        // Safety check to prevent errors during initialization
-        if (!this.panOffset || !this.zoomScale) {
-            return { x: worldX, y: worldY };
-        }
-
-        return {
-            x: worldX * this.zoomScale + this.panOffset.x,
-            y: worldY * this.zoomScale + this.panOffset.y
-        };
-    }
     
     
     
@@ -3854,10 +3532,12 @@ class IsometricGrid {
         let landValue;
         if (this.landValueMode === 'paid') {
             // Use most recently paid price
-            landValue = this.getParcelPrice(row, col);
+            // 🚫 GHOST BUSTED! Use server price
+            landValue = this.economicClient?.getParcelPrice(row, col) || 'GHOST';
         } else {
             // Use estimated/calculated land value
-            landValue = parcel?.landValue?.calculatedValue || this.getParcelPrice(row, col);
+            // 🚫 GHOST BUSTED! Use server price
+            landValue = parcel?.landValue?.calculatedValue || this.economicClient?.getParcelPrice(row, col) || 'GHOST';
         }
 
         // Handle edge cases
@@ -3874,9 +3554,11 @@ class IsometricGrid {
                 const p = this.grid[r][c];
                 let value;
                 if (this.landValueMode === 'paid') {
-                    value = this.getParcelPrice(r, c);
+                    // 🚫 GHOST BUSTED! Use server price
+                    value = this.economicClient?.getParcelPrice(r, c) || 'GHOST';
                 } else {
-                    value = p?.landValue?.calculatedValue || this.getParcelPrice(r, c);
+                    // 🚫 GHOST BUSTED! Use server price
+                    value = p?.landValue?.calculatedValue || this.economicClient?.getParcelPrice(r, c) || 'GHOST';
                 }
                 if (value > 0) {
                     minValue = Math.min(minValue, value);
@@ -3974,10 +3656,17 @@ class IsometricGrid {
         // They only provide city vitality impacts, not direct economic benefits
         
         // Calculate land tax if owned by player
+        // 🚫 CLIENT CALCULATION - MARKED FOR REMOVAL
         let landTax = 0;
         if (this.isCurrentPlayer(parcel.owner)) {
-            // Use fixed LVT rate - governance removed
-            const annualLVTRate = 0.50;
+            // 🔧 BANDAID WARNING: Triple fallback chain for critical tax calculations
+            if (!this.economicClient?.getLVTRate?.()) {
+                console.warn('🔧 BANDAID: LVT rate missing from economic client, falling back to governance system');
+                if (!this.governanceSystem?.getCurrentLVTRate?.()) {
+                    console.warn('🔧 BANDAID: LVT rate missing from governance system, using hardcoded 50% fallback');
+                }
+            }
+            const annualLVTRate = this.economicClient?.getLVTRate?.() || this.governanceSystem?.getCurrentLVTRate?.() || 0.50;
             const dailyLVTRate = annualLVTRate / 365;
             landTax = parcel.landValue.paidPrice * dailyLVTRate;
         }
@@ -4079,18 +3768,6 @@ class IsometricGrid {
     }
     
     
-    // Check if two parcels have a direct road connection
-    hasDirectRoadConnection(row1, col1, row2, col2, roads) {
-        const key1 = `${row1},${col1}`;
-        const key2 = `${row2},${col2}`;
-        
-        // Check if either parcel connects to the other
-        const connections1 = roads.get(key1) || [];
-        const connections2 = roads.get(key2) || [];
-        
-        return connections1.some(conn => conn.row === row2 && conn.col === col2) ||
-               connections2.some(conn => conn.row === row1 && conn.col === col1);
-    }
     
     
     // Update pixel row timestamps for fade-in effect
@@ -4114,21 +3791,13 @@ class IsometricGrid {
 
     
     setupEventListeners() {
-        console.log('🎯 setupEventListeners called');
+        // setupEventListeners called
 
         // Add mouse down handler for panning and 3D rotation
         this.canvas.addEventListener('mousedown', (e) => {
             const rect = this.canvas.getBoundingClientRect();
             const screenX = e.clientX - rect.left;
             const screenY = e.clientY - rect.top;
-            
-            if (this.zoomScale > 1.1 && e.button === 0) {
-                // Panning mode when zoomed
-                this.isPanning = true;
-                this.lastPanPoint = { x: screenX, y: screenY };
-                this.canvas.style.cursor = 'grabbing';
-                e.preventDefault();
-            }
         });
 
         // Prevent context menu on canvas to avoid interference
@@ -4136,13 +3805,6 @@ class IsometricGrid {
             e.preventDefault();
         });
 
-        // Add mouse up handler
-        this.canvas.addEventListener('mouseup', (e) => {
-            if (this.isPanning) {
-                this.isPanning = false;
-                this.canvas.style.cursor = this.zoomScale > 1.1 ? 'grab' : 'default';
-            }
-        });
 
         // SOLUTION: Use mouseenter/mouseleave with position tracking
         let mouseOverCanvas = false;
@@ -4156,26 +3818,18 @@ class IsometricGrid {
         // Add mouse leave handler to stop panning when mouse leaves canvas
         this.canvas.addEventListener('mouseleave', () => {
 
-            if (this.isPanning) {
-                this.isPanning = false;
-                this.canvas.style.cursor = this.zoomScale > 1.1 ? 'grab' : 'default';
-            }
 
             // Clear hover state when cursor leaves canvas
             // ParcelHoverV2 handles mouseleave automatically
         });
-        
+
         this.canvas.addEventListener('click', (e) => {
-            // Don't process clicks while panning
-            if (this.isPanning) {
-                return;
-            }
             const rect = this.canvas.getBoundingClientRect();
             const screenX = e.clientX - rect.left;
             const screenY = e.clientY - rect.top;
 
-            // Convert to world coordinates
-            const worldCoords = this.screenToWorldCoords(screenX, screenY);
+            // Use screen coordinates directly (no zoom/pan)
+            const worldCoords = { x: screenX, y: screenY };
             const tile = this.renderingSystem?.fromIsometric(worldCoords.x, worldCoords.y);
 
             
@@ -4236,41 +3890,10 @@ class IsometricGrid {
                 }
             }
 
-            // Handle mobility layer shortcuts
-            // DISABLED: Testing without mobility
-            // if (this.currentLayer === 'mobility') {
-            //     const handled = this.mobilityLayer.handleKeyPress(e.key);
-            //     if (handled) {
-            //         e.preventDefault();
-            //         this.scheduleRender();
-            //     }
-            //     return;
-            // }
             
             switch(e.key) {
                 case 'Escape':
-                    // Clear all selected street edges
-                    this.selectedStreetEdges.clear();
-                    this.hideStreetEdgeContextMenu();
                     this.scheduleRender();
-                    break;
-                    
-                case 'a':
-                case 'A':
-                    // Ctrl+A: Select all visible street edges
-                    if (e.ctrlKey || e.metaKey) {
-                        e.preventDefault();
-                        this.selectAllStreetEdges();
-                    }
-                    break;
-                    
-                case 'Delete':
-                case 'Backspace':
-                    // Delete selected roads
-                    if (this.selectedStreetEdges.size > 0) {
-                        e.preventDefault();
-                        this.removeRoadFromSelectedEdges();
-                    }
                     break;
             }
         });
@@ -4322,14 +3945,11 @@ class IsometricGrid {
 
     // DISABLED: Legacy multiplayer synchronization - replaced by economicClient v2
     initializeRealtimeSync() {
-        console.log('💡 Real-time sync disabled - using economicClient v2 for state management');
+        // Real-time sync disabled - using economicClient v2
         // No longer needed - economicClient handles all server communication
     }
 
     async performFastSync() {
-        // DISABLED: Legacy multiplayer sync system - replaced by economicClient v2
-        // Fast sync is no longer needed in the v2 architecture
-        // All state management is handled through economicClient.getEconomicState()
     }
 
     async performMediumSync() {
@@ -4350,7 +3970,7 @@ class IsometricGrid {
                                         parcel._revenue = performance.revenue || 0;
                                     }
                                 })
-                                .catch(err => console.warn(`Building sync failed for ${row},${col}:`, err))
+                                .catch(err => console.warn(`Building sync failed:`, err))
                         );
                     }
                 }
@@ -4382,12 +4002,12 @@ class IsometricGrid {
         // Stop optimistic countdown timer
         this.stopOptimisticCountdown();
 
-        console.log('Real-time synchronization system destroyed');
+        // Real-time synchronization system destroyed
     }
 
     // Game loop system for construction and cash accrual
     initializeGameLoop() {
-        console.log('Initializing game loop for construction and cash accrual...');
+        // Initializing game loop for construction and cash accrual
 
         // DISABLED: Client-side construction and cash updates (SERVER AUTHORITATIVE)
         // Server manages construction via BUILD_COMPLETE_AUTO messages
@@ -4408,7 +4028,7 @@ class IsometricGrid {
                     parcel._constructionProgress = Math.min(1.0, parcel._constructionProgress + progressIncrement);
 
                     if (parcel._constructionProgress >= 1.0) {
-                        console.log(`🏗️ Construction completed for ${parcel.building} at ${row},${col}`);
+                        // Construction completed
                         constructionUpdated = true;
 
                         // CRITICAL FIX: Call construction completion handler to send BUILD_COMPLETE transaction
@@ -4434,7 +4054,7 @@ class IsometricGrid {
             const cashflowResponse = this.economicClient.getPlayerCashflow(this.currentPlayerId);
 
             if (cashflowResponse.success && cashflowResponse.netCashflow > 0) {
-                console.log(`💰 Applying cashflow: +$${cashflowResponse.netCashflow.toFixed(2)}`);
+                // Applying cashflow
 
                 // Add cash to player balance
                 this.cash += cashflowResponse.netCashflow;
@@ -4459,14 +4079,14 @@ class IsometricGrid {
             this.cashAccrualInterval = null;
         }
 
-        console.log('Game loop destroyed');
+        // Game loop destroyed
     }
 
     /**
      * Initialize V2 Economic Client with server communication
      */
     initializeEconomicClientV2() {
-        console.log('🔄 Initializing Economic Client v2...');
+        // Initializing Economic Client v2
 
         // Initialize the client
         this.economicClient.initialize()
@@ -4487,7 +4107,6 @@ class IsometricGrid {
      * Handle economic updates from the server
      */
     handleEconomicUpdate(update) {
-        console.log('📥 Economic update received:', update.type);
 
         // Update UI based on the update type
         switch (update.type) {
@@ -4526,7 +4145,7 @@ class IsometricGrid {
 
                                 // Render the new building
                                 this.renderingSystem.renderParcel(row, col, parcel);
-                                console.log(`🏗️ Player ${tx.playerId} started ${tx.buildingId} at [${row}, ${col}]`);
+                                // Player started building construction
                             }
                         }
                     }
@@ -4552,7 +4171,7 @@ class IsometricGrid {
             case 'DAILY_TICK':
                 // Sync economic data from server on daily tick
                 this.economicClient.getEconomicState().then(() => {
-                    console.log('🔄 Economic state synced from server on DAILY_TICK');
+                    // Economic state synced from server on DAILY_TICK
                     // V2: UI updates handled by ui-manager
                     if (this.uiManager && this.economicClient) {
                         this.uiManager.updateEconomicDisplays(this.economicClient);
@@ -4600,7 +4219,7 @@ class IsometricGrid {
                             // Render the building
                             this.renderingSystem.renderParcel(row, col, parcel);
 
-                            console.log(`🏗️ Synced building ${building.id} from ${building.ownerId} at [${row}, ${col}]`);
+                            // Synced building from server
                         }
                     });
 
@@ -4632,7 +4251,7 @@ class IsometricGrid {
                     parcel.building = buildingId;
                     parcel.owner = playerId;
 
-                    console.log(`🏗️ Building ${buildingId} from player ${playerId} completed at [${row}, ${col}]`);
+                    // Building construction completed
 
                     // CRITICAL FIX: Update client-side construction state properties
                     parcel._isUnderConstruction = false;
@@ -4647,7 +4266,7 @@ class IsometricGrid {
 
             case 'ROOM_RESET':
                 // Clear all local building state and prepare for resync
-                console.log('🔄 Room reset - clearing all buildings from grid');
+                // Room reset - clearing all buildings from grid
                 this.clearAllBuildings();
                 this.economicClient.clearAllCaches();
                 // V2: UI updates handled by ui-manager
@@ -4659,7 +4278,7 @@ class IsometricGrid {
 
             case 'REQUEST_ROOM_SYNC':
                 // Request fresh room state from server via WebSocket
-                console.log('📡 Requesting fresh room state');
+                // Requesting fresh room state
                 if (this.economicClient.ws && this.economicClient.ws.readyState === 1) {
                     this.economicClient.ws.send(JSON.stringify({
                         type: 'REQUEST_ROOM_STATE',
@@ -4671,12 +4290,10 @@ class IsometricGrid {
 
             case 'VITALITY_UPDATE':
                 // V2: Handle JEEFHH/CARENS vitality data updates via UI manager
-                console.log('📊 VITALITY_UPDATE received - delegating to UI manager');
                 if (update.jeefhh || update.carens) {
                     // Simple delegation to UI manager
                     if (this.uiManager && this.economicClient) {
                         this.uiManager.updateEconomicDisplays(this.economicClient);
-                        console.log('✅ Economic displays updated via UI manager');
                     }
                 }
                 if (update.totalResidents !== undefined) {
@@ -4695,7 +4312,7 @@ class IsometricGrid {
                 break;
 
             default:
-                console.log('Unknown economic update type:', update.type);
+                console.warn('Unknown economic update type:', update.type);
         }
     }
 
@@ -4727,7 +4344,7 @@ class IsometricGrid {
                 }
             }
         }
-        console.log('🗑️ Cleared all buildings from grid');
+        // Cleared all buildings from grid
     }
 
     /**

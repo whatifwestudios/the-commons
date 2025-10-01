@@ -20,7 +20,7 @@ body {
     background: #111111;
     border-bottom: 1px solid #2a2a2a;
     display: grid;
-    grid-template-columns: 1fr auto 1fr;
+    grid-template-columns: 300px 1fr 300px;
     align-items: stretch;
     z-index: 1000;
     transition: all 0.3s ease;
@@ -51,6 +51,45 @@ body.beer-hall-active #top-bar {
     }
 }
 
+/* Attractiveness emigration warning pulse */
+.attractiveness-warning-pulse {
+    animation: attractiveness-warning 2s ease-in-out infinite;
+}
+
+@keyframes attractiveness-warning {
+    0%, 100% {
+        box-shadow: 0 0 3px #FF6B6B;
+        filter: brightness(1);
+    }
+    50% {
+        box-shadow: 0 0 8px #FF6B6B, 0 0 12px #FF6B6B;
+        filter: brightness(1.2);
+    }
+}
+
+/* Attractiveness reveal animation - appears with flourish at 100 residents */
+.attractiveness-reveal {
+    animation: attractiveness-reveal 2s ease-out forwards;
+}
+
+@keyframes attractiveness-reveal {
+    0% {
+        opacity: 0;
+        transform: translateY(-10px) scale(0.95);
+        box-shadow: 0 0 0px #4A9EFF;
+    }
+    50% {
+        opacity: 1;
+        transform: translateY(0) scale(1.05);
+        box-shadow: 0 0 15px #4A9EFF, 0 0 25px #4A9EFF;
+    }
+    100% {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+        box-shadow: 0 0 0px #4A9EFF;
+    }
+}
+
 .top-bar-left {
     display: flex;
     align-items: stretch;
@@ -67,6 +106,7 @@ body.beer-hall-active #top-bar {
     display: flex;
     align-items: stretch;
     justify-content: flex-end;
+    width: 300px;
 }
 
 .top-bar-section {
@@ -125,6 +165,175 @@ body.beer-hall-active #top-bar {
 
 .top-bar-btn.city-name {
     color: #ffffff;
+}
+
+/* Commonwealth Score Styling */
+.commonwealth-score {
+    height: 100%;
+    padding: 0 10px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    width: 300px;
+}
+
+.commonwealth-score:hover {
+    background: #2a2a2a;
+}
+
+.score-label {
+    color: #888888;
+    font-size: 14px;
+    font-weight: 500;
+    letter-spacing: 0.5px;
+}
+
+.score-value {
+    color: #ffffff;
+    font-size: 14px;
+    font-weight: 500;
+    min-width: 35px;
+    text-align: center;
+}
+
+.score-rank {
+    color: #ffa500;
+    font-size: 12px;
+    font-weight: 500;
+    min-width: 25px;
+}
+
+/* Leaderboard Modal Styling */
+.leaderboard-content {
+    max-width: 800px;
+    width: 90%;
+}
+
+.leaderboard-table {
+    margin-bottom: 20px;
+}
+
+.leaderboard-header {
+    display: grid;
+    grid-template-columns: 80px 1fr 120px 120px 120px;
+    gap: 15px;
+    padding: 18px 20px;
+    background: #1a1a1a;
+    border-radius: 8px;
+    font-weight: 500;
+    font-size: 16px;
+    color: #888;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    font-family: 'SF Mono', Monaco, Inconsolata, 'Roboto Mono', 'Source Code Pro', monospace;
+}
+
+.leaderboard-rows {
+    background: #0f0f0f;
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+.leaderboard-row {
+    display: grid;
+    grid-template-columns: 80px 1fr 120px 120px 120px;
+    gap: 15px;
+    padding: 20px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    transition: background 0.2s ease;
+}
+
+.leaderboard-row:last-child {
+    border-bottom: none;
+}
+
+.leaderboard-row:hover {
+    background: rgba(255, 255, 255, 0.02);
+}
+
+.leaderboard-row.current-player {
+    background: rgba(255, 255, 255, 0.03);
+    border-left: 2px solid #666;
+}
+
+.lb-rank {
+    font-weight: 500;
+    text-align: center;
+    font-size: 16px;
+    font-family: 'SF Mono', Monaco, Inconsolata, 'Roboto Mono', 'Source Code Pro', monospace;
+}
+
+.lb-player {
+    color: #fff;
+    font-weight: 500;
+    font-size: 16px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-family: 'SF Mono', Monaco, Inconsolata, 'Roboto Mono', 'Source Code Pro', monospace;
+}
+
+.lb-wealth {
+    color: #fff;
+    text-align: right;
+    font-size: 16px;
+    font-family: 'SF Mono', Monaco, Inconsolata, 'Roboto Mono', 'Source Code Pro', monospace;
+    font-weight: 400;
+}
+
+.lb-lvt {
+    color: #fff;
+    text-align: right;
+    font-size: 16px;
+    font-family: 'SF Mono', Monaco, Inconsolata, 'Roboto Mono', 'Source Code Pro', monospace;
+    font-weight: 400;
+}
+
+.lb-score {
+    color: #fff;
+    text-align: right;
+    font-weight: 500;
+    font-size: 16px;
+    font-family: 'SF Mono', Monaco, Inconsolata, 'Roboto Mono', 'Source Code Pro', monospace;
+}
+
+/* Rank-specific colors - gold gradient */
+.leaderboard-row:nth-child(1) .lb-rank {
+    color: #FFD700; /* Pure gold for 1st */
+}
+
+.leaderboard-row:nth-child(2) .lb-rank {
+    color: #DEB887; /* Softer gold for 2nd */
+}
+
+.leaderboard-row:nth-child(3) .lb-rank {
+    color: #BDB76B; /* Even softer for 3rd */
+}
+
+.leaderboard-row:nth-child(n+4) .lb-rank {
+    color: #fff; /* White for all others */
+}
+
+.victory-info {
+    background: #1a1a1a;
+    border-radius: 8px;
+    padding: 20px;
+    margin-top: 20px;
+}
+
+.victory-info p {
+    margin: 8px 0;
+    color: #ccc;
+    font-size: 15px;
+    font-family: 'SF Mono', Monaco, Inconsolata, 'Roboto Mono', 'Source Code Pro', monospace;
+    font-weight: 400;
+}
+
+.victory-info strong {
+    color: #fff;
+    font-weight: 500;
 }
 
 .top-bar-info {
@@ -869,6 +1078,7 @@ body.beer-hall-active #top-bar {
 
 .modal.visible .modal-content {
     transform: scale(1);
+    width: 800px;
 }
 
 .modal-header {
@@ -1729,7 +1939,7 @@ body.beer-hall-active #top-bar {
 
 /* Legacy tooltip CSS removed - using unified TooltipManager system */
 
-.context-menu {
+#context-menu.context-menu {
     position: absolute;
     background: #111111;
     border: 1px solid #2a2a2a;
@@ -1740,58 +1950,25 @@ body.beer-hall-active #top-bar {
     min-width: 200px;
     max-width: 250px;
     flex-direction: column;
+    font-family: 'SF Mono', Monaco, 'Roboto Mono', monospace;
+    font-size: 16px;
+    line-height: 1.4;
+    padding: 12px;
 }
 
 .context-menu.visible {
     display: flex;
 }
 
-.context-header {
-    padding: 12px 16px;
-    border-bottom: 1px solid #2a2a2a;
-    background: #0a0a0a;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-}
+/* Context menu now uses tooltip system's standardized header classes */
 
-.context-coord {
-    font-size: 14px;
-    font-weight: 600;
-    color: #ffffff;
-    letter-spacing: 0.5px;
-}
-
-.context-status {
-    font-size: 9px;
-    font-weight: 600;
-    letter-spacing: 0.5px;
-    padding: 2px 6px;
-    border-radius: 2px;
-    background: #2a2a2a;
-    color: #888888;
-}
-
-.context-status.unowned {
-    background: #2a2a2a;
-    color: #888888;
-}
-
-.context-status.owned {
-    background: #1a3a1a;
-    color: #ffffff;
-}
-
-.context-status.competitor {
-    background: #3a1a1a;
-    color: #ffffff;
-}
+/* Legacy context-status classes removed - using tooltip system's ownership badges */
 
 .context-content {
-    padding: 8px;
+    padding: 2px;
 }
 
-.context-btn {
+#context-menu .context-btn {
     width: 100%;
     padding: 10px 16px;
     margin-bottom: 4px;
@@ -1799,7 +1976,7 @@ body.beer-hall-active #top-bar {
     border: 1px solid #2a2a2a;
     color: #888888;
     font-family: inherit;
-    font-size: 11px;
+    font-size: 14px;
     font-weight: 600;
     letter-spacing: 0.5px;
     cursor: pointer;
@@ -1810,11 +1987,11 @@ body.beer-hall-active #top-bar {
     overflow: hidden;
 }
 
-.context-btn:last-child {
+#context-menu .context-btn:last-child {
     margin-bottom: 0;
 }
 
-.context-btn::before {
+#context-menu .context-btn::before {
     content: '';
     position: absolute;
     top: 0;
@@ -1826,7 +2003,7 @@ body.beer-hall-active #top-bar {
     z-index: -1;
 }
 
-.context-btn:hover {
+#context-menu .context-btn:hover {
     background: #1a1a1a;
     border-color: #ffffff;
     color: #ffffff;
@@ -1865,28 +2042,29 @@ body.beer-hall-active #top-bar {
 }
 
 .build-menu-title {
-    font-size: 9px;
-    font-weight: 600;
-    letter-spacing: 0.5px;
-    color: #666666;
-    margin-bottom: 6px;
-    padding: 0 8px;
+    font-size: 13px;
+    font-weight: 500;
+    letter-spacing: 0.75px;
+    color: #ffffff;
+    margin-bottom: 8px;
+    padding: 4px;
+    text-align: center;
 }
 
 .category-btn {
     width: 100%;
-    padding: 8px 16px;
-    margin-bottom: 2px;
+    padding: 12px 4px;
+    margin-bottom: 4px;
     background: transparent;
-    border: 1px solid #2a2a2a;
-    color: #888888;
+    border: none;
+    color: #c5c5c5;
     font-family: inherit;
-    font-size: 10px;
-    font-weight: 600;
+    font-size: 14px;
+    font-weight: 500;
     letter-spacing: 0.5px;
     cursor: pointer;
     transition: all 0.15s ease;
-    border-radius: 2px;
+    border-radius: 4px;
     text-align: left;
     display: flex;
     justify-content: space-between;
@@ -1895,8 +2073,8 @@ body.beer-hall-active #top-bar {
 
 .category-btn:hover {
     background: #1a1a1a;
-    border-color: #ffffff;
     color: #ffffff;
+    transform: translateY(-1px);
 }
 
 /* Removed category-btn .arrow styles - using simple → instead */
@@ -1905,7 +2083,7 @@ body.beer-hall-active #top-bar {
     position: absolute;
     left: calc(100% + 8px);
     top: 0;
-    width: 220px;
+    width: 240px;
     background: #0a0a0a;
     border: 1px solid #2a2a2a;
     border-radius: 4px;
@@ -1914,9 +2092,10 @@ body.beer-hall-active #top-bar {
     visibility: hidden;
     transition: all 0.2s ease;
     z-index: 1000;
-    max-height: 300px;
+    max-height: 320px;
     overflow-y: auto;
     pointer-events: none;
+    padding: 6px;
 }
 
 .building-submenu.show {
@@ -1940,12 +2119,12 @@ body.beer-hall-active #top-bar {
 
 .building-btn {
     width: 100%;
-    padding: 6px 12px;
+    padding: 10px 12px;
     background: transparent;
     border: none;
     color: #888888;
     font-family: inherit;
-    font-size: 9px;
+    font-size: 13px;
     font-weight: 500;
     letter-spacing: 0.3px;
     cursor: pointer;
@@ -2768,25 +2947,26 @@ body.beer-hall-active #top-bar {
 }
 
 .building-info-panel {
-    position: absolute;
+    position: fixed;
     top: 0;
-    left: 0;
     right: 0;
-    bottom: 0;
+    width: 300px;
+    height: 100vh;
     background: #111111;
+    border-left: 1px solid #2a2a2a;
     opacity: 0;
     visibility: hidden;
     transition: all 0.3s ease;
     overflow-y: auto;
     z-index: 200;
-    max-height: 100vh;
+    font-family: 'SF Mono', Monaco, 'Roboto Mono', monospace;
 }
 
 .building-info-panel.visible {
-    display: flex !important;
-    visibility: visible !important;
-    opacity: 1 !important;
-    pointer-events: auto !important;
+    display: flex;
+    visibility: visible;
+    opacity: 1;
+    pointer-events: auto;
     flex-direction: column;
 }
 
@@ -2805,36 +2985,40 @@ body.beer-hall-active #top-bar {
     text-transform: uppercase;
 }
 
-.building-info-content {
-    padding: 16px;
+#building-info-panel .building-info-content {
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    height: calc(100vh - 80px);
+    gap: 20px;
 }
 
-.building-description {
-    padding: 10px 14px;
+#building-info-panel .building-description {
+    padding: 14px 16px;
     background: #1a1a1a;
-    border-radius: 6px;
-    margin-bottom: 12px;
-    font-size: 11px;
-    line-height: 1.5;
-    color: #a8a8a8;
+    border-radius: 8px;
+    font-size: 16px;
+    line-height: 1.6;
+    color: #cccccc;
     font-style: italic;
-    border-left: 2px solid #4a90e2;
+    border-left: 3px solid #4a90e2;
+    flex-shrink: 0;
 }
 
-.building-info-image {
-    margin-bottom: 12px;
+#building-info-panel .building-info-image {
     text-align: center;
-    height: 80px;
+    height: 120px;
     display: flex;
     align-items: center;
     justify-content: center;
     background: #0a0a0a;
-    border-radius: 6px;
+    border-radius: 8px;
+    flex-shrink: 0;
 }
 
 .building-info-image img {
     max-width: 90%;
-    max-height: 70px;
+    max-height: 100px;
     object-fit: contain;
 }
 
@@ -2854,22 +3038,22 @@ body.beer-hall-active #top-bar {
     border-bottom: none;
 }
 
-.building-info-details .info-label {
-    font-size: 12px;
+#building-info-panel .building-info-details .info-label {
+    font-size: 15px;
     font-weight: 500;
     color: #808080;
     letter-spacing: 0.5px;
 }
 
-.building-info-details .info-value {
-    font-size: 13px;
+#building-info-panel .building-info-details .info-value {
+    font-size: 16px;
     font-weight: 600;
     color: #ffffff;
     font-variant-numeric: tabular-nums;
 }
 
-.building-impacts h4 {
-    font-size: 13px;
+#building-info-panel .building-impacts h4 {
+    font-size: 16px;
     font-weight: 600;
     color: #4a90e2;
     margin-bottom: 12px;
@@ -2877,47 +3061,55 @@ body.beer-hall-active #top-bar {
     letter-spacing: 1px;
 }
 
-#building-impacts-list {
+#building-info-panel #building-impacts-list {
     display: flex;
     flex-direction: column;
-    gap: 0;
+    gap: 8px;
+    flex: 1;
+    overflow-y: auto;
+    padding-right: 4px;
 }
 
-.building-supply-demand {
+#building-info-panel .building-supply-demand {
     border-bottom: 1px solid #222222;
-    margin-bottom: 12px;
-    padding-bottom: 12px;
+    padding-bottom: 16px;
+    flex: 0 0 auto;
 }
 
-.building-supply-demand .vitality-group-title,
-.building-impacts .vitality-group-title {
+#building-info-panel .building-impacts {
+    flex: 1 1 auto;
+    min-height: 0;
+}
+
+#building-info-panel .building-supply-demand .vitality-group-title,
+#building-info-panel .building-impacts .vitality-group-title {
     display: block;
-    font-size: 10px;
+    font-size: 16px;
     font-weight: 600;
-    color: #666666;
+    color: #888888;
     letter-spacing: 1px;
-    margin-bottom: 8px;
+    margin-bottom: 12px;
 }
 
-.building-supply-demand .vitality-row,
-.building-impacts .vitality-row {
+#building-info-panel .building-supply-demand .vitality-row,
+#building-info-panel .building-impacts .vitality-row {
     display: flex;
     align-items: center;
-    margin-bottom: 8px;
-    height: 20px;
+    margin-bottom: 12px;
+    height: 28px;
 }
 
-.building-supply-demand .vitality-label {
-    font-size: 10px;
+#building-info-panel .building-supply-demand .vitality-label {
+    font-size: 15px;
     font-weight: 600;
     letter-spacing: 0.5px;
-    min-width: 80px;
-    margin-right: 12px;
+    min-width: 100px;
+    margin-right: 16px;
     color: #808080;
 }
 
-.building-supply-demand .info-value {
-    font-size: 11px;
+#building-info-panel .building-supply-demand .info-value {
+    font-size: 16px;
     font-weight: 600;
     color: #ffffff;
     font-variant-numeric: tabular-nums;
@@ -2930,13 +3122,14 @@ body.beer-hall-active #top-bar {
     transition: all 0.3s ease;
 }
 
-.building-impacts .vitality-label {
-    font-size: 10px;
+#building-info-panel .building-impacts .vitality-label {
+    font-size: 14px;
     font-weight: 600;
     letter-spacing: 0.5px;
-    min-width: 80px;
+    min-width: 90px;
     margin-right: 12px;
     text-transform: uppercase;
+    color: #808080;
 }
 
 .building-impacts .vitality-bar {
@@ -2977,10 +3170,10 @@ body.beer-hall-active #top-bar {
     overflow: hidden;
 }
 
-.impact-item .impact-label {
+#building-info-panel .impact-item .impact-label {
     color: #b8b8b8;
     text-transform: capitalize;
-    font-size: 12px;
+    font-size: 15px;
     font-weight: 500;
     z-index: 2;
     position: relative;
@@ -3004,8 +3197,8 @@ body.beer-hall-active #top-bar {
     background: linear-gradient(90deg, transparent, #f87171);
 }
 
-.impact-item .impact-value {
-    font-size: 9px;
+#building-info-panel .impact-item .impact-value {
+    font-size: 13px;
     font-weight: 600;
     font-variant-numeric: tabular-nums;
 }
@@ -3016,6 +3209,240 @@ body.beer-hall-active #top-bar {
 
 .impact-item .impact-value.negative {
     color: #ef4444;
+}
+
+/* Building Info Panel System Styles - Clean Data-Driven Approach */
+
+/* Labels - Override legacy styles with higher specificity */
+#building-info-panel .jeefhh-label,
+#building-info-panel .carens-label {
+    font-size: 15px !important;
+    font-weight: 600 !important;
+    letter-spacing: 0.5px !important;
+    text-transform: uppercase !important;
+    min-width: 110px !important;
+    margin-right: 12px !important;
+}
+
+/* JEEFHH label colors */
+#building-info-panel .jeefhh-label[data-color="jobs"] { color: #ec4899; }
+#building-info-panel .jeefhh-label[data-color="energy"] { color: #f59e0b; }
+#building-info-panel .jeefhh-label[data-color="education"] { color: #8b5cf6; }
+#building-info-panel .jeefhh-label[data-color="food"] { color: #84cc16; }
+#building-info-panel .jeefhh-label[data-color="housing"] { color: #06b6d4; }
+#building-info-panel .jeefhh-label[data-color="healthcare"] { color: #ef4444; }
+
+/* CARENS label colors */
+#building-info-panel .carens-label[data-domain="safety"] { color: #ef4444; }
+#building-info-panel .carens-label[data-domain="culture"] { color: #a855f7; }
+#building-info-panel .carens-label[data-domain="affordability"] { color: #f97316; }
+#building-info-panel .carens-label[data-domain="resilience"] { color: #14b8a6; }
+#building-info-panel .carens-label[data-domain="environment"] { color: #22c55e; }
+#building-info-panel .carens-label[data-domain="noise"] { color: #6b7280; }
+
+/* Rows */
+#building-info-panel .jeefhh-bar-row,
+#building-info-panel .carens-bar-row {
+    display: flex;
+    align-items: center;
+    margin-bottom: 12px;
+    height: 28px;
+    font-size: 14px;
+}
+
+/* Section titles - Override legacy styles */
+#building-info-panel .vitality-group-title {
+    font-size: 16px !important;
+    font-weight: 600 !important;
+    color: #888888 !important;
+    letter-spacing: 1px !important;
+    margin-bottom: 12px !important;
+    text-transform: uppercase !important;
+    display: block !important;
+}
+
+/* Progress bars with data attributes */
+#building-info-panel .jeefhh-progress[data-state="balanced"] {
+    position: absolute;
+    left: 49%;
+    width: 2%;
+    height: 8px;
+    border-radius: 50%;
+    background: #3b82f6;
+    border: 1px solid rgba(255,255,255,0.3);
+}
+
+#building-info-panel .jeefhh-progress[data-state="supply"] {
+    position: absolute;
+    left: 50%;
+    height: 6px;
+    border-radius: 0;
+    background: linear-gradient(90deg, #3b82f6, #ef4444);
+}
+
+#building-info-panel .jeefhh-progress[data-state="demand"] {
+    position: absolute;
+    height: 6px;
+    border-radius: 0;
+    background: #ef4444;
+}
+
+#building-info-panel .carens-progress[data-state="neutral"] {
+    position: absolute;
+    left: 49%;
+    width: 2%;
+    height: 8px;
+    border-radius: 50%;
+    background: #8b5cf6;
+    border: 1px solid rgba(255,255,255,0.3);
+}
+
+#building-info-panel .carens-progress[data-state="positive"] {
+    position: absolute;
+    left: 50%;
+    height: 6px;
+    border-radius: 0;
+    background: #3b82f6;
+}
+
+#building-info-panel .carens-progress[data-state="negative"] {
+    position: absolute;
+    height: 6px;
+    border-radius: 0;
+    background: #ef4444;
+}
+
+/* Investment score */
+#building-info-panel .investment-score-number {
+    font-size: 24px;
+    font-weight: bold;
+}
+
+#building-info-panel .investment-score-label {
+    font-size: 14px;
+    font-weight: 600;
+    text-transform: capitalize;
+}
+
+#building-info-panel .investment-score-circle[data-score-level="excellent"] .investment-score-number,
+#building-info-panel .investment-score-circle[data-score-level="excellent"] .investment-score-label {
+    color: #4CAF50;
+}
+
+#building-info-panel .investment-score-circle[data-score-level="excellent"] {
+    border-color: #4CAF50;
+}
+
+#building-info-panel .investment-score-circle[data-score-level="good"] .investment-score-number,
+#building-info-panel .investment-score-circle[data-score-level="good"] .investment-score-label {
+    color: #8BC34A;
+}
+
+#building-info-panel .investment-score-circle[data-score-level="good"] {
+    border-color: #8BC34A;
+}
+
+#building-info-panel .investment-score-circle[data-score-level="fair"] .investment-score-number,
+#building-info-panel .investment-score-circle[data-score-level="fair"] .investment-score-label {
+    color: #FFC107;
+}
+
+#building-info-panel .investment-score-circle[data-score-level="fair"] {
+    border-color: #FFC107;
+}
+
+#building-info-panel .investment-score-circle[data-score-level="poor"] .investment-score-number,
+#building-info-panel .investment-score-circle[data-score-level="poor"] .investment-score-label {
+    color: #FF9800;
+}
+
+#building-info-panel .investment-score-circle[data-score-level="poor"] {
+    border-color: #FF9800;
+}
+
+#building-info-panel .investment-score-circle[data-score-level="very-poor"] .investment-score-number,
+#building-info-panel .investment-score-circle[data-score-level="very-poor"] .investment-score-label {
+    color: #F44336;
+}
+
+#building-info-panel .investment-score-circle[data-score-level="very-poor"] {
+    border-color: #F44336;
+}
+
+/* Metrics - Override legacy styles */
+#building-info-panel .metric-label {
+    font-size: 14px !important;
+    color: #808080 !important;
+}
+
+#building-info-panel .metric-value {
+    font-size: 15px !important;
+    font-weight: 600 !important;
+    color: #ffffff !important;
+}
+
+/* Info values - Override legacy styles */
+#building-info-panel .info-value {
+    font-size: 15px !important;
+    font-weight: 600 !important;
+    color: #ffffff !important;
+    font-variant-numeric: tabular-nums !important;
+}
+
+/* Cost container */
+#building-info-panel .cost-container {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-left: auto;
+}
+
+/* Style image visibility */
+#building-info-img.visible {
+    display: block;
+}
+
+#building-info-img:not(.visible) {
+    display: none;
+}
+
+/* New classes for replaced inline styles */
+.funding-indicator {
+    font-size: 14px;
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-weight: 600;
+}
+
+.funding-indicator.funded {
+    color: #4CAF50;
+    background: rgba(76, 175, 80, 0.15);
+}
+
+.funding-indicator.partial {
+    color: #FFA726;
+    background: rgba(255, 167, 38, 0.15);
+}
+
+.no-impacts-message {
+    color: #666666;
+    font-size: 16px;
+    text-align: center;
+    padding: 20px;
+}
+
+.funding-amount {
+    font-size: 16px;
+    font-weight: 600;
+}
+
+.category-arrow {
+    font-size: 18px;
+    opacity: 0.7;
+}
+
+.building-price-info {
+    font-size: 14px;
 }
 
 .impact-item .impact-value.neutral {

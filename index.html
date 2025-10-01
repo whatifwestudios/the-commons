@@ -1461,6 +1461,235 @@
             pointer-events: none;
         }
 
+
+        /* Building Info Panel */
+        .building-info-panel {
+            position: fixed;
+            z-index: 10001;
+            background: rgba(26, 26, 26, 0.98);
+            border: 1px solid #333;
+            border-radius: 8px;
+            max-width: 320px;
+            font-family: 'SF Mono', Monaco, 'Roboto Mono', monospace;
+            font-size: 13px;
+            color: #e0e0e0;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.8);
+            backdrop-filter: blur(10px);
+            display: none;
+            pointer-events: none;
+        }
+
+        .building-info-panel.visible {
+            display: block;
+        }
+
+        .building-info-header {
+            padding: 12px 16px;
+            border-bottom: 1px solid #333;
+            background: rgba(40, 40, 40, 0.5);
+        }
+
+        .building-info-panel .building-name {
+            font-weight: bold;
+            color: #ffffff;
+            font-size: 16px;
+        }
+
+        .building-info-panel .building-category {
+            color: #888;
+            text-transform: uppercase;
+            font-size: 11px;
+        }
+
+        .building-description {
+            padding: 12px 16px;
+            color: #ccc;
+            font-size: 12px;
+            line-height: 1.4;
+            border-bottom: 1px solid #333;
+        }
+
+        .building-economics {
+            padding: 16px;
+        }
+
+        .economics-section h4 {
+            color: #4CAF50;
+            margin: 0 0 8px 0;
+            font-size: 14px;
+        }
+
+        .economics-grid {
+            display: grid;
+            gap: 6px;
+        }
+
+        .economics-item {
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .economics-item.net {
+            border-top: 1px solid #333;
+            padding-top: 6px;
+            margin-top: 6px;
+        }
+
+        .economics-item .label {
+            color: #aaa;
+        }
+
+        .economics-item .value.cost {
+            color: #ff9800;
+        }
+
+        .economics-item .value.profit {
+            color: #4CAF50;
+        }
+
+        .economics-item .value.loss {
+            color: #f44336;
+        }
+
+        /* Category Details Slide-out Panel */
+        .category-details-panel {
+            position: fixed;
+            top: 0;
+            right: 0;
+            width: 400px;
+            height: 100vh;
+            background: rgba(26, 26, 26, 0.98);
+            border-left: 2px solid #444;
+            z-index: 10002;
+            transform: translateX(100%);
+            transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            backdrop-filter: blur(10px);
+            font-family: 'SF Mono', Monaco, 'Roboto Mono', monospace;
+            color: #e0e0e0;
+            overflow-y: auto;
+        }
+
+        .category-details-panel.open {
+            transform: translateX(0);
+        }
+
+        .panel-header {
+            padding: 20px;
+            background: rgba(40, 40, 40, 0.8);
+            border-bottom: 1px solid #444;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            position: sticky;
+            top: 0;
+            z-index: 10003;
+        }
+
+        .panel-header h4 {
+            margin: 0;
+            color: #ffffff;
+            font-size: 18px;
+            font-weight: 600;
+        }
+
+        .panel-close-btn {
+            background: none;
+            border: none;
+            color: #888;
+            font-size: 24px;
+            cursor: pointer;
+            padding: 5px;
+            border-radius: 4px;
+            transition: all 0.2s ease;
+        }
+
+        .panel-close-btn:hover {
+            color: #fff;
+            background: rgba(255, 255, 255, 0.1);
+        }
+
+        .panel-content {
+            padding: 20px;
+        }
+
+        .category-description {
+            color: #ccc;
+            line-height: 1.6;
+            margin-bottom: 20px;
+            font-size: 14px;
+        }
+
+        .maintenance-note {
+            background: rgba(76, 175, 80, 0.1);
+            border: 1px solid rgba(76, 175, 80, 0.3);
+            border-radius: 6px;
+            padding: 12px;
+            margin-bottom: 20px;
+            color: #81C784;
+            font-size: 13px;
+        }
+
+        .buildings-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+            gap: 12px;
+            margin-top: 15px;
+        }
+
+        .building-item {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 6px;
+            padding: 12px;
+            transition: all 0.2s ease;
+        }
+
+        .building-item:hover {
+            background: rgba(255, 255, 255, 0.08);
+            border-color: rgba(255, 255, 255, 0.2);
+            transform: translateY(-1px);
+        }
+
+        .building-name {
+            font-weight: 600;
+            color: #fff;
+            font-size: 13px;
+            margin-bottom: 4px;
+        }
+
+        .building-description {
+            color: #aaa;
+            font-size: 11px;
+            line-height: 1.4;
+        }
+
+        /* Panel section headers */
+        .panel-content h5 {
+            color: #fff;
+            font-size: 16px;
+            margin: 25px 0 15px 0;
+            padding-bottom: 8px;
+            border-bottom: 1px solid #444;
+        }
+
+        /* Scrollbar styling for the panel */
+        .category-details-panel::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        .category-details-panel::-webkit-scrollbar-track {
+            background: rgba(255, 255, 255, 0.05);
+        }
+
+        .category-details-panel::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 3px;
+        }
+
+        .category-details-panel::-webkit-scrollbar-thumb:hover {
+            background: rgba(255, 255, 255, 0.3);
+        }
+
     </style>
 </head>
 <body>
@@ -1475,7 +1704,9 @@
                     PLAYER
                 </button>
                 <div class="dropdown-menu" id="player-menu">
-                    <!-- Menu items removed: leaderboard, player stats, reset game, attenuation overlay -->
+                    <button class="dropdown-item" id="quit-game-btn" style="color: #ff4444; border-top: 1px solid #333; margin-top: 5px;">
+                        🚪 Quit Game
+                    </button>
                 </div>
             </div>
         </div>
@@ -1523,10 +1754,16 @@
                 </div>
             </div>
         </div>
-        
-        <!-- Right container: Empty for now -->
+
+        <!-- Right container: Commonwealth Score -->
         <div class="top-bar-right">
+            <div class="commonwealth-score" id="commonwealth-score" title="First to a score of 25 wins!">
+                <span class="score-label">YOUR COMMONWEALTH SCORE</span>
+                <span class="score-value" id="cw-score-value">0.6</span>
+                <span class="score-rank" id="cw-score-rank">1st</span>
+            </div>
         </div>
+
     </div>
     
     <!-- Cashflow Modal -->
@@ -1580,6 +1817,7 @@
         <div id="main-area">
             <canvas id="gameCanvas"></canvas>
             <!-- Legacy tooltip removed - using unified TooltipManager system -->
+            <!-- Legacy Context Menu (V1) - using this for hover submenus -->
             <div id="context-menu" class="context-menu">
                 <div class="context-header">
                     <span class="context-coord">A-1</span>
@@ -1589,6 +1827,7 @@
                     <!-- Content will be populated based on parcel state -->
                 </div>
             </div>
+
         </div>
 
         <!-- Multiplayer Chat Overlay -->
@@ -1840,37 +2079,12 @@
                         <img id="building-info-img" src="" alt="Building">
                     </div>
                     <div class="building-description"></div>
-                    
-                    <!-- Supply & Demand Section -->
-                    <div class="building-supply-demand">
-                        <div class="vitality-group-title">SUPPLY & DEMAND</div>
-                        <div class="vitality-row">
-                            <span class="vitality-label">COST</span>
-                            <span class="info-value" id="building-cost">$0</span>
-                        </div>
-                        <div class="vitality-row">
-                            <span class="vitality-label">BUILD TIME</span>
-                            <span class="info-value" id="building-time">0 days</span>
-                        </div>
-                        <div class="vitality-row">
-                            <span class="vitality-label">BEDROOMS</span>
-                            <span class="info-value" id="building-bedrooms">0</span>
-                        </div>
-                        <div class="vitality-row">
-                            <span class="vitality-label">JOBS</span>
-                            <span class="info-value" id="building-jobs">0</span>
-                        </div>
-                    </div>
-                    
-                    <!-- Requirements Section -->
-                    <div class="building-requirements" style="display: none;">
-                        <div class="vitality-group-title">REQUIREMENTS</div>
-                        <div id="building-requirements-list"></div>
-                    </div>
-                    
-                    <!-- CARENS Livability Section -->
+
+                    <!-- Supply & Demand Section - content populated by BuildingInfoPanelSystem -->
+                    <div class="building-supply-demand"></div>
+
+                    <!-- CARENS Livability Section - content populated by BuildingInfoPanelSystem -->
                     <div class="building-impacts">
-                        <div class="vitality-group-title">CARENS (LIVABILITY)</div>
                         <div id="building-impacts-list"></div>
                     </div>
                 </div>
@@ -1896,11 +2110,11 @@
                 <div class="financial-overview">
                     <div class="financial-metrics">
                         <div class="metric-item">
-                            <span class="metric-label">Monthly Collection</span>
+                            <span class="metric-label">Unallocated Funds</span>
                             <span class="metric-value">$<span id="monthly-lvt-amount">0</span></span>
                         </div>
                         <div class="metric-item">
-                            <span class="metric-label">Current Funds</span>
+                            <span class="metric-label">City Treasury</span>
                             <span class="metric-value">$<span id="unallocated-funds-amount">0</span></span>
                         </div>
                         <div class="metric-item lvt-adjuster">
@@ -1908,8 +2122,16 @@
                             <div class="lvt-controls">
                                 <button class="vote-btn decrease" id="lvt-decrease-btn">-</button>
                                 <div class="lvt-display">
-                                    <span class="current-rate" id="current-lvt-display">50%</span>
-                                    <span class="vote-points" id="lvt-vote-points">0</span>
+                                    <div class="lvt-rates">
+                                        <span class="current-rate" id="current-lvt-display">50%</span>
+                                        <span class="rate-arrow" id="lvt-rate-arrow" style="display: none;">→</span>
+                                        <span class="proposed-rate" id="proposed-lvt-display" style="display: none;">50%</span>
+                                    </div>
+                                    <div class="lvt-effects">
+                                        <span class="vote-points" id="lvt-vote-points">0</span>
+                                        <span class="net-effect" id="lvt-net-effect" style="display: none;"></span>
+                                    </div>
+                                    <div class="player-allocation-indicators" id="lvt-player-dots"></div>
                                 </div>
                                 <button class="vote-btn increase" id="lvt-increase-btn">+</button>
                             </div>
@@ -2159,7 +2381,11 @@
                 if (category && categoryData[category]) {
                     // If clicking the same category that's already open, close it
                     if (currentOpenCategory === category) {
-                        closeCategoryDetails();
+                        if (window.governanceV3) {
+                            window.governanceV3.closeCategoryDetails();
+                        } else {
+                            closeCategoryDetails();
+                        }
                         currentOpenCategory = null;
                     } else {
                         // Otherwise show the new category details
@@ -2173,7 +2399,11 @@
         // Close panel handler
         document.addEventListener('click', function(e) {
             if (e.target.id === 'close-category-details') {
-                closeCategoryDetails();
+                if (window.governanceV3) {
+                    window.governanceV3.closeCategoryDetails();
+                } else {
+                    closeCategoryDetails();
+                }
             }
         });
 
@@ -2190,7 +2420,11 @@
                 
                 // Close if clicked inside modal but outside panel (and not on a more info button)
                 if (isClickInsideModal && !isClickInsidePanel && !isMoreInfoButton) {
-                    closeCategoryDetails();
+                    if (window.governanceV3) {
+                        window.governanceV3.closeCategoryDetails();
+                    } else {
+                        closeCategoryDetails();
+                    }
                 }
             }
         });
@@ -2236,9 +2470,51 @@
         }
     }
 
+    // Sidebar panel collapse/expand functionality
+    document.addEventListener('DOMContentLoaded', function() {
+        const sectionHeaders = document.querySelectorAll('.section-header[data-target]');
+
+        sectionHeaders.forEach(header => {
+            header.addEventListener('click', function() {
+                const collapsibleSection = this.parentElement;
+                if (collapsibleSection && collapsibleSection.classList.contains('collapsible')) {
+                    collapsibleSection.classList.toggle('collapsed');
+                }
+            });
+        });
+    });
+
     </script>
     
     </div> <!-- End of game-interface -->
+
+    <!-- Commonwealth Leaderboard Modal -->
+    <div class="modal" id="leaderboard-modal">
+        <div class="modal-content leaderboard-content">
+            <div class="modal-header">
+                <h3>Commonwealth Leaderboard</h3>
+                <button class="modal-close" id="leaderboard-close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="leaderboard-table">
+                    <div class="leaderboard-header">
+                        <div class="lb-rank">Rank</div>
+                        <div class="lb-player">Player</div>
+                        <div class="lb-wealth">Wealth</div>
+                        <div class="lb-lvt">LVT Contrib</div>
+                        <div class="lb-score">CW Score</div>
+                    </div>
+                    <div class="leaderboard-rows" id="leaderboard-rows">
+                        <!-- Dynamic content -->
+                    </div>
+                </div>
+                <div class="victory-info">
+                    <p><strong>Early Victory:</strong> First to 25.0 CW Score + 15% LVT Contribution</p>
+                    <p><strong>Year-End Victory:</strong> Highest CW Score on Sept 1st</p>
+                </div>
+            </div>
+        </div>
+    </div>
     
     <!-- Transition Overlay -->
     <div id="transition-overlay" class="transition-overlay">
@@ -2654,8 +2930,9 @@
     <script src="utils/csv-converter.js"></script>
     <script src="csv-uploader.js"></script>
     <script type="module" src="buildings.js"></script>
+    <!-- 🚫 CLIENT STATE AUDITOR REMOVED - GHOSTS LEAD THE WAY! -->
     <!-- State Auditing System - Load FIRST to intercept all mutations -->
-    <script src="client-state-auditor.js"></script>
+    <!-- <script src="client-state-auditor.js"></script> -->
 
     <!-- Utility Scripts -->
     <script src="utils/player-utils.js"></script>
@@ -2663,6 +2940,7 @@
 
     <script src="utils/color-utils.js"></script>
     <script src="utils/coordinate-utils.js"></script>
+    <script src="event-cleanup-manager.js"></script>
 
     <!-- Cash Management System -->
 
@@ -2679,6 +2957,7 @@
     <script src="tooltip-system-v2.js"></script>
     <script src="position-adjuster.js"></script>
     <script src="isometric-angle-adjuster.js"></script>
+    <script src="view-angle-adjuster.js"></script>
     <script src="rendering-system-v2.js"></script>
     <!-- Legacy tooltip systems archived -->
     <script src="context-menu-system.js"></script>
@@ -2850,11 +3129,23 @@
             const now = new Date();
             const time = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
-            messageDiv.innerHTML = `
-                <span class="message-time">${time}</span>
-                <span class="message-player" style="color: ${playerColor};">${playerName}:</span>
-                <span class="message-text">${message}</span>
-            `;
+            // Create elements safely to prevent XSS
+            const timeSpan = document.createElement('span');
+            timeSpan.className = 'message-time';
+            timeSpan.textContent = time;
+
+            const playerSpan = document.createElement('span');
+            playerSpan.className = 'message-player';
+            playerSpan.style.color = playerColor;
+            playerSpan.textContent = playerName + ':';
+
+            const messageSpan = document.createElement('span');
+            messageSpan.className = 'message-text';
+            messageSpan.textContent = message;
+
+            messageDiv.appendChild(timeSpan);
+            messageDiv.appendChild(playerSpan);
+            messageDiv.appendChild(messageSpan);
 
             chatMessages.appendChild(messageDiv);
             chatMessages.scrollTop = chatMessages.scrollHeight;

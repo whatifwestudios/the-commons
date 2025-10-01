@@ -8,6 +8,9 @@
  * - Handle real-time game time synchronization
  */
 
+// Global debug mode flag - set to false to reduce console spam
+window.DEBUG_MODE = window.DEBUG_MODE || false;
+
 class EconomicClient {
     constructor(game, autoConnectWebSocket = true) {
         this.game = game;
@@ -17,6 +20,23 @@ class EconomicClient {
         this.gameTime = 0;
         this.serverGameTime = 0;
         this.lastSyncTime = Date.now();
+
+        // Connection resilience state
+        this.reconnectAttempts = 0;
+        this.maxReconnectAttempts = 10;
+        this.reconnectTimeout = null;
+        this.baseReconnectDelay = 1000; // 1 second base delay
+        this.maxReconnectDelay = 30000; // 30 seconds max delay
+        this.isConnected = false;
+        this.connectionId = this.generateConnectionId();
+        this.messageQueue = [];
+        this.lastHeartbeat = Date.now();
+        this.heartbeatInterval = null;
+        this.heartbeatFrequency = 30000; // 30 seconds
+        this.connectionLost = false;
+
+        // ROOT CAUSE FIX: Prevent browser from killing WebSocket
+        this.setupPageVisibilityHandling();
 
         // Economic data from server
         this.jeefhh = {
@@ -29,11 +49,16 @@ class EconomicClient {
         };
 
         this.carens = {
-            culture: 0.5, affordability: 0.5, resilience: 0.5,
-            environment: 0.5, noise: 0.5, safety: 0.5, multiplier: 1.0
+            culture: 0,       // Points on -100 to +100 scale
+            affordability: 0,
+            resilience: 0,
+            environment: 0,
+            noise: 0,
+            safety: 0,
+            multiplier: 1.0   // Combined multiplier from server
         };
-        this.carensMultiplier = 1.0; // Keep for backward compatibility
         this.totalResidents = 0;
+        this.lvtRate = 0.5; // Default LVT rate 50%
 
         // V2: Processed vitality data for UI (computed from jeefhh)
         this.vitalitySupply = {
@@ -54,6 +79,9 @@ class EconomicClient {
         // Update callbacks
         this.updateCallbacks = new Set();
 
+        // Transaction response callbacks for WebSocket transactions
+        this.transactionCallbacks = new Map();
+
         // V2: Player ID ready callback
         this.onPlayerIdReady = null;
 
@@ -61,7 +89,6 @@ class EconomicClient {
         this.GAME_DAY_MS = 3600000 / 365; // Same as server
         this.clientGameStartTime = Date.now();
 
-        console.log('📡 Economic Client v2 initialized');
 
         // Client clock will be started when game begins (not during lobby/chat)
         this.clockStarted = false;
@@ -88,11 +115,9 @@ class EconomicClient {
      */
     startClientClock() {
         if (this.clockStarted) {
-            console.log('⏰ Client clock already started, skipping');
-            return;
+                return;
         }
 
-        console.log('⏰ Starting client game clock at Sept 2nd (Henry George\'s birthday)');
 
         // Reset game start time to now (when game actually begins)
         this.clientGameStartTime = Date.now();
@@ -129,13 +154,11 @@ class EconomicClient {
         this.clientGameStartTime = now - serverElapsedMs;
         this.gameTime = serverGameTime;
 
-        console.log(`⏰ Game time synced: Day ${Math.floor(this.gameTime)}`);
 
         // Update game's date display with server-authoritative time
         if (window.game && typeof window.game.updateGameDate === 'function') {
             window.game.currentDay = Math.floor(this.gameTime);
             window.game.updateGameDate();
-            console.log('📅 Server-authoritative date updated in UI');
         }
     }
 
@@ -239,52 +262,59 @@ class EconomicClient {
      */
     async sendTransaction(transaction) {
         try {
-            console.log('📤 Sending transaction:', transaction.type);
+            // Check Beer Hall WebSocket instead
+            const beerHallWS = (typeof window.beerHallLobby !== 'undefined' && window.beerHallLobby && window.beerHallLobby.ws) ? window.beerHallLobby.ws : null;
 
-            const response = await fetch(`${this.baseUrl}/api/economics/transaction`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify(transaction)
-            });
-
-            if (!response.ok) {
-                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            if (!beerHallWS || beerHallWS.readyState !== WebSocket.OPEN) {
+                throw new Error('WebSocket not connected');
             }
 
-            const result = await response.json();
+            // Add transaction ID for tracking
+            transaction.id = `${transaction.type}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
-            if (!result.success) {
-                throw new Error(result.error || 'Transaction failed');
-            }
+            // Send via Beer Hall WebSocket
+            beerHallWS.send(JSON.stringify({
+                type: 'ECONOMIC_TRANSACTION',
+                transaction: transaction
+            }));
 
-            console.log('✅ Transaction successful:', result);
-
-            // Sync game time
-            if (result.gameTime) {
-                this.syncWithServerTime(result.gameTime);
-            }
-
-            // Process immediate balance update from flattened transaction result
-            if (result.newBalance !== undefined) {
-                const newBalance = result.newBalance;
-                console.log(`💰 Immediate transaction balance update: ${newBalance}`);
-
-                // Store server-authoritative balance and update UI
-                this.serverBalance = newBalance;
-                if (window.game && window.game.domCache && window.game.domCache.playerCash) {
-                    window.game.domCache.playerCash.textContent = `$${Math.round(newBalance).toLocaleString()}`;
-                    console.log(`✅ UI updated immediately to show transaction result: $${Math.round(newBalance).toLocaleString()}`);
-                }
-            }
-
-            return result;
+            // Wait for response via WebSocket
+            return await this.waitForTransactionResponse(transaction.id);
 
         } catch (error) {
-            console.error('❌ Transaction failed:', error);
+            console.error('❌ Economic transaction failed:', error);
             throw error;
         }
+    }
+
+    async waitForTransactionResponse(transactionId) {
+        return new Promise((resolve, reject) => {
+            const timeout = setTimeout(() => {
+                this.transactionCallbacks.delete(transactionId);
+                reject(new Error('Transaction timeout'));
+            }, 10000); // 10 second timeout
+
+            this.transactionCallbacks.set(transactionId, (result) => {
+                clearTimeout(timeout);
+                this.transactionCallbacks.delete(transactionId);
+
+                // Sync game time
+                if (result.gameTime) {
+                    this.syncWithServerTime(result.gameTime);
+                }
+
+                // Process immediate balance update
+                if (result.newBalance !== undefined) {
+                    this.serverBalance = result.newBalance;
+                    const playerCashElement = window.game?.uiManager?.get('playerCash');
+                    if (playerCashElement) {
+                        playerCashElement.textContent = `$${Math.round(result.newBalance).toLocaleString()}`;
+                    }
+                }
+
+                resolve(result);
+            });
+        });
     }
 
     /**
@@ -343,7 +373,7 @@ class EconomicClient {
         const building = this.buildings.get(locationKey);
 
         if (!building) {
-            console.warn(`⚠️ Building not found at ${locationKey} in WebSocket data`);
+            console.warn(`⚠️ Building not found at ${locationKey}`);
             return null;
         }
 
@@ -372,7 +402,7 @@ class EconomicClient {
 
         // Only warn if we have no WebSocket connection at all
         if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
-            console.warn(`⚠️ No cashflow data available for player ${playerId} - WebSocket not connected`);
+            console.warn(`⚠️ No cashflow data available - WebSocket not connected`);
         }
         return null;
     }
@@ -392,7 +422,7 @@ class EconomicClient {
         // Only warn if WebSocket is connected but data still not available (actual error)
         // During initialization, it's normal for data to not be available yet
         if (this.ws && this.ws.readyState === WebSocket.OPEN && this.gameState) {
-            console.warn(`⚠️ No player data available for ${targetPlayerId} - player not found in game state`);
+            console.warn(`⚠️ Player data not found in game state`);
         }
         return null;
     }
@@ -416,7 +446,7 @@ class EconomicClient {
 
         try {
             this.ws.send(JSON.stringify(transaction));
-            console.log(`🏛️ Submitted governance transaction: ${type}`, data);
+            // Governance transaction submitted
             return true;
         } catch (error) {
             console.error('Failed to submit governance transaction:', error);
@@ -471,67 +501,70 @@ class EconomicClient {
      * Get current player's balance from WebSocket data
      */
     getCurrentPlayerBalance() {
-        if (!this.playerId || !this.playerBalances) {
-            // Return starting balance before server sync
-            return 6000;
+        // V2 Server-authoritative ONLY - no fallbacks
+        if (typeof this.serverBalance === 'number') {
+            return this.serverBalance;
         }
-        return this.playerBalances[this.playerId] || 6000;
+
+        // No fallbacks - wait for server sync
+        // Balance not yet synced with server
+        return 0; // Show 0 instead of misleading 6000
     }
 
     /**
      * Get current player's actions from WebSocket data
      */
     getCurrentPlayerActions() {
-        if (!this.playerId || !this.playerActions) {
-            // Return starting actions before server sync (default monthly allowance)
-            return 20;
+        // V2 Server-authoritative ONLY - no fallbacks
+        if (this.playerId && this.playerActions && typeof this.playerActions[this.playerId] === 'number') {
+            return this.playerActions[this.playerId];
         }
-        return this.playerActions[this.playerId] || 20;
+
+        // No fallbacks - wait for server sync
+        // Actions not yet synced with server
+        return 0; // Show 0 instead of misleading 20
+    }
+
+    /**
+     * Get current player's wealth from WebSocket data
+     */
+    getCurrentPlayerWealth() {
+        // V2 Server-authoritative ONLY - no fallbacks
+        if (typeof this.serverWealth === 'number') {
+            return this.serverWealth;
+        }
+
+        // No fallbacks - wait for server sync
+        // Wealth not yet synced with server
+        return 0; // Show 0 instead of misleading amount
     }
 
     /**
      * Get city attractiveness score for population movement
      */
     getCityAttractiveness() {
-        // Return null for empty grid (no buildings)
-        if (!this.buildings || this.buildings.size === 0) {
-            return null;
-        }
-        return this.attractiveness || 0.96; // Default starting attractiveness
+        // UI should NOT calculate attractiveness - only return server value
+        return this.attractiveness || null;
     }
 
     /**
      * Get detailed attractiveness breakdown for tooltip
      */
     getAttractivenessBreakdown() {
-        if (!this.jeefhh || !this.carens) {
+        // UI should NOT calculate attractiveness - server sends this value
+        // Return server-provided attractiveness or null if no data
+        if (!this.attractiveness) {
             return {
-                score: 0.96,
-                coreScore: 1.0,
-                qualityScore: 0.87,
+                score: null,
+                coreScore: null,
+                qualityScore: null,
                 strongest: 'No data available',
                 weakest: 'No data available',
                 immigrationStatus: 'Building city infrastructure...'
             };
         }
 
-        // Calculate the same breakdown as server
-        const coreMultipliers = [
-            this.jeefhh.jobs?.multiplier || 1.0,
-            this.jeefhh.housing?.multiplier || 1.0,
-            this.jeefhh.food?.multiplier || 1.0,
-            this.jeefhh.energy?.multiplier || 1.0
-        ];
-        const coreScore = coreMultipliers.reduce((sum, m) => sum + m, 0) / coreMultipliers.length;
-
-        const qualityMultipliers = [
-            this.jeefhh.education?.multiplier || 1.0,
-            this.jeefhh.healthcare?.multiplier || 1.0,
-            this.carens?.multiplier || 1.0
-        ];
-        const qualityScore = qualityMultipliers.reduce((sum, m) => sum + m, 0) / qualityMultipliers.length;
-
-        const attractiveness = (coreScore * 0.7) + (qualityScore * 0.3);
+        const attractiveness = this.attractiveness;
 
         // Find strongest and weakest categories
         const allCategories = {
@@ -541,7 +574,7 @@ class EconomicClient {
             'Energy': this.jeefhh.energy?.multiplier || 1.0,
             'Education': this.jeefhh.education?.multiplier || 1.0,
             'Healthcare': this.jeefhh.healthcare?.multiplier || 1.0,
-            'Quality of Life': this.carens?.multiplier || 1.0
+            'Livability': this.carens?.multiplier || 1.0
         };
 
         const sorted = Object.entries(allCategories).sort(([,a], [,b]) => b - a);
@@ -550,22 +583,29 @@ class EconomicClient {
 
         // Immigration status message
         let immigrationStatus;
-        if (attractiveness >= 1.1) {
+        if (attractiveness >= 1.05) {
             immigrationStatus = '✅ Attracting new residents!';
         } else if (attractiveness >= 0.95) {
-            immigrationStatus = `⚠️ Need ${(1.1 - attractiveness).toFixed(2)} more points to attract residents`;
+            immigrationStatus = `⚠️ Need ${(1.05 - attractiveness).toFixed(2)} more points to attract residents`;
         } else {
             immigrationStatus = '❌ Risk of emigration if conditions persist';
         }
 
         return {
             score: attractiveness,
-            coreScore,
-            qualityScore,
+            coreScore: null, // Client no longer calculates breakdown
+            qualityScore: null, // Client no longer calculates breakdown
             strongest: `${strongest[0]} (${strongest[1].toFixed(2)}x)`,
             weakest: `${weakest[0]} (${weakest[1].toFixed(2)}x)`,
             immigrationStatus
         };
+    }
+
+    /**
+     * Get current LVT rate
+     */
+    getLVTRate() {
+        return this.lvtRate;
     }
 
     /**
@@ -576,16 +616,15 @@ class EconomicClient {
      * Handle economic update from server
      */
     handleEconomicUpdate(update) {
-        console.log('📥 Received economic update:', update.type);
+        // Processing economic update
 
         // Handle transaction types within ECONOMIC_UPDATE messages
         if (update.transaction && update.transaction.type) {
-            console.log('📥 Processing transaction:', update.transaction.type);
 
             switch (update.transaction.type) {
                 case 'BUILD_COMPLETE_AUTO':
                     // Building automatically completed construction
-                    console.log(`🏗️ Building ${update.transaction.buildingId} completed at (${update.transaction.location})`);
+                    // Building construction completed
                     this.triggerUIUpdate('BUILDING_COMPLETED', update.transaction);
                     break;
 
@@ -620,7 +659,7 @@ class EconomicClient {
             // If current player's balance changed, notify cash manager
             if (this.playerId && this.playerBalances[this.playerId] !== undefined) {
                 const newBalance = this.playerBalances[this.playerId];
-                console.log(`💰 WebSocket balance update: ${this.playerId} -> $${newBalance}`);
+                // Balance updated via WebSocket
 
                 // Force cash manager sync if it exists
                 // ✅ CLEANED: Direct balance update - no CashManager needed
@@ -645,7 +684,6 @@ class EconomicClient {
      * Handle daily update from server
      */
     handleDailyUpdate(update) {
-        console.log('📅 Daily update received:', update.gameDay);
 
         // Process all economic data the same way as handleEconomicUpdate
         if (update.jeefhh) {
@@ -667,7 +705,6 @@ class EconomicClient {
             update.buildings.forEach(building => {
                 this.buildings.set(building.locationKey, building);
             });
-            console.log(`🏗️ Daily update buildings sync: ${update.buildings.length} buildings`);
         }
 
         // Update player balances from WebSocket data
@@ -677,7 +714,6 @@ class EconomicClient {
             // If current player's balance changed, notify cash manager
             if (this.playerId && this.playerBalances[this.playerId] !== undefined) {
                 const newBalance = this.playerBalances[this.playerId];
-                console.log(`💰 Daily update balance sync: ${this.playerId} -> $${newBalance}`);
 
                 // Force cash manager sync if it exists
                 // ✅ CLEANED: Direct balance update - no CashManager needed
@@ -756,7 +792,7 @@ class EconomicClient {
      * Handles server-authoritative game state updates
      */
     syncGameState(gameState, eventType) {
-        console.log(`🔄 Syncing server-authoritative game state: ${eventType}`);
+        // Syncing game state
 
         // Update game time
         if (gameState.gameTime !== undefined) {
@@ -776,6 +812,21 @@ class EconomicClient {
         if (gameState.attractiveness !== undefined) {
             this.attractiveness = gameState.attractiveness;
         }
+        if (gameState.lvtRate !== undefined) {
+            this.lvtRate = gameState.lvtRate;
+        }
+
+        // Sync governance data (treasury, tax rate)
+        if (gameState.governance) {
+            this.governance = gameState.governance;
+            // Treasury synced
+        }
+
+        // Sync cashflow data for current player
+        if (gameState.cashflow && this.playerId && gameState.cashflow[this.playerId]) {
+            this.dailyCashflowTotals = gameState.cashflow[this.playerId];
+            // Cashflow synced
+        }
 
         // V2: Process vitality data for UI
         this.updateVitalityData();
@@ -788,7 +839,6 @@ class EconomicClient {
             gameState.buildings.forEach(building => {
                 this.buildings.set(building.locationKey, building);
             });
-            console.log(`🏗️ Synced ${gameState.buildings.length} buildings from server state`);
 
             // Sync buildings to game grid for visual rendering
             this.syncBuildingsToGameGrid();
@@ -797,12 +847,23 @@ class EconomicClient {
 
         // Sync player data (server-authoritative)
         if (gameState.players) {
+            // Debug: Log received player data (only in debug mode)
+            if (window.DEBUG_MODE) {
+                console.log('🔍 DEBUG: Economic client received player data:', gameState.players);
+                Object.entries(gameState.players).forEach(([playerId, player]) => {
+                    console.log(`  Player ${playerId}:`, {
+                        name: player.name,
+                        color: player.color,
+                        hasGovernance: !!player.governance
+                    });
+                });
+            }
+
             // Store complete player data for multiplayer rendering (names, colors, etc.)
             if (!this.gameState) {
                 this.gameState = {};
             }
             this.gameState.players = gameState.players;
-            console.log('🎨 Synced complete player data for multiplayer:', Object.keys(gameState.players));
 
             // Legacy support: extract specific data into separate properties
             this.playerBalances = {};
@@ -813,17 +874,7 @@ class EconomicClient {
             });
 
             // Balance and action sync logging (reduced frequency)
-            if (!this.lastBalanceLogTime || Date.now() - this.lastBalanceLogTime > 2000) {
-                console.log('💰 Balance sync check:', this.playerId, 'server balance:', gameState.players[this.playerId]?.cash);
-                console.log('🎯 Action sync check:', this.playerId, 'server actions:', gameState.players[this.playerId]?.actions?.total);
-
-                // DEBUG: Log player colors for multiplayer sync verification
-                Object.values(gameState.players).forEach(player => {
-                    console.log(`🎨 Player ${player.id} (${player.name}): ${player.color}`);
-                });
-
-                this.lastBalanceLogTime = Date.now();
-            }
+            // Player data synced
         }
 
         // Sync action marketplace data
@@ -833,7 +884,6 @@ class EconomicClient {
 
         // Sync player ID if not set
         if (!this.playerId && window.game?.currentPlayerId) {
-            console.log('🔄 Syncing Economic Client player ID from game:', window.game.currentPlayerId);
             this.playerId = window.game.currentPlayerId;
         }
 
@@ -842,21 +892,27 @@ class EconomicClient {
             const playerData = gameState.players[this.playerId];
             const newBalance = playerData.cash;
 
-            console.log(`💰 Server-authoritative balance update: ${this.playerId} -> $${Math.round(newBalance).toLocaleString()}`);
 
-            // Server-authoritative: Store server balance and update UI directly
+            // Server-authoritative: Store server balance and wealth
             this.serverBalance = newBalance;
+            if (playerData.wealth !== undefined) {
+                this.serverWealth = playerData.wealth;
+                // Trigger UI update when wealth data is received
+                if (window.game && typeof window.game.updatePlayerStats === 'function') {
+                    window.game.updatePlayerStats();
+                }
+            }
 
             // Update UI directly with server balance (no client state mutations)
-            if (window.game && window.game.domCache && window.game.domCache.playerCash) {
-                window.game.domCache.playerCash.textContent = `$${Math.round(newBalance).toLocaleString()}`;
-                console.log('✅ UI updated to:', window.game.domCache.playerCash.textContent);
+            const playerCashElement = window.game?.uiManager?.get('playerCash');
+            if (playerCashElement) {
+                playerCashElement.textContent = `$${Math.round(newBalance).toLocaleString()}`;
 
                 // Check if something overrides our update within 100ms
                 setTimeout(() => {
-                    const currentDisplay = window.game.domCache.playerCash.textContent;
+                    const currentDisplay = playerCashElement.textContent;
                     if (currentDisplay !== `$${Math.round(newBalance).toLocaleString()}`) {
-                        console.warn('⚠️ Cash display was overridden!', 'Expected:', `$${Math.round(newBalance).toLocaleString()}`, 'Actual:', currentDisplay);
+                        console.warn('⚠️ Cash display was overridden');
                     }
                 }, 100);
             }
@@ -867,22 +923,19 @@ class EconomicClient {
             } else {
                 // Only warn about missing city name during initial game state sync (not governance updates)
                 if (!playerData.cityName && eventType === 'GAME_STARTED') {
-                    console.warn('⚠️ City name not available from server data during game start');
+                    // City name not available from server
                 } else if (!window.game || typeof window.game.updateCityNameFromServer !== 'function') {
-                    console.warn('⚠️ Game updateCityNameFromServer function not available');
+                    // updateCityNameFromServer function not available
                 }
-                console.log('⚠️ Using fallback cash display update');
                 const cashElement = document.querySelector('.player-cash, #player-cash, [class*="cash"]');
                 if (cashElement) {
                     cashElement.textContent = `$${Math.round(newBalance).toLocaleString()}`;
-                    console.log('✅ Fallback update to:', cashElement.textContent);
                 }
             }
         }
 
         // Sync grid/parcel ownership (server-authoritative)
         if (gameState.grid && this.game.grid) {
-            console.log('🏞️ Syncing grid ownership from server state');
 
             // Update the client grid with server-authoritative data
             gameState.grid.forEach((row, rowIndex) => {
@@ -899,7 +952,6 @@ class EconomicClient {
                 }
             });
 
-            console.log('🏞️ Grid ownership synchronized with server');
 
             // Trigger grid re-render
             if (this.game.scheduleRender) {
@@ -910,15 +962,20 @@ class EconomicClient {
         // Sync cashflow data (server-authoritative, eliminates HTTP polling)
         if (gameState.cashflow) {
             this.cachedCashflow = gameState.cashflow;
-            console.log(`💸 Synced cashflow data for ${Object.keys(gameState.cashflow).length} players`);
         }
 
-        // Skip governance sync - player governance is handled via individual transactions
+        // Sync monthly budget data for category funding display
+        if (gameState.monthlyBudget) {
+            this.monthlyBudget = gameState.monthlyBudget;
+            // Monthly budget data synced: revenue: ${this.monthlyBudget.totalRevenue || 0}
+        }
+
+        // Skip individual player governance sync - handled via individual transactions
         // This prevents the client governance system from being overwritten by legacy server data
         if (gameState.governance && this.game.governanceSystem && false) {
             this.game.governanceSystem.governance = gameState.governance;
             this.game.governanceSystem.updateGovernanceModal();
-            console.log(`🏛️ Synced governance data: treasury $${gameState.governance.treasuryBalance || 0}`);
+            // Governance data synced
         }
 
         // V2: Trigger UI updates with processed data instead of raw sync
@@ -934,18 +991,17 @@ class EconomicClient {
      */
     syncBuildingsToGameGrid() {
         if (!this.game || !this.game.grid) {
-            console.log('⚠️ Game grid not available for building sync');
+            console.warn('⚠️ Game grid not available for building sync');
             return;
         }
 
-        console.log('🔄 Syncing buildings to game grid for visual rendering...');
         let syncedCount = 0;
 
         // Clear existing buildings from grid first
         this.game.grid.forEach((row, rowIndex) => {
             row.forEach((parcel, colIndex) => {
                 if (parcel.building) {
-                    console.log(`🗑️ Clearing old building from grid [${rowIndex},${colIndex}]`);
+                    // Clearing old building from grid
                     parcel.building = null;
                 }
             });
@@ -955,7 +1011,7 @@ class EconomicClient {
         this.buildings.forEach((building, locationKey) => {
             const [row, col] = building.location;
             if (this.game.grid[row] && this.game.grid[row][col]) {
-                console.log(`🏗️ Adding building to grid: ${building.id} at [${row},${col}]`);
+                // Adding building to grid
 
                 this.game.grid[row][col].building = {
                     id: building.id,
@@ -970,14 +1026,13 @@ class EconomicClient {
                     images: building.images
                 };
 
-                console.log(`🎨 Building graphics: ${building.graphicsFile || 'no graphics found'}`);
+                // Building graphics loaded
                 syncedCount++;
             } else {
-                console.warn(`⚠️ Invalid building location: [${row},${col}]`);
+                console.warn(`⚠️ Invalid building location`);
             }
         });
 
-        console.log(`✅ Synced ${syncedCount} buildings to game grid for rendering`);
     }
 
     /**
@@ -1009,7 +1064,6 @@ class EconomicClient {
      */
     clearAllCaches() {
         this.buildingPerformanceCache.clear();
-        console.log('🗑️ All caches cleared');
     }
 
     /**
@@ -1051,11 +1105,9 @@ class EconomicClient {
      * Initialize economic client (fetch initial state)
      */
     async initialize() {
-        console.log('🚀 Initializing economic client...');
 
         try {
             await this.getEconomicState();
-            console.log('✅ Economic client initialized successfully');
             return true;
         } catch (error) {
             console.error('❌ Failed to initialize economic client:', error);
@@ -1071,27 +1123,18 @@ class EconomicClient {
      * Initialize WebSocket connection for real-time multiplayer updates
      */
     initializeWebSocket() {
-        // 🔧 FIX: Reuse existing Beer Hall WebSocket instead of creating new connection
-        if (typeof beerHallLobby !== 'undefined' && beerHallLobby && beerHallLobby.ws && beerHallLobby.ws.readyState === WebSocket.OPEN) {
-            console.log('🔄 Reusing existing Beer Hall WebSocket connection');
-            this.ws = beerHallLobby.ws;
-            // DON'T override Beer Hall's WebSocket handlers - Beer Hall will forward messages
-            console.log('📡 Economic Client will receive messages via Beer Hall forwarding');
-            return;
-        }
+        // Economic Client now purely relies on Beer Hall for WebSocket connection
+        // No independent connection - Beer Hall handles all WebSocket management
+        console.log('🔌 Economic Client connecting via Beer Hall WebSocket forwarding');
 
-        // Fallback: Create new WebSocket if Beer Hall WebSocket not available
-        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const host = window.location.host;
-        const wsUrl = `${protocol}//${host}/ws`;
-
-        console.log('🔌 Connecting to WebSocket:', wsUrl);
-
-        try {
-            this.ws = new WebSocket(wsUrl);
-            this.setupWebSocketHandlers();
-        } catch (error) {
-            console.error('🔌 Failed to connect to WebSocket:', error);
+        // Set connection status based on Beer Hall WebSocket
+        if (typeof window.beerHallLobby !== 'undefined' && window.beerHallLobby && window.beerHallLobby.ws && window.beerHallLobby.ws.readyState === WebSocket.OPEN) {
+            this.isConnected = true;
+            this.connectionLost = false;
+            console.log('✅ Economic Client connected via Beer Hall WebSocket');
+        } else {
+            this.isConnected = false;
+            console.log('⚠️ Beer Hall WebSocket not available - waiting for connection...');
         }
     }
 
@@ -1123,7 +1166,10 @@ class EconomicClient {
         // Only set onopen for new connections (not reused ones)
         if (!this.ws.onopen || this.ws.readyState === WebSocket.CONNECTING) {
             this.ws.onopen = () => {
-                console.log('🔌 WebSocket connected - real-time multiplayer active');
+                console.log('✅ Economic Client WebSocket connected successfully');
+
+                // Handle successful connection/reconnection
+                this.handleReconnection();
 
                 // 🔧 FIX: Send existing player ID with name/color to prevent multiple player creation
                 if (this.game && this.game.currentPlayerId) {
@@ -1131,53 +1177,42 @@ class EconomicClient {
                     const playerName = window.beerHallLobby?.playerName || null;
                     const playerColor = window.beerHallLobby?.selectedColor || null;
 
-                    console.log(`🔄 Sending player metadata to server: ${this.game.currentPlayerId}`, {
-                        name: playerName,
-                        color: playerColor
-                    });
-
                     // Small delay to ensure WebSocket is fully ready
                     setTimeout(() => {
-                        if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-                            this.ws.send(JSON.stringify({
-                                type: 'IDENTIFY_PLAYER',
-                                playerId: this.game.currentPlayerId,
-                                playerName: playerName,
-                                playerColor: playerColor
-                            }));
-                        }
+                        this.sendMessage({
+                            type: 'IDENTIFY_PLAYER',
+                            playerId: this.game.currentPlayerId,
+                            playerName: playerName,
+                            playerColor: playerColor,
+                            connectionId: this.connectionId
+                        });
                     }, 10); // 10ms delay
                 }
             };
         } else {
             // WebSocket already open, send identify message immediately
-            console.log('🔌 WebSocket already connected - reusing Beer Hall connection');
+            // WebSocket already connected
+            this.handleReconnection();
+
             if (this.game && this.game.currentPlayerId) {
                 // Get player name and color from Beer Hall Lobby
                 const playerName = window.beerHallLobby?.playerName || null;
                 const playerColor = window.beerHallLobby?.selectedColor || null;
 
-                console.log(`🔄 Sending player metadata to server: ${this.game.currentPlayerId}`, {
-                    name: playerName,
-                    color: playerColor
-                });
-
-                this.ws.send(JSON.stringify({
+                this.sendMessage({
                     type: 'IDENTIFY_PLAYER',
                     playerId: this.game.currentPlayerId,
                     playerName: playerName,
-                    playerColor: playerColor
-                }));
+                    playerColor: playerColor,
+                    connectionId: this.connectionId
+                });
             }
         }
 
         // Set onclose and onerror handlers (for both new and reused connections)
-        this.ws.onclose = () => {
-            console.log('🔌 WebSocket disconnected - attempting reconnection...');
-            // Attempt to reconnect after 3 seconds
-            setTimeout(() => {
-                this.initializeWebSocket();
-            }, 3000);
+        this.ws.onclose = (event) => {
+            console.warn(`⚠️ WebSocket disconnected - Code: ${event.code}, Reason: ${event.reason}`);
+            this.handleDisconnection();
         };
 
         this.ws.onerror = (error) => {
@@ -1189,16 +1224,16 @@ class EconomicClient {
      * Handle real-time WebSocket updates from server
      */
     handleWebSocketUpdate(update) {
-        console.log('📡 Real-time update received:', update.type);
+        // Processing WebSocket update
 
         switch (update.type) {
             case 'CONNECTED':
-                console.log('🔌', update.message);
+                // WebSocket connected
 
                 // V2: Store server-assigned player ID
                 if (update.playerId) {
                     this.playerId = update.playerId;
-                    console.log('🆔 Server assigned player ID:', this.playerId);
+                    // Server assigned player ID
 
                     // Notify game that player ID is ready
                     if (this.onPlayerIdReady) {
@@ -1208,12 +1243,13 @@ class EconomicClient {
 
                 // Handle room state sync
                 if (update.roomState) {
-                    console.log('🎲 Joined room:', update.roomState.roomName);
-                    console.log('👥 Players in room:', update.roomState.players);
+                    if (window.DEBUG_MODE) {
+                        // Joined multiplayer room
+                    }
 
                     // Sync existing buildings from room
                     if (update.roomState.buildings && update.roomState.buildings.length > 0) {
-                        console.log(`🏗️ Syncing ${update.roomState.buildings.length} existing buildings`);
+                        // Syncing existing buildings
 
                         // Store buildings in local data
                         this.buildings = new Map();
@@ -1233,12 +1269,12 @@ class EconomicClient {
 
             case 'PLAYER_IDENTIFIED':
                 // 🔧 FIX: Confirmation that server accepted our existing player ID
-                console.log('✅ Server confirmed player ID:', update.playerId);
+                // Server confirmed player ID
                 if (update.playerId && this.game.currentPlayerId === update.playerId) {
                     this.playerId = update.playerId;
-                    console.log(`🔄 Economic client now using correct player ID: ${this.playerId}`);
+                    // Economic client using correct player ID
                 } else {
-                    console.warn('⚠️ Player ID mismatch:', update.playerId, 'vs game:', this.game.currentPlayerId);
+                    console.warn('⚠️ Player ID mismatch detected');
                 }
                 break;
 
@@ -1252,17 +1288,27 @@ class EconomicClient {
                 this.handleDailyUpdate(update);
                 break;
 
+            case 'LEADERBOARD_UPDATE':
+                // Commonwealth Score leaderboard update
+                this.handleLeaderboardUpdate(update);
+                break;
+
+            case 'COMMONWEALTH_UPDATE':
+                // Real-time Commonwealth Score updates
+                this.handleCommonwealthUpdate(update);
+                break;
+
             case 'ROOM_STATE_SYNC':
                 // Room state sync response (from REQUEST_ROOM_STATE)
-                console.log('📥 Room state sync response received');
+                // Room state sync response received
                 if (update.roomState) {
-                    console.log(`🏗️ Syncing ${update.roomState.buildings?.length || 0} buildings from server`);
+                    // Syncing buildings from server
 
                     // V2: Extract and update city name for current player
                     if (update.roomState.players && this.playerId) {
                         const currentPlayer = update.roomState.players.find(p => p.id === this.playerId);
                         if (currentPlayer && currentPlayer.cityName && window.game && typeof window.game.updateCityNameFromServer === 'function') {
-                            console.log(`🏙️ Updating city name from room state: ${currentPlayer.cityName}`);
+                            // Updating city name from room state
                             window.game.updateCityNameFromServer(currentPlayer.cityName);
                         }
                     }
@@ -1279,13 +1325,13 @@ class EconomicClient {
 
             case 'BUILD_COMPLETE_AUTO':
                 // Building automatically completed construction
-                console.log(`🏗️ Building ${update.buildingId} completed at (${update.location})`);
+                // Building construction completed
                 this.triggerUIUpdate('BUILDING_COMPLETED', update);
                 break;
 
             case 'ROOM_RESET':
                 // Room has been reset - clear local state and resync
-                console.log('🔄 Room reset received - clearing local state');
+                // Room reset - clearing local state
                 this.clearAllCaches();
                 this.triggerUIUpdate('ROOM_RESET', update);
 
@@ -1297,22 +1343,21 @@ class EconomicClient {
 
             case 'READY_CHECK_STARTED':
                 // Beer hall table ready-check modal
-                console.log('🍻 Table ready check started!');
+                // Table ready check started
                 this.triggerUIUpdate('READY_CHECK_STARTED', update);
                 break;
 
             case 'GAME_STATE':
                 // 🔧 FIX: Handle GAME_STATE messages received from shared Beer Hall WebSocket
-                console.log('🎮 GAME_STATE received - syncing with server');
+                // Game state received - syncing with server
 
                 // Special handling for GAME_STARTED events with city names
                 if (update.eventType === 'GAME_STARTED' && update.eventData?.players) {
-                    console.log('🏙️ GAME_STARTED detected - extracting city names');
+                    // Game started - extracting city names
                     const players = update.eventData.players;
                     const currentPlayer = players.find(p => p.id === this.playerId);
 
                     if (currentPlayer && currentPlayer.cityName) {
-                        console.log(`🏙️ Your city name: ${currentPlayer.cityName}`);
                         // Store city name for UI display
                         localStorage.setItem('playerCityName', currentPlayer.cityName);
                         // Update UI immediately if game exists
@@ -1325,23 +1370,22 @@ class EconomicClient {
                 }
 
                 if (update.gameState) {
-                    console.log('🔄 Calling syncGameState...');
                     this.syncGameState(update.gameState, update.eventType);
                 } else {
-                    console.log('❌ No gameState in update, skipping sync');
+                    console.warn('⚠️ No gameState in update, skipping sync');
                 }
                 break;
 
             case 'SERVER_STATE_SYNC':
                 // Handle server state synchronization
-                console.log('📊 SERVER_STATE_SYNC received - updating economic data');
+                // Server state sync received
                 if (update.jeefhh) {
                     this.jeefhh = update.jeefhh;
-                    console.log('📊 JEEFHH data updated:', this.jeefhh);
+                    // JEEFHH data updated
                 }
                 if (update.carens) {
                     this.carens = update.carens;
-                    console.log('🏛️ CARENS data updated:', this.carens);
+                    // CARENS data updated
                 }
                 if (update.totalResidents !== undefined) {
                     this.totalResidents = update.totalResidents;
@@ -1359,12 +1403,12 @@ class EconomicClient {
                 break;
 
             case 'MONTHLY_UPDATE':
-                console.log('🗳️ Monthly update received:', update.message);
+                // Monthly update received
                 // Update governance points in local game state
                 // DISABLED: Legacy local governance point update - V2 uses server-authoritative governance
                 if (this.game && this.game.governanceSystem && false) {
                     this.game.governanceSystem.governance.votingPoints += 2;
-                    console.log(`🗳️ Updated local governance points: ${this.game.governanceSystem.governance.votingPoints}`);
+                    // Governance points updated
                     // Update the governance modal if it's open
                     // DISABLED: Legacy governance modal update - V2 facade handles this via WebSocket sync
                     // this.game.governanceSystem.updateGovernanceModal();
@@ -1375,13 +1419,13 @@ class EconomicClient {
 
             case 'GOVERNANCE_UPDATE':
                 // Handle governance transaction results
-                console.log('🏛️ Governance update received:', update);
+                // Governance update received
                 if (update.gameState) {
-                    console.log('🔄 Syncing game state after governance update...');
+                    // Syncing game state after governance update
                     this.syncGameState(update.gameState, 'GOVERNANCE_UPDATE');
                 }
                 if (update.transaction && this.game.governanceSystem) {
-                    console.log('🏛️ Updating governance UI after transaction:', update.transaction.type);
+                    // Updating governance UI after transaction
                     // Refresh governance modal to show updated state
                     this.game.governanceSystem.updateGovernanceModal();
                 }
@@ -1389,7 +1433,7 @@ class EconomicClient {
 
             case 'GOVERNANCE_ERROR':
                 // Handle governance transaction errors
-                console.log('🏛️ Governance error received:', update);
+                // Governance error received
                 if (update.error) {
                     console.error('❌ Governance transaction failed:', update.error);
                 } else {
@@ -1400,7 +1444,7 @@ class EconomicClient {
 
             case 'chat_message':
                 // Handle incoming chat messages from other players
-                console.log('💬 Chat message received:', update);
+                // Chat message received
                 if (update.playerId !== this.playerId) { // Don't echo back own messages
                     // Add message to in-game chat
                     if (window.addChatMessage) {
@@ -1409,8 +1453,23 @@ class EconomicClient {
                 }
                 break;
 
+            case 'TRANSACTION_RESPONSE':
+                // Handle transaction response from server
+                if (update.transactionId && this.transactionCallbacks.has(update.transactionId)) {
+                    const callback = this.transactionCallbacks.get(update.transactionId);
+                    callback(update.result);
+                } else {
+                    console.warn('⚠️ Received transaction response with no matching callback');
+                }
+                break;
+
+            case 'PONG':
+                // Heartbeat response - connection is healthy
+                this.lastPongTime = Date.now();
+                break;
+
             default:
-                console.log('📡 Unknown update type:', update.type);
+                console.warn('⚠️ Unknown update type:', update.type);
         }
     }
 
@@ -1442,10 +1501,7 @@ class EconomicClient {
                 HEALTHCARE: this.jeefhh.healthcare?.demand || 0
             };
 
-            console.log('📊 Vitality data processed from server JEEFHH:', {
-                supply: this.vitalitySupply,
-                demand: this.vitalityDemand
-            });
+            // Vitality data processed from server
         }
     }
 
@@ -1499,26 +1555,424 @@ class EconomicClient {
      * Get CARENS metrics for UI display
      */
     getCarensMetrics() {
+        // Getting CARENS metrics
         const carensMetrics = ['SAFETY', 'CULTURE', 'AFFORDABILITY', 'RESILIENCE', 'ENVIRONMENT', 'NOISE'];
         const metrics = {};
 
         carensMetrics.forEach(domain => {
             const domainKey = domain.toLowerCase();
-            const score = this.carens[domainKey] || 0;
+            let points, score;
 
-            // Convert 0-1 scale to -100 to +100 points scale
-            // 0.5 = 0 points (neutral), 0.0 = -100 points, 1.0 = +100 points
-            const points = Math.round((score - 0.5) * 200);
+            // Direct scoring: CARENS values are already raw points
+            score = this.carens[domainKey] || 0;
+            points = Math.round(score);
 
             metrics[domain] = {
                 score: score,
                 points: points,
-                percentage: Math.round(score * 100), // Keep for backward compatibility
-                status: score >= 0.8 ? 'excellent' : score >= 0.6 ? 'good' : score >= 0.4 ? 'fair' : 'poor'
+                percentage: Math.max(0, Math.min(100, score)), // Raw points clamped to 0-100%
+                status: score >= 80 ? 'excellent' : score >= 60 ? 'good' : score >= 40 ? 'good' : score >= 20 ? 'fair' : score >= -20 ? 'neutral' : 'poor'
             };
         });
 
+        // CARENS metrics calculated
         return metrics;
+    }
+
+    /**
+     * Update player information (name/color) and broadcast to other players
+     */
+    updatePlayerInfo() {
+        if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+            console.warn('⚠️ Cannot update player info - WebSocket not ready');
+            return;
+        }
+
+        const playerName = window.beerHallLobby?.playerName || null;
+        const playerColor = window.beerHallLobby?.selectedColor || null;
+
+        // Broadcasting updated player info
+
+        this.ws.send(JSON.stringify({
+            type: 'PLAYER_INFO_UPDATE',
+            playerId: this.playerId,
+            playerName: playerName,
+            playerColor: playerColor,
+            timestamp: Date.now()
+        }));
+    }
+
+    /**
+     * Handle leaderboard update from server
+     */
+    handleLeaderboardUpdate(update) {
+        if (window.uiManager) {
+            // Update leaderboard modal if open
+            window.uiManager.updateLeaderboard(update.scores, this.playerId);
+
+            // Update Commonwealth Score in top bar
+            if (update.currentPlayer) {
+                window.uiManager.updateCommonwealthScore(
+                    update.currentPlayer.score,
+                    update.currentPlayer.rank
+                );
+            }
+        }
+    }
+
+    /**
+     * Handle real-time Commonwealth Score updates
+     */
+    handleCommonwealthUpdate(update) {
+        if (window.uiManager && update.scores) {
+            // Find current player's score
+            const currentPlayerScore = update.scores.find(s => s.playerId === this.playerId);
+
+            // Update top bar display
+            if (currentPlayerScore) {
+                window.uiManager.updateCommonwealthScore(
+                    currentPlayerScore.score,
+                    currentPlayerScore.rank
+                );
+            }
+
+            // If leaderboard modal is open, update it too
+            const modal = document.getElementById('leaderboard-modal');
+            if (modal && modal.style.display === 'block') {
+                window.uiManager.updateLeaderboard(update.scores, this.playerId);
+            }
+        }
+    }
+
+    // ===============================================
+    // 🚀 UNBREAKABLE CONNECTION RESILIENCE SYSTEM
+    // ===============================================
+
+    /**
+     * Generate unique connection ID for tracking
+     */
+    generateConnectionId() {
+        return 'conn_' + Math.random().toString(36).substr(2, 9) + '_' + Date.now();
+    }
+
+    /**
+     * Handle disconnection - Beer Hall now manages reconnection
+     */
+    handleDisconnection() {
+        console.log('⚠️ Economic Client detected disconnection - Beer Hall will handle reconnection');
+
+        // Just update status - Beer Hall handles the actual reconnection
+        this.isConnected = false;
+        this.connectionLost = true;
+        this.stopHeartbeat();
+
+        // Connection lost - handled silently
+    }
+
+    /**
+     * Attempt to reconnect to WebSocket
+     */
+    attemptReconnection() {
+        console.log(`🔌 Attempting reconnection (${this.reconnectAttempts}/${this.maxReconnectAttempts})...`);
+
+        try {
+            // Generate new connection ID for this attempt
+            this.connectionId = this.generateConnectionId();
+
+            // Initialize new WebSocket connection
+            this.initializeWebSocket();
+
+        } catch (error) {
+            console.error('🔥 Reconnection failed:', error);
+            this.handleDisconnection(); // Try again
+        }
+    }
+
+    /**
+     * Handle Beer Hall reconnection
+     */
+    handleBeerHallReconnection() {
+        console.log('🎉 Economic Client notified of Beer Hall reconnection!');
+        this.isConnected = true;
+        this.connectionLost = false;
+
+        // Request fresh game state
+        this.requestGameStateSync();
+
+        // Start heartbeat
+        this.startHeartbeat();
+    }
+
+    /**
+     * Handle successful reconnection
+     */
+    handleReconnection() {
+        console.log('🎉 WebSocket reconnected successfully!');
+        this.isConnected = true;
+        this.connectionLost = false;
+        this.reconnectAttempts = 0; // Reset counter
+
+        // Clear any reconnection timeout
+        if (this.reconnectTimeout) {
+            clearTimeout(this.reconnectTimeout);
+            this.reconnectTimeout = null;
+        }
+
+        // Start heartbeat
+        this.startHeartbeat();
+
+        // Process queued messages
+        this.processMessageQueue();
+
+        // Request fresh game state
+        this.requestGameStateSync();
+
+        // Reconnection successful - handled silently
+    }
+
+    /**
+     * Start heartbeat to monitor connection health
+     */
+    startHeartbeat() {
+        if (this.heartbeatInterval) {
+            clearInterval(this.heartbeatInterval);
+        }
+
+        this.heartbeatInterval = setInterval(() => {
+            if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+                this.sendHeartbeat();
+            } else {
+                console.warn('💓 Heartbeat failed - connection lost');
+                this.handleDisconnection();
+            }
+        }, this.heartbeatFrequency);
+    }
+
+    /**
+     * Stop heartbeat monitoring
+     */
+    stopHeartbeat() {
+        if (this.heartbeatInterval) {
+            clearInterval(this.heartbeatInterval);
+            this.heartbeatInterval = null;
+        }
+    }
+
+    /**
+     * Send heartbeat ping to server
+     */
+    sendHeartbeat() {
+        const ping = {
+            type: 'PING',
+            connectionId: this.connectionId,
+            timestamp: Date.now()
+        };
+
+        this.sendMessage(ping, false); // Don't queue heartbeats
+        this.lastHeartbeat = Date.now();
+    }
+
+    /**
+     * Enhanced message sending with queuing
+     */
+    sendMessage(message, queueIfOffline = true) {
+        // Send via Beer Hall WebSocket
+        const beerHallWS = (typeof window.beerHallLobby !== 'undefined' && window.beerHallLobby && window.beerHallLobby.ws) ? window.beerHallLobby.ws : null;
+
+        if (beerHallWS && beerHallWS.readyState === WebSocket.OPEN) {
+            try {
+                beerHallWS.send(JSON.stringify(message));
+                return true;
+            } catch (error) {
+                console.error('💥 Failed to send message via Beer Hall:', error);
+                if (queueIfOffline) {
+                    this.queueMessage(message);
+                }
+                return false;
+            }
+        } else {
+            console.warn('⚠️ Beer Hall WebSocket not available for sending');
+            if (queueIfOffline) {
+                this.queueMessage(message);
+            }
+            return false;
+        }
+    }
+
+    /**
+     * Queue message for sending when reconnected
+     */
+    queueMessage(message) {
+        // Don't queue heartbeats or duplicate messages
+        if (message.type === 'PING' || message.type === 'PONG') {
+            return;
+        }
+
+        // Limit queue size to prevent memory issues
+        if (this.messageQueue.length >= 100) {
+            this.messageQueue.shift(); // Remove oldest message
+        }
+
+        message.queuedAt = Date.now();
+        this.messageQueue.push(message);
+        console.log(`📦 Queued message: ${message.type} (${this.messageQueue.length} in queue)`);
+    }
+
+    /**
+     * Process queued messages after reconnection
+     */
+    processMessageQueue() {
+        if (this.messageQueue.length === 0) {
+            return;
+        }
+
+        console.log(`📨 Processing ${this.messageQueue.length} queued messages...`);
+
+        const now = Date.now();
+        const maxAge = 60000; // 1 minute max age
+
+        // Filter out stale messages
+        const validMessages = this.messageQueue.filter(msg => {
+            return (now - msg.queuedAt) < maxAge;
+        });
+
+        // Send valid messages
+        validMessages.forEach(message => {
+            delete message.queuedAt; // Remove queue metadata
+            this.sendMessage(message, false); // Don't re-queue
+        });
+
+        this.messageQueue = [];
+        console.log(`✅ Processed ${validMessages.length} valid messages`);
+    }
+
+    /**
+     * Request full game state sync after reconnection
+     */
+    requestGameStateSync() {
+        const syncRequest = {
+            type: 'REQUEST_GAME_STATE_SYNC',
+            connectionId: this.connectionId,
+            playerId: this.game?.currentPlayerId,
+            timestamp: Date.now()
+        };
+
+        this.sendMessage(syncRequest);
+        console.log('🔄 Requested game state synchronization');
+    }
+
+    /**
+     * Show reconnecting UI indicator
+     */
+    showReconnectingUI(attempt, delay) {
+        // Silent reconnection - no UI distraction
+    }
+
+    /**
+     * Show connection lost UI
+     */
+    showConnectionLostUI() {
+        // Silent connection handling - no UI distraction
+    }
+
+    /**
+     * Hide reconnection UI
+     */
+    hideReconnectingUI() {
+        // Remove any existing connection status UI silently
+        const statusDiv = document.getElementById('connection-status');
+        if (statusDiv && statusDiv.parentNode) {
+            statusDiv.parentNode.removeChild(statusDiv);
+        }
+    }
+
+    // ===============================================
+    // 🎯 ROOT CAUSE FIX: PAGE VISIBILITY HANDLING
+    // ===============================================
+
+    /**
+     * Prevent browser from killing WebSocket when tab goes background
+     */
+    setupPageVisibilityHandling() {
+        console.log('🎯 Setting up page visibility handling to prevent disconnections');
+
+        // Handle page visibility changes
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden) {
+                console.log('📱 Tab backgrounded - maintaining WebSocket connection');
+                // Reduce heartbeat frequency to save battery but keep connection alive
+                this.adjustHeartbeatForBackground(true);
+            } else {
+                console.log('📱 Tab foregrounded - resuming normal operation');
+                // Resume normal heartbeat frequency
+                this.adjustHeartbeatForBackground(false);
+
+                // Request fresh game state in case we missed updates
+                this.requestGameStateSync();
+            }
+        });
+
+        // Handle page beforeunload (prevent accidental disconnections)
+        window.addEventListener('beforeunload', (event) => {
+            console.log('🚪 Page unloading - preserving connection state');
+            // Don't prevent unload, but prepare for reconnection
+            if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+                // Send a graceful disconnect message
+                this.sendMessage({
+                    type: 'GRACEFUL_DISCONNECT',
+                    playerId: this.game?.currentPlayerId,
+                    reason: 'page_unload'
+                }, false);
+            }
+        });
+
+        // Handle focus/blur events for additional stability
+        window.addEventListener('focus', () => {
+            console.log('🎯 Window focused - ensuring connection health');
+            this.checkConnectionHealth();
+            // Resume normal heartbeat frequency
+            this.adjustHeartbeatForBackground(false);
+        });
+
+        window.addEventListener('blur', () => {
+            console.log('🎯 Window blurred - entering background mode');
+            // Send immediate heartbeat to keep connection alive
+            this.sendHeartbeat();
+            // Adjust heartbeat for background mode
+            this.adjustHeartbeatForBackground(true);
+        });
+    }
+
+    /**
+     * Adjust heartbeat frequency based on page visibility
+     */
+    adjustHeartbeatForBackground(isBackground) {
+        if (isBackground) {
+            // Slower heartbeat to save battery but keep connection alive
+            this.heartbeatFrequency = 60000; // 60 seconds
+            console.log('💓 Reduced heartbeat to 60s for background mode');
+        } else {
+            // Normal heartbeat frequency
+            this.heartbeatFrequency = 30000; // 30 seconds
+            console.log('💓 Restored heartbeat to 30s for foreground mode');
+        }
+
+        // Restart heartbeat with new frequency
+        this.startHeartbeat();
+    }
+
+    /**
+     * Check connection health and reconnect if needed
+     */
+    checkConnectionHealth() {
+        if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+            console.log('🔍 Connection check failed - attempting reconnection');
+            this.handleDisconnection();
+        } else {
+            console.log('🔍 Connection check passed - connection healthy');
+            // Send immediate ping to verify
+            this.sendHeartbeat();
+        }
     }
 }
 

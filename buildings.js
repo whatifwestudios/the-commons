@@ -68,7 +68,6 @@ class BuildingManager {
      * Preload all building images for smooth rendering
      */
     async preloadBuildingImages() {
-        console.log('🎨 Preloading building images...');
 
         // Initialize shared image cache for rendering system
         if (!window.buildingImageCache) {
@@ -92,7 +91,6 @@ class BuildingManager {
                             const img = new Image();
                             img.onload = () => {
                                 window.buildingImageCache.set(imagePath, img);
-                                console.log(`✅ Preloaded: ${imagePath}`);
                                 resolve(img);
                             };
                             img.onerror = () => {
@@ -113,7 +111,6 @@ class BuildingManager {
         const successCount = results.filter(img => img !== null).length;
         const totalCount = imagePromises.length;
 
-        console.log(`🎨 Preloaded ${successCount}/${totalCount} building images`);
     }
 
     parseCSV(csvData) {
@@ -370,6 +367,12 @@ class BuildingManager {
     getBuildingById(buildingId) {
         const allBuildings = this.getAllBuildings();
         return allBuildings.find(b => b.id === buildingId) || null;
+    }
+
+    // Get a specific building by name
+    getBuildingByName(buildingName) {
+        const allBuildings = this.getAllBuildings();
+        return allBuildings.find(b => b.name === buildingName) || null;
     }
 
     // Get building categories

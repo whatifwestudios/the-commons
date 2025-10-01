@@ -119,11 +119,9 @@ class BuildingSystem {
             return false;
         }
 
-        // Check affordability using server-authoritative balance
+        // V2 Server-authoritative ONLY - no fallbacks
         const cost = fundingInfo ? fundingInfo.playerCost : this.calculateBuildingCostWithFunding(building);
-        const currentBalance = (this.game.economicClient && typeof this.game.economicClient.serverBalance === 'number')
-            ? this.game.economicClient.serverBalance
-            : this.game.playerCash;
+        const currentBalance = this.game.economicClient?.getCurrentPlayerBalance() || 0;
 
         if (this.game.isCurrentPlayer(owner) && currentBalance < cost) {
             this.game.showNotification('Insufficient funds!', 'error');
@@ -186,6 +184,12 @@ class BuildingSystem {
         // Server handles all construction state and timing - just update UI state
         parcel._isUnderConstruction = true;
         parcel._serverManaged = true; // Mark as server-managed construction
+
+        // Store construction timing data for progress calculation
+        const buildingDef = this.game.getBuildingDataByName(buildingId);
+        parcel._constructionStartTime = Date.now();
+        parcel._constructionDays = buildingDef?.economics?.constructionDays || 1; // Default 1 day
+        parcel._constructionProgress = 0;
         
         // Track building ownership locally (UI only)
         if (this.game.isCurrentPlayer(owner)) {
@@ -372,95 +376,29 @@ class BuildingSystem {
     /**
      * Calculate building economics (revenue, maintenance, etc.)
      */
+    // 🚫 CLIENT CALCULATION - DISABLED! BUSTED!
+    // Server already has this data - client should just display server values
+    // Likely fate: Complete removal, replace with server data retrieval
     calculateBuildingEconomics(parcel, row, col) {
-        // Land Value Tax - use dynamic rate from governance system
-        const annualLVTRate = this.game.governanceSystem ? this.game.governanceSystem.getCurrentLVTRate() : 0.50;
-        const dailyLVTRate = annualLVTRate / 365;
-        const landTax = (parcel.landValue?.paidPrice || 0) * dailyLVTRate;
-        
-        let revenue = 0;
-        let maintenance = 0;
-        let buildingName = 'Vacant';
-        let netIncome = -landTax;
-        
-        if (parcel.building) {
-            // Buildings under construction generate no revenue
-            if (parcel._isUnderConstruction) {
-                return {
-                    revenue: 0,
-                    maintenance: 0,
-                    landTax: landTax,
-                    netIncome: -landTax,
-                    buildingName: 'Under Construction'
-                };
-            }
-
-            const building = this.buildingManager.getBuildingById(parcel.building);
-            
-            if (building && building.economics) {
-                buildingName = building.name;
-                
-                // Base revenue
-                revenue = building.economics.maxRevenue || 0;
-                
-                // Apply efficiency multiplier
-                const efficiency = this.getBuildingEfficiency(row, col);
-                revenue *= (efficiency / 100);
-                
-                // Apply supply/demand multipliers
-                revenue *= this.getSupplyDemandMultiplier(building, row, col);
-                
-                // Condition-based maintenance (worse condition = higher maintenance)
-                const baseMaintenance = building.economics.maintenanceCost || 0;
-                const buildingCondition = this.calculateBuildingCondition(building, parcel.buildingAge || 0);
-                const maintenanceMultiplier = 1 / buildingCondition; // Inverse relationship
-                maintenance = baseMaintenance * maintenanceMultiplier;
-                
-                netIncome = revenue - maintenance - landTax;
-            }
-        }
-        
+        // CLIENT-SIDE CALCULATION DISABLED - RETURN GHOST PLACEHOLDER
         return {
-            buildingName,
-            revenue: Math.round(revenue * 100) / 100,
-            maintenance: Math.round(maintenance * 100) / 100,
-            lvt: Math.round(landTax * 100) / 100,
-            netIncome: Math.round(netIncome * 100) / 100,
-            decay: parcel.decay || 0,
-            age: parcel.buildingAge || 0
+            buildingName: parcel.building ? 'GHOST' : 'Vacant',
+            revenue: 'GHOST',
+            maintenance: 'GHOST',
+            lvt: 'GHOST',
+            netIncome: 'GHOST',
+            decay: 'GHOST',
+            age: 'GHOST'
         };
     }
     
     /**
      * Get building efficiency based on needs satisfaction
      */
+    // 🚫 CLIENT CALCULATION - DISABLED! BUSTED!
     getBuildingEfficiency(row, col) {
-        const parcel = this.game.grid[row][col];
-        if (!parcel || !parcel.building) return 100;
-        
-        const building = this.buildingManager.getBuildingById(parcel.building);
-        if (!building) return 100;
-        
-        let efficiency = 100;
-        let unsatisfiedNeeds = 0;
-        let totalNeeds = 0;
-        
-        // Check each need type
-        const needs = this.getBuildingNeeds(building);
-        
-        for (const need of needs) {
-            totalNeeds++;
-            const satisfaction = this.getNeedSatisfaction(need, row, col);
-            if (satisfaction < 100) {
-                unsatisfiedNeeds++;
-                efficiency *= (satisfaction / 100);
-            }
-        }
-        
-        // Clamp efficiency to 0-100% range (no artificial minimum)
-        efficiency = Math.max(0, Math.min(100, efficiency));
-        
-        return Math.round(efficiency);
+        // CLIENT-SIDE CALCULATION DISABLED - RETURN GHOST PLACEHOLDER
+        return 'GHOST';
     }
     
     /**
@@ -494,36 +432,10 @@ class BuildingSystem {
     /**
      * Get need satisfaction level
      */
+    // 🚫 CLIENT CALCULATION - DISABLED! BUSTED!
     getNeedSatisfaction(need, row, col) {
-        switch(need.type) {
-            case 'roads':
-                // Simple adjacency check - look at the 8 neighboring cells
-                return this.getAdjacentResourceScore('roads', row, col);
-
-            case 'energy':
-                return this.getAdjacentResourceScore('energy', row, col);
-
-            case 'workers':
-                return this.getAdjacentResourceScore('workers', row, col);
-
-            case 'jobs':
-                return this.getAdjacentResourceScore('jobs', row, col);
-
-            case 'food':
-                return this.getAdjacentResourceScore('food', row, col);
-
-            case 'housing':
-                return this.getAdjacentResourceScore('housing', row, col);
-
-            case 'education':
-                return this.getAdjacentResourceScore('education', row, col);
-
-            case 'healthcare':
-                return this.getAdjacentResourceScore('healthcare', row, col);
-
-            default:
-                return 100;
-        }
+        // CLIENT-SIDE CALCULATION DISABLED - RETURN GHOST PLACEHOLDER
+        return 'GHOST';
     }
 
     /**
@@ -611,73 +523,10 @@ class BuildingSystem {
     /**
      * Get resource access score from adjacent 8 cells (puzzle-like gameplay)
      */
+    // 🚫 CLIENT CALCULATION - DISABLED! BUSTED!
     getAdjacentResourceScore(resourceType, row, col) {
-        let totalSupply = 0;
-        let adjacentCount = 0;
-        const missingResources = [];
-
-        // Check all 8 adjacent cells
-        const directions = [
-            [-1, -1], [-1, 0], [-1, 1],
-            [0, -1],           [0, 1],
-            [1, -1],  [1, 0],  [1, 1]
-        ];
-
-        for (const [dRow, dCol] of directions) {
-            const adjRow = row + dRow;
-            const adjCol = col + dCol;
-
-            // Skip if out of bounds
-            if (adjRow < 0 || adjRow >= this.game.gridSize || adjCol < 0 || adjCol >= this.game.gridSize) {
-                continue;
-            }
-
-            adjacentCount++;
-            const parcel = this.game.grid[adjRow][adjCol];
-
-            if (!parcel || !parcel.building) {
-                missingResources.push({ row: adjRow, col: adjCol, reason: 'empty' });
-                continue;
-            }
-
-            // Only consider completed buildings (OOO: Only Operational Order)
-            const isUnderConstruction = parcel._constructionProgress < 1.0;
-            if (isUnderConstruction) {
-                missingResources.push({ row: adjRow, col: adjCol, reason: 'under_construction' });
-                continue;
-            }
-
-            const building = this.game.buildingManager?.getBuildingById(parcel.building);
-            if (!building) {
-                continue;
-            }
-
-            // Calculate resource supply from this adjacent building
-            const resourceSupply = this.getBuildingResourceSupply(building, resourceType);
-            if (resourceSupply > 0) {
-                totalSupply += resourceSupply;
-            } else {
-                missingResources.push({ row: adjRow, col: adjCol, reason: 'no_resource' });
-            }
-        }
-
-        // Convert to percentage score (0-100)
-        // Perfect score = 100 when all adjacent cells provide the resource
-        const maxPossibleSupply = adjacentCount * 10; // Assuming 10 as max supply per cell
-        const score = Math.min(100, (totalSupply / Math.max(1, maxPossibleSupply)) * 100);
-
-        // Store missing resources for UI display
-        this.lastResourceCheck = {
-            resourceType,
-            row,
-            col,
-            score,
-            totalSupply,
-            adjacentCount,
-            missingResources
-        };
-
-        return score;
+        // CLIENT-SIDE CALCULATION DISABLED - RETURN GHOST PLACEHOLDER
+        return 'GHOST';
     }
 
     /**
@@ -712,7 +561,10 @@ class BuildingSystem {
     /**
      * Calculate building condition (0-1 scale based on age and decay rate)
      */
+    // 🚫 CLIENT CALCULATION - DISABLED! BUSTED!
     calculateBuildingCondition(building, ageInDays = 0) {
+        // CLIENT-SIDE CALCULATION DISABLED - RETURN GHOST PLACEHOLDER
+        return 'GHOST';
         if (!building || !building.economics) {
             return 1.0; // Perfect condition if no building data
         }
@@ -753,17 +605,43 @@ class BuildingSystem {
      * Calculate building cost with funding discounts
      */
     calculateBuildingCostWithFunding(building, fullCost = null) {
-        if (!building) return 0;
+        if (!building) return { fullCost: 0, playerCost: 0, publicFunding: 0, availableFunds: 0, category: 'housing' };
 
         const baseCost = fullCost || building.cost || 0;
+        const category = building?.category || 'housing';
 
-        // Apply governance funding if available through the new governance system
-        if (this.game.governanceSystem) {
-            return this.game.governanceSystem.getBuildingCostWithFunding(building);
+        // Get category funding from monthly budget allocations
+        const availableFunds = this.getCategoryFunding(category);
+        const publicFunding = Math.min(availableFunds, baseCost);
+        const playerCost = Math.max(0, baseCost - publicFunding);
+
+        return {
+            fullCost: baseCost,
+            playerCost,
+            publicFunding,
+            availableFunds,
+            category
+        };
+    }
+
+    /**
+     * Get available funding for a category from server game state
+     */
+    getCategoryFunding(category) {
+        // Check if we have budget data from server
+        if (!this.game.economicClient?.gameState?.monthlyBudget) {
+            return 0;
         }
 
+        const budget = this.game.economicClient.gameState.monthlyBudget;
+        const proportion = budget.proportions?.[category] || 0;
 
-        return baseCost;
+        // Get total treasury amount - this would come from governance system
+        // For now, return a placeholder amount based on proportion
+        // TODO: Get actual treasury balance from server
+        const totalTreasury = 10000; // Placeholder
+
+        return Math.floor(totalTreasury * proportion);
     }
     
     /**
@@ -810,6 +688,7 @@ class BuildingSystem {
             const parcel = this.game.grid[row][col];
             
             if (parcel && this.game.isCurrentPlayer(parcel.owner)) {
+                // 🚫 CLIENT CALCULATION - MARKED FOR REMOVAL
                 const stats = this.calculateBuildingEconomics(parcel, row, col);
                 this.economicCache.buildingStats.set(key, stats);
             } else {
@@ -836,9 +715,20 @@ class BuildingSystem {
 
                 // Only handle visual progress for server-managed construction
                 if (parcel && parcel._isUnderConstruction && parcel._serverManaged) {
-                    // Set a default progress value for UI (actual progress managed by server)
-                    if (!parcel._constructionProgress) {
-                        parcel._constructionProgress = 0.1; // Show some progress for UI
+                    // Calculate construction progress based on time elapsed
+                    if (parcel._constructionStartTime && parcel._constructionDays) {
+                        const elapsedMs = Date.now() - parcel._constructionStartTime;
+                        const elapsedDays = elapsedMs / (this.game.gameSpeed * 1000); // Convert ms to game days
+                        const progress = Math.min(1.0, elapsedDays / parcel._constructionDays);
+                        parcel._constructionProgress = progress;
+
+                        // Auto-complete when progress reaches 100%
+                        if (progress >= 1.0 && !parcel._completionTriggered) {
+                            parcel._completionTriggered = true; // Prevent multiple triggers
+                            // Server will handle actual completion
+                        }
+                    } else if (!parcel._constructionProgress) {
+                        parcel._constructionProgress = 0.1; // Show some progress for UI fallback
                     }
                 }
             }
@@ -848,7 +738,11 @@ class BuildingSystem {
     /**
      * Age all buildings and update decay
      */
+    // 🚫 CLIENT CALCULATION - DISABLED! BUSTED!
+    // Server tracks building age and decay - client should receive updates via WebSocket
     ageBuildings(deltaTime = 1) {
+        // CLIENT-SIDE CALCULATION DISABLED - NO MORE AGING CALCULATIONS
+        return;
         for (let row = 0; row < this.game.gridSize; row++) {
             for (let col = 0; col < this.game.gridSize; col++) {
                 const parcel = this.game.grid[row][col];
@@ -953,8 +847,11 @@ class BuildingSystem {
      */
     async purchaseParcel(row, col) {
         const coord = this.game.getParcelCoordinate(row, col);
-        // Use static distance-based pricing for initial purchases
-        const price = this.game.getParcelPrice(row, col);
+        // 🚫 GHOST-BUSTING FIX: Client pricing was sending 'GHOST' to server, breaking cash balance tracking!
+        // Issue: getParcelPrice() was disabled and returned 'GHOST', server couldn't process transaction amounts
+        // Solution: Use economicClient.getParcelPrice() for server-authoritative pricing with fallback
+        // const price = this.game.getParcelPrice(row, col); // GHOST!
+        const price = this.game.economicClient?.getParcelPrice(row, col) || 150; // Server-authoritative pricing
         
         // Check if player has enough actions
         if (!this.game.useAction('purchaseParcel', this.game.actionManager.actionCosts.purchaseParcel)) {
@@ -962,10 +859,8 @@ class BuildingSystem {
             return false;
         }
         
-        // Check if player has enough cash - use server-authoritative balance
-        const currentBalance = (this.game.economicClient && typeof this.game.economicClient.serverBalance === 'number')
-            ? this.game.economicClient.serverBalance
-            : this.game.playerCash;
+        // V2 Server-authoritative ONLY - no fallbacks
+        const currentBalance = this.game.economicClient?.getCurrentPlayerBalance() || 0;
 
         if (currentBalance < price) {
             // Refund the action since purchase failed
@@ -1079,9 +974,7 @@ class BuildingSystem {
         }
 
         // Check if player has enough cash for their portion - use server-authoritative balance
-        const currentBalance = (this.game.economicClient && typeof this.game.economicClient.serverBalance === 'number')
-            ? this.game.economicClient.serverBalance
-            : this.game.playerCash;
+        const currentBalance = this.game.economicClient?.getCurrentPlayerBalance() || 0;
 
         if (currentBalance < playerCostRequired) {
             // Refund the action since construction failed
@@ -1102,16 +995,16 @@ class BuildingSystem {
             return false;
         }
         
-        // Process building locally
-        const oldCash = this.game.playerCash;
+        // Process building locally - server-authoritative balance tracking
+        const oldCash = this.game.economicClient?.getCurrentPlayerBalance() || 0;
         
         // Deduct public funds from governance budget
         if (publicFunding > 0 && this.game.governanceSystem) {
             this.game.governanceSystem.spendFromCategory(buildingCategory, publicFunding);
         }
         
-        // Store original state for potential rollback
-        const originalCash = this.game.playerCash;
+        // Store original state for potential rollback - server-authoritative
+        const originalCash = this.game.economicClient?.getCurrentPlayerBalance() || 0;
         const originalBuilding = this.game.grid[row][col].building;
         const originalAmenities = this.game.grid[row][col].amenities || [];
         const originalConstructionStartDay = this.game.grid[row][col].constructionStartDay;
@@ -1215,9 +1108,7 @@ class BuildingSystem {
         const demolitionFee = Math.round(currentValue * 0.1);
         
         // Check if player can afford demolition fee - use server-authoritative balance
-        const currentBalance = (this.game.economicClient && typeof this.game.economicClient.serverBalance === 'number')
-            ? this.game.economicClient.serverBalance
-            : this.game.playerCash;
+        const currentBalance = this.game.economicClient?.getCurrentPlayerBalance() || 0;
 
         if (currentBalance < demolitionFee) {
             this.game.showInsufficientFundsFeedback();
@@ -1358,9 +1249,7 @@ class BuildingSystem {
         const repairCost = this.game.calculateRepairCost(parcel, building);
 
         // Use server-authoritative balance for repair cost check
-        const currentBalance = (this.game.economicClient && typeof this.game.economicClient.serverBalance === 'number')
-            ? this.game.economicClient.serverBalance
-            : this.game.playerCash;
+        const currentBalance = this.game.economicClient?.getCurrentPlayerBalance() || 0;
 
         if (currentBalance < repairCost) {
             return false;
@@ -1410,7 +1299,8 @@ class BuildingSystem {
         
         const building = this.buildingManager.getBuildingById(parcel.building);
         if (!building) return null;
-        
+
+        // 🚫 CLIENT CALCULATION - MARKED FOR REMOVAL
         const economics = this.calculateBuildingEconomics(parcel, row, col);
         const efficiency = this.getBuildingEfficiency(row, col);
         const needs = this.getBuildingNeeds(building);
@@ -1428,33 +1318,12 @@ class BuildingSystem {
         };
     }
 
-    /**
-     * Calculate building cost with public funding support
-     * Moved from game.js for proper modularity
-     */
-    calculateBuildingCostWithFunding(building, fullCost) {
-        // Get the building category for public funding check
-        const category = building?.category || 'housing';
-        const availableFunds = this.game.governanceSystem ?
-            this.game.governanceSystem.getCategoryFunding(category) : 0;
-        const publicFunding = Math.min(availableFunds, fullCost);
-        const playerCost = fullCost - publicFunding;
-
-        return {
-            fullCost,
-            publicFunding,
-            playerCost,
-            availableFunds,
-            category,
-            fundingStatus: publicFunding >= fullCost ? 'full' :
-                          publicFunding > 0 ? 'partial' : 'none'
-        };
-    }
 
     /**
      * Calculate repair cost for building based on exponential decay
      * Moved from game.js for proper modularity
      */
+    // 🚫 CLIENT CALCULATION - ELIMINATED FOR SERVER AUTHORITY
     calculateRepairCost(parcel, building) {
         // Calculate cost to repair building based on maintenance increase due to exponential decay
         // Cost = 200 × (current_maintenance - original_maintenance)
@@ -1484,6 +1353,7 @@ class BuildingSystem {
      * Calculate current building value accounting for decay
      * Moved from game.js for proper modularity
      */
+    // 🚫 CLIENT CALCULATION - ELIMINATED FOR SERVER AUTHORITY
     calculateCurrentBuildingValue(parcel, building) {
         // Calculate current building value accounting for decay
         if (!building || !building.economics) return 0;

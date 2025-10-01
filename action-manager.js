@@ -24,21 +24,14 @@ class ActionManager {
         };
     }
 
+    // 🚫 CLIENT CALCULATION - DISABLED! BUSTED!
     /**
      * Calculate monthly action allowance based on current month
      * September gets 20 actions, then 2 less each month until minimum of 10
      */
     calculateMonthlyActionAllowance() {
-        const monthOrder = ['SEPT', 'OCT', 'NOV', 'DEC', 'JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG'];
-
-        // Handle case where gameDate is not yet available (before server sync)
-        const gameDate = this.game.gameDate || { month: 'SEPT', day: 1 };
-        const currentMonthIndex = monthOrder.indexOf(gameDate.month);
-        const baseActions = 20;
-        const reduction = currentMonthIndex * 2;
-        const minimumActions = 10;
-
-        return Math.max(minimumActions, baseActions - reduction);
+        // CLIENT-SIDE CALCULATION DISABLED - RETURN GHOST PLACEHOLDER
+        return 'GHOST';
     }
 
     /**

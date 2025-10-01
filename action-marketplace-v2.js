@@ -46,7 +46,6 @@ class ActionMarketplaceV2 {
         }
 
         this.setupMarketplace();
-        console.log('🏪 Action Marketplace V2 initialized (server-authoritative)');
     }
 
     setupMarketplace() {
@@ -565,41 +564,16 @@ class ActionMarketplaceV2 {
         return playerId.slice(-4); // Last 4 characters as fallback
     }
 
+    // 🚫 CLIENT CALCULATION - DISABLED! BUSTED!
     calculateBuyNowPrice(listing) {
-        if (!listing.buyNowPrice) return 0;
-
-        // If no bids yet, use base buy now price
-        if (listing.currentBid === 0) {
-            return listing.buyNowPrice;
-        }
-
-        // Calculate month progress (placeholder - would come from server)
-        const monthProgress = 0.5; // TODO: Get from server time system
-
-        // Premium starts at 500% and decays to 0%
-        const maxPremiumRate = 5.0; // 500%
-        const currentPremiumRate = maxPremiumRate * (1 - monthProgress);
-
-        // If current bid exceeds buy now + premium, no premium (bidding war)
-        const premiumPrice = listing.buyNowPrice * (1 + currentPremiumRate);
-        if (listing.currentBid >= premiumPrice) {
-            return listing.buyNowPrice;
-        }
-
-        return Math.floor(premiumPrice);
+        // CLIENT-SIDE CALCULATION DISABLED - RETURN GHOST PLACEHOLDER
+        return 'GHOST';
     }
 
+    // 🚫 CLIENT CALCULATION - DISABLED! BUSTED!
     calculateEndEarlyFee(listing) {
-        if (!listing || listing.currentBid === 0) return 0;
-
-        // Calculate month progress (placeholder - would come from server)
-        const monthProgress = 0.5; // TODO: Get from server time system
-
-        // Fee starts at 500% and decays to 0%
-        const maxFeeRate = 5.0; // 500%
-        const currentFeeRate = maxFeeRate * (1 - monthProgress);
-
-        return Math.floor(listing.currentBid * currentFeeRate);
+        // CLIENT-SIDE CALCULATION DISABLED - RETURN GHOST PLACEHOLDER
+        return 'GHOST';
     }
 
     /**

@@ -3,8 +3,8 @@
  *
  * Architecture:
  * - Transaction-based processing (client sends actions, server calculates)
- * - Single shared global state for all players
- * - Performance = Base × Local Needs × Global JEEFHH × Global CARENS
+ * - Single shared room-wide state for all players in the room
+ * - Performance = Base × Local Needs × Room JEEFHH × Room CARENS
  * - Real-time updates with smart client deltas
  */
 
@@ -13,13 +13,13 @@ const path = require('path');
 
 class ServerEconomicEngine {
     constructor() {
-        // Global game state - single source of truth
+        // Room-wide game state - single source of truth for this room
         this.gameState = {
             gameTime: 0,           // Game time in days (0-365 = 1 game year = 1 real hour)
             gameStartTime: Date.now(),
-            gameStarted: false,    // Track pre-game vs in-game state globally
+            gameStarted: false,    // Track pre-game vs in-game state room-wide
 
-            // Global JEEFHH supply/demand state
+            // Room-wide JEEFHH supply/demand state
             jeefhh: {
                 jobs: { supply: 0, demand: 0, multiplier: 1.0 },
                 energy: { supply: 0, demand: 0, multiplier: 1.0 },
@@ -29,15 +29,15 @@ class ServerEconomicEngine {
                 healthcare: { supply: 0, demand: 0, multiplier: 1.0 }
             },
 
-            // Global CARENS livability scores
+            // Room-wide CARENS livability scores (points-based system)
             carens: {
-                culture: 0.5,      // Base score 0.5 (neutral baseline = 0 points)
-                affordability: 0.5,
-                resilience: 0.5,
-                environment: 0.5,
-                noise: 0.5,
-                safety: 0.5,
-                multiplier: 1.0    // Combined multiplier (0.6x to 1.4x)
+                culture: 0,       // Points on -100 to +100 scale
+                affordability: 0,
+                resilience: 0,
+                environment: 0,
+                noise: 0,
+                safety: 0,
+                multiplier: 1.0   // Combined multiplier (0.6x to 1.4x)
             },
 
             // Buildings by location
@@ -187,6 +187,17 @@ class ServerEconomicEngine {
     }
 
     /**
+     * 🚫 BANDAID ELIMINATED! Centralized player balance access
+     * Get player balance with proper error handling (no fallbacks that mask missing data)
+     */
+    getPlayerBalance(playerId) {
+        if (!this.gameState.playerBalances.has(playerId)) {
+            throw new Error(`Player ${playerId} not found in balance system`);
+        }
+        return this.gameState.playerBalances.get(playerId);
+    }
+
+    /**
      * Update neighboring parcel prices when a parcel is purchased
      * Each purchase adds a systematic bump to neighboring unbought parcels
      */
@@ -333,11 +344,11 @@ class ServerEconomicEngine {
             }
         }
 
-        // If any buildings completed, trigger global recalculation
+        // If any buildings completed, trigger room-wide recalculation
         if (completedBuildings.length > 0) {
             console.log(`✅ ${completedBuildings.length} buildings completed construction automatically`);
 
-            // Recalculate global economics with new completed buildings
+            // Recalculate room-wide economics with new completed buildings
             this.recalculateGlobalEconomics();
 
             // Ensure all completed buildings have performance data before broadcasting
@@ -528,7 +539,7 @@ class ServerEconomicEngine {
             transaction.result = result;
             this.transactionHistory.push(transaction);
 
-            // Recalculate global economics after any building change
+            // Recalculate room-wide economics after any building change
             if (['BUILD_START', 'BUILD_COMPLETE', 'DESTROY_BUILDING', 'REPAIR_BUILDING'].includes(transaction.type)) {
                 this.recalculateGlobalEconomics();
             }
@@ -576,7 +587,7 @@ class ServerEconomicEngine {
         const locationKey = `${row},${col}`;
 
         // 🔧 FIX: Use playerBalances Map directly instead of legacy players Map
-        const currentBalance = this.gameState.playerBalances.get(playerId) || 0;
+        const currentBalance = this.getPlayerBalance(playerId);
 
 
         // Validate player can afford
@@ -764,16 +775,17 @@ class ServerEconomicEngine {
      */
 
     /**
-     * Recalculate global JEEFHH and CARENS after building changes
+     * Recalculate room-wide JEEFHH and CARENS after building changes
      */
     recalculateGlobalEconomics() {
+        console.log('🔧 DEBUG: recalculateGlobalEconomics() called - building count:', this.gameState.buildings.size);
         this.calculateGlobalJEEFHH();
         this.calculateGlobalCARENS();
         this.recalculateAllBuildingPerformances();
     }
 
     /**
-     * Calculate global JEEFHH supply/demand and multipliers
+     * Calculate room-wide JEEFHH supply/demand and multipliers
      */
     calculateGlobalJEEFHH() {
         // Reset supply (demand is calculated by age-aware system)
@@ -783,13 +795,21 @@ class ServerEconomicEngine {
         });
 
         // Sum supply from all completed buildings
+        let buildingCount = 0;
         for (const [locationKey, building] of this.gameState.buildings) {
-            if (building.underConstruction) continue;
+            if (building.underConstruction) {
+                console.log(`🏗️ Skipping building under construction: ${building.id} at ${locationKey}`);
+                continue;
+            }
 
             const buildingDef = this.buildingDefinitions.get(building.id);
-            if (!buildingDef || !buildingDef.resources) continue;
+            if (!buildingDef || !buildingDef.resources) {
+                console.log(`⚠️ No building definition or resources for: ${building.id}`);
+                continue;
+            }
 
             const econ = buildingDef.resources;
+            buildingCount++;
 
             // Supply contributions
             this.gameState.jeefhh.jobs.supply += econ.jobsProvided || 0;
@@ -798,7 +818,12 @@ class ServerEconomicEngine {
             this.gameState.jeefhh.food.supply += econ.foodProvided || 0;
             this.gameState.jeefhh.housing.supply += econ.housingProvided || 0;
             this.gameState.jeefhh.healthcare.supply += econ.healthcareProvided || 0;
+
+            console.log(`🏠 Adding supply from ${building.id}: housing+${econ.housingProvided || 0}, jobs+${econ.jobsProvided || 0}, food+${econ.foodProvided || 0}, energy+${econ.energyProvided || 0}`);
         }
+
+        console.log(`📊 JEEFHH calculation: ${buildingCount} completed buildings`);
+        console.log(`📊 Total supply: housing=${this.gameState.jeefhh.housing.supply}, jobs=${this.gameState.jeefhh.jobs.supply}, food=${this.gameState.jeefhh.food.supply}, energy=${this.gameState.jeefhh.energy.supply}`);
 
         // Calculate multipliers (0.4x to 1.6x based on supply/demand ratio)
         Object.keys(this.gameState.jeefhh).forEach(resource => {
@@ -814,11 +839,11 @@ class ServerEconomicEngine {
             }
         });
 
-        console.log('📊 Global JEEFHH updated:', this.gameState.jeefhh);
+        console.log('📊 Room-wide JEEFHH updated:', this.gameState.jeefhh);
     }
 
     /**
-     * Calculate global CARENS scores and multiplier
+     * Calculate room-wide CARENS scores and multiplier
      */
     calculateGlobalCARENS() {
         const carens = this.gameState.carens;
@@ -826,15 +851,15 @@ class ServerEconomicEngine {
 
         console.log(`🏛️ DEBUG: Calculating CARENS with ${buildingCount} buildings`);
 
-        // Start CARENS scores at neutral (0.5) baseline
-        carens.culture = 0.5;
-        carens.affordability = 0.5;
-        carens.resilience = 0.5;
-        carens.environment = 0.5;
-        carens.noise = 0.5;
-        carens.safety = 0.5;
+        // Start CARENS scores at neutral (0 points on -100 to +100 scale)
+        let culturePoints = 0;
+        let affordabilityPoints = 0;
+        let resiliencePoints = 0;
+        let environmentPoints = 0;
+        let noisePoints = 0;
+        let safetyPoints = 0;
 
-        // Sum CARENS contributions from all completed buildings
+        // Sum CARENS contributions from all completed buildings (on -100 to +100 scale)
         for (const [locationKey, building] of this.gameState.buildings) {
             if (building.underConstruction) continue;
 
@@ -843,32 +868,35 @@ class ServerEconomicEngine {
 
             const livability = buildingDef.livability;
 
-            // Add CARENS impacts from each building (already normalized 0-1 values)
-            carens.culture += this.extractLivabilityValue(livability.culture) || 0;
-            carens.affordability += this.extractLivabilityValue(livability.affordability) || 0;
-            carens.resilience += this.extractLivabilityValue(livability.resilience) || 0;
-            carens.environment += this.extractLivabilityValue(livability.environment) || 0;
-            carens.noise += this.extractLivabilityValue(livability.noise) || 0;
-            carens.safety += this.extractLivabilityValue(livability.safety) || 0;
+            // Add raw CARENS impacts (values from CSV are in -100 to +100 range)
+            culturePoints += this.extractLivabilityValue(livability.culture) || 0;
+            affordabilityPoints += this.extractLivabilityValue(livability.affordability) || 0;
+            resiliencePoints += this.extractLivabilityValue(livability.resilience) || 0;
+            environmentPoints += this.extractLivabilityValue(livability.environment) || 0;
+            noisePoints += this.extractLivabilityValue(livability.noise) || 0;
+            safetyPoints += this.extractLivabilityValue(livability.safety) || 0;
         }
 
-        // Clamp CARENS scores to valid range (0 to 1)
-        carens.culture = Math.max(0, Math.min(1, carens.culture));
-        carens.affordability = Math.max(0, Math.min(1, carens.affordability));
-        carens.resilience = Math.max(0, Math.min(1, carens.resilience));
-        carens.environment = Math.max(0, Math.min(1, carens.environment));
-        carens.noise = Math.max(0, Math.min(1, carens.noise));
-        carens.safety = Math.max(0, Math.min(1, carens.safety));
+        // Points-only system: store raw points directly
+        carens.culture = culturePoints;
+        carens.affordability = affordabilityPoints;
+        carens.resilience = resiliencePoints;
+        carens.environment = environmentPoints;
+        carens.noise = noisePoints;
+        carens.safety = safetyPoints;
 
-        // Calculate average for multiplier
-        const avgScore = (carens.culture + carens.affordability + carens.resilience +
-                         carens.environment + carens.noise + carens.safety) / 6;
+        // Calculate average for multiplier (convert raw points to 0-1 for multiplier calculation)
+        const avgPoints = (carens.culture + carens.affordability + carens.resilience +
+                          carens.environment + carens.noise + carens.safety) / 6;
+
+        // Normalize average points to 0-1 scale for multiplier only
+        const normalizedAvg = (avgPoints + 100) / 200; // -100→+100 becomes 0→1
 
         // Convert to multiplier (0.6x to 1.4x)
-        carens.multiplier = 0.6 + (avgScore * 0.8);
+        carens.multiplier = 0.6 + (normalizedAvg * 0.8);
 
-        console.log(`🏛️ DEBUG: CARENS calculation - avgScore=${avgScore.toFixed(3)}, multiplier=${carens.multiplier.toFixed(3)}`);
-        console.log('🏛️ Global CARENS updated:', carens);
+        console.log(`🏛️ DEBUG: CARENS calculation - avgPoints=${avgPoints.toFixed(1)}, multiplier=${carens.multiplier.toFixed(3)}`);
+        console.log('🏛️ Room-wide CARENS updated:', carens);
     }
 
     /**
@@ -912,9 +940,10 @@ class ServerEconomicEngine {
         const baseRevenue = econ.maxRevenue || 0;
 
         // 1. Local needs satisfaction (from connected parcels)
-        const localNeedsSatisfaction = this.calculateLocalNeedsSatisfaction(row, col);
+        const localNeedsSatisfactionData = this.calculateLocalNeedsSatisfaction(row, col);
+        const localNeedsSatisfaction = localNeedsSatisfactionData.overallSatisfaction;
 
-        // 2. Global JEEFHH multiplier (affects ALL buildings based on global state)
+        // 2. Room-wide JEEFHH multiplier (affects ALL buildings based on room state)
         const jeefhhMultiplier = this.calculateGlobalJEEFHHMultiplier();
 
         // 3. Local CARENS multiplier (based on adjacent parcels)
@@ -940,6 +969,9 @@ class ServerEconomicEngine {
                 maintenance: Math.round(actualMaintenance * 100) / 100,
                 netIncome: Math.round((actualRevenue - actualMaintenance) * 100) / 100
             },
+
+            // Resource satisfaction data for tooltips
+            resourceSatisfaction: localNeedsSatisfactionData.detailedSatisfaction,
 
             // Detailed breakdown for data insights
             detailed: {
@@ -971,12 +1003,14 @@ class ServerEconomicEngine {
         const building = this.gameState.buildings.get(`${row},${col}`);
         const buildingDef = this.buildingDefinitions.get(building.id);
 
-        if (!buildingDef.resources.energyRequired) {
-            return 1.0; // No local needs = fully satisfied
-        }
-
         // Get connected buildings (8 adjacent)
-        const connectedSupply = { energy: 0 };
+        const connectedSupply = {
+            energy: 0,
+            jobs: 0,
+            food: 0,
+            education: 0,
+            healthcare: 0
+        };
 
         this.ADJACENCY_OFFSETS.forEach(([dr, dc]) => {
             const connectedKey = `${row + dr},${col + dc}`;
@@ -986,25 +1020,92 @@ class ServerEconomicEngine {
                 const connectedDef = this.buildingDefinitions.get(connectedBuilding.id);
                 if (connectedDef && connectedDef.resources) {
                     connectedSupply.energy += connectedDef.resources.energyProvided || 0;
+                    connectedSupply.jobs += connectedDef.resources.jobsProvided || 0;
+                    connectedSupply.food += connectedDef.resources.foodProvided || 0;
+                    connectedSupply.education += connectedDef.resources.educationProvided || 0;
+                    connectedSupply.healthcare += connectedDef.resources.healthcareProvided || 0;
                 }
             }
         });
 
-        // Calculate satisfaction ratio with a minimum baseline (25% operation without energy)
-        const energyNeeded = buildingDef.resources.energyRequired;
-        const energySatisfaction = Math.min(1.0, connectedSupply.energy / energyNeeded);
+        const satisfactionRatios = [];
+        const detailedSatisfaction = {
+            energy: { required: 0, supplied: 0, satisfaction: 1.0 },
+            jobs: { required: 0, supplied: 0, satisfaction: 1.0 },
+            food: { required: 0, supplied: 0, satisfaction: 1.0 },
+            education: { required: 0, supplied: 0, satisfaction: 1.0 },
+            healthcare: { required: 0, supplied: 0, satisfaction: 1.0 }
+        };
 
-        // Buildings can operate at 25% minimum even without all needs met
-        // This ensures early game viability
-        const minOperation = 0.25;
-        return Math.max(minOperation, energySatisfaction);
+        // Check direct building requirements (e.g., energy for operations)
+        if (buildingDef.resources.energyRequired > 0) {
+            const energyRequired = buildingDef.resources.energyRequired;
+            const energySatisfaction = Math.min(1.0, connectedSupply.energy / energyRequired);
+            satisfactionRatios.push(energySatisfaction);
+
+            detailedSatisfaction.energy = {
+                required: energyRequired,
+                supplied: connectedSupply.energy,
+                satisfaction: energySatisfaction
+            };
+        }
+
+        // For housing buildings, check resident needs based on capacity
+        const housingProvided = buildingDef.resources.housingProvided || 0;
+        if (housingProvided > 0) {
+            const potentialResidents = housingProvided * 2; // 2 people per bedroom
+
+            // Each resident needs nearby jobs and food access
+            const jobsNeeded = potentialResidents * 0.5; // 0.5 jobs per resident
+            const foodNeeded = potentialResidents * 2; // 2 food units per resident
+
+            if (jobsNeeded > 0) {
+                const jobsSatisfaction = Math.min(1.0, connectedSupply.jobs / jobsNeeded);
+                satisfactionRatios.push(jobsSatisfaction);
+
+                detailedSatisfaction.jobs = {
+                    required: jobsNeeded,
+                    supplied: connectedSupply.jobs,
+                    satisfaction: jobsSatisfaction
+                };
+            }
+
+            if (foodNeeded > 0) {
+                const foodSatisfaction = Math.min(1.0, connectedSupply.food / foodNeeded);
+                satisfactionRatios.push(foodSatisfaction);
+
+                detailedSatisfaction.food = {
+                    required: foodNeeded,
+                    supplied: connectedSupply.food,
+                    satisfaction: foodSatisfaction
+                };
+            }
+        }
+
+        // If no specific requirements, building is self-sufficient
+        if (satisfactionRatios.length === 0) {
+            return {
+                overallSatisfaction: 1.0,
+                detailedSatisfaction: detailedSatisfaction
+            };
+        }
+
+        // Calculate overall satisfaction as average of all requirements
+        const overallSatisfaction = satisfactionRatios.reduce((sum, ratio) => sum + ratio, 0) / satisfactionRatios.length;
+
+        // Buildings can operate at 5% minimum even without all needs met
+        const minOperation = 0.05;
+        return {
+            overallSatisfaction: Math.max(minOperation, overallSatisfaction),
+            detailedSatisfaction: detailedSatisfaction
+        };
     }
 
     /**
      * Calculate JEEFHH multiplier for a specific building type
      */
     calculateGlobalJEEFHHMultiplier() {
-        // JEEFHH is truly global: all buildings affected by the worst-performing resource
+        // JEEFHH is truly room-wide: all buildings affected by the worst-performing resource
         // When housing is in oversupply, ALL residential buildings earn less regardless of individual needs
 
         const jeefhh = this.gameState.jeefhh;
@@ -1019,10 +1120,10 @@ class ServerEconomicEngine {
             jeefhh.healthcare.multiplier
         ];
 
-        // Use the minimum multiplier to represent global economic stress
+        // Use the minimum multiplier to represent room-wide economic stress
         const globalMultiplier = Math.min(...multipliers);
 
-        console.log(`🌐 Global JEEFHH multiplier: ${globalMultiplier.toFixed(3)} (worst: ${Math.min(...multipliers).toFixed(3)})`);
+        console.log(`🌐 Room-wide JEEFHH multiplier: ${globalMultiplier.toFixed(3)} (worst: ${Math.min(...multipliers).toFixed(3)})`);
 
         return globalMultiplier;
     }
@@ -1031,17 +1132,14 @@ class ServerEconomicEngine {
      * Calculate local CARENS multiplier based on adjacent parcels
      */
     calculateLocalCARENSMultiplier(row, col) {
-        // Start with global baseline CARENS scores
-        const globalCarens = this.gameState.carens;
-
-        // Local CARENS scores start from global baseline
+        // Start from neutral baseline (0 points) - each building starts neutral
         const localCarens = {
-            culture: globalCarens.culture,
-            affordability: globalCarens.affordability,
-            resilience: globalCarens.resilience,
-            environment: globalCarens.environment,
-            noise: globalCarens.noise,
-            safety: globalCarens.safety
+            culture: 0,
+            affordability: 0,
+            resilience: 0,
+            environment: 0,
+            noise: 0,
+            safety: 0
         };
 
         // Examine surrounding area for local CARENS impacts
@@ -1061,24 +1159,20 @@ class ServerEconomicEngine {
 
                         // Apply each CARENS category with its specific range and effect
                         Object.keys(localCarens).forEach(category => {
-                            const livabilityData = buildingDef.livability[category];
+                            const effect = buildingDef.livability[category] || 0;
+                            const range = buildingDef.livability[`${category}_range`] || 2; // Default range
 
-                            // Handle both old format (number) and new format (object with effect/range)
-                            let effect, range;
-                            if (typeof livabilityData === 'object' && livabilityData !== null) {
-                                effect = livabilityData.effect || 0;
-                                range = livabilityData.range || 2;
-                            } else {
-                                // Legacy format - simple number
-                                effect = livabilityData || 0;
-                                range = 2; // Default range
-                            }
-
-                            // Only apply effect if within range
+                            // Only apply effect if within range and effect is non-zero
                             if (effect !== 0 && distance <= range) {
-                                // Distance attenuation: closer buildings have more impact
-                                const attenuation = 1.0 / (1.0 + distance * 0.3);
-                                localCarens[category] += effect * attenuation;
+                                // Linear attenuation: full effect at distance 0, zero effect at max range
+                                const attenuation = Math.max(0, 1.0 - (distance / range));
+                                const attenuatedEffect = effect * attenuation;
+                                localCarens[category] += attenuatedEffect;
+
+                                // Debug logging for attenuation
+                                if (row === 2 && col === 2) { // Only log for specific location to avoid spam
+                                    console.log(`🔄 CARENS[${r},${c}→${row},${col}] ${category}: ${effect} * ${attenuation.toFixed(2)} = ${attenuatedEffect.toFixed(1)}`);
+                                }
                             }
                         });
                     }
@@ -1086,19 +1180,17 @@ class ServerEconomicEngine {
             }
         }
 
-        // Clamp local scores to reasonable bounds (0.1 to 1.5)
-        Object.keys(localCarens).forEach(key => {
-            localCarens[key] = Math.max(0.1, Math.min(1.5, localCarens[key]));
-        });
+        // Calculate net CARENS total (sum of all categories)
+        const netCarensTotal = localCarens.culture + localCarens.affordability + localCarens.resilience +
+                              localCarens.environment + localCarens.noise + localCarens.safety;
 
-        // Convert to multiplier (similar to global CARENS calculation)
-        const avgLocalScore = (localCarens.culture + localCarens.affordability + localCarens.resilience +
-                              localCarens.environment + localCarens.noise + localCarens.safety) / 6;
+        // Convert to multiplier: 0 = 1.0x (neutral), +100 = 1.4x (max), -100 = 0.6x (min)
+        // Formula: 1.0 + (netCarensTotal / 100) * 0.4
+        // Your example: +20 points = 1.0 + (20/100) * 0.4 = 1.08x
+        const localMultiplier = 1.0 + (netCarensTotal / 100) * 0.4;
 
-        // Convert to multiplier (0.6x to 1.4x)
-        const localMultiplier = 0.6 + (avgLocalScore * 0.8);
-
-        return localMultiplier;
+        // Clamp to reasonable bounds (0.6x to 1.4x)
+        return Math.max(0.6, Math.min(1.4, localMultiplier));
     }
 
     /**
@@ -1180,7 +1272,8 @@ class ServerEconomicEngine {
      */
     updateTotalPopulation(attractiveness) {
         const dynamics = this.POPULATION_DYNAMICS;
-        const currentPop = this.gameState.demographics.total;
+        // Use fractional population for calculations to allow proper accumulation
+        const currentPop = this.gameState.demographics.fractionalTotal || this.gameState.demographics.total;
 
         // Base growth rate adjusted by economic attractiveness
         const attractivenessModifier = (attractiveness - 1.0) * dynamics.migrationSensitivity;
@@ -1192,36 +1285,74 @@ class ServerEconomicEngine {
         // Calculate new population
         let newPopulation = currentPop * (1 + dailyGrowthRate);
 
-        // If no current population but conditions are very good, allow initial immigration
-        if (currentPop === 0 && attractiveness > 1.1) {
-            const maxHousingCapacity = this.calculateMaxHousingCapacity();
-            console.log(`🏠 DEBUG Immigration Check: currentPop=${currentPop}, attractiveness=${attractiveness.toFixed(3)}, maxHousingCapacity=${maxHousingCapacity}`);
-            if (maxHousingCapacity > 0) {
-                // Start with small initial population when conditions are good
-                const immigrationRate = (attractiveness - 1.0) * 2; // Scale with attractiveness
-                const cappedImmigration = maxHousingCapacity * 0.1; // Cap at 10% of housing capacity
-                newPopulation = Math.min(immigrationRate, cappedImmigration);
-                console.log(`🏠 DEBUG Immigration Calc: immigrationRate=${immigrationRate.toFixed(3)}, cappedAt=${cappedImmigration.toFixed(3)}, result=${newPopulation.toFixed(3)}`);
-                console.log(`🏠 Initial immigration: ${newPopulation.toFixed(1)} residents attracted by economic conditions (attractiveness: ${attractiveness.toFixed(3)})`);
+        const maxHousingCapacity = this.calculateMaxHousingCapacity();
+
+        // 🏠 BOOTSTRAP FIX: Initial population moves in when housing becomes available
+        if (currentPop === 0 && maxHousingCapacity > 0) {
+            // First residents move in immediately when housing is built
+            const initialPopulation = Math.min(maxHousingCapacity * 0.3, 20); // 30% occupancy or 20 people, whichever is smaller
+            newPopulation = initialPopulation;
+            console.log(`🏠 BOOTSTRAP: Initial ${initialPopulation.toFixed(1)} residents move into new housing (capacity: ${maxHousingCapacity})`);
+        }
+        // Early game immigration (0-100 residents): housing-driven growth
+        else if (currentPop > 0 && currentPop < 100 && maxHousingCapacity > currentPop) {
+            // Gradual fill-up of available housing, basic attractiveness check
+            if (attractiveness >= 0.8) { // Lower threshold for early game
+                const availableHousing = maxHousingCapacity - currentPop;
+                const dailyImmigration = Math.min(availableHousing * 0.15, 10); // 15% of available housing or 10 people max
+                newPopulation = currentPop + dailyImmigration;
+                console.log(`🏠 EARLY GAME: ${dailyImmigration.toFixed(1)} residents move in (${currentPop.toFixed(1)} → ${newPopulation.toFixed(1)}, attractiveness: ${attractiveness.toFixed(3)})`);
             } else {
-                console.log(`🏠 DEBUG: No immigration - maxHousingCapacity is 0`);
+                console.log(`🏠 DEBUG: Early game immigration blocked - attractiveness too low (${attractiveness.toFixed(3)} < 0.8)`);
+            }
+        }
+        // Established city immigration (100+ residents): economic conditions matter more
+        else if (attractiveness > 1.05 && currentPop >= 100) {
+            console.log(`🏠 DEBUG Immigration Check: currentPop=${currentPop}, attractiveness=${attractiveness.toFixed(3)}, maxHousingCapacity=${maxHousingCapacity}`);
+            if (maxHousingCapacity > currentPop) {
+                // Add immigrants to existing population when conditions are good
+                const immigrationRate = (attractiveness - 1.0) * 2; // Scale with attractiveness
+                const availableHousing = maxHousingCapacity - currentPop;
+                const cappedImmigration = availableHousing * 0.1; // Cap at 10% of available housing
+                const dailyImmigration = Math.min(immigrationRate, cappedImmigration);
+                newPopulation = currentPop + dailyImmigration;
+                console.log(`🏠 DEBUG Immigration Calc: immigrationRate=${immigrationRate.toFixed(3)}, availableHousing=${availableHousing.toFixed(1)}, cappedAt=${cappedImmigration.toFixed(3)}, result=${newPopulation.toFixed(3)}`);
+                console.log(`🏠 Immigration: ${dailyImmigration.toFixed(1)} new residents attracted by economic conditions (attractiveness: ${attractiveness.toFixed(3)})`);
+            } else {
+                console.log(`🏠 DEBUG: No immigration - housing at capacity (${currentPop}/${maxHousingCapacity})`);
             }
         } else {
-            console.log(`🏠 DEBUG: No immigration - currentPop=${currentPop}, attractiveness=${attractiveness.toFixed(3)} (needs currentPop===0 && attractiveness>1.1)`);
+            if (currentPop < 100) {
+                console.log(`🏠 DEBUG: No immigration - waiting for better conditions (${currentPop}/100 residents, attractiveness: ${attractiveness.toFixed(3)})`);
+            } else {
+                console.log(`🏠 DEBUG: No immigration - attractiveness=${attractiveness.toFixed(3)} (needs >1.05)`);
+            }
         }
 
-        // Track poor conditions for emigration (existing residents leave after sustained week of poor conditions)
-        if (currentPop > 0) {
+        // Graduated emigration system with warnings and escalating losses
+        // BUT only after reaching 100 residents - early game is protected from emigration
+        if (currentPop >= 100) {
             if (attractiveness < 0.95) {
                 this.gameState.emigrationTracking.poorConditionsDays++;
-                console.log(`🏠 DEBUG: Poor conditions day ${this.gameState.emigrationTracking.poorConditionsDays}/7 (attractiveness: ${attractiveness.toFixed(3)})`);
+                const days = this.gameState.emigrationTracking.poorConditionsDays;
+                console.log(`🏠 DEBUG: Poor conditions day ${days}/7 (attractiveness: ${attractiveness.toFixed(3)})`);
 
-                // If poor conditions persist for a week (7 days), trigger emigration
-                if (this.gameState.emigrationTracking.poorConditionsDays >= 7) {
-                    const emigrationRate = (0.95 - attractiveness) * 0.5; // Scale emigration with how bad conditions are
-                    const emigrationLoss = currentPop * emigrationRate * 0.1; // 10% base rate
+                // Graduated emigration: 3 days = warning, 5 days = small loss, 7 days = major exodus
+                if (days >= 7) {
+                    // Major exodus after 7 days
+                    const emigrationRate = (0.95 - attractiveness) * 0.5; // Scale with how bad conditions are
+                    const emigrationLoss = currentPop * emigrationRate * 0.15; // 15% base rate for major exodus
                     newPopulation = Math.max(0, currentPop - emigrationLoss);
-                    console.log(`🏠 Emigration: ${emigrationLoss.toFixed(1)} residents leaving due to sustained poor conditions (${this.gameState.emigrationTracking.poorConditionsDays} days < 0.95)`);
+                    console.log(`🏠 MAJOR EMIGRATION: ${emigrationLoss.toFixed(1)} residents leaving due to sustained poor conditions (${days} days < 0.95)`);
+                } else if (days >= 5) {
+                    // Small emigration after 5 days
+                    const emigrationRate = (0.95 - attractiveness) * 0.3;
+                    const emigrationLoss = currentPop * emigrationRate * 0.05; // 5% base rate for small loss
+                    newPopulation = Math.max(0, currentPop - emigrationLoss);
+                    console.log(`🏠 Small emigration: ${emigrationLoss.toFixed(1)} residents leaving due to poor conditions (${days} days < 0.95)`);
+                } else if (days >= 3) {
+                    // Warning at 3 days (no actual emigration yet)
+                    console.log(`🏠 ⚠️ EMIGRATION WARNING: Residents unhappy for ${days} days. Improve conditions soon to prevent departures!`);
                 }
             } else {
                 // Reset counter when conditions improve
@@ -1230,17 +1361,28 @@ class ServerEconomicEngine {
                     this.gameState.emigrationTracking.poorConditionsDays = 0;
                 }
             }
+        } else if (currentPop > 0) {
+            // Reset emigration tracking for early game cities (below 100 residents)
+            if (this.gameState.emigrationTracking.poorConditionsDays > 0) {
+                console.log(`🏠 DEBUG: Early game - resetting emigration tracking (${currentPop}/100 residents)`);
+                this.gameState.emigrationTracking.poorConditionsDays = 0;
+            }
         }
         this.gameState.emigrationTracking.lastAttractivenessCheck = attractiveness;
 
         // Apply maximum housing constraint
-        const maxHousingCapacity = this.calculateMaxHousingCapacity();
         newPopulation = Math.min(newPopulation, maxHousingCapacity);
 
         // Ensure minimum viable population
         newPopulation = Math.max(newPopulation, 0);
 
-        this.gameState.demographics.total = Math.floor(newPopulation);
+        // Store fractional population for proper accumulation
+        if (!this.gameState.demographics.fractionalTotal) {
+            this.gameState.demographics.fractionalTotal = 0;
+        }
+        this.gameState.demographics.fractionalTotal = newPopulation;
+        // Round up so 0.2 residents = 1 resident, 1.49 = 2 residents, etc.
+        this.gameState.demographics.total = Math.ceil(this.gameState.demographics.fractionalTotal);
 
         if (Math.abs(newPopulation - currentPop) > 0.1) {
             console.log(`📈 Population change: ${currentPop} → ${newPopulation.toFixed(1)} (growth rate: ${(effectiveGrowthRate * 100).toFixed(2)}%)`);
@@ -1320,13 +1462,19 @@ class ServerEconomicEngine {
         this.gameState.demographicsPerBuilding.clear();
 
         const totalResidents = this.gameState.demographics.total;
-        if (totalResidents === 0) return;
+        console.log(`🏠 DEBUG DISTRIBUTE: totalResidents from demographics.total = ${totalResidents}`);
+        if (totalResidents === 0) {
+            console.log(`🏠 DEBUG DISTRIBUTE: Early return - no residents to distribute`);
+            return;
+        }
 
         // Calculate building attractiveness scores
         const buildingScores = new Map();
         let totalScore = 0;
 
+        console.log(`🏠 DEBUG DISTRIBUTE: Checking ${this.gameState.buildings.size} buildings for housing`);
         for (const [locationKey, building] of this.gameState.buildings) {
+            console.log(`🏠 DEBUG DISTRIBUTE: Building ${building.id} at ${locationKey}, underConstruction: ${building.underConstruction}`);
             if (building.underConstruction) continue;
 
             const buildingDef = this.buildingDefinitions.get(building.id);
@@ -1334,8 +1482,10 @@ class ServerEconomicEngine {
                 const score = this.calculateBuildingAttractiveness(building, locationKey);
                 buildingScores.set(locationKey, score);
                 totalScore += score;
+                console.log(`🏠 DEBUG DISTRIBUTE: ${building.id} provides ${buildingDef.resources.housingProvided} housing, score: ${score}`);
             }
         }
+        console.log(`🏠 DEBUG DISTRIBUTE: Found ${buildingScores.size} housing buildings, totalScore: ${totalScore}`);
 
         // Distribute residents proportionally by attractiveness
         let residentsRemaining = totalResidents;
@@ -1372,6 +1522,7 @@ class ServerEconomicEngine {
         }
 
         this.gameState.totalResidents = totalResidents - residentsRemaining;
+        console.log(`🏠 DEBUG DISTRIBUTE: Set gameState.totalResidents = ${totalResidents} - ${residentsRemaining} = ${this.gameState.totalResidents}`);
     }
 
     /**
@@ -1383,16 +1534,26 @@ class ServerEconomicEngine {
 
         // Factor 1: Local CARENS (quality of life)
         const localCarens = this.calculateLocalCARENSMultiplier(row, col);
-        score *= localCarens;
+        console.log(`🏠 DEBUG ATTRACT: ${building.id} localCarens = ${localCarens}`);
+        score *= (isNaN(localCarens) ? 1.0 : localCarens);
 
         // Factor 2: Local needs satisfaction (energy access)
         const localNeeds = this.calculateLocalNeedsSatisfaction(row, col);
-        score *= localNeeds;
+        console.log(`🏠 DEBUG ATTRACT: ${building.id} localNeeds = ${localNeeds}`);
+        score *= (isNaN(localNeeds) ? 1.0 : localNeeds);
 
         // Factor 3: Building condition
         const condition = building.condition || 1.0;
-        score *= condition;
+        console.log(`🏠 DEBUG ATTRACT: ${building.id} condition = ${condition}`);
+        score *= (isNaN(condition) ? 1.0 : condition);
 
+        // Safety check for final score
+        if (isNaN(score)) {
+            console.log(`🏠 DEBUG ATTRACT: WARNING - ${building.id} final score is NaN, defaulting to 1.0`);
+            score = 1.0;
+        }
+
+        console.log(`🏠 DEBUG ATTRACT: ${building.id} final score = ${score}`);
         return score;
     }
 
@@ -1718,10 +1879,11 @@ class ServerEconomicEngine {
      */
     calculatePlayerCashflow(playerId) {
         // 🔧 FIX: Use playerBalances Map directly instead of legacy players Map
-        const currentBalance = this.gameState.playerBalances.get(playerId) || 0;
+        const currentBalance = this.getPlayerBalance(playerId);
 
         let totalRevenue = 0;
         let totalMaintenance = 0;
+        let totalLVT = 0;
         const buildingBreakdown = [];
 
         // Sum from player's buildings
@@ -1741,7 +1903,20 @@ class ServerEconomicEngine {
             }
         }
 
-        const netCashflow = totalRevenue - totalMaintenance;
+        // Calculate daily LVT expenses for owned parcels
+        const lvtRate = this.getCurrentLVTRate();
+        for (let row = 0; row < this.gameState.grid.length; row++) {
+            for (let col = 0; col < this.gameState.grid[row].length; col++) {
+                const parcel = this.gameState.grid[row][col];
+                if (parcel.owner === playerId) {
+                    const landValue = 100; // Standard parcel price
+                    const dailyLVT = (landValue * lvtRate) / 365;
+                    totalLVT += dailyLVT;
+                }
+            }
+        }
+
+        const netCashflow = totalRevenue - totalMaintenance - totalLVT;
 
         // Update player cash in playerBalances
         const newBalance = currentBalance + netCashflow;
@@ -1760,14 +1935,15 @@ class ServerEconomicEngine {
         const wealth = newBalance + buildingValues;
 
         // Only log cashflow if there's actual activity (non-zero or significant change)
-        if (netCashflow !== 0 || buildingBreakdown.length > 0) {
-            console.log(`💰 Cashflow calculated for ${playerId}: ${netCashflow.toFixed(2)} (${buildingBreakdown.length} buildings)`);
+        if (netCashflow !== 0 || buildingBreakdown.length > 0 || totalLVT > 0) {
+            console.log(`💰 Cashflow calculated for ${playerId}: $${netCashflow.toFixed(2)} (Revenue: $${totalRevenue.toFixed(2)}, Maintenance: $${totalMaintenance.toFixed(2)}, LVT: $${totalLVT.toFixed(2)})`);
         }
 
         return {
             playerId,
             totalRevenue,
             totalMaintenance,
+            totalLVT,
             netCashflow,
             cash: newBalance,
             wealth: wealth,
@@ -1806,7 +1982,7 @@ class ServerEconomicEngine {
 
         // Deduct maintenance costs from player balances
         for (const [playerId, totalMaintenance] of maintenanceCosts) {
-            const currentBalance = this.gameState.playerBalances.get(playerId) || 0;
+            const currentBalance = this.getPlayerBalance(playerId);
             const newBalance = Math.max(0, currentBalance - totalMaintenance);
             this.gameState.playerBalances.set(playerId, newBalance);
             console.log(`💸 Player ${playerId} paid $${totalMaintenance.toFixed(2)} in building maintenance (${currentBalance.toFixed(2)} → ${newBalance.toFixed(2)})`);
@@ -1872,8 +2048,11 @@ class ServerEconomicEngine {
                 wealth: wealth, // Cash + land value + building value (with decay)
                 transactions: [],
                 // V2: Include governance data for UI updates
-                governance: governance
-                // Note: cityName, color, name are sent once at room join, not in every broadcast
+                governance: governance,
+                // Include player metadata for consistent UI display (governance dots, parcel colors, etc.)
+                name: playerState?.name,
+                color: playerState?.color,
+                cityName: playerState?.cityName
             };
         });
 
@@ -1901,12 +2080,17 @@ class ServerEconomicEngine {
                 players: players,
                 cashflow: cashflowData,
                 grid: this.gameState.grid,
-                governance: null  // Player governance is handled via individual transactions, not global broadcast
+                governance: {
+                    treasury: this.governanceSystem ? this.governanceSystem.getTreasury() : 0,
+                    taxRate: this.governanceSystem ? this.governanceSystem.governance.taxRate : 0.5
+                },
+                lvtRate: this.getCurrentLVTRate()  // Include current LVT rate
             }
         };
 
         console.log(`📡 Broadcasting complete game state: ${buildings.length} buildings, ${Object.keys(players).length} players, event: ${eventType}`);
         console.log(`💰 DEBUG: Player data being broadcast:`, Object.keys(players).map(id => `${id}: $${players[id].cash}`));
+        console.log(`👥 DEBUG: Broadcasting totalResidents = ${this.gameState.totalResidents}, demographics.total = ${this.gameState.demographics.total}`);
 
         // V2: Debug log eventData for GAME_STARTED to verify city names are included
         if (eventType === 'GAME_STARTED' && eventData.players) {
@@ -2023,7 +2207,15 @@ class ServerEconomicEngine {
             environment: 0.5,
             noise: 0.5,
             safety: 0.5,
-            multiplier: 1.0 // Neutral multiplier when no buildings exist
+            multiplier: 1.0, // Neutral multiplier when no buildings exist
+            points: { // Initialize points structure for client display
+                culture: 0,
+                affordability: 0,
+                resilience: 0,
+                environment: 0,
+                noise: 0,
+                safety: 0
+            }
         };
 
         // Reset residents and demographics
@@ -2062,6 +2254,8 @@ class ServerEconomicEngine {
                 cityName: roomPlayerData.cityName, // V2: Include city name for client sync
                 cash: roomPlayerData.balance || 6000,
                 wealth: roomPlayerData.balance || 6000,
+                totalLVTPaid: 0,  // Track total LVT contributions
+                totalWealthGenerated: roomPlayerData.balance || 6000,  // Track all wealth ever generated
                 transactions: [],
                 buildings: [],
                 lastCashflowUpdate: 0,
@@ -2098,7 +2292,7 @@ class ServerEconomicEngine {
         console.log(`💰 Processing parcel purchase: ${playerId} spending $${amount} for ${description || 'parcel'}`);
 
         // 🔧 FIX: Use playerBalances Map directly instead of legacy players Map
-        const currentBalance = this.gameState.playerBalances.get(playerId) || 0;
+        const currentBalance = this.getPlayerBalance(playerId);
 
         // Check if player has enough cash
         if (currentBalance < amount) {
@@ -2149,7 +2343,7 @@ class ServerEconomicEngine {
         console.log(`💰 Processing cash spend: ${playerId} spending $${amount} for ${description || 'purchase'}`);
 
         // 🔧 FIX: Use playerBalances Map directly instead of legacy players Map
-        const currentBalance = this.gameState.playerBalances.get(playerId) || 0;
+        const currentBalance = this.getPlayerBalance(playerId);
 
         // Check if player has enough cash
         if (currentBalance < amount) {
@@ -2239,7 +2433,7 @@ class ServerEconomicEngine {
     }
 
     /**
-     * Handle Governance Vote V3 - Simple allocation system
+     * Handle Governance Vote V3 - Simple allocation system with validation and broadcasting
      */
     handleGovernanceVote(playerId, voteType, data) {
         const player = this.getOrCreatePlayer(playerId);
@@ -2256,32 +2450,76 @@ class ServerEconomicEngine {
             };
         }
 
+        let result = { success: false };
+
         switch (voteType) {
             case 'allocation':
-                // Set allocation for a category
+                // Set allocation for a category with point validation
                 const { category, value } = data;
                 if (!category) return { success: false, error: 'No category specified' };
 
+                // Validate points allocation
+                const newAllocations = { ...player.governance.allocations };
+                newAllocations[category] = Math.max(0, value);
+
+                const totalAllocated = Object.values(newAllocations).reduce((sum, points) => sum + points, 0)
+                    + Math.abs(player.governance.lvtVote);
+
+                if (totalAllocated > player.governance.votingPoints) {
+                    return { success: false, error: 'Not enough voting points available' };
+                }
+
                 player.governance.allocations[category] = Math.max(0, value);
                 console.log(`🏛️ Player ${playerId} set ${category} allocation to ${value}`);
-                return { success: true };
+                result = { success: true };
+                break;
 
             case 'lvt':
-                // Set LVT vote
-                player.governance.lvtVote = data.value || 0;
-                console.log(`🏛️ Player ${playerId} set LVT vote to ${data.value}`);
-                return { success: true };
+                // Set LVT vote with point validation
+                const newLvtVote = data.value || 0;
+                const currentAllocated = Object.values(player.governance.allocations).reduce((sum, points) => sum + points, 0);
+
+                if (currentAllocated + Math.abs(newLvtVote) > player.governance.votingPoints) {
+                    return { success: false, error: 'Not enough voting points available' };
+                }
+
+                player.governance.lvtVote = newLvtVote;
+                console.log(`🏛️ Player ${playerId} set LVT vote to ${newLvtVote}`);
+                result = { success: true };
+                break;
 
             case 'reset':
                 // Reset all allocations
                 player.governance.allocations = {};
                 player.governance.lvtVote = 0;
                 console.log(`🏛️ Player ${playerId} reset all allocations`);
-                return { success: true };
+                result = { success: true };
+                break;
 
             default:
                 return { success: false, error: 'Unknown vote type' };
         }
+
+        // If successful, recalculate budget and LVT rate, then broadcast
+        if (result.success) {
+            this.calculateMonthlyBudgets();
+            this.calculateLVTRate();
+
+            // Broadcast governance update to all players
+            this.broadcastGovernanceUpdate();
+        }
+
+        return result;
+    }
+
+    /**
+     * Broadcast governance update to all players
+     */
+    broadcastGovernanceUpdate() {
+        this.broadcastGameState('GOVERNANCE_UPDATE', {
+            source: 'governance_vote',
+            timestamp: Date.now()
+        });
     }
 
     /**
@@ -2516,28 +2754,25 @@ class ServerEconomicEngine {
     }
 
     /**
-     * Calculate LVT rate based on all player votes
+     * Calculate LVT rate based on all player votes (V3 system)
      */
     calculateLVTRate() {
-        let totalIncreaseVotes = 0;
-        let totalDecreaseVotes = 0;
+        let totalLVTVotes = 0;
 
-        // Sum all player LVT votes
+        // Sum all player LVT votes (V3 uses single lvtVote value: + for increase, - for decrease)
         this.gameState.players.forEach((playerState) => {
-            if (playerState.governance) {
-                totalIncreaseVotes += playerState.governance.lvtVotesIncrease || 0;
-                totalDecreaseVotes += playerState.governance.lvtVotesDecrease || 0;
+            if (playerState.governance && playerState.governance.lvtVote !== undefined) {
+                totalLVTVotes += playerState.governance.lvtVote;
             }
         });
 
-        // Calculate net change from base 50%
-        const netVotes = totalIncreaseVotes - totalDecreaseVotes;
-        const newRate = Math.max(0, Math.min(1, 0.5 + (netVotes * 0.01))); // 1% per net vote
+        // Calculate new rate from base 50%
+        const newRate = Math.max(0, Math.min(1, 0.5 + (totalLVTVotes * 0.01))); // 1% per vote point
 
-        // Store the rate globally (this could be moved to a global governance state later)
+        // Store the rate room-wide
         this.currentLVTRate = newRate;
 
-        console.log(`📊 LVT rate calculated: ${(newRate * 100).toFixed(1)}% (${totalIncreaseVotes} increase, ${totalDecreaseVotes} decrease votes)`);
+        console.log(`📊 LVT rate calculated: ${(newRate * 100).toFixed(1)}% (${totalLVTVotes} net vote points)`);
 
         return newRate;
     }
@@ -2609,6 +2844,49 @@ class ServerEconomicEngine {
     }
 
     /**
+     * Calculate Commonwealth Scores for all players
+     * Score = (Wealth × (1 + LVT_Contribution_Ratio)) / 10000
+     */
+    calculateCommonwealthScores() {
+        const scores = new Map();
+
+        for (const [playerId, playerState] of this.gameState.players) {
+            const currentWealth = this.getPlayerBalance(playerId);
+            const lvtPaid = playerState.totalLVTPaid || 0;
+
+            // Use a baseline 30% LVT rate assumption for victory calculation
+            // This prevents gaming by voting down the LVT rate
+            const BASELINE_LVT_RATE = 0.30;
+            const effectiveWealth = Math.max(currentWealth, 1); // Prevent division by zero
+
+            // Calculate LVT contribution ratio using baseline rate
+            const lvtContributionRatio = lvtPaid / (effectiveWealth * BASELINE_LVT_RATE);
+
+            // Calculate Commonwealth Score
+            const rawScore = currentWealth * (1 + Math.min(lvtContributionRatio, 2)); // Cap contribution bonus at 200%
+            const commonwealthScore = rawScore / 10000; // Convert to friendly number
+
+            scores.set(playerId, {
+                score: commonwealthScore,
+                wealth: currentWealth,
+                lvtPaid: lvtPaid,
+                lvtRatio: lvtContributionRatio
+            });
+        }
+
+        // Sort scores to get rankings
+        const sortedScores = Array.from(scores.entries())
+            .sort((a, b) => b[1].score - a[1].score)
+            .map(([playerId, data], index) => ({
+                playerId,
+                rank: index + 1,
+                ...data
+            }));
+
+        return sortedScores;
+    }
+
+    /**
      * Process daily LVT collection for all player-owned parcels
      * Called automatically every game day (~9.86 seconds)
      */
@@ -2650,13 +2928,19 @@ class ServerEconomicEngine {
 
                     if (dailyLVT > 0) {
                         const playerId = parcel.owner;
-                        const currentBalance = this.gameState.playerBalances.get(playerId) || 0;
+                        const currentBalance = this.getPlayerBalance(playerId);
 
                         if (currentBalance >= dailyLVT) {
                             // Deduct LVT from player balance
                             this.gameState.playerBalances.set(playerId, currentBalance - dailyLVT);
                             this.governanceSystem.addFunds(dailyLVT, `Daily LVT from parcel [${row},${col}]`);
                             totalLVT += dailyLVT;
+
+                            // Track player's LVT contributions
+                            const playerState = this.gameState.players.get(playerId);
+                            if (playerState) {
+                                playerState.totalLVTPaid = (playerState.totalLVTPaid || 0) + dailyLVT;
+                            }
 
                             console.log(`💸 LVT: Player ${playerId} paid $${dailyLVT.toFixed(2)} for parcel [${row},${col}]`);
                         } else {

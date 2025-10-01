@@ -401,7 +401,6 @@ class UIManager {
      * V2: Update all vitality displays from economic client data
      */
     updateVitalityFromEconomicClient(economicClient) {
-        console.log('📊 UI Manager: Updating vitality displays from economic client');
 
         // Get processed vitality metrics from economic client
         const jeefhhMetrics = economicClient.getVitalityMetrics();
@@ -417,21 +416,22 @@ class UIManager {
         });
 
         // Update CARENS bars
+        // Processing CARENS metrics
         Object.entries(carensMetrics).forEach(([domain, data]) => {
             const barElement = document.getElementById(`${domain.toLowerCase()}-bar`);
+            // Updating CARENS bar for domain
             if (barElement) {
                 this.updateNetScoreBar(barElement, data.score, domain);
             }
         });
 
-        console.log('✅ UI Manager: Vitality displays updated');
     }
 
     /**
      * V2: Update all economic displays from economic client
      */
     updateEconomicDisplays(economicClient) {
-        console.log('💰 UI Manager: Updating economic displays');
+        // Updating economic displays
 
         // Update player balance
         const playerBalance = economicClient.getCurrentPlayerBalance();
@@ -445,7 +445,6 @@ class UIManager {
         // Update attractiveness metric with dynamic tooltip
         this.updateAttractiveness(economicClient);
 
-        console.log('✅ UI Manager: Economic displays updated');
     }
 
     /**
@@ -454,9 +453,31 @@ class UIManager {
     updateAttractiveness(economicClient) {
         const attractiveness = economicClient.getCityAttractiveness();
         const breakdown = economicClient.getAttractivenessBreakdown();
+        const totalResidents = economicClient.totalResidents || 0;
 
         // Check if city is empty (no buildings)
         const hasBuildings = attractiveness !== null;
+
+        // Hide attractiveness until 100 residents - early game is protected
+        const attractivenessRow = document.getElementById('attractiveness-row');
+        if (attractivenessRow) {
+            if (totalResidents < 100) {
+                attractivenessRow.style.display = 'none';
+                return; // Exit early - don't update attractiveness display
+            } else {
+                const wasHidden = attractivenessRow.style.display === 'none';
+                attractivenessRow.style.display = 'flex';
+
+                // Trigger reveal animation when first showing attractiveness
+                if (wasHidden) {
+                    attractivenessRow.classList.add('attractiveness-reveal');
+                    // Remove animation class after it completes
+                    setTimeout(() => {
+                        attractivenessRow.classList.remove('attractiveness-reveal');
+                    }, 2000);
+                }
+            }
+        }
 
         let displayValue, color;
 
@@ -475,65 +496,87 @@ class UIManager {
             }
         }
 
-        // Update the metric value with color
+        // Update the metric value with color and warning animation
         const attractivenessElement = document.getElementById('city-attractiveness');
         if (attractivenessElement) {
             attractivenessElement.textContent = displayValue;
             attractivenessElement.style.color = color;
+
+            // Add pulsing animation when approaching emigration threshold
+            if (hasBuildings && attractiveness < 0.95) {
+                attractivenessElement.classList.add('attractiveness-warning-pulse');
+            } else {
+                attractivenessElement.classList.remove('attractiveness-warning-pulse');
+            }
         }
 
-        // Create dynamic tooltip with detailed breakdown
-        let tooltip;
+        // Create simplified tooltip with clear mechanics explanation and recommendations
+        const recommendations = this.getAttractivenessRecommendations(economicClient);
 
-        if (!hasBuildings) {
-            tooltip = `
-                <div style="text-align: left;">
-                    <div style="font-weight: 600; margin-bottom: 8px; color: #FFD700;">
-                        City Attractiveness: --
-                    </div>
-                    <div style="color: #87CEEB; margin-bottom: 8px;">
-                        Build your first structure to establish city attractiveness.
-                    </div>
-                    <div style="font-size: 11px; color: #888;">
-                        Above 1.1 attracts residents • Below 0.95 for a week causes emigration
-                    </div>
+        tooltip = `
+            <div style="text-align: left;">
+                <div style="font-weight: 600; margin-bottom: 8px; color: #FFD700;">
+                    City Attractiveness: ${attractiveness.toFixed(2)}
                 </div>
-            `;
-        } else {
-            tooltip = `
-                <div style="text-align: left;">
-                    <div style="font-weight: 600; margin-bottom: 8px; color: #FFD700;">
-                        City Attractiveness: ${breakdown.score.toFixed(2)}
-                    </div>
 
-                    <div style="margin-bottom: 6px;">
-                        <div style="color: #98FB98;">Core Needs: ${breakdown.coreScore.toFixed(2)} (70% weight)</div>
-                        <div style="color: #87CEEB;">Quality of Life: ${breakdown.qualityScore.toFixed(2)} (30% weight)</div>
-                    </div>
+                <div style="color: #87CEEB; margin-bottom: 8px; font-size: 13px;">
+                    Attractiveness below 0.95 for 7 straight days causes emigration and your city will spiral.
+                </div>
 
-                    <div style="margin-bottom: 6px;">
-                        <div style="color: #90EE90;">🏆 Strongest: ${breakdown.strongest}</div>
-                        <div style="color: #FFA07A;">⚠️ Weakest: ${breakdown.weakest}</div>
+                <div style="border-top: 1px solid #444; padding-top: 8px; margin-top: 8px;">
+                    <div style="font-weight: 500; margin-bottom: 4px; color: #FFD700;">
+                        Top Recommendations:
                     </div>
-
-                    <div style="border-top: 1px solid #444; padding-top: 6px; margin-top: 6px;">
-                        <div style="color: ${breakdown.score >= 1.1 ? '#90EE90' : breakdown.score >= 0.95 ? '#FFD700' : '#FFA07A'};">
-                            ${breakdown.immigrationStatus}
+                    ${recommendations.map(rec => `
+                        <div style="color: #90EE90; font-size: 12px; margin-bottom: 2px;">
+                            • ${rec}
                         </div>
-                    </div>
-
-                    <div style="font-size: 11px; color: #888; margin-top: 4px;">
-                        Above 1.1 attracts residents • Below 0.95 for a week causes emigration
-                    </div>
+                    `).join('')}
                 </div>
-            `;
-        }
+            </div>
+        `;
 
         // Update the tooltip
-        const attractivenessRow = document.getElementById('attractiveness-row');
         if (attractivenessRow) {
             attractivenessRow.setAttribute('data-tooltip', tooltip);
         }
+    }
+
+    /**
+     * Get top 2 recommendations for improving city attractiveness
+     */
+    getAttractivenessRecommendations(economicClient) {
+        const jeefhh = economicClient.jeefhh || {};
+        const carens = economicClient.carens || {};
+
+        // Analyze all factors that contribute to attractiveness
+        const factors = [
+            { name: 'Build more housing', score: jeefhh.housing?.multiplier || 1.0, type: 'housing' },
+            { name: 'Add more jobs', score: jeefhh.jobs?.multiplier || 1.0, type: 'jobs' },
+            { name: 'Improve food access', score: jeefhh.food?.multiplier || 1.0, type: 'food' },
+            { name: 'Boost energy production', score: jeefhh.energy?.multiplier || 1.0, type: 'energy' },
+            { name: 'Expand education facilities', score: jeefhh.education?.multiplier || 1.0, type: 'education' },
+            { name: 'Add healthcare services', score: jeefhh.healthcare?.multiplier || 1.0, type: 'healthcare' },
+            { name: 'Improve livability (CARENS)', score: carens.multiplier || 1.0, type: 'carens' }
+        ];
+
+        // Sort by lowest scores (biggest improvement opportunities)
+        factors.sort((a, b) => a.score - b.score);
+
+        // Return top 2 recommendations with specific advice
+        const recommendations = [];
+        for (let i = 0; i < Math.min(2, factors.length); i++) {
+            const factor = factors[i];
+            if (factor.score < 1.0) {
+                recommendations.push(factor.name + ' (critical shortage)');
+            } else if (factor.score < 1.1) {
+                recommendations.push(factor.name + ' (needs improvement)');
+            } else {
+                recommendations.push(factor.name + ' (expand further)');
+            }
+        }
+
+        return recommendations.length > 0 ? recommendations : ['Keep expanding all city services', 'Build diverse neighborhoods'];
     }
 
     /**
@@ -676,7 +719,7 @@ class UIManager {
         }
 
         // Update tooltip content with colored numbers
-        const newTooltip = `<span class="${tooltipClass}">${supply}/${demand}</span> ${domain}. Goal: balanced supply and demand.`;
+        const newTooltip = `<span class="${tooltipClass}">${demand}/${supply}</span> ${domain}. Goal: balanced supply and demand.`;
         barContainer.setAttribute('data-tooltip', newTooltip);
     }
 
@@ -685,6 +728,7 @@ class UIManager {
      * 0.5 = neutral (purple dot), >0.5 = gradient toward blue, <0.5 = gradient toward red
      */
     updateNetScoreBar(progressBar, score, domain) {
+        // Updating net score bar
         const barContainer = progressBar.parentElement;
         const balanceDot = barContainer.querySelector('.balance-dot');
 
@@ -692,10 +736,11 @@ class UIManager {
         progressBar.style.cssText = '';
         barContainer.classList.remove('balanced', 'positive', 'negative');
 
-        // Convert 0-1 score to -100 to +100 points scale (0.5 = 0 points)
-        const points = (score - 0.5) * 200;
+        // Direct scoring: score is already raw points (-100 to +100, 0 = neutral)
+        const points = score;
         const absPoints = Math.abs(points);
-        const isNeutral = absPoints < 5; // Within 5 points is considered neutral
+        const isNeutral = absPoints < 1; // Within 1 point is considered neutral
+        // Net score bar calculation
 
         if (isNeutral) {
             // Neutral state: show purple dot in center
@@ -858,39 +903,7 @@ class UIManager {
         const zoomOutBtn = document.getElementById('zoom-out');
         const zoomResetBtn = document.getElementById('zoom-reset');
         
-        if (zoomInBtn && !zoomInBtn.dataset.listenerAdded) {
-            zoomInBtn.addEventListener('click', () => {
-                if (game.zoomLevel < 2.4) {
-                    game.zoomLevel++;
-                    game.updateZoom();
-                }
-            });
-            zoomInBtn.dataset.listenerAdded = 'true';
-        }
-        
-        if (zoomOutBtn && !zoomOutBtn.dataset.listenerAdded) {
-            zoomOutBtn.addEventListener('click', () => {
-                if (game.zoomLevel > 0.4) {
-                    game.zoomLevel--;
-                    game.updateZoom();
-                }
-            });
-            zoomOutBtn.dataset.listenerAdded = 'true';
-        }
-        
-        if (zoomResetBtn && !zoomResetBtn.dataset.listenerAdded) {
-            zoomResetBtn.addEventListener('click', () => {
-                game.zoomLevel = 0.4;
-                game.panOffset = { x: 0, y: 0 };
-                game.updateZoom();
-            });
-            zoomResetBtn.dataset.listenerAdded = 'true';
-        }
-        
-        // Update zoom buttons state - now safe for missing buttons
-        if (game.updateZoomButtons) {
-            game.updateZoomButtons();
-        }
+        // Zoom controls removed - buttons are no longer functional
     }
     
     /**
@@ -954,6 +967,40 @@ class UIManager {
             });
         }
         
+        // Quit Game button
+        const quitGameBtn = document.getElementById('quit-game-btn');
+        if (quitGameBtn) {
+            quitGameBtn.addEventListener('click', () => {
+                // Confirm quit action
+                if (confirm('Are you sure you want to quit this game? You will not be able to rejoin this match.')) {
+                    // Send quit game message to server
+                    if (window.gameEconomicClient && window.gameEconomicClient.ws) {
+                        window.gameEconomicClient.ws.send(JSON.stringify({
+                            type: 'QUIT_GAME',
+                            permanent: true
+                        }));
+
+                        // Return to beer hall
+                        setTimeout(() => {
+                            window.location.reload();
+                        }, 500);
+                    }
+                }
+                playerMenu?.classList.remove('active');
+            });
+        }
+
+        // Commonwealth Score leaderboard
+        const commonwealthScore = document.getElementById('commonwealth-score');
+        if (commonwealthScore) {
+            commonwealthScore.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                this.showLeaderboard();
+                playerMenu?.classList.remove('active');
+            });
+        }
+
         const showPlayerStats = document.getElementById('show-player-stats');
         if (showPlayerStats) {
             showPlayerStats.addEventListener('click', () => {
@@ -1012,7 +1059,6 @@ class UIManager {
                 
                 if (email) {
                     // Send magic link (placeholder for now)
-                    console.log('Sending magic link to:', email);
                     
                     // Update button state
                     magicLinkBtn.textContent = 'Link Sent!';
@@ -1157,6 +1203,86 @@ class UIManager {
     }
     
     /**
+     * Show Commonwealth Score leaderboard
+     */
+    showLeaderboard() {
+        const modal = document.getElementById('leaderboard-modal');
+        if (!modal) return;
+
+        // Request current scores from server
+        if (window.gameEconomicClient && window.gameEconomicClient.ws) {
+            window.gameEconomicClient.ws.send(JSON.stringify({
+                type: 'REQUEST_LEADERBOARD'
+            }));
+        }
+
+        modal.classList.add('visible');
+
+        // Close button
+        const closeBtn = document.getElementById('leaderboard-close');
+        if (closeBtn) {
+            closeBtn.onclick = () => {
+                modal.classList.remove('visible');
+            };
+        }
+
+        // Close on outside click
+        window.onclick = (event) => {
+            if (event.target === modal) {
+                modal.classList.remove('visible');
+            }
+        };
+    }
+
+    /**
+     * Update leaderboard display
+     */
+    updateLeaderboard(scores, currentPlayerId) {
+        const rowsContainer = document.getElementById('leaderboard-rows');
+        if (!rowsContainer) return;
+
+        rowsContainer.innerHTML = '';
+
+        scores.forEach((playerScore, index) => {
+            const row = document.createElement('div');
+            row.className = 'leaderboard-row';
+
+            if (playerScore.playerId === currentPlayerId) {
+                row.classList.add('current-player');
+            }
+
+            const rankSuffix = ['st', 'nd', 'rd'][index] || 'th';
+
+            row.innerHTML = `
+                <div class="lb-rank">${index + 1}${rankSuffix}</div>
+                <div class="lb-player">${playerScore.playerName || 'Player'}</div>
+                <div class="lb-wealth">$${playerScore.wealth.toLocaleString()}</div>
+                <div class="lb-lvt">${(playerScore.lvtRatio * 100).toFixed(1)}%</div>
+                <div class="lb-score">${playerScore.score.toFixed(1)}</div>
+            `;
+
+            rowsContainer.appendChild(row);
+        });
+    }
+
+    /**
+     * Update Commonwealth Score display in top bar
+     */
+    updateCommonwealthScore(score, rank) {
+        const scoreValue = document.getElementById('cw-score-value');
+        const scoreRank = document.getElementById('cw-score-rank');
+
+        if (scoreValue) {
+            scoreValue.textContent = score.toFixed(1);
+        }
+
+        if (scoreRank) {
+            const rankSuffix = ['st', 'nd', 'rd'][rank - 1] || 'th';
+            scoreRank.textContent = `${rank}${rankSuffix}`;
+        }
+    }
+
+    /**
      * Show insufficient funds effect
      */
     showInsufficientFundsEffect() {
@@ -1194,6 +1320,7 @@ class UIManager {
         }
 
         const building = game.buildingManager.getBuildingById(parcel.building);
+        // 🚫 CLIENT CALCULATION - MARKED FOR REMOVAL
         const stats = game.calculateBuildingEconomics(parcel, row, col);
         const coord = game.getParcelCoordinate(row, col);
 
@@ -1450,7 +1577,9 @@ class UIManager {
 
         const currentLvtDisplayEl = document.getElementById('current-lvt-display');
         if (currentLvtDisplayEl) {
-            currentLvtDisplayEl.textContent = `${(game.governance.currentLvtRate * 100).toFixed(0)}%`;
+            // Use server governance data for LVT rate
+            const serverLvtRate = game.economicClient?.governance?.taxRate || game.governance.currentLvtRate || 0.5;
+            currentLvtDisplayEl.textContent = `${(serverLvtRate * 100).toFixed(0)}%`;
         }
 
         const proposedLvtRateEl = document.getElementById('proposed-lvt-rate');
@@ -1464,16 +1593,20 @@ class UIManager {
             lvtVotePointsElOld.textContent = game.governance.playerAllocations?.lvtRate || 0;
         }
 
-        // Update monthly collection
+        // Update monthly collection - FIXED: Use real server data
         const monthlyLvtAmountEl = document.getElementById('monthly-lvt-amount');
         if (monthlyLvtAmountEl) {
-            monthlyLvtAmountEl.textContent = game.governance.monthlyLvtCollected.toLocaleString();
+            // Get LVT collection from economic client or legacy fallback
+            const monthlyLvt = game.economicClient?.dailyCashflowTotals?.lvtExpenses || game.governance.monthlyLvtCollected || 0;
+            monthlyLvtAmountEl.textContent = Math.abs(monthlyLvt * 30).toLocaleString(); // Convert daily to monthly estimate
         }
 
-        // Update unallocated funds display
+        // Update unallocated funds display - FIXED: Use real treasury data
         const unallocatedFundsAmountEl = document.getElementById('unallocated-funds-amount');
         if (unallocatedFundsAmountEl) {
-            unallocatedFundsAmountEl.textContent = (game.governance.unallocatedFunds || 0).toLocaleString();
+            // Get treasury from economic client or legacy fallback
+            const treasury = game.economicClient?.governance?.treasury || game.governance.unallocatedFunds || 0;
+            unallocatedFundsAmountEl.textContent = Math.round(treasury).toLocaleString();
         }
 
         // Update vote summary with new unified system
@@ -1490,8 +1623,10 @@ class UIManager {
 
         const playerVotingPointsEl = document.getElementById('player-voting-points');
         if (playerVotingPointsEl) {
-            const unallocatedPoints = game.getUnallocatedPoints();
-            console.log(`🗳️ Updating UI: Total=${game.governance.totalVotingPoints}, Used=${game.getTotalAllocatedPoints()}, Available=${unallocatedPoints}`);
+            // Get voting points from server governance data
+            const serverVotingPoints = game.economicClient?.governance?.votingPoints;
+            const unallocatedPoints = serverVotingPoints !== undefined ? serverVotingPoints : game.getUnallocatedPoints();
+            // Updating governance UI with voting points
             playerVotingPointsEl.textContent = unallocatedPoints;
         }
 
@@ -1658,7 +1793,6 @@ class UIManager {
         // Set up table sorting
         this.setupCashflowTableSorting(game);
 
-        console.log('✅ DCF functionality initialized in UIManager');
     }
 
     /**
@@ -1682,7 +1816,6 @@ class UIManager {
             this.hideDemographicTooltip(game);
         });
 
-        console.log('✅ Residents demographic tooltip initialized');
     }
 
     /**
@@ -1695,6 +1828,10 @@ class UIManager {
         const totalResidents = game.economicClient?.totalResidents || 0;
         const demographics = game.economicClient?.gameState?.demographics || {};
         const jeefhh = game.economicClient?.jeefhh || {};
+
+        // Calculate occupancy rate (residents / housing capacity)
+        const housingSupply = jeefhh.housing?.supply || 0;
+        const occupancyRate = housingSupply > 0 ? (totalResidents / housingSupply * 100).toFixed(1) : 0;
 
         // Calculate top 2 citywide needs based on supply/demand ratio
         const needs = [];
@@ -1727,6 +1864,11 @@ class UIManager {
                 <div style="display: flex; justify-content: space-between;">
                     <span style="color: #ccc;">Total Residents:</span>
                     <span style="color: #FFD700; font-weight: 600;">${totalResidents.toLocaleString()}</span>
+                </div>
+
+                <div style="display: flex; justify-content: space-between;">
+                    <span style="color: #ccc;">Housing Occupancy:</span>
+                    <span style="color: #4CAF50; font-weight: 600;">${occupancyRate}%</span>
                 </div>
 
                 ${demographics.ageGroups ? this.renderAgeGroups(demographics.ageGroups) : ''}
@@ -1800,17 +1942,10 @@ class UIManager {
     showCashflowTooltip(game, element) {
         if (!game || !game.tooltipManager) return;
 
-        console.log('🔍 DCF Tooltip called - checking data sources:', {
-            dailyCashflowTotals: game.dailyCashflowTotals,
-            topBarElement: document.getElementById('player-cashflow')?.textContent,
-            cache: game.cache?.cashflowBreakdown,
-            economicClient: game.economicClient?.isConnected || false
-        });
 
         // Use the same exact check as the top bar
         if (game.dailyCashflowTotals) {
             const totals = game.dailyCashflowTotals;
-            console.log('✅ Using dailyCashflowTotals:', totals);
 
         const tooltipContent = `
             <div style="display: flex; flex-direction: column; gap: 4px; min-width: 200px;">
@@ -1843,7 +1978,7 @@ class UIManager {
                 maxWidth: 250
             });
         } else {
-            console.warn('❌ No dailyCashflowTotals available for tooltip');
+            console.warn('⚠️ No dailyCashflowTotals available for tooltip');
         }
     }
 
@@ -1892,13 +2027,6 @@ class UIManager {
         const totals = game.dailyCashflowTotals || { revenue: 0, maintenance: 0, lvt: 0, netCashflow: 0 };
         const breakdown = game.cashflowBreakdown || [];
 
-        console.log('🔍 DCF Modal Debug:', {
-            dailyCashflowTotals: game.dailyCashflowTotals,
-            totals: totals,
-            breakdown: breakdown,
-            cache: game.cache?.cashflowBreakdown,
-            currentCashflowPreview: game.currentCashflowPreview
-        });
 
         // Update modal title to show current player
         const modalTitle = document.querySelector('.cashflow-modal h3');
@@ -2103,7 +2231,6 @@ class UIManager {
             element.textContent = playerName;
         });
 
-        console.log('🎮 Updated player name in UI elements:', playerName);
     }
 }
 

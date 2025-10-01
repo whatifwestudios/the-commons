@@ -91,7 +91,6 @@ class BeerHallLobby {
         this.checkInitialSizeSelection();
 
         this.isInitialized = true;
-        console.log('🍺 Beer Hall Lobby initialized');
     }
 
     validateElements() {
@@ -200,6 +199,11 @@ class BeerHallLobby {
         // Sync header and game size colors with selected color
         this.syncUIColors(color);
 
+        // Broadcast color change to other players in multiplayer
+        if (window.gameEconomicClient) {
+            window.gameEconomicClient.updatePlayerInfo();
+        }
+
         // Don't animate on click - only on regeneration
     }
 
@@ -212,15 +216,15 @@ class BeerHallLobby {
         if (beerLobby) {
             const headerTitle = beerLobby.querySelector('h1');
             if (headerTitle) {
-                console.log('🎨 Setting Commons title color to:', color);
+                // Setting Commons title color
                 // Remove inline style first, then apply new color with important
                 headerTitle.removeAttribute('style');
                 headerTitle.style.cssText = `font-size: 28px; color: ${color} !important; margin: 0 0 8px 0; font-weight: 600;`;
             } else {
-                console.warn('🎨 No h1 found in beer lobby');
+                console.warn('⚠️ No h1 found in beer lobby');
             }
         } else {
-            console.warn('🎨 Beer lobby element not found');
+            console.warn('⚠️ Beer lobby element not found');
         }
 
         // Update active size button with colored border, white text, no background change
@@ -324,7 +328,7 @@ class BeerHallLobby {
         // Check if it's solo mode (data-size="1")
         if (sizeData === '1') {
             // Solo mode - player will start game by clicking "Enter the Commons"
-            console.log('🎮 Solo mode selected - player controls when to start', sizeData);
+            // Solo mode selected - player controls when to start
             // No automatic start - player decides when to begin
             return;
         }
@@ -356,7 +360,7 @@ class BeerHallLobby {
         // Update the player count display
         this.updatePlayerCount(1, maxPlayers);
 
-        console.log('🎯 Table preference:', this.playerPreferences);
+        // Table preference set
     }
 
     /**
@@ -365,13 +369,14 @@ class BeerHallLobby {
     async startSoloGame() {
         // Validate input
         const playerName = document.getElementById('player-name').value.trim() || 'Player';
+        this.playerName = playerName; // Store for WebSocket identification
 
         if (!this.selectedColor) {
             alert('Please select a color!');
             return;
         }
 
-        console.log('🎮 Creating isolated solo table...');
+        // Creating isolated solo table
 
         try {
             // Create isolated solo table via beer hall API
@@ -394,7 +399,7 @@ class BeerHallLobby {
             const result = await response.json();
 
             if (result.success) {
-                console.log('🎮 Solo table created:', result.table.id);
+                // Solo table created successfully
 
                 // Create player config for solo mode
                 const playerConfig = {
@@ -407,7 +412,7 @@ class BeerHallLobby {
                     // Governance preferences now handled by main governance system
                 };
 
-                console.log('🎮 Starting solo game with config:', playerConfig);
+                // Starting solo game
 
                 // Hide all lobby screens and start game
                 this.hideAllLobbyScreens();
@@ -471,7 +476,7 @@ class BeerHallLobby {
     checkInitialSizeSelection() {
         const activeButton = document.querySelector('.size-btn.active');
         if (activeButton && activeButton.dataset.size === '1') {
-            console.log('🎮 SOLO mode detected on initialization - showing welcome screen (player controls when to start)');
+            // SOLO mode detected - showing welcome screen
             // Show welcome screen - player will start game by clicking "Enter the Commons"
             this.welcomeScreen.style.display = 'flex';
         } else if (activeButton) {
@@ -506,6 +511,7 @@ class BeerHallLobby {
             return;
         }
 
+        // Always require server connection
         if (!this.playerId) {
             alert('Connecting to server... Please wait a moment and try again.');
             this.findTableBtn.textContent = '🚀 Enter The Commons';
@@ -518,8 +524,8 @@ class BeerHallLobby {
         const isSoloMode = activeButton && activeButton.dataset.size === '1';
 
         if (isSoloMode) {
-            // Handle solo mode
-            console.log('🎮 Solo mode detected in handleFindTable - starting solo game');
+            // Handle solo mode through server
+            // Solo mode detected - starting solo game
             this.startSoloGame();
             return;
         }
@@ -540,7 +546,7 @@ class BeerHallLobby {
                 // Governance preferences now handled by main governance system
             };
 
-            console.log('🎮 Entering The Commons:', playerConfig);
+            // Entering The Commons
 
             // Hide welcome screen immediately and start game
             this.welcomeScreen.style.display = 'none';
@@ -580,7 +586,7 @@ class BeerHallLobby {
      */
     async joinTableInBackground() {
         try {
-            console.log('🔄 Joining multiplayer table in background...');
+            // Joining multiplayer table in background
 
             const response = await fetch('/api/beer-hall/find-table', {
                 method: 'POST',
@@ -599,7 +605,7 @@ class BeerHallLobby {
 
             if (result.success) {
                 this.currentTable = result.table;
-                console.log('🍻 Joined table in background:', this.currentTable);
+                // Joined table in background
 
                 // Notify game about multiplayer connection
                 if (window.game && window.game.handleMultiplayerJoined) {
@@ -625,19 +631,24 @@ class BeerHallLobby {
         }
 
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const host = window.location.host;
+        // Connect to the same server that served the page
+        const host = window.location.host; // Uses current port automatically
         const wsUrl = `${protocol}//${host}/ws`;
 
-        console.log('🔌 Connecting to beer hall WebSocket...');
+        // Connecting to beer hall WebSocket
+        // Connecting to beer hall WebSocket
 
         try {
             this.ws = new WebSocket(wsUrl);
 
             this.ws.onopen = () => {
-                console.log('🔌 Beer Hall WebSocket connected');
+                console.log('✅ Beer Hall WebSocket connected successfully');
+                // Handle successful connection/reconnection
+                this.handleReconnection();
             };
 
             this.ws.onmessage = (event) => {
+                // WebSocket message received
                 try {
                     const update = JSON.parse(event.data);
                     this.handleWebSocketUpdate(update);
@@ -646,11 +657,14 @@ class BeerHallLobby {
                 }
             };
 
-            this.ws.onclose = () => {
-                console.log('🔌 Beer Hall WebSocket disconnected');
+            this.ws.onclose = (event) => {
+                console.warn('⚠️ Beer Hall WebSocket disconnected - Code:', event.code);
+                // Attempt to reconnect after a delay
+                this.scheduleReconnection();
             };
 
             this.ws.onerror = (error) => {
+                console.error('🔌 DEBUG: Beer Hall WebSocket error:', error);
                 console.error('🔌 Beer Hall WebSocket error:', error);
             };
 
@@ -663,11 +677,11 @@ class BeerHallLobby {
      * Handle WebSocket updates
      */
     handleWebSocketUpdate(update) {
-        console.log('📡 Beer Hall update:', update.type);
+        // Processing WebSocket update
 
         switch (update.type) {
             case 'CONNECTED':
-                console.log('🔗 Setting player ID from WebSocket:', update.playerId);
+                // Setting player ID from WebSocket
                 this.playerId = update.playerId;
                 break;
 
@@ -684,7 +698,6 @@ class BeerHallLobby {
                 break;
 
             case 'PLAYER_JOINED':
-                console.log('📡 Beer Hall: PLAYER_JOINED received:', update);
                 this.handlePlayerJoined(update);
                 break;
 
@@ -700,16 +713,20 @@ class BeerHallLobby {
                 this.handleGameStart(update);
                 break;
 
+            case 'GAME_STARTING':
+                // Game is starting - can be ignored or logged
+                console.log('🎮 Game starting...');
+                break;
+
             case 'GAME_STATE':
                 // Check if this is a GAME_STARTED event with city names
                 if (update.eventType === 'GAME_STARTED' && update.eventData?.players) {
-                    console.log('🏙️ GAME_STARTED detected - extracting city names');
+                    // GAME_STARTED detected - extracting city names
                     const players = update.eventData.players;
                     const currentPlayer = players.find(p => p.id === this.playerId);
 
                     if (currentPlayer && currentPlayer.cityName) {
-                        console.log(`🏙️ Your city name: ${currentPlayer.cityName}`);
-                        // Store city name for UI display
+                                    // Store city name for UI display
                         localStorage.setItem('playerCityName', currentPlayer.cityName);
                         // Update UI immediately if game exists
                         if (window.game && window.game.updateCityNameFromServer) {
@@ -721,19 +738,31 @@ class BeerHallLobby {
                 }
 
                 // Forward GAME_STATE messages to Economic Client
-                console.log('📡 Beer Hall: Forwarding GAME_STATE to Economic Client');
+                // Forwarding GAME_STATE to Economic Client
                 if (window.game && window.game.economicClient) {
+                    // Calling economicClient.handleWebSocketUpdate
                     window.game.economicClient.handleWebSocketUpdate(update);
+                } else {
+                    console.warn('⚠️ Economic Client not available for GAME_STATE');
                 }
                 break;
 
             case 'GOVERNANCE_UPDATE':
                 // Forward GOVERNANCE_UPDATE messages to Economic Client
-                console.log('📡 Beer Hall: Forwarding GOVERNANCE_UPDATE to Economic Client');
+                // Beer Hall: Forwarding GOVERNANCE_UPDATE to Economic Client
                 if (window.game && window.game.economicClient) {
                     window.game.economicClient.handleWebSocketUpdate(update);
                 } else {
                     console.warn('⚠️ Economic Client not available for GOVERNANCE_UPDATE');
+                }
+                break;
+
+            case 'COMMONWEALTH_UPDATE':
+                // Forward COMMONWEALTH_UPDATE messages to Economic Client
+                if (window.game && window.game.economicClient) {
+                    window.game.economicClient.handleWebSocketUpdate(update);
+                } else {
+                    console.warn('⚠️ Economic Client not available for COMMONWEALTH_UPDATE');
                 }
                 break;
 
@@ -743,7 +772,64 @@ class BeerHallLobby {
                 break;
 
             default:
-                console.log('📡 Unknown beer hall update:', update.type);
+                // Forward any unhandled messages to Economic Client
+                if (window.game && window.game.economicClient) {
+                    console.log(`🔄 Beer Hall forwarding unknown message ${update.type} to Economic Client`);
+                    window.game.economicClient.handleWebSocketUpdate(update);
+                } else {
+                    console.warn('⚠️ Unknown beer hall update:', update.type);
+                }
+        }
+    }
+
+    /**
+     * Schedule reconnection attempt
+     */
+    scheduleReconnection() {
+        console.log('🔄 Beer Hall scheduling reconnection...');
+
+        // Clear any existing reconnection timeout
+        if (this.reconnectionTimeout) {
+            clearTimeout(this.reconnectionTimeout);
+        }
+
+        // Initialize reconnection attempts if not set
+        if (!this.reconnectionAttempts) {
+            this.reconnectionAttempts = 0;
+        }
+
+        this.reconnectionAttempts++;
+        const delay = Math.min(1000 * Math.pow(2, this.reconnectionAttempts - 1), 30000); // Exponential backoff, max 30s
+
+        console.log(`🔄 Beer Hall reconnection attempt ${this.reconnectionAttempts} in ${delay}ms`);
+
+        this.reconnectionTimeout = setTimeout(() => {
+            this.initializeWebSocket();
+        }, delay);
+    }
+
+    /**
+     * Handle successful reconnection
+     */
+    handleReconnection() {
+        console.log('🎉 Beer Hall reconnected successfully!');
+
+        // Reset reconnection attempts
+        this.reconnectionAttempts = 0;
+
+        // Clear reconnection timeout
+        if (this.reconnectionTimeout) {
+            clearTimeout(this.reconnectionTimeout);
+            this.reconnectionTimeout = null;
+        }
+
+        // Notify Economic Client that Beer Hall is ready
+        if (window.game && window.game.economicClient) {
+            console.log('🔄 Notifying Economic Client of Beer Hall reconnection');
+            // Give it a moment to ensure WebSocket is fully ready
+            setTimeout(() => {
+                window.game.economicClient.handleBeerHallReconnection();
+            }, 100);
         }
     }
 
@@ -751,7 +837,7 @@ class BeerHallLobby {
      * Show ready check modal
      */
     showReadyCheck(update) {
-        console.log('🍻 Table ready check started!');
+        // Table ready check started
 
         const tableInfo = update.tableInfo;
 
@@ -842,8 +928,9 @@ class BeerHallLobby {
      * Start game cinematic
      */
     startGameCinematic(update) {
-        console.log('🎮 Starting game cinematic!');
-        console.log('📦 GAME_STARTED update:', update);
+        if (window.DEBUG_MODE) {
+            console.log('✅ Starting game cinematic!');
+        }
 
         // Hide ready check modal
         this.readyCheckModal.style.display = 'none';
@@ -856,7 +943,6 @@ class BeerHallLobby {
         const currentPlayer = players.find(p => p.id === this.playerId);
 
         if (currentPlayer && currentPlayer.cityName) {
-            console.log(`🏙️ Your city name: ${currentPlayer.cityName}`);
             // Store city name for UI display
             localStorage.setItem('playerCityName', currentPlayer.cityName);
             // Update UI immediately if game exists
@@ -909,7 +995,7 @@ class BeerHallLobby {
             // Add initial player to chat
             this.addPlayerToChat(this.playerName, this.selectedColor);
 
-            console.log('💬 Multiplayer chat overlay shown');
+            // Multiplayer chat overlay shown
         }
     }
 
@@ -1450,7 +1536,7 @@ class BeerHallLobby {
                 }
 
                 if (result) {
-                    console.log(`🏛️ Pre-game LVT ${action}: ${(governanceSystem.governance.taxRate * 100).toFixed(1)}% (net votes: ${this.playerLVTVotes})`);
+                    // Pre-game LVT vote processed
                 }
                 }
             } else {
@@ -1655,7 +1741,7 @@ class BeerHallLobby {
 
         // Simply close the governance modal and return to chat
         // All governance votes are automatically saved to server in real-time
-        console.log('🏛️ Returning to chat - all votes automatically synchronized');
+        // Returning to chat - all votes automatically synchronized
         governanceSystem.closeGovernanceModal();
     }
 

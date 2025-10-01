@@ -3,6 +3,18 @@
  * Multi-user server with authentication and isolated user experiences
  */
 
+// Add global error handlers to prevent crashes
+process.on('uncaughtException', (err) => {
+    console.error('❌ UNCAUGHT EXCEPTION:', err);
+    console.error('Stack:', err.stack);
+    // Don't exit in production, just log the error
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+    console.error('❌ UNHANDLED REJECTION at:', promise, 'reason:', reason);
+    // Don't exit in production, just log the error
+});
+
 const express = require('express');
 const path = require('path');
 const cors = require('cors');
@@ -98,6 +110,12 @@ wss.on('connection', (ws, req) => {
     const playerId = `player_${Math.random().toString(36).substr(2, 9)}`;
     ws.playerId = playerId;
 
+    // Connection health tracking
+    ws.connectionTime = Date.now();
+    ws.lastPing = Date.now();
+    ws.lastPong = Date.now();
+    ws.isAlive = true;
+
     // Send welcome with assigned player ID
     ws.send(JSON.stringify({
         type: 'CONNECTED',
@@ -119,14 +137,58 @@ wss.on('connection', (ws, req) => {
         }
     });
 
-    ws.on('close', () => {
-        console.log(`🔌 Player ${playerId} disconnected`);
+    ws.on('close', (code, reason) => {
+        const reasonText = reason ? reason.toString() : 'No reason provided';
+        const duration = Date.now() - ws.connectionTime;
+        const isGraceful = ws.gracefulDisconnect || code === 1000 || code === 1001;
+
+        if (isGraceful) {
+            console.log(`🚪 Player ${playerId} disconnected gracefully - Code: ${code}, Duration: ${duration}ms`);
+        } else {
+            console.log(`❌ Player ${playerId} UNEXPECTED disconnect - Code: ${code}, Reason: ${reasonText}`);
+            console.log(`🕐 Connection duration: ${duration}ms`);
+
+            // Log common close codes for debugging
+            const closeReasons = {
+                1000: 'Normal closure',
+                1001: 'Going away (page refresh/navigation)',
+                1002: 'Protocol error',
+                1003: 'Unsupported data type',
+                1005: 'No status code (abnormal)',
+                1006: 'Abnormal closure (no close frame)',
+                1007: 'Invalid frame payload data',
+                1008: 'Policy violation',
+                1009: 'Message too big',
+                1010: 'Missing extension',
+                1011: 'Internal server error',
+                1012: 'Service restart',
+                1013: 'Try again later',
+                1014: 'Bad gateway',
+                1015: 'TLS handshake failure'
+            };
+
+            if (closeReasons[code]) {
+                console.log(`🔍 Close code meaning: ${closeReasons[code]}`);
+            }
+
+            // For unexpected disconnections, log more details
+            if (code === 1006) {
+                console.log(`🚨 Code 1006 detected - possible causes:`);
+                console.log(`   - Browser tab backgrounded/killed`);
+                console.log(`   - Network connection lost`);
+                console.log(`   - Server overload`);
+                console.log(`   - Client-side JavaScript error`);
+            }
+        }
+
         connectedClients.delete(ws);
         roomManager.handleDisconnect(playerId);
     });
 
     ws.on('error', (error) => {
-        console.error('🔌 WebSocket error:', error);
+        console.error(`🔌 WebSocket error for ${playerId}:`, error);
+        console.error(`🔍 Error code: ${error.code}, Message: ${error.message}`);
+        console.error(`🔍 Error stack:`, error.stack);
         connectedClients.delete(ws);
     });
 });
@@ -178,6 +240,51 @@ async function handleWebSocketMessage(ws, data) {
                 playerId: playerId,
                 ready: data.ready
             });
+            break;
+
+        case 'QUIT_GAME':
+            // Permanent quit - player cannot rejoin this game
+            if (!room) {
+                console.error('Player not in a room for QUIT_GAME:', playerId);
+                return;
+            }
+            console.log(`🚪 Player ${playerId} permanently quit the game`);
+
+            // Remove player permanently from room
+            roomManager.quitGame(playerId);
+
+            // Send confirmation to player
+            ws.send(JSON.stringify({
+                type: 'QUIT_CONFIRMED',
+                message: 'You have left the game'
+            }));
+
+            // Close the websocket
+            ws.close();
+            break;
+
+        case 'REQUEST_LEADERBOARD':
+            // Send current Commonwealth scores to player
+            if (!room) {
+                console.error('Player not in a room for REQUEST_LEADERBOARD:', playerId);
+                return;
+            }
+
+            const scores = room.economicEngine.calculateCommonwealthScores();
+            const currentPlayerScore = scores.find(s => s.playerId === playerId);
+
+            ws.send(JSON.stringify({
+                type: 'LEADERBOARD_UPDATE',
+                scores: scores.map(s => ({
+                    playerId: s.playerId,
+                    playerName: room.players.get(s.playerId)?.name || 'Player',
+                    wealth: s.wealth,
+                    lvtRatio: s.lvtRatio,
+                    score: s.score,
+                    rank: s.rank
+                })),
+                currentPlayer: currentPlayerScore
+            }));
             break;
 
         case 'CHAT':
@@ -273,11 +380,94 @@ async function handleWebSocketMessage(ws, data) {
                     data
                 );
 
-                if (result.success) {
-                    // Broadcast updated governance state to all players in room
-                    room.economicEngine.broadcastGameStateUpdate('GOVERNANCE_UPDATE');
+                // Trigger game loop for governance actions
+                if (result && result.success) {
+                    global.triggerGameLoop(`governance_${data.voteType}`);
                 }
+
+                // 🚫 BANDAID ELIMINATED! Economic engine auto-broadcasts on success
+                // Pure flow: action → calculated impact → server broadcast → player reaction
+                // No manual broadcast needed!
             }
+            break;
+
+        case 'ECONOMIC_TRANSACTION':
+            // Handle economic transactions via WebSocket
+            if (!room) {
+                ws.send(JSON.stringify({
+                    type: 'TRANSACTION_RESPONSE',
+                    transactionId: data.transaction?.id,
+                    result: {
+                        success: false,
+                        error: 'Player not in any room'
+                    }
+                }));
+                return;
+            }
+
+            try {
+                console.log('📥 Room-aware transaction received via WebSocket:', data.transaction.type, 'for room:', room.id);
+                const result = await room.economicEngine.processTransaction(data.transaction);
+
+                // Trigger game loop for economic actions
+                if (result.success) {
+                    global.triggerGameLoop(`websocket_${data.transaction.type}`);
+                }
+
+                // Send response back via WebSocket
+                ws.send(JSON.stringify({
+                    type: 'TRANSACTION_RESPONSE',
+                    transactionId: data.transaction.id,
+                    result: result
+                }));
+
+            } catch (error) {
+                console.error('❌ Transaction processing failed:', error);
+                ws.send(JSON.stringify({
+                    type: 'TRANSACTION_RESPONSE',
+                    transactionId: data.transaction?.id,
+                    result: {
+                        success: false,
+                        error: error.message,
+                        timestamp: Date.now()
+                    }
+                }));
+            }
+            break;
+
+        case 'PING':
+            // Respond to client heartbeat ping
+            ws.lastPing = Date.now();
+            ws.send(JSON.stringify({
+                type: 'PONG',
+                connectionId: data.connectionId,
+                timestamp: Date.now(),
+                serverTime: Date.now()
+            }));
+            break;
+
+        case 'PONG':
+            // Handle client pong response (if server initiates ping)
+            ws.lastPong = Date.now();
+            break;
+
+        case 'REQUEST_GAME_STATE_SYNC':
+            // Handle request for full game state synchronization
+            console.log(`🔄 Game state sync requested by ${data.playerId}`);
+            if (room && room.economicEngine) {
+                // Force a complete state broadcast to this client
+                room.economicEngine.broadcastGameState('SYNC_REQUESTED', {
+                    playerId: data.playerId,
+                    connectionId: data.connectionId
+                });
+            }
+            break;
+
+        case 'GRACEFUL_DISCONNECT':
+            // Handle graceful disconnection (page unload, etc.)
+            console.log(`🚪 Graceful disconnect from ${data.playerId}: ${data.reason}`);
+            // Mark this as an expected disconnection - don't log as error
+            ws.gracefulDisconnect = true;
             break;
 
         default:
@@ -306,15 +496,51 @@ function broadcastToAllClients(update) {
 
 // Clean multiplayer - room broadcast functions are set per room in RoomManager
 
-// Start economic engine timer for all rooms
-setInterval(() => {
-    // Update each room's game timer
-    roomManager.rooms.forEach(room => {
-        if (room.state === 'IN_PROGRESS') {
-            room.economicEngine.updateGameTime();
-        }
-    });
-}, 1000); // Update every second
+// Smart game loop system - runs on demand with throttling
+let lastGameLoopRun = 0;
+const GAME_LOOP_MIN_INTERVAL = 250; // 0.25 seconds minimum
+const GAME_DAY_MS = 3600000 / 365; // ~9.86 seconds per game day
+
+function runGameLoop(triggeredBy = 'timer') {
+    const now = Date.now();
+
+    // Throttle: don't run more often than every 0.25s
+    if (now - lastGameLoopRun < GAME_LOOP_MIN_INTERVAL) {
+        return;
+    }
+
+    lastGameLoopRun = now;
+
+    try {
+        console.log(`🎮 Game loop triggered by: ${triggeredBy}`);
+
+        // Update each room's game timer
+        roomManager.rooms.forEach(room => {
+            try {
+                if (room.state === 'IN_PROGRESS') {
+                    room.economicEngine.updateGameTime();
+
+                    // Check victory conditions (less frequently)
+                    if (now % 10000 < GAME_LOOP_MIN_INTERVAL) {
+                        room.checkVictoryConditions();
+                    }
+                }
+            } catch (roomError) {
+                console.error(`❌ Room ${room.id} processing error:`, roomError);
+                // Continue with other rooms instead of crashing
+            }
+        });
+    } catch (globalError) {
+        console.error('❌ Game loop error:', globalError);
+        // Don't exit, keep the server running
+    }
+}
+
+// Natural progression: run every game day (~9.86 seconds)
+setInterval(() => runGameLoop('daily_progression'), GAME_DAY_MS);
+
+// Make runGameLoop available globally for economic action triggers
+global.triggerGameLoop = (reason) => runGameLoop(reason);
 console.log('🏭 Server-side Economic Engine initialized');
 
 // ====================================================================
@@ -380,53 +606,8 @@ app.get('/api/beer-hall/lobby', (req, res) => {
     }
 });
 
-// V2 Transaction API - Room-specific economic transactions
-app.post('/api/v2/transaction', (req, res) => {
-    try {
-        const { playerId, type, amount, description } = req.body;
-
-        if (!playerId) {
-            return res.status(400).json({ error: 'playerId required' });
-        }
-
-        // Find player's room
-        const room = roomManager.getPlayerRoom(playerId);
-        if (!room) {
-            return res.status(404).json({ error: 'Player not in any room' });
-        }
-
-        // Process transaction through room's economic engine
-        const result = room.economicEngine.processTransaction({
-            type,
-            playerId,
-            amount,
-            description,
-            timestamp: Date.now()
-        });
-
-        if (result.success) {
-            // Broadcast transaction to room members
-            room.broadcast({
-                type: 'TRANSACTION_UPDATE',
-                playerId: playerId,
-                transaction: result,
-                timestamp: Date.now()
-            });
-
-            res.json({
-                success: true,
-                result: result,
-                roomId: room.id
-            });
-        } else {
-            res.status(400).json(result);
-        }
-
-    } catch (error) {
-        console.error('❌ V2 Transaction error:', error);
-        res.status(500).json({ error: error.message });
-    }
-});
+// ❌ REMOVED: V2 Transaction API - Now handled via WebSocket only
+// All economic transactions should use WebSocket 'ECONOMIC_TRANSACTION' message type
 
 // Health check endpoint
 app.get('/health', (req, res) => {
@@ -486,171 +667,12 @@ app.post('/api/buildings/save-json', (req, res) => {
 // Cash transaction endpoint
 // REMOVED: Legacy /api/cash/transaction endpoint - replaced by v2 economic system
 
-// Player balance endpoint
-app.post('/api/player/balance', noAuth, (req, res) => {
-    try {
-        const { playerId } = req.body;
+// ❌ REMOVED: Player state API endpoints - Now handled via WebSocket only
+// Player balance, color, and other state is provided in game state broadcasts
+// Player actions should use WebSocket message types
 
-        // Ensure we have a valid playerId for balance lookup - no fallback to shared 'player'
-        if (!playerId) {
-            return res.status(400).json({
-                success: false,
-                error: 'playerId is required for balance lookup',
-                message: 'Each user session must provide a unique playerId'
-            });
-        }
-
-        const actualUserId = playerId;
-
-        const balance = getPlayerBalance(actualUserId);
-
-        res.json({
-            success: true,
-            balance: balance,
-            playerId: actualUserId,
-            timestamp: Date.now()
-        });
-
-    } catch (error) {
-        console.error('❌ Balance lookup failed:', error);
-        res.status(500).json({
-            success: false,
-            error: 'Failed to get balance',
-            message: error.message
-        });
-    }
-});
-
-// Reset player balance endpoint
-app.post('/api/player/reset-balance', async (req, res) => {
-    try {
-        console.log('🔄 Player balance reset requested');
-
-        // Reset player balance to starting amount
-        const startingBalance = 6000;
-
-        // For now, just return success - in multiplayer this would update database
-        res.json({
-            success: true,
-            message: 'Player balance reset successfully',
-            newBalance: startingBalance,
-            timestamp: new Date().toISOString()
-        });
-
-        console.log('✅ Player balance reset to', startingBalance);
-    } catch (error) {
-        console.error('❌ Balance reset failed:', error);
-        res.status(500).json({
-            success: false,
-            error: 'Failed to reset balance',
-            message: error.message
-        });
-    }
-});
-
-// Update player color endpoint - V2: Handled by room-based WebSocket system
-app.post('/api/player/color', noAuth, (req, res) => {
-    try {
-        const { playerId, color } = req.body;
-        const actualPlayerId = playerId || 'player';
-
-        if (!color || !/^#[0-9A-Fa-f]{6}$/.test(color)) {
-            return res.status(400).json({
-                success: false,
-                error: 'Invalid color format'
-            });
-        }
-
-        // V2: Color management is handled by room system via WebSocket
-        // Return success for compatibility but actual updates happen via room WebSocket
-        const result = {
-            success: true,
-            assignedColor: color, // V2: Accept provided color, room validates
-            playerId: actualPlayerId,
-            message: 'V2: Color managed by room system'
-        };
-
-        console.log(`🎨 V2: Player ${actualPlayerId} color update request for ${color} (handled by room system)`);
-
-        res.json(result);
-    } catch (error) {
-        console.error('❌ Player color update failed:', error);
-        res.status(500).json({
-            success: false,
-            error: 'Failed to update player color',
-            message: error.message
-        });
-    }
-});
-
-
-
-
-// Get player info endpoint
-app.get('/api/player/:playerId', noAuth, (req, res) => {
-    try {
-        const playerId = req.params.playerId || 'player';
-
-        // TODO: Use actual GameState instance in multiplayer
-        // For now, return default player data
-        const playerData = {
-            id: playerId,
-            name: 'Player',
-            color: '#10AC84',
-            cash: 6000,
-            actions: 20,
-            votingPoints: 0
-        };
-
-        res.json({
-            success: true,
-            player: playerData
-        });
-    } catch (error) {
-        console.error('❌ Get player info failed:', error);
-        res.status(500).json({
-            success: false,
-            error: 'Failed to get player info',
-            message: error.message
-        });
-    }
-});
-
-// Get all players endpoint - V2: Room-based player data
-app.get('/api/players', noAuth, (req, res) => {
-    try {
-        // V2: Players are managed by individual rooms
-        const allPlayers = {};
-
-        // Aggregate players from all rooms
-        roomManager.rooms.forEach((room, roomId) => {
-            room.players.forEach((playerData, playerId) => {
-                allPlayers[playerId] = {
-                    id: playerId,
-                    name: playerData.name || 'Player',
-                    color: playerData.color || '#10AC84',
-                    cash: playerData.balance || 6000,
-                    actions: 20, // V2: Actions handled by room economic engine
-                    votingPoints: playerData.governance?.votingPoints || 0,
-                    roomId: roomId,
-                    cityName: playerData.cityName // V2: Include server-generated city name
-                };
-            });
-        });
-
-        res.json({
-            success: true,
-            players: allPlayers
-        });
-    } catch (error) {
-        console.error('❌ Get players failed:', error);
-        res.status(500).json({
-            success: false,
-            error: 'Failed to get players',
-            message: error.message
-        });
-    }
-});
+// ❌ REMOVED: Get all players endpoint - Now handled via WebSocket only
+// Player data is provided in game state broadcasts to each room
 
 
 // =============================================================================
@@ -665,33 +687,8 @@ app.get('/api/players', noAuth, (req, res) => {
 // LEGACY ENDPOINT REMOVED: Cashflow data now provided via WebSocket-only communication
 // All economic data is now synchronized via server-authoritative WebSocket broadcasts
 
-// Process economic transaction (room-aware)
-app.post('/api/economics/transaction', async (req, res) => {
-    try {
-        const playerId = req.body.playerId;
-        const room = roomManager.getPlayerRoom(playerId);
-
-        if (!room) {
-            return res.status(404).json({
-                success: false,
-                error: 'Player not in any room'
-            });
-        }
-
-        console.log('📥 Room-aware transaction received:', req.body.type, 'for room:', room.id);
-        const result = await room.economicEngine.processTransaction(req.body);
-
-        res.json(result);
-
-    } catch (error) {
-        console.error('❌ Transaction processing failed:', error);
-        res.status(500).json({
-            success: false,
-            error: error.message,
-            timestamp: Date.now()
-        });
-    }
-});
+// ❌ REMOVED: Economics transaction API - Now handled via WebSocket only
+// All economic transactions should use WebSocket 'ECONOMIC_TRANSACTION' message type
 
 // =============================================================================
 
@@ -708,92 +705,9 @@ app.get('/api/leaderboard', (req, res) => {
     });
 });
 
-// =============================================================================
-// CLEAN GOVERNANCE API - Simple and working
-// =============================================================================
-
-// Get governance state for a player
-app.get('/api/governance/state', (req, res) => {
-    const playerId = req.query.playerId;
-
-    if (!playerId) {
-        return res.status(400).json({ success: false, error: 'playerId required' });
-    }
-
-    try {
-        const room = roomManager.findRoomByPlayerId(playerId);
-
-        if (!room) {
-            // Player not in room - return default state
-            return res.json({
-                success: true,
-                votingPoints: 0,
-                allocations: {}
-            });
-        }
-
-        // Get player data from economic engine
-        const playerData = room.economicEngine.getPlayerData(playerId);
-
-        if (!playerData) {
-            // Player exists in room but no data - return default
-            return res.json({
-                success: true,
-                votingPoints: 0,
-                allocations: {}
-            });
-        }
-
-        // Get actual governance data
-        const governance = playerData.governance || { votingPoints: 0, votes: {} };
-
-        res.json({
-            success: true,
-            votingPoints: governance.votingPoints || 0,
-            allocations: governance.votes || {}
-        });
-
-    } catch (error) {
-        console.error('❌ Governance state error:', error);
-        res.status(500).json({ success: false, error: error.message });
-    }
-});
-
-// Submit governance vote
-app.post('/api/governance/vote', async (req, res) => {
-    const { playerId, category, amount } = req.body;
-
-    if (!playerId || !category || amount === undefined) {
-        return res.status(400).json({ success: false, error: 'Missing required fields' });
-    }
-
-    try {
-        const room = roomManager.findRoomByPlayerId(playerId);
-
-        if (!room) {
-            return res.status(404).json({ success: false, error: 'Player not found' });
-        }
-
-        // Submit vote through economic engine
-        const result = await room.economicEngine.processTransaction({
-            type: 'budget_vote',
-            playerId: playerId,
-            category: category,
-            amount: amount,
-            timestamp: Date.now()
-        });
-
-        if (result.success) {
-            res.json({ success: true, result: result });
-        } else {
-            res.status(400).json({ success: false, error: result.error || 'Vote failed' });
-        }
-
-    } catch (error) {
-        console.error('❌ Governance vote error:', error);
-        res.status(500).json({ success: false, error: error.message });
-    }
-});
+// ❌ REMOVED: Governance API endpoints - Now handled via WebSocket only
+// Governance state is provided in the regular game state broadcasts
+// Governance votes should use WebSocket 'GOVERNANCE_VOTE' message type
 
 
 // Serve index.html for all non-API routes
@@ -807,4 +721,87 @@ server.listen(PORT, () => {
     console.log(`📍 Game available at: http://localhost:${PORT}`);
     console.log(`🔌 WebSocket available at: ws://localhost:${PORT}/ws`);
     console.log(`🏠 Mode: Real-time multiplayer`);
+
+    // Start connection health monitoring
+    startConnectionHealthMonitoring();
 });
+
+// =============================================================================
+// 🚀 CONNECTION HEALTH MONITORING SYSTEM
+// =============================================================================
+
+/**
+ * Monitor WebSocket connections and clean up stale ones
+ */
+function startConnectionHealthMonitoring() {
+    const HEALTH_CHECK_INTERVAL = 30000; // 30 seconds
+    const STALE_CONNECTION_TIMEOUT = 60000; // 60 seconds
+
+    console.log('💓 Starting connection health monitoring');
+
+    setInterval(() => {
+        const now = Date.now();
+        let healthyConnections = 0;
+        let staleConnections = 0;
+
+        connectedClients.forEach(ws => {
+            if (ws.readyState === WebSocket.OPEN) {
+                // Check if connection is stale (no ping in timeout period)
+                const timeSinceLastPing = now - (ws.lastPing || ws.connectionTime);
+
+                if (timeSinceLastPing > STALE_CONNECTION_TIMEOUT) {
+                    console.log(`🔥 Terminating stale connection for player ${ws.playerId} (${timeSinceLastPing}ms since last ping)`);
+                    ws.terminate();
+                    staleConnections++;
+                } else {
+                    healthyConnections++;
+                }
+            } else {
+                // Remove dead connections
+                connectedClients.delete(ws);
+                staleConnections++;
+            }
+        });
+
+        if (healthyConnections > 0 || staleConnections > 0) {
+            console.log(`💓 Connection health: ${healthyConnections} healthy, ${staleConnections} cleaned up`);
+        }
+
+    }, HEALTH_CHECK_INTERVAL);
+}
+
+/**
+ * Get connection statistics
+ */
+function getConnectionStats() {
+    const now = Date.now();
+    const stats = {
+        total: connectedClients.size,
+        healthy: 0,
+        stale: 0,
+        connections: []
+    };
+
+    connectedClients.forEach(ws => {
+        const connectionAge = now - ws.connectionTime;
+        const timeSinceLastPing = now - (ws.lastPing || ws.connectionTime);
+
+        const connInfo = {
+            playerId: ws.playerId,
+            state: ws.readyState,
+            age: connectionAge,
+            lastPing: timeSinceLastPing,
+            room: roomManager.getPlayerRoom(ws.playerId)?.id || 'none'
+        };
+
+        if (ws.readyState === WebSocket.OPEN && timeSinceLastPing < 60000) {
+            stats.healthy++;
+        } else {
+            stats.stale++;
+        }
+
+        stats.connections.push(connInfo);
+    });
+
+    return stats;
+}

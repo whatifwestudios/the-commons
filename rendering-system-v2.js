@@ -138,8 +138,8 @@ class RenderingSystemV2 {
 
         // Convert to world coordinates
         const worldCoords = {
-            x: (screenX - this.game.panOffset.x) / this.game.zoomScale,
-            y: (screenY - this.game.panOffset.y) / this.game.zoomScale
+            x: screenX,
+            y: screenY
         };
 
         // Use V1's coordinate conversion for consistency
@@ -266,35 +266,17 @@ class RenderingSystemV2 {
     }
 
     /**
-     * Handle panning
+     * Handle panning (disabled)
      */
     handlePanning(e, coords) {
-        if (!this.game.isPanning) return;
-
-        if (this.game.lastPanPoint) {
-            const deltaX = coords.screenX - this.game.lastPanPoint.x;
-            const deltaY = coords.screenY - this.game.lastPanPoint.y;
-
-            this.game.panOffset.x += deltaX;
-            this.game.panOffset.y += deltaY;
-
-            this.scheduleRender();
-        }
-
-        this.game.lastPanPoint = { x: coords.screenX, y: coords.screenY };
+        // Panning functionality removed
     }
 
     /**
      * Handle mouse down events
      */
     handleMouseDown(e, coords) {
-        // Start panning if zoomed
-        if (this.game.zoomScale > 1.1 && e.button === 0) {
-            this.game.isPanning = true;
-            this.game.lastPanPoint = { x: coords.screenX, y: coords.screenY };
-            this.canvas.style.cursor = 'grabbing';
-            e.preventDefault();
-        }
+        // Panning functionality removed
     }
 
     /**
@@ -305,13 +287,11 @@ class RenderingSystemV2 {
     }
 
     /**
-     * End panning state
+     * End panning state (disabled)
      */
     endPanning() {
-        if (this.game.isPanning) {
-            this.game.isPanning = false;
-            this.canvas.style.cursor = this.game.zoomScale > 1.1 ? 'grab' : 'default';
-        }
+        // Panning functionality removed
+        this.canvas.style.cursor = 'default';
     }
 
     /**
@@ -347,12 +327,9 @@ class RenderingSystemV2 {
 
         // Apply transformations with defensive checks
         this.ctx.save();
-        const panX = this.game.panOffset?.x || 0;
-        const panY = this.game.panOffset?.y || 0;
-        const zoom = this.game.zoomScale || 1;
-
-        this.ctx.translate(panX, panY);
-        this.ctx.scale(zoom, zoom);
+        // Pan and zoom functionality removed - use default scale/translation
+        // this.ctx.translate(0, 0);
+        // this.ctx.scale(1, 1);
 
         // Complete V2 rendering pipeline
         this.renderGrid();
@@ -373,13 +350,11 @@ class RenderingSystemV2 {
 
         // Use V1's exact tile ordering approach
         const tiles = [];
-        for (let row = 0; row < this.game.gridSize; row++) {
-            for (let col = 0; col < this.game.gridSize; col++) {
-                // Use V1's toIsometric method for consistency
-                const iso = this.game.renderingSystem.toIsometric(col, row);
-                tiles.push({ col, row, zIndex: iso.zIndex || (row + col) });
-            }
-        }
+        window.GridUtils.forEachPosition(this.game.gridSize, (row, col) => {
+            // Use V1's toIsometric method for consistency
+            const iso = this.game.renderingSystem.toIsometric(col, row);
+            tiles.push({ col, row, zIndex: iso.zIndex || (row + col) });
+        });
 
         // Sort by Z-index (V1's approach)
         tiles.sort((a, b) => a.zIndex - b.zIndex);
@@ -432,12 +407,9 @@ class RenderingSystemV2 {
      * Convert grid coordinates to isometric screen coordinates
      */
     toIsometric(col, row) {
-        const offsetX = this.game.offsetX || (this.canvas.width / 2);
-        const offsetY = this.game.offsetY || (this.canvas.height / 2 - 200);
-
-        const isoX = (col - row) * (this.tileWidth / 2) + offsetX;
-        const isoY = (col + row) * (this.tileHeight / 2) + offsetY;
-        return { x: isoX, y: isoY };
+        return window.CoordinateUtils.toIsometricWithGameOffsets(
+            this.game, col, row, this.tileWidth, this.tileHeight
+        );
     }
 
     /**
@@ -490,7 +462,7 @@ class RenderingSystemV2 {
             }
 
             if (player && player.color) {
-                console.log(`🎨 Found synced color for ${playerId} (${player.name}): ${player.color}`);
+                if (window.DEBUG_MODE) console.log(`🎨 Found synced color for ${playerId} (${player.name}): ${player.color}`);
                 return player.color;
             }
         }
@@ -500,7 +472,6 @@ class RenderingSystemV2 {
             playerId === 1 ||
             playerId === this.game.currentPlayerId) {
             const localColor = this.game.playerSettings?.color || '#10AC84';
-            console.log(`🎨 Using local color for current player ${playerId}: ${localColor}`);
             return localColor;
         }
 
@@ -514,12 +485,12 @@ class RenderingSystemV2 {
         // Handle numeric player IDs for competitors
         if (typeof playerId === 'number') {
             const fallbackColor = colors[(playerId - 1) % colors.length];
-            console.warn(`🎨 No synced color for player ${playerId}, using fallback: ${fallbackColor}`);
+            if (window.DEBUG_MODE) console.warn(`🎨 No synced color for player ${playerId}, using fallback: ${fallbackColor}`);
             return fallbackColor;
         }
 
         // For unknown player IDs, return default but log a warning
-        console.warn('🎨 Unknown player ID in getPlayerColor:', playerId, 'using default color');
+        if (window.DEBUG_MODE) console.warn('🎨 Unknown player ID in getPlayerColor:', playerId, 'using default color');
         return '#10AC84'; // Default green
     }
 
@@ -564,11 +535,9 @@ class RenderingSystemV2 {
     renderBuildings() {
         if (!this.game.grid) return;
 
-        for (let row = 0; row < this.game.gridSize; row++) {
-            for (let col = 0; col < this.game.gridSize; col++) {
-                this.renderBuilding(row, col);
-            }
-        }
+        window.GridUtils.forEachPosition(this.game.gridSize, (row, col) => {
+            this.renderBuilding(row, col);
+        });
     }
 
     /**
@@ -598,7 +567,7 @@ class RenderingSystemV2 {
         const building = this.game.economicClient?.buildings?.get(locationKey);
 
         if (!building) {
-            console.log(`⚠️ No building data found for ${buildingId} at [${row},${col}]`);
+            if (window.DEBUG_MODE) console.log(`⚠️ No building data found for ${buildingId} at [${row},${col}]`);
             return;
         }
 
@@ -609,7 +578,7 @@ class RenderingSystemV2 {
             this.drawBuildingImage(imagePath, buildingX, buildingY, row, col);
         } else {
             // Fallback: draw simple rectangle if no graphics found
-            console.log(`⚠️ No graphics found for building: ${building.id || building.type}`);
+            if (window.DEBUG_MODE) console.log(`⚠️ No graphics found for building: ${building.id || building.type}`);
 
             const tint = this.getBuildingTint(row, col);
             if (tint === 'yellow') {
@@ -656,7 +625,7 @@ class RenderingSystemV2 {
         }
 
         // Fallback: draw warning if image not preloaded
-        console.warn(`⚠️ Building image not preloaded: ${imagePath}`);
+        if (window.DEBUG_MODE) console.warn(`⚠️ Building image not preloaded: ${imagePath}`);
         this.drawImageNotFoundPlaceholder(x, y, row, col);
     }
 
@@ -942,33 +911,11 @@ class RenderingSystemV2 {
      * Convert screen coordinates to grid coordinates
      */
     fromIsometric(screenX, screenY) {
-        return window.CoordinateUtils?.fromIsometric(
-            screenX, screenY, this.tileWidth, this.tileHeight,
-            this.game.offsetX || 0, this.game.offsetY || 0, this.game.gridSize
-        ) || (() => {
-            const x = screenX - (this.game.offsetX || 0);
-            const y = screenY - (this.game.offsetY || 0);
-
-            const col = Math.round((x / (this.tileWidth / 2) + y / (this.tileHeight / 2)) / 2);
-            const row = Math.round((y / (this.tileHeight / 2) - x / (this.tileWidth / 2)) / 2);
-
-            // Validate bounds
-            if (row < 0 || row >= this.game.gridSize || col < 0 || col >= this.game.gridSize) {
-                return null;
-            }
-
-            return { row, col };
-        })();
+        return window.CoordinateUtils.fromIsometricWithGameOffsets(
+            this.game, screenX, screenY, this.tileWidth, this.tileHeight
+        );
     }
 
-    /**
-     * Convert grid coordinates to isometric screen coordinates
-     */
-    toIsometric(col, row) {
-        const isoX = (col - row) * (this.tileWidth / 2) + (this.game.offsetX || 0);
-        const isoY = (col + row) * (this.tileHeight / 2) + (this.game.offsetY || 0);
-        return { x: isoX, y: isoY };
-    }
 
     /**
      * Draw diamond shape for isometric tiles
@@ -988,7 +935,6 @@ class RenderingSystemV2 {
     initialize() {
         // V2 system is already initialized in constructor
         // This method exists for backwards compatibility
-        console.log('🎨 V2 Rendering System initialized');
         this.scheduleRender();
     }
 

@@ -9,6 +9,35 @@ const ServerEconomicEngine = require('./server-economic-engine-v2');
 // GameState removed - using v2 server-authoritative economic engine
 const CityNameGenerator = require('./city-name-generator');
 
+// Simple server-side governance system for treasury operations
+class ServerGovernanceSystem {
+    constructor() {
+        this.governance = {
+            taxRate: 0.50, // Default 50% LVT rate (0-1 range)
+            treasury: 0
+        };
+    }
+
+    addFunds(amount, description) {
+        this.governance.treasury += amount;
+        console.log(`🏛️ Treasury: +$${amount.toFixed(2)} from ${description} (Total: $${this.governance.treasury.toFixed(2)})`);
+    }
+
+    getTreasury() {
+        return this.governance.treasury;
+    }
+
+    setTaxRate(rate) {
+        this.governance.taxRate = Math.max(0, Math.min(1, rate)); // Clamp 0-1
+        console.log(`🏛️ Tax rate set to ${(this.governance.taxRate * 100).toFixed(1)}%`);
+    }
+
+    startGameplay() {
+        // Called when game starts - could adjust voting points or settings for gameplay
+        console.log(`🏛️ Governance system ready for gameplay`);
+    }
+}
+
 class GameRoom {
     constructor(id, options = {}) {
         this.id = id;
@@ -27,6 +56,10 @@ class GameRoom {
 
         // Each room has its own v2 economic engine with server-authoritative state
         this.economicEngine = new ServerEconomicEngine();
+
+        // Create and connect governance system for treasury operations
+        this.governanceSystem = new ServerGovernanceSystem();
+        this.economicEngine.governanceSystem = this.governanceSystem;
 
         console.log(`🏛️ Governance system connected to economic engine`);
 
@@ -56,10 +89,11 @@ class GameRoom {
             throw new Error('Room is full');
         }
 
-        // Allow joining in progress for multiplayer testing
-        // if (this.state !== 'WAITING' && !this.players.has(playerId)) {
-        //     throw new Error('Game already in progress');
-        // }
+        // Board game model: No late joining allowed once game starts
+        // Players can only reconnect if they were already in the game
+        if (this.state !== 'WAITING' && !this.players.has(playerId)) {
+            throw new Error('Game already in progress - no late joining allowed');
+        }
 
         // Set host if first player
         if (this.players.size === 0) {
@@ -214,8 +248,8 @@ class GameRoom {
                 this.economicEngine.governanceSystem.startGameplay();
 
                 // CRITICAL FIX: Sync governance system's updated voting points to economic engine player data
-                const gameplayVotingPoints = this.economicEngine.governanceSystem.governance.votingPoints; // Should be 2
-                console.log(`🏛️ SYNC: Updating all players to ${gameplayVotingPoints} gameplay voting points`);
+                const gameplayVotingPoints = this.economicEngine.governanceSystem.governance.votingPoints || 2; // Default to 2 if undefined
+                console.log(`🏛️ SYNC: Updating all players to ${gameplayVotingPoints} gameplay voting points (governance system had: ${this.economicEngine.governanceSystem.governance.votingPoints})`);
 
                 // Update all players in the economic engine with the correct gameplay voting points
                 this.economicEngine.gameState.players.forEach((playerState, playerId) => {
@@ -239,6 +273,124 @@ class GameRoom {
             countdown: 3,
             roomId: this.id
         });
+    }
+
+    /**
+     * Check victory conditions
+     * Called periodically to see if any player has won
+     */
+    checkVictoryConditions() {
+        if (this.state !== 'IN_PROGRESS') return;
+
+        // Check if it's Sept 1st (end of year) - game ends after 365 days
+        const currentDay = Math.floor(this.economicEngine.gameState.gameTime);
+        if (currentDay >= 365) {
+            // Year-end victory - highest Commonwealth Score wins
+            const scores = this.economicEngine.calculateCommonwealthScores();
+            if (scores.length > 0) {
+                const winner = scores[0];
+                this.endGame(winner.playerId, `Year-End Victory (CW Score: ${winner.score.toFixed(1)})`);
+                return;
+            }
+        }
+
+        // Early Victory: Commonwealth Score of 25+ with 15% LVT contribution ratio
+        const EARLY_VICTORY_SCORE = 25.0;
+        const MIN_LVT_RATIO = 0.15;
+        const MIN_WEALTH = 50000; // Prevent gaming with low wealth
+
+        const scores = this.economicEngine.calculateCommonwealthScores();
+
+        for (const playerScore of scores) {
+            // Check early victory conditions
+            if (playerScore.score >= EARLY_VICTORY_SCORE &&
+                playerScore.lvtRatio >= MIN_LVT_RATIO &&
+                playerScore.wealth >= MIN_WEALTH) {
+
+                this.endGame(
+                    playerScore.playerId,
+                    `Civic Victory (CW Score: ${playerScore.score.toFixed(1)}, LVT Contribution: ${(playerScore.lvtRatio * 100).toFixed(1)}%)`
+                );
+                return;
+            }
+        }
+
+        // Store current scores for broadcasting
+        this.lastCommonwealthScores = scores;
+
+        // Broadcast updated scores every 30 seconds during gameplay
+        if (Date.now() % 30000 < 5000) {
+            this.broadcastCommonwealthScores();
+        }
+    }
+
+    /**
+     * Broadcast Commonwealth Scores to all players
+     */
+    broadcastCommonwealthScores() {
+        if (!this.lastCommonwealthScores) return;
+
+        this.broadcast({
+            type: 'COMMONWEALTH_UPDATE',
+            scores: this.lastCommonwealthScores.map(s => ({
+                playerId: s.playerId,
+                playerName: this.players.get(s.playerId)?.name || 'Player',
+                wealth: s.wealth,
+                lvtRatio: s.lvtRatio,
+                score: s.score,
+                rank: s.rank
+            }))
+        });
+    }
+
+    /**
+     * End the game with a winner
+     */
+    endGame(winnerId, victoryType) {
+        this.state = 'COMPLETED';
+
+        const winnerData = this.players.get(winnerId);
+        console.log(`🏆 Game ended! Winner: ${winnerId} - ${victoryType}`);
+
+        // Broadcast victory
+        this.broadcast({
+            type: 'GAME_OVER',
+            winner: {
+                playerId: winnerId,
+                playerName: winnerData?.name || 'Player',
+                color: winnerData?.color
+            },
+            victoryType: victoryType,
+            finalStats: this.getGameStats(),
+            timestamp: Date.now()
+        });
+
+        // Schedule room cleanup after 30 seconds
+        setTimeout(() => {
+            // Remove all players
+            for (const playerId of this.players.keys()) {
+                this.removePlayer(playerId);
+            }
+            console.log(`🗑️ Game room ${this.id} cleaned up after victory`);
+        }, 30000);
+    }
+
+    /**
+     * Get final game statistics
+     */
+    getGameStats() {
+        const stats = [];
+        for (const [playerId, playerData] of this.players) {
+            const playerState = this.economicEngine?.players?.get(playerId);
+            stats.push({
+                playerId: playerId,
+                playerName: playerData.name,
+                population: playerState?.stats?.population || 0,
+                balance: playerState?.balance || 0,
+                buildings: playerState?.buildings?.length || 0
+            });
+        }
+        return stats.sort((a, b) => b.population - a.population);
     }
 
     /**
@@ -513,6 +665,7 @@ class RoomManager {
             const player = room.players.get(playerId);
             if (player) {
                 player.connected = false;
+                player.disconnectedAt = Date.now();
 
                 // Broadcast disconnect
                 room.broadcast({
@@ -520,8 +673,72 @@ class RoomManager {
                     playerId: playerId
                 });
 
-                // TODO: Add reconnection timeout before removing player
+                // Set up 5-minute timeout for auto-removal
+                // Clear any existing timeout first
+                if (player.reconnectTimeout) {
+                    clearTimeout(player.reconnectTimeout);
+                }
+
+                player.reconnectTimeout = setTimeout(() => {
+                    // Check if still disconnected after 5 minutes
+                    const currentRoom = this.getPlayerRoom(playerId);
+                    const currentPlayer = currentRoom?.players.get(playerId);
+
+                    if (currentPlayer && !currentPlayer.connected) {
+                        console.log(`⏰ Auto-removing player ${playerId} after 5 minutes of disconnection`);
+
+                        // Remove player permanently
+                        currentRoom.removePlayer(playerId);
+                        this.playerRooms.delete(playerId);
+
+                        // Broadcast auto-removal
+                        currentRoom.broadcast({
+                            type: 'PLAYER_AUTO_REMOVED',
+                            playerId: playerId,
+                            message: `Player ${playerId} was removed after 5 minutes of inactivity`,
+                            players: Array.from(currentRoom.players.values())
+                        });
+
+                        // Check if room should be deleted
+                        if (currentRoom.players.size === 0) {
+                            this.rooms.delete(this.playerRooms.get(playerId));
+                            console.log(`🗑️ Deleted empty room after auto-removal`);
+                        }
+                    }
+                }, 5 * 60 * 1000); // 5 minutes
             }
+        }
+    }
+
+    /**
+     * Handle player permanently quitting the game
+     * Unlike disconnect, this is a permanent departure - player cannot rejoin
+     */
+    quitGame(playerId) {
+        const currentRoomId = this.playerRooms.get(playerId);
+        if (!currentRoomId) return;
+
+        const room = this.rooms.get(currentRoomId);
+        if (!room) return;
+
+        // Remove player permanently
+        room.removePlayer(playerId);
+
+        // Broadcast that player quit (not just disconnected)
+        room.broadcast({
+            type: 'PLAYER_QUIT',
+            playerId: playerId,
+            message: `Player ${playerId} has permanently left the game`,
+            players: Array.from(room.players.values())
+        });
+
+        // Clean up player room mapping
+        this.playerRooms.delete(playerId);
+
+        // Check if room should be deleted
+        if (room.players.size === 0) {
+            this.rooms.delete(currentRoomId);
+            console.log(`🗑️ Deleted empty room ${currentRoomId} after last player quit`);
         }
     }
 
@@ -535,6 +752,13 @@ class RoomManager {
             if (player) {
                 player.connected = true;
                 room.connections.set(playerId, ws);
+
+                // Clear any pending auto-removal timeout
+                if (player.reconnectTimeout) {
+                    clearTimeout(player.reconnectTimeout);
+                    player.reconnectTimeout = null;
+                    console.log(`🔄 Cancelled auto-removal for reconnected player ${playerId}`);
+                }
 
                 // Send full room state to reconnected player
                 ws.send(JSON.stringify({

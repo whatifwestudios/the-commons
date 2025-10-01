@@ -16,7 +16,6 @@ class ClientStateAuditor {
         this.blockedMutations = [];
         this.interceptedObjects = new Set();
 
-        console.log(`🔍 Client State Auditor initialized in ${mode} mode`);
 
         // Start intercepting immediately
         this.startIntercepting();
@@ -47,7 +46,6 @@ class ClientStateAuditor {
                 return gameInstance;
             },
             set(value) {
-                console.log('🎮 Game instance created - starting state interception');
                 gameInstance = value;
                 if (value) {
                     auditor.interceptGameObject(value);
@@ -135,7 +133,6 @@ class ClientStateAuditor {
         // Skip if property is already intercepted or non-configurable
         const descriptor = Object.getOwnPropertyDescriptor(obj, prop);
         if (descriptor && (!descriptor.configurable || descriptor.get)) {
-            console.log(`⚠️ Skipping ${path} - already intercepted or non-configurable`);
             return;
         }
 
@@ -197,7 +194,6 @@ class ClientStateAuditor {
             const newProps = currentProps.filter(prop => !originalProps.has(prop));
 
             newProps.forEach(prop => {
-                console.log(`🆕 New property detected: ${path}.${prop}`);
                 this.interceptProperty(obj, prop, `${path}.${prop}`);
                 originalProps.add(prop);
             });
@@ -359,9 +355,4 @@ if (typeof window !== 'undefined') {
     window.generateStateAudit = () => window.clientStateAuditor.exportReport();
     window.resetStateAudit = () => window.clientStateAuditor.reset();
 
-    console.log('🔍 Client State Auditor ready! Use these functions:');
-    console.log('  - enableServerAuthoritative() // Block client mutations');
-    console.log('  - enableClientMutations() // Allow client mutations (audit only)');
-    console.log('  - generateStateAudit() // Generate removal roadmap');
-    console.log('  - resetStateAudit() // Clear audit history');
 }

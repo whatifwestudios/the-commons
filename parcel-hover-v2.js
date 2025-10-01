@@ -16,6 +16,9 @@ class ParcelHoverV2 {
         this.currentHover = null; // { row, col }
         this.adjacentParcels = new Set(); // Set of "row,col" strings
 
+        // Event cleanup manager
+        this.eventManager = new window.EventCleanupManager();
+
         // Visual config
         this._playerColor = '#10AC84'; // Default, will be updated
         this.hoverOpacity = 0.3;
@@ -51,14 +54,14 @@ class ParcelHoverV2 {
         // Remove complex debug handlers from game.js
         this.clearExistingHandlers();
 
-        // Simple mousemove handler
-        this.game.canvas.addEventListener('mousemove', (e) => {
+        // Simple mousemove handler with proper cleanup tracking
+        this.eventManager.addEventListener(this.game.canvas, 'mousemove', (e) => {
             const rect = this.game.canvas.getBoundingClientRect();
             const screenX = e.clientX - rect.left;
             const screenY = e.clientY - rect.top;
 
-            // Convert to world coordinates
-            const worldCoords = this.game.screenToWorldCoords(screenX, screenY);
+            // Use screen coordinates directly (no zoom/pan conversion needed)
+            const worldCoords = { x: screenX, y: screenY };
 
             // Use the rendering system's coordinate conversion
             const tile = this.game.renderingSystem?.fromIsometric(worldCoords.x, worldCoords.y);
@@ -71,7 +74,7 @@ class ParcelHoverV2 {
         });
 
         // Clear hover when mouse leaves canvas
-        this.game.canvas.addEventListener('mouseleave', () => {
+        this.eventManager.addEventListener(this.game.canvas, 'mouseleave', () => {
             this.updateHover(null);
         });
     }
@@ -80,8 +83,8 @@ class ParcelHoverV2 {
      * Remove existing complex mouse handlers
      */
     clearExistingHandlers() {
-        // Skip canvas cloning to preserve other event handlers
-        // The V2 system should work alongside existing handlers
+        // Use event cleanup manager to properly remove all tracked listeners
+        this.eventManager.cleanup();
     }
 
     /**

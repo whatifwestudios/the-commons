@@ -36,6 +36,24 @@ class GovernanceV3 {
         this.categories.forEach(cat => {
             this.localState.allocations[cat] = 0;
         });
+
+        // Track server LVT rate
+        this.serverLVTRate = 0.5; // Default 50%
+
+        // Track all players' governance data for dots
+        this.allPlayersGovernance = {};
+
+        // Track financial data from server
+        this.treasuryData = {
+            unallocatedFunds: 0,
+            cityTreasury: 0
+        };
+
+        // Cache DOM elements for financial display
+        this.financialElements = {
+            unallocatedFunds: null, // Monthly LVT collection not yet allocated
+            cityTreasury: null      // Total accumulated treasury
+        };
     }
 
     /**
@@ -64,17 +82,19 @@ class GovernanceV3 {
         // Listen for server updates
         this.listenForUpdates();
 
+        // Initialize MORE INFO panels
+        this.setupMoreInfoPanels();
+
         this.initialized = true;
-        console.log('🏛️ Governance V3 initialized');
+        console.log('✅ Governance V3 initialized');
     }
 
     /**
      * Cache DOM elements for performance
      */
     cacheElements() {
-        // Points display - try both possible IDs
-        this.domCache.totalPoints = document.getElementById('player-voting-points');
-        this.domCache.availablePoints = document.getElementById('available-points') || document.getElementById('points-available');
+        // Points display - get the existing element that shows voting points
+        this.domCache.votingPointsDisplay = document.getElementById('player-voting-points');
 
         // Category elements
         this.categories.forEach(cat => {
@@ -85,7 +105,8 @@ class GovernanceV3 {
                     container,
                     voteCount: container?.querySelector('.vote-count'),
                     increaseBtn: container?.querySelector('[data-action="increase"]'),
-                    decreaseBtn: container?.querySelector('[data-action="decrease"]')
+                    decreaseBtn: container?.querySelector('[data-action="decrease"]'),
+                    playerDots: container?.querySelector('.player-allocation-indicators')
                 };
             }
         });
@@ -93,14 +114,22 @@ class GovernanceV3 {
         // LVT elements - using correct IDs from HTML
         this.domCache.lvt = {
             votePoints: document.getElementById('lvt-vote-points'), // This shows the vote points like "+2"
-            rateDisplay: document.getElementById('current-lvt-display'), // This shows actual rate like "52%"
+            currentRate: document.getElementById('current-lvt-display'), // Current server rate
+            proposedRate: document.getElementById('proposed-lvt-display'), // Proposed rate preview
+            rateArrow: document.getElementById('lvt-rate-arrow'), // Arrow between rates
+            netEffect: document.getElementById('lvt-net-effect'), // Net effect display with preview
             increaseBtn: document.getElementById('lvt-increase-btn'),
-            decreaseBtn: document.getElementById('lvt-decrease-btn')
+            decreaseBtn: document.getElementById('lvt-decrease-btn'),
+            playerDots: document.getElementById('lvt-player-dots') // Player allocation dots
         };
 
         // Modal controls
         this.domCache.closeBtn = document.getElementById('close-governance-modal');
         this.domCache.resetBtn = document.getElementById('reset-governance');
+
+        // Financial overview elements (note: IDs are inconsistent with labels in HTML)
+        this.financialElements.unallocatedFunds = document.getElementById('monthly-lvt-amount'); // Shows unallocated funds
+        this.financialElements.cityTreasury = document.getElementById('unallocated-funds-amount'); // Shows city treasury
     }
 
     /**
@@ -145,26 +174,19 @@ class GovernanceV3 {
      */
     async syncWithServer() {
         if (!this.economicClient) {
-            console.log('🏛️ Governance V3: No economic client for sync');
+            console.warn('⚠️ No economic client for governance sync');
             return;
         }
 
         const playerId = this.economicClient.playerId;
         if (!playerId) {
-            console.log('🏛️ Governance V3: No player ID yet');
+            console.warn('⚠️ No player ID for governance sync');
             return;
         }
 
         const playerData = this.economicClient.getPlayerData(playerId);
 
-        console.log('🏛️ Governance V3: Syncing with server for player:', playerId);
-        console.log('🏛️ Governance V3: PlayerData exists:', !!playerData);
-        console.log('🏛️ Governance V3: Governance data:', playerData?.governance);
-        console.log('🏛️ Governance V3: Economic client state:', {
-            isConnected: this.economicClient.isConnected,
-            hasPlayers: !!this.economicClient.players,
-            playerCount: this.economicClient.players ? Object.keys(this.economicClient.players).length : 0
-        });
+        // Syncing governance data with server
 
         if (playerData?.governance) {
             this.localState.totalPoints = playerData.governance.votingPoints || 2;
@@ -179,9 +201,26 @@ class GovernanceV3 {
             // Sync LVT vote
             this.localState.lvtVote = playerData.governance.lvtVote || 0;
 
-            console.log('🏛️ Governance V3: Local state after sync:', this.localState);
+            // Local governance state synced with server
         } else {
-            console.log('🏛️ Governance V3: No governance data found in player data');
+            // No governance data found - using defaults
+        }
+
+        // Get current LVT rate from economic client
+        if (this.economicClient && this.economicClient.getLVTRate) {
+            this.serverLVTRate = this.economicClient.getLVTRate();
+        }
+
+        // Sync treasury data from server via economic client
+        if (this.economicClient && this.economicClient.governance) {
+            this.treasuryData.cityTreasury = this.economicClient.governance.treasury || 0;
+        }
+
+        // Get monthly budget data (unallocated funds) from economic client
+        if (this.economicClient && this.economicClient.monthlyBudget) {
+            // Calculate unallocated funds: total LVT collection minus allocated budget
+            const monthlyBudget = this.economicClient.monthlyBudget;
+            this.treasuryData.unallocatedFunds = monthlyBudget.totalRevenue || 0;
         }
 
         this.updateUI();
@@ -196,27 +235,75 @@ class GovernanceV3 {
         // Register for governance updates
         this.economicClient.onUpdate((update) => {
             if (update.type === 'GOVERNANCE_UPDATE' || update.type === 'STATE_UPDATE' || update.type === 'TRANSACTION_COMPLETE') {
-                console.log('🏛️ Governance V3: Received update:', update.type);
+                // Received governance update from server
                 this.syncWithServer();
+                // Update player dots when governance data changes
+                this.updatePlayerDots();
             }
         });
     }
 
     /**
-     * Calculate available points
+     * Calculate allocated and available points
      */
-    getAvailablePoints() {
-        let allocated = 0;
+    getPointsData() {
+        // Calculate total allocated points
+        const allocatedInCategories = Object.values(this.localState.allocations).reduce((sum, points) => sum + points, 0);
+        const allocatedInLVT = Math.abs(this.localState.lvtVote);
+        const totalAllocated = allocatedInCategories + allocatedInLVT;
+        const available = this.localState.totalPoints - totalAllocated;
 
-        // Sum category allocations
-        Object.values(this.localState.allocations).forEach(val => {
-            allocated += val;
+        return {
+            totalPoints: this.localState.totalPoints,
+            allocated: totalAllocated,
+            available: Math.max(0, available)
+        };
+    }
+
+    /**
+     * Calculate what the LVT rate would be if the player's vote were applied
+     */
+    calculateProposedLVTRate() {
+        // Start with current server rate (base 50%)
+        const baseRate = 0.5;
+
+        // Add the effect of this player's vote (1% per vote point)
+        const playerEffect = this.localState.lvtVote * 0.01;
+
+        // Calculate proposed rate (clamped between 0% and 100%)
+        const proposedRate = Math.max(0, Math.min(1, baseRate + playerEffect));
+
+        return proposedRate;
+    }
+
+    /**
+     * Calculate the net effect of all LVT votes from all players
+     */
+    calculateNetLVTEffect() {
+        if (!this.economicClient || !this.economicClient.gameState || !this.economicClient.gameState.players) {
+            return { netPoints: 0, previewRate: this.serverLVTRate, daysUntilApplied: 30 };
+        }
+
+        const players = this.economicClient.gameState.players;
+        let totalLVTVotes = 0;
+
+        // Sum up all LVT votes from all players
+        Object.values(players).forEach(player => {
+            if (player.governance && player.governance.lvtVote) {
+                totalLVTVotes += player.governance.lvtVote;
+            }
         });
 
-        // Add absolute value of LVT vote
-        allocated += Math.abs(this.localState.lvtVote);
+        // Calculate the new rate with all votes applied (1% per vote point)
+        const baseRate = 0.5; // Default 50%
+        const netEffect = totalLVTVotes * 0.01;
+        const previewRate = Math.max(0, Math.min(1, baseRate + netEffect));
 
-        return Math.max(0, this.localState.totalPoints - allocated);
+        return {
+            netPoints: totalLVTVotes,
+            previewRate: previewRate,
+            daysUntilApplied: 30 // Assuming monthly updates
+        };
     }
 
     /**
@@ -229,8 +316,9 @@ class GovernanceV3 {
         // Validation
         if (newValue < 0) return; // Can't go negative
 
-        if (delta > 0 && this.getAvailablePoints() < delta) {
-            console.log('⚠️ Not enough points available');
+        const pointsData = this.getPointsData();
+        if (delta > 0 && pointsData.available < delta) {
+            console.warn('⚠️ Not enough points available');
             this.flashError('Not enough points available');
             return;
         }
@@ -258,15 +346,16 @@ class GovernanceV3 {
         const allocationDelta = newAllocated - currentAllocated;
 
         // Check if we have points for increased allocation
-        if (allocationDelta > 0 && this.getAvailablePoints() < allocationDelta) {
-            console.log('⚠️ Not enough points for LVT allocation');
+        const pointsData = this.getPointsData();
+        if (allocationDelta > 0 && pointsData.available < allocationDelta) {
+            console.warn('⚠️ Not enough points for LVT allocation');
             this.flashError('Not enough points available');
             return;
         }
 
         // Update local state (allocation model - points can be moved freely)
         this.localState.lvtVote = newValue;
-        console.log(`🏛️ LVT allocation changed: ${this.localState.lvtVote - delta} → ${newValue} (delta: ${delta})`);
+        // LVT allocation changed
 
         this.updateUI();
 
@@ -278,7 +367,10 @@ class GovernanceV3 {
      * Send changes to server
      */
     async sendToServer(type, data) {
-        if (!this.economicClient || !this.economicClient.ws) {
+        // Check Beer Hall WebSocket instead
+        const beerHallWS = (typeof window.beerHallLobby !== 'undefined' && window.beerHallLobby && window.beerHallLobby.ws) ? window.beerHallLobby.ws : null;
+
+        if (!beerHallWS || beerHallWS.readyState !== WebSocket.OPEN) {
             console.error('❌ No WebSocket connection');
             return;
         }
@@ -290,7 +382,7 @@ class GovernanceV3 {
             playerId: this.economicClient.playerId
         };
 
-        this.economicClient.ws.send(JSON.stringify(transaction));
+        beerHallWS.send(JSON.stringify(transaction));
     }
 
     /**
@@ -314,23 +406,13 @@ class GovernanceV3 {
      * Update the UI with current state
      */
     updateUI() {
-        const available = this.getAvailablePoints();
+        const pointsData = this.getPointsData();
 
-        console.log(`🏛️ Governance V3: UpdateUI - Total: ${this.localState.totalPoints}, Available: ${available}`);
-
-        // Update points display
-        if (this.domCache.totalPoints) {
-            this.domCache.totalPoints.textContent = this.localState.totalPoints;
-            console.log('🏛️ Governance V3: Updated total points element');
+        // Update voting points display in "available/total" format
+        if (this.domCache.votingPointsDisplay) {
+            this.domCache.votingPointsDisplay.textContent = `${pointsData.available}/${pointsData.totalPoints}`;
         } else {
-            console.log('🏛️ Governance V3: No total points element found');
-        }
-
-        if (this.domCache.availablePoints) {
-            this.domCache.availablePoints.textContent = available;
-            console.log('🏛️ Governance V3: Updated available points element');
-        } else {
-            console.log('🏛️ Governance V3: No available points element found');
+            console.warn('⚠️ No voting points display element found');
         }
 
         // Update category displays
@@ -347,27 +429,264 @@ class GovernanceV3 {
 
             // Enable/disable increase button based on available points
             if (cache?.increaseBtn) {
-                cache.increaseBtn.disabled = available <= 0;
+                cache.increaseBtn.disabled = pointsData.available <= 0;
             }
         });
 
-        // Update LVT vote points display
+        // Update LVT displays
         if (this.domCache.lvt.votePoints) {
             const lvtValue = this.localState.lvtVote;
             const sign = lvtValue > 0 ? '+' : '';
             this.domCache.lvt.votePoints.textContent = `${sign}${lvtValue}`;
-            console.log(`🏛️ Governance V3: Updated LVT vote points display to ${sign}${lvtValue}`);
+        }
+
+        // Update current LVT rate display
+        if (this.domCache.lvt.currentRate) {
+            const currentRate = Math.round(this.serverLVTRate * 100);
+            this.domCache.lvt.currentRate.textContent = `${currentRate}%`;
+        }
+
+        // Update net effect display (shows collective impact of all players)
+        const netEffect = this.calculateNetLVTEffect();
+        if (this.domCache.lvt.netEffect && netEffect.netPoints !== 0) {
+            const sign = netEffect.netPoints > 0 ? '+' : '';
+            const previewRate = Math.round(netEffect.previewRate * 100);
+            this.domCache.lvt.netEffect.textContent = `Net: ${sign}${netEffect.netPoints} (${previewRate}% in ${netEffect.daysUntilApplied} days)`;
+            this.domCache.lvt.netEffect.style.display = 'inline';
+            this.domCache.lvt.netEffect.style.color = netEffect.netPoints > 0 ? '#4CAF50' : '#F44336';
+        } else if (this.domCache.lvt.netEffect) {
+            this.domCache.lvt.netEffect.style.display = 'none';
+        }
+
+        // Hide the old proposed rate system since we're using the net effect display
+        if (this.domCache.lvt.proposedRate) {
+            this.domCache.lvt.proposedRate.style.display = 'none';
+        }
+        if (this.domCache.lvt.rateArrow) {
+            this.domCache.lvt.rateArrow.style.display = 'none';
         }
 
         // Enable/disable LVT buttons
         if (this.domCache.lvt.increaseBtn) {
             // Can increase LVT if we have available points
-            this.domCache.lvt.increaseBtn.disabled = available <= 0;
+            this.domCache.lvt.increaseBtn.disabled = pointsData.available <= 0;
         }
         if (this.domCache.lvt.decreaseBtn) {
             // Can always decrease LVT (moves towards zero, deallocating points)
             this.domCache.lvt.decreaseBtn.disabled = false;
         }
+
+        // Update financial overview
+        this.updateFinancialOverview();
+
+        // Update player allocation dots
+        this.updatePlayerDots();
+    }
+
+    /**
+     * Update financial overview displays with real-time data
+     */
+    updateFinancialOverview() {
+        // Update unallocated funds display
+        if (this.financialElements.unallocatedFunds) {
+            const unallocatedAmount = this.treasuryData.unallocatedFunds || 0;
+            this.financialElements.unallocatedFunds.textContent = unallocatedAmount.toLocaleString();
+        }
+
+        // Update city treasury display
+        if (this.financialElements.cityTreasury) {
+            const treasuryAmount = this.treasuryData.cityTreasury || 0;
+            this.financialElements.cityTreasury.textContent = treasuryAmount.toLocaleString();
+        }
+    }
+
+    /**
+     * Update player allocation dots for all categories
+     */
+    updatePlayerDots() {
+        // Get all players' governance data from economic client
+        if (this.economicClient && this.economicClient.gameState && this.economicClient.gameState.players) {
+            const players = this.economicClient.gameState.players;
+
+            // Debug: Log player data structure
+            console.log('🔍 DEBUG: Player data in governance system:', players);
+            Object.entries(players).forEach(([playerId, player]) => {
+                console.log(`  Player ${playerId}:`, {
+                    name: player.name,
+                    color: player.color,
+                    governance: player.governance
+                });
+            });
+
+            this.categories.forEach(category => {
+                this.updateCategoryPlayerDots(category, players);
+            });
+
+            // Also update LVT dots
+            this.updateLVTPlayerDots(players);
+        }
+    }
+
+    /**
+     * Update player dots for a specific category
+     */
+    updateCategoryPlayerDots(category, players) {
+        const dotsContainer = this.domCache[category]?.playerDots;
+        if (!dotsContainer) return;
+
+        // Clear existing dots
+        dotsContainer.innerHTML = '';
+
+        // Create dots for each player with allocations in this category
+        Object.values(players).forEach(player => {
+            if (player.governance && player.governance.allocations && player.governance.allocations[category] > 0) {
+                const allocation = player.governance.allocations[category];
+                const dot = this.createPlayerDot(player, allocation, category);
+                dotsContainer.appendChild(dot);
+            }
+        });
+
+        // Also show current player's local allocation if they have made changes not yet synced
+        if (this.economicClient && this.economicClient.playerId && this.localState.allocations[category] > 0) {
+            const currentPlayerData = players[this.economicClient.playerId];
+            if (currentPlayerData) {
+                // Only show if local allocation is different from server allocation
+                const serverAllocation = (currentPlayerData.governance?.allocations?.[category] || 0);
+                if (this.localState.allocations[category] !== serverAllocation) {
+                    const dot = this.createPlayerDot(currentPlayerData, this.localState.allocations[category], category);
+                    dot.style.border = '2px solid #FFD700'; // Gold border to indicate pending change
+                    dot.title += ' (pending)';
+                    dotsContainer.appendChild(dot);
+                }
+            }
+        }
+    }
+
+    /**
+     * Create a player allocation dot
+     */
+    createPlayerDot(player, allocation, category) {
+        const dot = document.createElement('div');
+        dot.className = 'player-dot';
+
+        // Get dot size based on allocation (5 steps: 1-5+ points)
+        const size = Math.min(5, Math.max(1, allocation));
+        const dotSize = 6 + (size * 2); // 8px to 16px
+
+        // Set player color (from game data or default)
+        const playerColor = player.color || '#888';
+
+        dot.style.cssText = `
+            width: ${dotSize}px;
+            height: ${dotSize}px;
+            border-radius: 50%;
+            background-color: ${playerColor};
+            display: inline-block;
+            margin: 1px;
+            opacity: 0.8;
+            transition: opacity 0.3s ease;
+            position: relative;
+            cursor: pointer;
+        `;
+
+        // Add hover tooltip with player name
+        const playerName = player.name || player.playerName || `Player ${player.id || ''}`;
+        dot.title = `${playerName}: ${allocation} points in ${category}`;
+
+        // Add hover effects
+        dot.addEventListener('mouseenter', () => {
+            dot.style.opacity = '1';
+        });
+
+        dot.addEventListener('mouseleave', () => {
+            dot.style.opacity = '0.8';
+        });
+
+        return dot;
+    }
+
+    /**
+     * Update LVT player dots
+     */
+    updateLVTPlayerDots(players) {
+        const dotsContainer = this.domCache.lvt.playerDots;
+        if (!dotsContainer) return;
+
+        // Clear existing dots
+        dotsContainer.innerHTML = '';
+
+        // Create dots for each player with LVT votes
+        Object.values(players).forEach(player => {
+            if (player.governance && player.governance.lvtVote && player.governance.lvtVote !== 0) {
+                const lvtVote = player.governance.lvtVote;
+                const dot = this.createLVTPlayerDot(player, lvtVote);
+                dotsContainer.appendChild(dot);
+            }
+        });
+
+        // Also show current player's local LVT vote if they have made changes not yet synced
+        if (this.economicClient && this.economicClient.playerId && this.localState.lvtVote !== 0) {
+            const currentPlayerData = players[this.economicClient.playerId];
+            if (currentPlayerData) {
+                // Only show if local LVT vote is different from server LVT vote
+                const serverLVTVote = (currentPlayerData.governance?.lvtVote || 0);
+                if (this.localState.lvtVote !== serverLVTVote) {
+                    const dot = this.createLVTPlayerDot(currentPlayerData, this.localState.lvtVote);
+                    dot.style.border = '2px solid #FFD700'; // Gold border to indicate pending change
+                    dot.title += ' (pending)';
+                    dotsContainer.appendChild(dot);
+                }
+            }
+        }
+    }
+
+    /**
+     * Create a player LVT vote dot
+     */
+    createLVTPlayerDot(player, lvtVote) {
+        const dot = document.createElement('div');
+        dot.className = 'player-dot lvt-dot';
+
+        // Get dot size based on vote magnitude (5 steps: 1-5+ points)
+        const magnitude = Math.abs(lvtVote);
+        const size = Math.min(5, Math.max(1, magnitude));
+        const dotSize = 6 + (size * 2); // 8px to 16px
+
+        // Set player color (from game data or default)
+        const playerColor = player.color || '#888';
+
+        // Add visual indicator for increase (+) vs decrease (-)
+        const border = lvtVote > 0 ? '2px solid #4CAF50' : '2px solid #F44336'; // Green for +, Red for -
+
+        dot.style.cssText = `
+            width: ${dotSize}px;
+            height: ${dotSize}px;
+            border-radius: 50%;
+            background-color: ${playerColor};
+            border: ${border};
+            display: inline-block;
+            margin: 1px;
+            opacity: 0.8;
+            transition: opacity 0.3s ease;
+            position: relative;
+            cursor: pointer;
+        `;
+
+        // Add hover tooltip with player name
+        const playerName = player.name || player.playerName || `Player ${player.id || ''}`;
+        const direction = lvtVote > 0 ? 'increase' : 'decrease';
+        dot.title = `${playerName}: ${Math.abs(lvtVote)} points to ${direction} LVT rate`;
+
+        // Add hover effects
+        dot.addEventListener('mouseenter', () => {
+            dot.style.opacity = '1';
+        });
+
+        dot.addEventListener('mouseleave', () => {
+            dot.style.opacity = '0.8';
+        });
+
+        return dot;
     }
 
     /**
@@ -431,7 +750,7 @@ class GovernanceV3 {
         this.modal.style.display = 'flex';
         this.modal.classList.add('visible');
 
-        console.log('🏛️ Governance modal opened');
+        // Governance modal opened
     }
 
     /**
@@ -445,7 +764,158 @@ class GovernanceV3 {
             this.modal.style.display = 'none';
         }, 300);
 
-        console.log('🏛️ Governance modal closed');
+        // Governance modal closed
+    }
+
+    /**
+     * Setup MORE INFO panels functionality (copied from HTML inline script)
+     */
+    setupMoreInfoPanels() {
+        const categoryData = {
+            education: {
+                title: "Education Budget",
+                description: "Fund schools, libraries, and educational programs to boost citizen learning and development.",
+                maintenance: "✓ Covers maintenance costs for education buildings",
+                buildings: ["School", "Library", "University", "Research Lab", "Training Center"]
+            },
+            healthcare: {
+                title: "Healthcare Budget",
+                description: "Support hospitals, clinics, and public health programs to keep citizens healthy and productive.",
+                maintenance: "✓ Covers maintenance costs for healthcare buildings",
+                buildings: ["Clinic", "Hospital", "Medical Center", "Pharmacy", "Wellness Center"]
+            },
+            infrastructure: {
+                title: "Infrastructure Budget",
+                description: "Maintain roads, bridges, utilities, and core city systems that everything depends on.",
+                maintenance: "✓ Covers maintenance costs for infrastructure buildings",
+                buildings: ["Road", "Bridge", "Power Plant", "Water Treatment", "Telecom Tower"]
+            },
+            housing: {
+                title: "Housing Budget",
+                description: "Support affordable housing programs and residential development initiatives.",
+                maintenance: "✓ Covers maintenance costs for housing buildings",
+                buildings: ["Apartment Complex", "Social Housing", "Senior Housing", "Student Housing"]
+            },
+            culture: {
+                title: "Culture Budget",
+                description: "Fund arts, museums, cultural events, and programs that enrich community life.",
+                maintenance: "✓ Covers maintenance costs for cultural buildings",
+                buildings: ["Museum", "Art Gallery", "Theater", "Cultural Center", "Concert Hall"]
+            },
+            recreation: {
+                title: "Recreation Budget",
+                description: "Maintain parks, sports facilities, and recreational programs for citizen wellbeing.",
+                maintenance: "✓ Covers maintenance costs for recreation buildings",
+                buildings: ["Park", "Sports Complex", "Swimming Pool", "Gym", "Community Center"]
+            },
+            commercial: {
+                title: "Commercial Budget",
+                description: "Support business development, trade promotion, and economic growth initiatives.",
+                maintenance: "✓ Covers maintenance costs for commercial buildings",
+                buildings: ["Market", "Shopping Center", "Office Complex", "Business Park", "Trade Center"]
+            },
+            civic: {
+                title: "Civic Budget",
+                description: "Fund government services, public administration, and civic engagement programs.",
+                maintenance: "✓ Covers maintenance costs for civic buildings",
+                buildings: ["City Hall", "Police Station", "Fire Station", "Court House", "Public Service Center"]
+            },
+            emergency: {
+                title: "Emergency Budget",
+                description: "Maintain emergency response capabilities and disaster preparedness programs.",
+                maintenance: "✓ Covers maintenance costs for emergency services",
+                buildings: ["Emergency Center", "Fire Station", "Police Station", "Ambulance Service", "Disaster Relief Center"]
+            },
+            ubi: {
+                title: "Universal Basic Income",
+                description: "Provide direct cash payments to all citizens, ensuring basic economic security for everyone.",
+                maintenance: "✓ Direct payments to citizens based on funding level",
+                buildings: ["Payment Center", "Social Services Office", "Citizen Support Center"]
+            }
+        };
+
+        // Track currently open category
+        this.currentOpenCategory = null;
+
+        // Add click handlers to all more-info-btn buttons
+        document.addEventListener('click', (e) => {
+            if (e.target.classList.contains('more-info-btn')) {
+                const category = e.target.getAttribute('data-category');
+                if (category && categoryData[category]) {
+                    // If clicking the same category that's already open, close it
+                    if (this.currentOpenCategory === category) {
+                        this.closeCategoryDetails();
+                    } else {
+                        this.showCategoryDetails(categoryData[category]);
+                        this.currentOpenCategory = category;
+                    }
+                }
+            }
+        });
+
+        // Close panel handler
+        document.addEventListener('click', (e) => {
+            if (e.target.id === 'close-category-details') {
+                this.closeCategoryDetails();
+            }
+        });
+
+        // Close panel when clicking outside (on governance modal but not on slide-out panel)
+        document.addEventListener('click', (e) => {
+            const panel = document.getElementById('category-details-panel');
+            const governanceModal = document.getElementById('governance-modal');
+
+            // Check if the panel is open and user clicked inside governance modal but outside the panel
+            if (this.currentOpenCategory && panel && governanceModal) {
+                const isClickInsideModal = governanceModal.contains(e.target);
+                const isClickInsidePanel = panel.contains(e.target);
+                const isMoreInfoButton = e.target.classList.contains('more-info-btn');
+
+                // Close if clicked inside modal but outside panel (and not on a more info button)
+                if (isClickInsideModal && !isClickInsidePanel && !isMoreInfoButton) {
+                    this.closeCategoryDetails();
+                }
+            }
+        });
+    }
+
+    showCategoryDetails(data) {
+        const panel = document.getElementById('category-details-panel');
+        const title = document.getElementById('category-details-title');
+        const content = document.getElementById('category-details-content');
+
+        if (!panel || !title || !content) return;
+
+        title.textContent = data.title;
+
+        let buildingsHtml = '';
+        if (Array.isArray(data.buildings)) {
+            buildingsHtml = data.buildings.map(building =>
+                `<div class="building-item">
+                    <div class="building-name">${building}</div>
+                    <div class="building-description">Click to place this building type</div>
+                </div>`
+            ).join('');
+        }
+
+        content.innerHTML = `
+            <div class="category-description">${data.description}</div>
+            <div class="maintenance-note">${data.maintenance}</div>
+            <div class="buildings-list">
+                <h5>Related Buildings:</h5>
+                <div class="buildings-grid">${buildingsHtml}</div>
+            </div>
+        `;
+
+        panel.classList.add('open');
+    }
+
+    closeCategoryDetails() {
+        const panel = document.getElementById('category-details-panel');
+        if (panel) {
+            panel.classList.remove('open');
+        }
+        this.currentOpenCategory = null;
     }
 }
 
