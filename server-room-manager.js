@@ -14,7 +14,19 @@ class ServerGovernanceSystem {
     constructor() {
         this.governance = {
             taxRate: 0.50, // Default 50% LVT rate (0-1 range)
-            treasury: 0
+            treasury: 0,
+            budgets: {
+                education: 0,
+                healthcare: 0,
+                infrastructure: 0,
+                housing: 0,
+                culture: 0,
+                recreation: 0,
+                commercial: 0,
+                civic: 0,
+                emergency: 0,
+                ubi: 0
+            }
         };
     }
 
@@ -30,6 +42,67 @@ class ServerGovernanceSystem {
     setTaxRate(rate) {
         this.governance.taxRate = Math.max(0, Math.min(1, rate)); // Clamp 0-1
         console.log(`🏛️ Tax rate set to ${(this.governance.taxRate * 100).toFixed(1)}%`);
+    }
+
+    /**
+     * Transfer funds from treasury to allocated budget categories
+     * @param {Object} budgetProportions - Object with category proportions (0-1)
+     * @param {number} totalRevenue - Total revenue to allocate
+     */
+    allocateBudgets(budgetProportions, totalRevenue) {
+        if (totalRevenue <= 0 || !budgetProportions) {
+            console.log(`📦 No budget allocation: totalRevenue=${totalRevenue}, proportions=${!!budgetProportions}`);
+            return;
+        }
+
+        const availableFunds = Math.min(totalRevenue, this.governance.treasury);
+        let totalAllocated = 0;
+
+        console.log(`💰 BUDGET ALLOCATION: $${availableFunds.toFixed(2)} available from treasury`);
+
+        Object.entries(budgetProportions).forEach(([category, proportion]) => {
+            if (proportion > 0) {
+                const allocation = availableFunds * proportion;
+                this.governance.budgets[category] += allocation;
+                totalAllocated += allocation;
+                console.log(`   📊 ${category}: +$${allocation.toFixed(2)} (${(proportion * 100).toFixed(1)}%)`);
+            }
+        });
+
+        // Deduct allocated funds from treasury
+        this.governance.treasury -= totalAllocated;
+
+        console.log(`💰 ALLOCATION COMPLETE: $${totalAllocated.toFixed(2)} allocated, $${this.governance.treasury.toFixed(2)} remaining in treasury`);
+    }
+
+    /**
+     * Get budget balances for all categories
+     */
+    getBudgets() {
+        return { ...this.governance.budgets };
+    }
+
+    /**
+     * Spend from a specific budget category
+     * @param {string} category - Budget category
+     * @param {number} amount - Amount to spend
+     * @param {string} description - Description of expense
+     * @returns {boolean} - Success/failure
+     */
+    spendFromBudget(category, amount, description) {
+        if (!this.governance.budgets[category]) {
+            console.warn(`⚠️ Invalid budget category: ${category}`);
+            return false;
+        }
+
+        if (this.governance.budgets[category] < amount) {
+            console.warn(`⚠️ Insufficient ${category} budget: $${this.governance.budgets[category].toFixed(2)} < $${amount.toFixed(2)}`);
+            return false;
+        }
+
+        this.governance.budgets[category] -= amount;
+        console.log(`💸 ${category} budget: -$${amount.toFixed(2)} for ${description} (Remaining: $${this.governance.budgets[category].toFixed(2)})`);
+        return true;
     }
 
     startGameplay() {

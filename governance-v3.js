@@ -220,6 +220,7 @@ class GovernanceV3 {
         // Sync treasury data from server via economic client
         if (this.economicClient && this.economicClient.governance) {
             this.treasuryData.cityTreasury = this.economicClient.governance.treasury || 0;
+            this.treasuryData.categoryBudgets = this.economicClient.governance.budgets || {};
         }
 
         // Get monthly budget data (unallocated funds) from economic client
@@ -233,7 +234,8 @@ class GovernanceV3 {
             console.log('💰 GOVERNANCE: Updated budget data:', {
                 totalAllocations: monthlyBudget.totalAllocations,
                 totalPoints: monthlyBudget.totalPoints,
-                proportions: monthlyBudget.proportions
+                proportions: monthlyBudget.proportions,
+                categoryBudgets: this.treasuryData.categoryBudgets
             });
         }
 

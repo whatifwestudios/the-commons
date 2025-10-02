@@ -2150,7 +2150,8 @@ class ServerEconomicEngine {
                 governance: {
                     treasury: this.governanceSystem ? this.governanceSystem.getTreasury() : 0,
                     taxRate: this.governanceSystem ? this.governanceSystem.governance.taxRate : 0.5,
-                    monthlyBudget: this.gameState.monthlyBudget || null
+                    monthlyBudget: this.gameState.monthlyBudget || null,
+                    budgets: this.governanceSystem ? this.governanceSystem.getBudgets() : {}
                 },
                 monthlyActionAllowance: this.calculateMonthlyActionAllowance(),
                 lvtRate: this.getCurrentLVTRate()  // Include current LVT rate
@@ -2519,6 +2520,15 @@ class ServerEconomicEngine {
 
         if (totalPoints === 0) {
             console.log(`   📦 No allocations - tax revenue remains in treasury`);
+        } else {
+            // Transfer treasury funds to allocated budget categories
+            if (this.governanceSystem) {
+                const treasuryBalance = this.governanceSystem.getTreasury();
+                console.log(`💰 MONTHLY TRANSFER: Allocating $${treasuryBalance.toFixed(2)} from treasury to budgets`);
+                this.governanceSystem.allocateBudgets(budgetProportions, treasuryBalance);
+            } else {
+                console.warn('⚠️ No governance system - cannot allocate budget funds');
+            }
         }
 
         // TODO: Apply budget effects (building subsidies, service bonuses, etc.)
