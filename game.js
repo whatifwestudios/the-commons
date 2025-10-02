@@ -458,8 +458,49 @@ class IsometricGrid {
         
     }
 
+    async initializeClientSystems() {
+        // Multiplayer mode: Initialize client systems without resetting server-managed game state
+        console.log('🎮 Initializing client systems for multiplayer (preserving server state)');
+
+        // Initialize building system
+        this.buildingSystem.initialize();
+
+        // Initialize governance V3
+        if (typeof initializeGovernanceV3 !== 'undefined') {
+            initializeGovernanceV3(this.economicClient);
+            this.governanceSystem = window.governanceV3; // For UI compatibility
+        }
+
+        // Initialize rendering system
+        this.renderingSystem.initialize();
+
+        // Context menu system v1 ready to use (no initialization needed)
+
+        this.startGameTime();
+        this.scheduleRender();
+
+        // REMOVED: Construction animation manager - handled by building system now
+
+        // Start live tooltip updates for time-based tooltips
+        this.startLiveTooltipUpdates();
+
+        // Initialize real-time synchronization for multiplayer reliability
+        this.initializeRealtimeSync();
+
+        // Initialize game loop for construction progress and cash accrual
+        this.initializeGameLoop();
+
+        // Load existing player settings if available
+        await this.loadPlayerSettings();
+
+        // Update player button with current settings (including beer hall lobby data)
+        this.updatePlayerButton();
+
+        // V2: Panel states initialized by UIManager
+    }
+
     async startGame() {
-        // Reset all game state for clean start
+        // Reset all game state for clean start (SOLO MODE ONLY)
         this.resetGameState();
 
         // Initialize building system
@@ -608,8 +649,15 @@ class IsometricGrid {
             cityNameElement.textContent = cityName;
         }
 
-        // Start the game
-        await this.startGame();
+        // Initialize game systems (skip client-side reset for multiplayer)
+        if (playerConfig.mode === 'solo') {
+            // Solo mode: Client manages its own state
+            await this.startGame();
+        } else {
+            // Multiplayer mode: Server manages game state, only initialize client UI
+            console.log('🎮 Multiplayer mode: Initializing client systems without game state reset');
+            await this.initializeClientSystems();
+        }
 
         // Start the game timer now that the game has truly begun (not during lobby/chat)
         if (this.economicClient) {

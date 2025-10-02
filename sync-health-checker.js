@@ -291,8 +291,8 @@ class SyncHealthChecker {
             indicator.id = 'sync-health-indicator';
             indicator.style.cssText = `
                 position: fixed;
-                top: 8px;
-                right: 8px;
+                bottom: 8px;
+                left: 8px;
                 padding: 4px 8px;
                 font-size: 10px;
                 font-weight: 500;

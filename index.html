@@ -3173,14 +3173,7 @@
             const messageDiv = document.createElement('div');
             messageDiv.className = 'chat-message-small';
 
-            const now = new Date();
-            const time = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-
             // Create elements safely to prevent XSS
-            const timeSpan = document.createElement('span');
-            timeSpan.className = 'message-time';
-            timeSpan.textContent = time;
-
             const playerSpan = document.createElement('span');
             playerSpan.className = 'message-player';
             playerSpan.style.color = playerColor;
@@ -3190,7 +3183,6 @@
             messageSpan.className = 'message-text';
             messageSpan.textContent = message;
 
-            messageDiv.appendChild(timeSpan);
             messageDiv.appendChild(playerSpan);
             messageDiv.appendChild(messageSpan);
 

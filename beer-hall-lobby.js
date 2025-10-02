@@ -1056,10 +1056,7 @@ class BeerHallLobby {
         const messageDiv = document.createElement('div');
         messageDiv.className = 'player-message';
 
-        const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-
         messageDiv.innerHTML = `
-            <span class="message-time">${time}</span>
             <span class="message-player" style="${color ? `color: ${color}` : ''}">${playerName}:</span>
             <span class="message-text">${message}</span>
         `;
@@ -1078,10 +1075,7 @@ class BeerHallLobby {
         const messageDiv = document.createElement('div');
         messageDiv.className = 'system-message';
 
-        const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-
         messageDiv.innerHTML = `
-            <span class="message-time">${time}</span>
             <span class="message-text">${message}</span>
         `;
 
@@ -1810,15 +1804,7 @@ class BeerHallLobby {
             const messageElement = document.createElement('div');
             messageElement.className = 'chat-message';
 
-            // Format timestamp
-            const time = new Date(message.timestamp).toLocaleTimeString('en-US', {
-                hour12: false,
-                hour: '2-digit',
-                minute: '2-digit'
-            });
-
             messageElement.innerHTML = `
-                <span class="chat-time">[${time}]</span>
                 <span class="chat-player" style="color: ${message.color}">${message.playerName}:</span>
                 <span class="chat-text">${message.message}</span>
             `;
