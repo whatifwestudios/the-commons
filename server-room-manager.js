@@ -58,6 +58,9 @@ class GameRoom {
         this.chatHistory = [];
         this.maxChatHistory = 100;
 
+        // Shared city name for all players in this room
+        this.cityName = null;
+
         // Each room has its own v2 economic engine with server-authoritative state
         // Pass room reference to the engine so it can check for Solo Mode
         this.economicEngine = new ServerEconomicEngine(this);
@@ -105,18 +108,20 @@ class GameRoom {
             this.host = playerId;
         }
 
-        // Generate unique city name for this player
-        const cityName = roomManager?.cityNameGenerator ?
-            roomManager.cityNameGenerator.generateCityName() :
-            `${playerData.name || 'Player'} City`;
-        console.log(`🏙️ FRESH: City name generation for ${playerId}: ${cityName} (roomManager: ${roomManager ? 'YES' : 'NO'})`);
+        // Generate shared city name for room (only once when first player joins)
+        if (!this.cityName) {
+            this.cityName = roomManager?.cityNameGenerator ?
+                roomManager.cityNameGenerator.generateCityName() :
+                `${playerData.name || 'Player'} City`;
+            console.log(`🏙️ SHARED: Generated city name for room ${this.id}: ${this.cityName} (roomManager: ${roomManager ? 'YES' : 'NO'})`);
+        }
 
-        // Add player with default data including server-generated city name
+        // Add player with default data including shared city name
         this.players.set(playerId, {
             id: playerId,
             name: playerData.name || `Player ${this.players.size + 1}`,
             color: playerData.color || this.getNextColor(),
-            cityName: cityName, // Server-generated city name
+            cityName: this.cityName, // Shared city name for all players
             ready: false,
             connected: true,
             balance: 6000, // Starting balance
@@ -220,8 +225,12 @@ class GameRoom {
      * Start the game
      */
     startGame() {
-        if (this.state !== 'WAITING') return;
+        if (this.state !== 'WAITING') {
+            console.log(`⚠️ Cannot start game - room is in state: ${this.state}`);
+            return;
+        }
 
+        console.log(`🎮 Starting game for room ${this.id} - transitioning from WAITING to STARTING`);
         this.state = 'STARTING';
 
         // Broadcast game starting with countdown
@@ -253,19 +262,31 @@ class GameRoom {
             console.log('🚀 3 second timeout complete - starting game');
             this.state = 'IN_PROGRESS';
 
-            // 🍺 BEER HALL FRESH START: Reset everything for new game
-            this.economicEngine.resetGameState();
+            // 🍺 BEER HALL FRESH START: Reset everything for new game (only if not already started)
+            if (!this.economicEngine.gameState.gameStarted) {
+                console.log('🎲 Resetting game state for fresh start');
+                this.economicEngine.resetGameState();
+            } else {
+                console.log('⚠️ Game already started - skipping reset to preserve game progress');
+            }
 
             // Initialize economic engine players with room player data (including governance points)
             this.economicEngine.initializePlayersFromRoom(this.players);
 
-            // Set fresh starting conditions: September 2nd, $6k per player
-            this.economicEngine.gameState.gameTime = 1.0; // Day 1 (Sept 2)
+            // Set fresh starting conditions only for new games
+            if (!this.economicEngine.gameState.gameStarted) {
+                console.log('🎲 Setting fresh starting conditions: September 2nd, $6k per player');
 
-            // CRITICAL FIX: Adjust gameStartTime so updateGameTime() calculates correctly
-            // We want to start on day 1, so set gameStartTime to "1 day ago"
-            const GAME_DAY_MS = 3600000 / 365; // Same constant as in economic engine
-            this.economicEngine.gameState.gameStartTime = Date.now() - (1 * GAME_DAY_MS);
+                // Set fresh starting conditions: September 2nd, $6k per player
+                this.economicEngine.gameState.gameTime = 1.0; // Day 1 (Sept 2)
+
+                // CRITICAL FIX: Adjust gameStartTime so updateGameTime() calculates correctly
+                // We want to start on day 1, so set gameStartTime to "1 day ago"
+                const GAME_DAY_MS = 3600000 / 365; // Same constant as in economic engine
+                this.economicEngine.gameState.gameStartTime = Date.now() - (1 * GAME_DAY_MS);
+            } else {
+                console.log('⚠️ Game already in progress - preserving current game time and conditions');
+            }
 
             // Initialize player balances if not exists
             if (!this.economicEngine.gameState.playerBalances) {
