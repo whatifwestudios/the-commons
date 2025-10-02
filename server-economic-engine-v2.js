@@ -12,10 +12,13 @@ const fs = require('fs');
 const path = require('path');
 
 class ServerEconomicEngine {
-    constructor() {
+    constructor(room = null) {
+        // Store room reference to check for Solo Mode
+        this.room = room;
+
         // Room-wide game state - single source of truth for this room
         this.gameState = {
-            gameTime: 0,           // Game time in days (0-365 = 1 game year = 1 real hour)
+            gameTime: 1,           // Game time in days - Start on Sept 2 (day 1)
             gameStartTime: Date.now(),
             gameStarted: false,    // Track pre-game vs in-game state room-wide
 
@@ -94,6 +97,32 @@ class ServerEconomicEngine {
         // Performance multiplier ranges
         this.JEEFHH_MULTIPLIER_RANGE = { min: 0.4, max: 1.6 };
         this.CARENS_MULTIPLIER_RANGE = { min: 0.6, max: 1.4 };
+
+        // Server-authoritative action costs
+        this.ACTION_COSTS = {
+            purchaseParcel: 1,
+            constructBuilding: 1,
+            participateAuction: 1
+        };
+
+        // Performance optimization: Caching system
+        this.cache = {
+            jeefhh: { lastUpdate: 0, data: null, dirty: true },
+            carens: { lastUpdate: 0, data: null, dirty: true },
+            buildingPerformances: new Map(), // locationKey -> {lastUpdate, data, dirty}
+            playerWealth: new Map(), // playerId -> {lastUpdate, data, dirty}
+            lastFullState: null, // For delta comparisons
+            lastBroadcast: 0
+        };
+
+        // Delta tracking for optimized updates
+        this.pendingChanges = {
+            buildings: new Set(), // Set of locationKeys that changed
+            players: new Set(), // Set of playerIds that changed
+            jeefhh: false,
+            carens: false,
+            gameTime: false
+        };
 
         // Population requirements by age group (from buildings.js)
         this.POPULATION_REQUIREMENTS = {
@@ -410,9 +439,11 @@ class ServerEconomicEngine {
         // Age buildings
         this.ageAllBuildings();
 
-        // Broadcast daily updates to clients
-        // Use unified broadcast for daily updates
-        this.broadcastGameState({ type: 'DAILY_UPDATE', source: 'timer' });
+        // Only broadcast if there were significant changes (residents, buildings, etc.)
+        // Avoid excessive broadcasting on quiet days
+        if (this.gameState.totalResidents > 0 || this.gameState.buildings.size > 0) {
+            this.broadcastGameState({ type: 'DAILY_UPDATE', source: 'timer' });
+        }
     }
 
     /**
@@ -650,6 +681,10 @@ class ServerEconomicEngine {
 
         this.gameState.buildings.set(locationKey, building);
 
+        // Intelligently invalidate only affected caches
+        this.invalidateCaches('building_added', [locationKey]);
+        this.pendingChanges.buildings.add(locationKey);
+
         console.log(`🏗️ Construction started: ${buildingId} at ${locationKey} by ${playerId}`);
 
         return {
@@ -751,6 +786,10 @@ class ServerEconomicEngine {
         // Remove building
         this.gameState.buildings.delete(locationKey);
 
+        // Intelligently invalidate only affected caches
+        this.invalidateCaches('building_removed', [locationKey]);
+        this.pendingChanges.buildings.add(locationKey);
+
         // Remove building reference from grid parcel
         if (this.gameState.grid[row] && this.gameState.grid[row][col]) {
             this.gameState.grid[row][col].building = null;
@@ -785,9 +824,17 @@ class ServerEconomicEngine {
     }
 
     /**
-     * Calculate room-wide JEEFHH supply/demand and multipliers
+     * Calculate room-wide JEEFHH supply/demand and multipliers (with caching)
      */
     calculateGlobalJEEFHH() {
+        // Check cache validity (30 second TTL)
+        const now = Date.now();
+        if (!this.cache.jeefhh.dirty && this.cache.jeefhh.data &&
+            (now - this.cache.jeefhh.lastUpdate) < 30000) {
+            // Use cached data
+            this.gameState.jeefhh = this.cache.jeefhh.data;
+            return;
+        }
         // Reset supply (demand is calculated by age-aware system)
         Object.keys(this.gameState.jeefhh).forEach(resource => {
             this.gameState.jeefhh[resource].supply = 0;
@@ -840,6 +887,14 @@ class ServerEconomicEngine {
         });
 
         console.log('📊 Room-wide JEEFHH updated:', this.gameState.jeefhh);
+
+        // Update cache
+        this.cache.jeefhh = {
+            lastUpdate: now,
+            data: JSON.parse(JSON.stringify(this.gameState.jeefhh)), // Deep copy
+            dirty: false
+        };
+        this.pendingChanges.jeefhh = true;
     }
 
     /**
@@ -869,12 +924,20 @@ class ServerEconomicEngine {
             const livability = buildingDef.livability;
 
             // Add raw CARENS impacts (values from CSV are in -100 to +100 range)
-            culturePoints += this.extractLivabilityValue(livability.culture) || 0;
-            affordabilityPoints += this.extractLivabilityValue(livability.affordability) || 0;
-            resiliencePoints += this.extractLivabilityValue(livability.resilience) || 0;
-            environmentPoints += this.extractLivabilityValue(livability.environment) || 0;
-            noisePoints += this.extractLivabilityValue(livability.noise) || 0;
-            safetyPoints += this.extractLivabilityValue(livability.safety) || 0;
+            const cultureValue = this.extractLivabilityValue(livability.culture) || 0;
+            const affordabilityValue = this.extractLivabilityValue(livability.affordability) || 0;
+            const resilienceValue = this.extractLivabilityValue(livability.resilience) || 0;
+            const environmentValue = this.extractLivabilityValue(livability.environment) || 0;
+            const noiseValue = this.extractLivabilityValue(livability.noise) || 0;
+            const safetyValue = this.extractLivabilityValue(livability.safety) || 0;
+
+            culturePoints += cultureValue;
+            affordabilityPoints += affordabilityValue;
+            resiliencePoints += resilienceValue;
+            environmentPoints += environmentValue;
+            noisePoints += noiseValue;
+            safetyPoints += safetyValue;
+
         }
 
         // Points-only system: store raw points directly
@@ -904,7 +967,9 @@ class ServerEconomicEngine {
      */
     extractLivabilityValue(livabilityData) {
         if (typeof livabilityData === 'number') {
-            return livabilityData;
+            // Convert decimal values (e.g., 0.02, 0.20) to points scale (-100 to +100)
+            // Decimal values are multiplied by 100 to get points
+            return Math.round(livabilityData * 100);
         } else if (typeof livabilityData === 'object' && livabilityData !== null) {
             return livabilityData.effect || 0;
         }
@@ -1814,9 +1879,14 @@ class ServerEconomicEngine {
 
             // Initialize in server-authoritative playerBalances Map
             this.gameState.playerBalances.set(playerId, 6000);
+
+            // Initialize in server-authoritative playerActions Map
+            const newPlayer = this.gameState.players.get(playerId);
+            this.gameState.playerActions.set(playerId, newPlayer.actions.total);
+
             const initialPoints = this.gameState.gameStarted ? 2 : 4;
-            this.gameState.players.get(playerId).governance.votingPoints = initialPoints;
-            console.log(`💰 Player ${playerId} starts with $6,000 and ${initialPoints} governance points`);
+            newPlayer.governance.votingPoints = initialPoints;
+            console.log(`💰 Player ${playerId} starts with $6,000, ${newPlayer.actions.total} actions, and ${initialPoints} governance points`);
         }
         return this.gameState.players.get(playerId);
     }
@@ -2082,8 +2152,10 @@ class ServerEconomicEngine {
                 grid: this.gameState.grid,
                 governance: {
                     treasury: this.governanceSystem ? this.governanceSystem.getTreasury() : 0,
-                    taxRate: this.governanceSystem ? this.governanceSystem.governance.taxRate : 0.5
+                    taxRate: this.governanceSystem ? this.governanceSystem.governance.taxRate : 0.5,
+                    monthlyBudget: this.gameState.monthlyBudget || null
                 },
+                monthlyActionAllowance: this.calculateMonthlyActionAllowance(),
                 lvtRate: this.getCurrentLVTRate()  // Include current LVT rate
             }
         };
@@ -2176,9 +2248,11 @@ class ServerEconomicEngine {
     resetGameState() {
         console.log('🎲 Board game reset: Resetting economic engine to Day 1...');
 
-        // Reset game time to start fresh
-        this.gameState.gameTime = 0;
-        this.gameState.gameStartTime = Date.now();
+        // Reset game time to start fresh (Sept 2)
+        this.gameState.gameTime = 1;
+        // CRITICAL FIX: Adjust gameStartTime so updateGameTime() calculates correctly
+        const GAME_DAY_MS = 3600000 / 365; // 1 hour real time = 1 year game time
+        this.gameState.gameStartTime = Date.now() - (1 * GAME_DAY_MS);
 
         // Clear all buildings
         this.gameState.buildings.clear();
@@ -2281,6 +2355,21 @@ class ServerEconomicEngine {
             console.log(`🏙️ Player ${playerId} cityName: "${roomPlayerData.cityName || 'NO CITY NAME'}"`);
             console.log(`👤 Player ${playerId} name: "${roomPlayerData.name || 'NO NAME'}", color: "${roomPlayerData.color || 'NO COLOR'}"`);;
         }
+    }
+
+    /**
+     * Remove player from economic engine (when they disconnect/leave)
+     */
+    removePlayer(playerId) {
+        console.log(`🗑️ Economic Engine: Removing player ${playerId}`);
+
+        // Remove from player balances
+        this.gameState.playerBalances.delete(playerId);
+
+        // Remove from players Map
+        this.gameState.players.delete(playerId);
+
+        console.log(`✅ Player ${playerId} removed from economic engine`);
     }
 
     /**
@@ -2422,7 +2511,8 @@ class ServerEconomicEngine {
             timestamp: this.gameState.gameTime
         };
 
-        console.log(`💰 Monthly budget calculated:`, budgetProportions);
+        console.log(`💰 Monthly budget calculated - totalPoints: ${totalPoints}, proportions:`, budgetProportions);
+        console.log(`💰 Total allocations by category:`, totalAllocations);
         console.log(`   Total voting points allocated: ${totalPoints}`);
 
         if (totalPoints === 0) {
@@ -3022,8 +3112,14 @@ class ServerEconomicEngine {
 
     /**
      * Calculate monthly action allowance (20 actions in Sept, declining by 2 each month to min 10)
+     * Solo Mode gets unlimited (9999) actions
      */
     calculateMonthlyActionAllowance() {
+        // Check if this is Solo Mode (room with maxPlayers === 1)
+        if (this.isSoloMode()) {
+            return 9999; // Unlimited actions for Solo Mode
+        }
+
         const monthOrder = ['SEPT', 'OCT', 'NOV', 'DEC', 'JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG'];
         const currentMonth = this.getCurrentGameMonth();
         const currentMonthIndex = monthOrder.indexOf(currentMonth);
@@ -3032,6 +3128,13 @@ class ServerEconomicEngine {
         const minimumActions = 10;
 
         return Math.max(minimumActions, baseActions - reduction);
+    }
+
+    /**
+     * Check if this is Solo Mode
+     */
+    isSoloMode() {
+        return this.room && this.room.maxPlayers === 1;
     }
 
     /**
@@ -3144,6 +3247,7 @@ class ServerEconomicEngine {
      * Process creating an action listing
      */
     async processCreateActionListing(transaction) {
+        console.log('🏪 Server: Processing ACTION_CREATE_LISTING:', transaction);
         const { playerId, quantity, reservePrice, buyNowPrice } = transaction;
 
         const player = this.getOrCreatePlayer(playerId);
@@ -3678,12 +3782,38 @@ class ServerEconomicEngine {
             buildingsArray.push(...this.gameState.buildings);
         }
 
-        // Convert actionMarketplace listings Map to Array (client expects array of listing objects)
+        // Convert actionMarketplace listings Map to Array with calculated values
         let actionMarketplace = this.gameState.actionMarketplace;
         if (actionMarketplace && actionMarketplace.listings instanceof Map) {
+            // Enhance each listing with server-calculated values
+            const enhancedListings = Array.from(actionMarketplace.listings.values()).map(listing => {
+                const enhanced = { ...listing };
+
+                // Add calculated buy now price with time-based premium
+                if (listing.buyNowPrice && listing.status === 'active') {
+                    enhanced.calculatedBuyNowPrice = this.calculateBuyNowPrice(listing);
+                }
+
+                // Add calculated cancellation/end early fee
+                if (listing.status === 'active') {
+                    const monthProgress = this.calculateMonthProgress();
+                    let fee = 0;
+                    if (listing.currentBid > 0) {
+                        const maxFeeRate = 5.0; // 500% of current bid
+                        const currentFeeRate = maxFeeRate * (1 - monthProgress);
+                        fee = Math.floor(listing.currentBid * currentFeeRate);
+                    }
+                    enhanced.calculatedEndEarlyFee = fee;
+                    enhanced.calculatedCancelFee = fee;
+                }
+
+                return enhanced;
+            });
+
             actionMarketplace = {
                 ...actionMarketplace,
-                listings: Array.from(actionMarketplace.listings.values()) // Just the values, not [key,value] pairs
+                listings: enhancedListings,
+                monthProgress: this.calculateMonthProgress() // Include month progress for client use
             };
         }
 
@@ -3698,7 +3828,204 @@ class ServerEconomicEngine {
                 : this.gameState.playerBalances,
             playerActions: this.gameState.playerActions instanceof Map
                 ? Object.fromEntries(this.gameState.playerActions)
-                : this.gameState.playerActions
+                : this.gameState.playerActions,
+            actionCosts: this.ACTION_COSTS
+        };
+    }
+
+    /**
+     * Intelligently invalidate only affected caches
+     */
+    invalidateCaches(changeType = 'all', affectedKeys = []) {
+        switch(changeType) {
+            case 'building_added':
+            case 'building_removed':
+                // These affect global calculations
+                this.cache.jeefhh.dirty = true;
+                this.cache.carens.dirty = true;
+
+                // Only invalidate nearby building performances (within influence range)
+                if (affectedKeys.length > 0) {
+                    const [row, col] = affectedKeys[0].split(',').map(Number);
+                    this.invalidateNearbyBuildingCaches(row, col, 5); // 5 tile radius
+                }
+                break;
+
+            case 'building_completed':
+                // Construction complete affects supply/demand
+                this.cache.jeefhh.dirty = true;
+                this.cache.carens.dirty = true;
+                break;
+
+            case 'building_performance':
+                // Only affects specific building
+                affectedKeys.forEach(key => {
+                    const cache = this.cache.buildingPerformances.get(key);
+                    if (cache) cache.dirty = true;
+                });
+                break;
+
+            case 'player_transaction':
+                // Only affects player wealth, not building performance
+                affectedKeys.forEach(playerId => {
+                    const cache = this.cache.playerWealth.get(playerId);
+                    if (cache) cache.dirty = true;
+                });
+                break;
+
+            case 'population_change':
+                // Affects demand calculations only
+                this.cache.jeefhh.dirty = true;
+                break;
+
+            case 'all':
+            default:
+                // Full invalidation (fallback)
+                this.cache.jeefhh.dirty = true;
+                this.cache.carens.dirty = true;
+                for (const [key, cache] of this.cache.buildingPerformances) {
+                    cache.dirty = true;
+                }
+                for (const [key, cache] of this.cache.playerWealth) {
+                    cache.dirty = true;
+                }
+        }
+    }
+
+    /**
+     * Invalidate building caches within a radius
+     */
+    invalidateNearbyBuildingCaches(centerRow, centerCol, radius) {
+        for (const [locationKey, cache] of this.cache.buildingPerformances) {
+            const [row, col] = locationKey.split(',').map(Number);
+            const distance = Math.max(Math.abs(row - centerRow), Math.abs(col - centerCol));
+            if (distance <= radius) {
+                cache.dirty = true;
+            }
+        }
+    }
+
+    /**
+     * Generate delta update with only changed data
+     */
+    generateDeltaUpdate() {
+        const delta = {
+            type: 'GAME_STATE_DELTA',
+            timestamp: Date.now(),
+            gameTime: this.gameState.gameTime,
+            changes: {}
+        };
+
+        // Include changed buildings
+        if (this.pendingChanges.buildings.size > 0) {
+            delta.changes.buildings = [];
+            for (const locationKey of this.pendingChanges.buildings) {
+                const building = this.gameState.buildings.get(locationKey);
+                if (building) {
+                    // Include calculated performance data
+                    const buildingWithPerf = this.calculateBuildingPerformance(building);
+                    delta.changes.buildings.push({
+                        locationKey,
+                        data: buildingWithPerf
+                    });
+                } else {
+                    // Building was removed
+                    delta.changes.buildings.push({
+                        locationKey,
+                        data: null
+                    });
+                }
+            }
+        }
+
+        // Include changed players
+        if (this.pendingChanges.players.size > 0) {
+            delta.changes.players = {};
+            for (const playerId of this.pendingChanges.players) {
+                const player = this.gameState.players.get(playerId);
+                if (player) {
+                    delta.changes.players[playerId] = this.calculatePlayerStats(player);
+                }
+            }
+        }
+
+        // Include JEEFHH if changed
+        if (this.pendingChanges.jeefhh) {
+            delta.changes.jeefhh = this.gameState.jeefhh;
+        }
+
+        // Include CARENS if changed
+        if (this.pendingChanges.carens) {
+            delta.changes.carens = this.gameState.carens;
+        }
+
+        // Reset pending changes
+        this.pendingChanges = {
+            buildings: new Set(),
+            players: new Set(),
+            jeefhh: false,
+            carens: false,
+            gameTime: false
+        };
+
+        return delta;
+    }
+
+    /**
+     * Broadcast delta updates instead of full state
+     */
+    broadcastDeltaUpdate() {
+        // Only broadcast if there are actual changes
+        if (this.pendingChanges.buildings.size > 0 ||
+            this.pendingChanges.players.size > 0 ||
+            this.pendingChanges.jeefhh ||
+            this.pendingChanges.carens) {
+
+            const delta = this.generateDeltaUpdate();
+
+            if (this.broadcastFunction) {
+                console.log(`📤 Broadcasting delta update: ${delta.changes.buildings?.length || 0} buildings, ${Object.keys(delta.changes.players || {}).length} players`);
+                this.broadcastFunction(delta);
+            }
+        }
+    }
+
+    /**
+     * Calculate player stats for delta updates
+     */
+    calculatePlayerStats(player) {
+        // Use cached wealth calculation if available
+        const playerId = player.id;
+        const now = Date.now();
+        let wealth = player.cash;
+
+        const cachedWealth = this.cache.playerWealth.get(playerId);
+        if (cachedWealth && !cachedWealth.dirty && (now - cachedWealth.lastUpdate) < 60000) {
+            wealth = cachedWealth.data;
+        } else {
+            // Calculate wealth from owned parcels and buildings
+            for (const [locationKey, parcel] of this.gameState.grid) {
+                if (parcel.owner === playerId) {
+                    wealth += parcel.price || 0;
+                    const building = this.gameState.buildings.get(locationKey);
+                    if (building && building.owner === playerId) {
+                        wealth += building.cost || 0;
+                    }
+                }
+            }
+
+            // Update cache
+            this.cache.playerWealth.set(playerId, {
+                lastUpdate: now,
+                data: wealth,
+                dirty: false
+            });
+        }
+
+        return {
+            ...player,
+            wealth,
+            cashflow: this.calculatePlayerCashflow(playerId)
         };
     }
 }

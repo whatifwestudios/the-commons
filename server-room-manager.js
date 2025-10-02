@@ -55,7 +55,8 @@ class GameRoom {
         this.host = null; // First player becomes host
 
         // Each room has its own v2 economic engine with server-authoritative state
-        this.economicEngine = new ServerEconomicEngine();
+        // Pass room reference to the engine so it can check for Solo Mode
+        this.economicEngine = new ServerEconomicEngine(this);
 
         // Create and connect governance system for treasury operations
         this.governanceSystem = new ServerGovernanceSystem();
@@ -142,6 +143,11 @@ class GameRoom {
         this.players.delete(playerId);
         this.connections.delete(playerId);
 
+        // Remove from economic engine
+        if (this.economicEngine && typeof this.economicEngine.removePlayer === 'function') {
+            this.economicEngine.removePlayer(playerId);
+        }
+
         // Assign new host if needed
         if (this.host === playerId && this.players.size > 0) {
             this.host = this.players.keys().next().value;
@@ -192,7 +198,7 @@ class GameRoom {
                     message: `Table is ready! ${this.players.size} players at the table.`,
                     tableInfo: {
                         name: this.roomName,
-                        players: Array.from(this.players.values()),
+                        players: this.getCleanPlayerData(),
                         minPlayers: this.minPlayers,
                         maxPlayers: this.maxPlayers
                     }
@@ -214,8 +220,33 @@ class GameRoom {
 
         this.state = 'STARTING';
 
-        // 3 second countdown
+        // Broadcast game starting with countdown
+        console.log('🎯 Broadcasting GAME_STARTING with 3 second countdown');
+        this.broadcast({
+            type: 'GAME_STARTING',
+            countdown: 3,
+            players: this.getCleanPlayerData()
+        });
+
+        // 3 second countdown with client updates
+        let countdown = 3;
+        const countdownInterval = setInterval(() => {
+            countdown--;
+            console.log(`⏰ Countdown: ${countdown}`);
+            if (countdown >= 0) {
+                this.broadcast({
+                    type: 'COUNTDOWN_UPDATE',
+                    countdown: countdown
+                });
+            }
+            if (countdown <= 0) {
+                clearInterval(countdownInterval);
+                console.log('⏰ Countdown complete - game will start');
+            }
+        }, 1000);
+
         setTimeout(() => {
+            console.log('🚀 3 second timeout complete - starting game');
             this.state = 'IN_PROGRESS';
 
             // 🍺 BEER HALL FRESH START: Reset everything for new game
@@ -226,6 +257,11 @@ class GameRoom {
 
             // Set fresh starting conditions: September 2nd, $6k per player
             this.economicEngine.gameState.gameTime = 1.0; // Day 1 (Sept 2)
+
+            // CRITICAL FIX: Adjust gameStartTime so updateGameTime() calculates correctly
+            // We want to start on day 1, so set gameStartTime to "1 day ago"
+            const GAME_DAY_MS = 3600000 / 365; // Same constant as in economic engine
+            this.economicEngine.gameState.gameStartTime = Date.now() - (1 * GAME_DAY_MS);
 
             // Initialize player balances if not exists
             if (!this.economicEngine.gameState.playerBalances) {
@@ -263,7 +299,7 @@ class GameRoom {
             // Broadcast complete initial game state (includes player balances)
             this.economicEngine.broadcastGameState('GAME_STARTED', {
                 roomId: this.id,
-                players: Array.from(this.players.values())
+                players: this.getCleanPlayerData()
             });
         }, 3000);
 
@@ -394,6 +430,21 @@ class GameRoom {
     }
 
     /**
+     * Sanitize player data for broadcasting (removes circular references)
+     */
+    getCleanPlayerData() {
+        return Array.from(this.players.values()).map(p => ({
+            id: p.id,
+            name: p.name,
+            color: p.color,
+            cityName: p.cityName,
+            ready: p.ready,
+            connected: p.connected,
+            balance: p.balance
+        }));
+    }
+
+    /**
      * Broadcast message to all players in room
      */
     broadcast(message, excludePlayerId = null) {
@@ -459,7 +510,7 @@ class GameRoom {
             roomId: this.id,
             roomName: this.roomName,
             state: this.state,
-            players: Array.from(this.players.values()),
+            players: this.getCleanPlayerData(),
             buildings: buildings,
             gameTime: this.economicEngine.gameState.gameTime,
             jeefhh: this.economicEngine.gameState.jeefhh,
@@ -516,7 +567,7 @@ class RoomManager {
         room.broadcast({
             type: 'PLAYER_JOINED',
             player: player,
-            players: Array.from(room.players.values())
+            players: room.getCleanPlayerData()
         }, playerId);
 
         return room;
@@ -536,7 +587,7 @@ class RoomManager {
                 room.broadcast({
                     type: 'PLAYER_LEFT',
                     playerId: playerId,
-                    players: Array.from(room.players.values())
+                    players: room.getCleanPlayerData()
                 });
 
                 // Delete room if empty
@@ -696,7 +747,7 @@ class RoomManager {
                             type: 'PLAYER_AUTO_REMOVED',
                             playerId: playerId,
                             message: `Player ${playerId} was removed after 5 minutes of inactivity`,
-                            players: Array.from(currentRoom.players.values())
+                            players: currentRoom.getCleanPlayerData()
                         });
 
                         // Check if room should be deleted
@@ -729,7 +780,7 @@ class RoomManager {
             type: 'PLAYER_QUIT',
             playerId: playerId,
             message: `Player ${playerId} has permanently left the game`,
-            players: Array.from(room.players.values())
+            players: room.getCleanPlayerData()
         });
 
         // Clean up player room mapping

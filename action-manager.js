@@ -10,7 +10,7 @@ class ActionManager {
         // V2: Server-authoritative action state (client displays server data)
         // Note: Actual action counts come from economic client sync
 
-        // Action costs configuration
+        // Action costs configuration (fallback - server provides authoritative values)
         this.actionCosts = {
             purchaseParcel: 1,
             constructBuilding: 1,
@@ -24,14 +24,15 @@ class ActionManager {
         };
     }
 
-    // 🚫 CLIENT CALCULATION - DISABLED! BUSTED!
     /**
-     * Calculate monthly action allowance based on current month
-     * September gets 20 actions, then 2 less each month until minimum of 10
+     * Get monthly action allowance from server data
      */
     calculateMonthlyActionAllowance() {
-        // CLIENT-SIDE CALCULATION DISABLED - RETURN GHOST PLACEHOLDER
-        return 'GHOST';
+        // V2: Server-authoritative data only
+        if (this.game.economicClient && this.game.economicClient.getMonthlyActionAllowance) {
+            return this.game.economicClient.getMonthlyActionAllowance();
+        }
+        return 0; // Wait for server sync
     }
 
     /**
@@ -61,7 +62,12 @@ class ActionManager {
      * Check if player can use a specific action type (server-authoritative)
      */
     canUseAction(actionType, cost = null) {
-        const actionCost = cost || this.actionCosts[actionType] || 1;
+        // Get action cost from server first, then fallback to local
+        const serverActionCosts = this.game.economicClient?.getActionCosts();
+        const actionCost = cost ||
+                          (serverActionCosts && serverActionCosts[actionType]) ||
+                          this.actionCosts[actionType] ||
+                          1;
         const currentActions = this.getCurrentActions();
         return currentActions >= actionCost;
     }
@@ -79,17 +85,25 @@ class ActionManager {
      */
     getCurrentActions() {
         if (this.game.economicClient && this.game.economicClient.getCurrentPlayerActions) {
-            return this.game.economicClient.getCurrentPlayerActions();
+            const actions = this.game.economicClient.getCurrentPlayerActions();
+            if (actions !== null) {
+                return actions;
+            }
         }
-        // Fallback to default monthly allowance
-        return this.calculateMonthlyActionAllowance();
+        // Return null if no server data available - let UI show loading state
+        return null;
     }
 
     /**
      * Use a specific action type (V2: Server-authoritative)
      */
     async useAction(actionType, cost = null) {
-        const actionCost = cost || this.actionCosts[actionType] || 1;
+        // Get action cost from server first, then fallback to local
+        const serverActionCosts = this.game.economicClient?.getActionCosts();
+        const actionCost = cost ||
+                          (serverActionCosts && serverActionCosts[actionType]) ||
+                          this.actionCosts[actionType] ||
+                          1;
 
         if (!this.canUseAction(actionType, actionCost)) {
             this.game.showNotification('Not enough actions! Visit the marketplace to buy more.', 'error');
@@ -173,12 +187,12 @@ class ActionManager {
 
         const actionsElement = document.getElementById('current-actions');
         if (actionsElement) {
-            actionsElement.textContent = currentActions;
+            actionsElement.textContent = currentActions !== null ? currentActions : 'Loading...';
         }
 
         const monthlyElement = document.getElementById('monthly-actions');
         if (monthlyElement) {
-            monthlyElement.textContent = monthlyAllowance;
+            monthlyElement.textContent = monthlyAllowance !== null ? monthlyAllowance : 'Loading...';
         }
     }
 
