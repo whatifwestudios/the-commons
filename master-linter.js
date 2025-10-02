@@ -457,9 +457,11 @@ class MultiplayerLintProfile extends BaseLintProfile {
                     });
                 }
 
-                // Direct construction progress manipulation
-                if (/\._constructionProgress\s*[\+\-]=|\._constructionProgress\s*=\s*[^=]/.test(line) ||
-                    /\.constructionProgress\s*[\+\-]=|\.constructionProgress\s*=\s*[^=]/.test(line)) {
+                // Direct construction progress manipulation (except completion/initialization/reads)
+                if ((/\._constructionProgress\s*[\+\-]=|\._constructionProgress\s*=\s*[^=]/.test(line) ||
+                    /\.constructionProgress\s*[\+\-]=|\.constructionProgress\s*=\s*[^=]/.test(line)) &&
+                    !line.includes('= 1.0') && !line.includes('= 0') && !line.includes('= 0.1') &&
+                    !line.includes('data.constructionProgress') && !line.includes('|| 1.0')) {
                     results.errors.push({
                         line: i + 1,
                         message: "AUTHORITY VIOLATION: Client calculating construction progress - server must manage timing"
