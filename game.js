@@ -218,7 +218,7 @@ class IsometricGrid {
         // Start game time updates (1 year = 1 hour = 3600 seconds)
         // 1 day in game = 3600/365 = ~9.86 seconds real time
         // V2: Removed client-side day timing - using server-authoritative time
-        this.currentDay = 0;
+        // this.currentDay managed by server through economicClient.gameTime
 
         // Building manager handles all building data
         this.buildingManager = window.buildingManager;
@@ -440,8 +440,8 @@ class IsometricGrid {
             this.gameTimeInterval = null;
         }
         
-        // Reset time state
-        this.currentDay = 1;
+        // Reset time state - server manages authoritative time
+        // this.currentDay managed by server through economicClient.gameTime
         this.currentMonth = 'SEPT';
         this.gameSpeed = 1;
         this.isPaused = false;
@@ -1440,7 +1440,7 @@ class IsometricGrid {
             playerSettings: this.playerSettings,
             gameState: {
                 playerCash: this.playerCash,
-                currentDay: this.currentDay,
+                currentDay: this.economicClient ? Math.floor(this.economicClient.gameTime) : 1,
                 gameDate: this.gameDate,
                 grid: this.grid,
                 economicMultipliers: this.economicMultipliers,

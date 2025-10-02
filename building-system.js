@@ -189,11 +189,8 @@ class BuildingSystem {
         parcel._isUnderConstruction = true;
         parcel._serverManaged = true; // Mark as server-managed construction
 
-        // Store construction timing data for progress calculation
-        const buildingDef = this.game.getBuildingDataByName(buildingId);
-        parcel._constructionStartTime = Date.now();
-        parcel._constructionDays = buildingDef?.economics?.constructionDays || 1; // Default 1 day
-        parcel._constructionProgress = 0;
+        // Initialize construction progress - server will manage timing
+        parcel._constructionProgress = 0.1; // Show initial progress for UI
         
         // Track building ownership locally (UI only)
         if (this.game.isCurrentPlayer(owner)) {
@@ -717,21 +714,10 @@ class BuildingSystem {
             for (let col = 0; col < this.game.gridSize; col++) {
                 const parcel = this.game.grid[row][col];
 
-                // Only handle visual progress for server-managed construction
+                // Server manages construction progress - client just displays it
                 if (parcel && parcel._isUnderConstruction && parcel._serverManaged) {
-                    // Calculate construction progress based on time elapsed
-                    if (parcel._constructionStartTime && parcel._constructionDays) {
-                        const elapsedMs = Date.now() - parcel._constructionStartTime;
-                        const elapsedDays = elapsedMs / (this.game.gameSpeed * 1000); // Convert ms to game days
-                        const progress = Math.min(1.0, elapsedDays / parcel._constructionDays);
-                        parcel._constructionProgress = progress;
-
-                        // Auto-complete when progress reaches 100%
-                        if (progress >= 1.0 && !parcel._completionTriggered) {
-                            parcel._completionTriggered = true; // Prevent multiple triggers
-                            // Server will handle actual completion
-                        }
-                    } else if (!parcel._constructionProgress) {
+                    // Progress comes from server updates, client only displays
+                    if (!parcel._constructionProgress) {
                         parcel._constructionProgress = 0.1; // Show some progress for UI fallback
                     }
                 }

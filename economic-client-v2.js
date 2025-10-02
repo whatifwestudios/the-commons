@@ -147,7 +147,6 @@ class EconomicClient {
 
                 // Update game date display
                 if (window.game && typeof window.game.updateGameDate === 'function') {
-                    window.game.currentDay = Math.floor(this.gameTime);
                     window.game.updateGameDate();
                 }
             }
@@ -186,7 +185,6 @@ class EconomicClient {
 
         // Update game's date display with server-authoritative time
         if (window.game && typeof window.game.updateGameDate === 'function') {
-            window.game.currentDay = Math.floor(this.gameTime);
             window.game.updateGameDate();
         }
 
