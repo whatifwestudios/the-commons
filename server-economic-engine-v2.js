@@ -3340,6 +3340,17 @@ class ServerEconomicEngine {
 
         const player = this.getOrCreatePlayer(playerId);
 
+        // Ensure actions object exists (for players created before actions system)
+        if (!player.actions) {
+            player.actions = {
+                monthly: this.calculateMonthlyActionAllowance(),
+                purchased: 0,
+                total: this.calculateMonthlyActionAllowance()
+            };
+            this.gameState.playerActions.set(playerId, player.actions.total);
+            console.log(`🔧 Initialized missing actions for player ${playerId}`);
+        }
+
         // Validate player has enough actions
         if (player.actions.total < quantity) {
             throw new Error(`Insufficient actions to list: need ${quantity}, have ${player.actions.total}`);

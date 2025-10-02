@@ -1799,14 +1799,19 @@ class BeerHallLobby {
         // Clear existing messages
         inGameChatContainer.innerHTML = '';
 
-        // Add each historical message
+        // Add each historical message with consistent formatting
         messages.forEach(message => {
             const messageElement = document.createElement('div');
-            messageElement.className = 'chat-message';
+            // Use same class as regular in-game messages
+            messageElement.className = 'chat-message-small';
 
+            // Add special class to distinguish pre-game messages if needed
+            messageElement.classList.add('pregame-message');
+
+            // Use consistent span classes with in-game chat
             messageElement.innerHTML = `
-                <span class="chat-player" style="color: ${message.color}">${message.playerName}:</span>
-                <span class="chat-text">${message.message}</span>
+                <span class="chat-player-small" style="color: ${message.color}">${message.playerName}:</span>
+                <span class="chat-text-small">${message.message}</span>
             `;
 
             inGameChatContainer.appendChild(messageElement);
