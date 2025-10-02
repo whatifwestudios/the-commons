@@ -24,7 +24,7 @@
     "lint": "node master-linter.js",
     "lint:all": "node master-linter.js all --verbose",
     "lint:multiplayer": "node master-linter.js multiplayer",
-    "lint:v2": "node lint-multiplayer-v2.js",
+    "lint:v2": "node master-linter.js multiplayer --verbose",
     "lint:performance": "node master-linter.js performance",
     "lint:security": "node master-linter.js security",
     "lint:quality": "node master-linter.js quality",

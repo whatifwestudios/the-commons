@@ -441,9 +441,62 @@ class MultiplayerLintProfile extends BaseLintProfile {
         };
 
         const lines = content.split('\n');
+        const isServerFile = file.includes('server');
+        const isClientFile = !isServerFile && file.endsWith('.js');
 
-        // Check for hardcoded player IDs
         lines.forEach((line, i) => {
+            // CRITICAL: Client-side authority violations
+            if (isClientFile && !line.includes('//')) {
+                // Direct cash manipulation
+                if (/\.cash\s*[\+\-]=|\.cash\s*=\s*[^=]/.test(line) ||
+                    /\.playerData\.cash\s*[\+\-]=|\.playerData\.cash\s*=\s*[^=]/.test(line) ||
+                    /\.balance\s*[\+\-]=|\.balance\s*=\s*[^=]/.test(line)) {
+                    results.errors.push({
+                        line: i + 1,
+                        message: "AUTHORITY VIOLATION: Client directly modifying cash/balance - must use server transactions"
+                    });
+                }
+
+                // Direct construction progress manipulation
+                if (/\._constructionProgress\s*[\+\-]=|\._constructionProgress\s*=\s*[^=]/.test(line) ||
+                    /\.constructionProgress\s*[\+\-]=|\.constructionProgress\s*=\s*[^=]/.test(line)) {
+                    results.errors.push({
+                        line: i + 1,
+                        message: "AUTHORITY VIOLATION: Client calculating construction progress - server must manage timing"
+                    });
+                }
+
+                // Direct infrastructure state modification
+                if (/infra\.(roadway|sidewalks|bikelanes|busStop|subwayEntrance|trafficControl)\s*=/.test(line) &&
+                    !line.includes('sendToServer') && !line.includes('economicClient')) {
+                    results.errors.push({
+                        line: i + 1,
+                        message: "AUTHORITY VIOLATION: Client directly modifying infrastructure - must use server transactions"
+                    });
+                }
+
+                // Direct game time manipulation
+                if (/\.gameTime\s*[\+\-]=|\.gameTime\s*=\s*[^=]/.test(line) ||
+                    /\.currentDay\s*[\+\-\+]=|\.currentDay\s*=\s*[^=]/.test(line)) {
+                    results.errors.push({
+                        line: i + 1,
+                        message: "AUTHORITY VIOLATION: Client modifying game time - server controls progression"
+                    });
+                }
+
+                // Direct parcel ownership changes (outside of server sync)
+                if (/parcel\.owner\s*=/.test(line) &&
+                    !line.includes('serverParcel') &&
+                    !line.includes('handleServerUpdate') &&
+                    !line.includes('handleEconomicUpdate')) {
+                    results.warnings.push({
+                        line: i + 1,
+                        message: "Potential authority issue: Direct parcel ownership change - verify this is from server sync"
+                    });
+                }
+            }
+
+            // Check for hardcoded player IDs
             if (/['"]\s*player\s*['"]/.test(line) &&
                 !line.includes('playerId') &&
                 !line.includes('//')) {
@@ -479,7 +532,32 @@ class MultiplayerLintProfile extends BaseLintProfile {
                     });
                 }
             }
+
+            // Check for console.log in commented-out client calculations
+            if (/\/\/.*this\.currentDay\+\+/.test(line)) {
+                results.suggestions.push({
+                    line: i + 1,
+                    message: "Good: Client-side time progression is properly commented out"
+                });
+            }
         });
+
+        // File-level checks
+        if (isClientFile) {
+            // Check for proper optimistic UI patterns
+            if (content.includes('localState') && content.includes('sendToServer')) {
+                results.suggestions.push({
+                    message: "Good: Using optimistic UI with server sync pattern"
+                });
+            }
+
+            // Check for proper server event handling
+            if (content.includes('handleServerUpdate') || content.includes('handleEconomicUpdate')) {
+                results.suggestions.push({
+                    message: "Good: Properly handling server state updates"
+                });
+            }
+        }
 
         // Check for V2 compliance
         if (file.includes('economic') || file.includes('server')) {
