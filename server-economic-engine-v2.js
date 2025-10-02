@@ -291,30 +291,24 @@ class ServerEconomicEngine {
      * Update game time and trigger time-based events
      */
     updateGameTime() {
-        const now = Date.now();
-        const elapsedMs = now - this.gameState.gameStartTime;
-        const newGameTime = elapsedMs / this.GAME_DAY_MS; // Convert to game days
-
         const previousDay = Math.floor(this.gameState.gameTime);
-        const currentDay = Math.floor(newGameTime);
 
-        this.gameState.gameTime = newGameTime;
+        // Simple increment: 1 game day = GAME_DAY_MS real time
+        const timeIncrement = 1 / 365; // 1 day increment per call
+        this.gameState.gameTime += timeIncrement;
 
-        // Game time progresses continuously
+        const currentDay = Math.floor(this.gameState.gameTime);
 
         // Check for building completion every update (not just daily)
         this.processAutomaticBuildingCompletion();
 
-        // Event-driven broadcasts: Only broadcast time on daily transitions
-        // Regular time updates sent with player action broadcasts
-
-        // Trigger daily events
+        // Trigger daily events on day transitions
         if (currentDay > previousDay) {
-            console.log(`🕒 DAY TRANSITION: ${previousDay} → ${currentDay} (time: ${newGameTime.toFixed(3)})`);
+            console.log(`🕒 DAY TRANSITION: ${previousDay} → ${currentDay} (time: ${this.gameState.gameTime.toFixed(3)})`);
             this.processDailyEvents();
         }
 
-        return newGameTime;
+        return this.gameState.gameTime;
     }
 
     /**
@@ -420,8 +414,8 @@ class ServerEconomicEngine {
             console.log(`📅 Game Day ${currentDay} - Processing daily events`);
         }
 
-        // Check for monthly events (day 1 of new month)
-        if (currentDay > 0 && currentDay % 30 === 0) {
+        // Check for monthly events (first day of new month using real calendar boundaries)
+        if (this.isFirstDayOfMonth(currentDay)) {
             this.processMonthlyEvents(currentDay);
         }
 
@@ -439,20 +433,17 @@ class ServerEconomicEngine {
         // Age buildings
         this.ageAllBuildings();
 
-        // Only broadcast if there were significant changes (residents, buildings, etc.)
-        // Avoid excessive broadcasting on quiet days
-        if (this.gameState.totalResidents > 0 || this.gameState.buildings.size > 0) {
-            this.broadcastGameState({ type: 'DAILY_UPDATE', source: 'timer' });
-        }
+        // Always broadcast gameTime updates to keep all clients synchronized
+        // Even on quiet days, time must stay in sync across all players
+        this.broadcastGameState({ type: 'DAILY_UPDATE', source: 'timer' });
     }
 
     /**
      * Process monthly events (governance points, budget allocations, etc.)
      */
     processMonthlyEvents(currentDay) {
-        const currentMonth = Math.floor(currentDay / 30);
-        const monthNames = ['SEPT', 'OCT', 'NOV', 'DEC', 'JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG'];
-        const monthName = monthNames[currentMonth % 12];
+        // Use proper calendar boundaries instead of simple 30-day months
+        const monthName = this.getCurrentGameMonth();
         console.log(`🗳️ MONTH TRANSITION: Starting ${monthName} (day ${currentDay} - first day of new month)`);
 
         // Award governance points to all players (2 points per month)
@@ -2122,7 +2113,13 @@ class ServerEconomicEngine {
                 // Include player metadata for consistent UI display (governance dots, parcel colors, etc.)
                 name: playerState?.name,
                 color: playerState?.color,
-                cityName: playerState?.cityName
+                cityName: playerState?.cityName,
+                // Include action data for client sync
+                actions: playerState?.actions || {
+                    monthly: this.calculateMonthlyActionAllowance(),
+                    purchased: 0,
+                    total: this.calculateMonthlyActionAllowance()
+                }
             };
         });
 
@@ -2161,12 +2158,17 @@ class ServerEconomicEngine {
         };
 
         console.log(`📡 Broadcasting complete game state: ${buildings.length} buildings, ${Object.keys(players).length} players, event: ${eventType}`);
+        console.log(`🕒 DEBUG: Broadcasting gameTime = ${this.gameState.gameTime}, gameDay = ${Math.floor(this.gameState.gameTime)}`);
         console.log(`💰 DEBUG: Player data being broadcast:`, Object.keys(players).map(id => `${id}: $${players[id].cash}`));
         console.log(`👥 DEBUG: Broadcasting totalResidents = ${this.gameState.totalResidents}, demographics.total = ${this.gameState.demographics.total}`);
+        console.log(`🎯 DEBUG: Broadcasting monthlyActionAllowance = ${this.calculateMonthlyActionAllowance()}`);
+        console.log(`🎯 DEBUG: Player actions being broadcast:`, Object.keys(players).map(id => `${id}: ${players[id].actions?.total || 'NO_ACTIONS'} total`));
+        console.log(`📅 DEBUG: Game state includes gameTime for client sync`); // FORCE RESTART
 
         // V2: Debug log eventData for GAME_STARTED to verify city names are included
         if (eventType === 'GAME_STARTED' && eventData.players) {
             console.log(`🏙️ GAME_STARTED eventData players:`, eventData.players.map(p => `${p.id}: ${p.cityName}`));
+            console.log(`🏙️ GAME_STARTED full eventData structure:`, JSON.stringify(eventData, null, 2));
         }
 
         // Broadcast complete state to all clients
@@ -2606,6 +2608,9 @@ class ServerEconomicEngine {
      * Broadcast governance update to all players
      */
     broadcastGovernanceUpdate() {
+        // CRITICAL FIX: Recalculate LVT rate after any governance change
+        this.calculateLVTRate();
+
         this.broadcastGameState('GOVERNANCE_UPDATE', {
             source: 'governance_vote',
             timestamp: Date.now()
@@ -2849,20 +2854,35 @@ class ServerEconomicEngine {
     calculateLVTRate() {
         let totalLVTVotes = 0;
 
-        // Sum all player LVT votes (V3 uses single lvtVote value: + for increase, - for decrease)
+        // Sum all player LVT votes (handle both old and new vote systems)
         this.gameState.players.forEach((playerState) => {
-            if (playerState.governance && playerState.governance.lvtVote !== undefined) {
-                totalLVTVotes += playerState.governance.lvtVote;
+            if (playerState.governance) {
+                // New system: single lvtVote value
+                if (playerState.governance.lvtVote !== undefined) {
+                    totalLVTVotes += playerState.governance.lvtVote;
+                }
+                // Legacy system: separate increase/decrease votes
+                else if (playerState.governance.lvtVotesIncrease !== undefined || playerState.governance.lvtVotesDecrease !== undefined) {
+                    const increaseVotes = playerState.governance.lvtVotesIncrease || 0;
+                    const decreaseVotes = playerState.governance.lvtVotesDecrease || 0;
+                    totalLVTVotes += (increaseVotes - decreaseVotes);
+                }
             }
         });
 
         // Calculate new rate from base 50%
         const newRate = Math.max(0, Math.min(1, 0.5 + (totalLVTVotes * 0.01))); // 1% per vote point
 
-        // Store the rate room-wide
+        // Store the rate room-wide in BOTH systems to keep them synchronized
         this.currentLVTRate = newRate;
 
+        // CRITICAL FIX: Also update governance system tax rate to keep systems in sync
+        if (this.governanceSystem && this.governanceSystem.governance) {
+            this.governanceSystem.governance.taxRate = newRate;
+        }
+
         console.log(`📊 LVT rate calculated: ${(newRate * 100).toFixed(1)}% (${totalLVTVotes} net vote points)`);
+        console.log(`📊 LVT rate synchronized: currentLVTRate=${this.currentLVTRate}, governanceSystem.taxRate=${this.governanceSystem?.governance?.taxRate}`);
 
         return newRate;
     }
@@ -2871,7 +2891,9 @@ class ServerEconomicEngine {
      * Get current LVT rate
      */
     getCurrentLVTRate() {
-        return this.currentLVTRate || 0.5; // Default to 50%
+        const rate = this.currentLVTRate || 0.5; // Default to 50%
+        console.log(`🏛️ DEBUG: getCurrentLVTRate() returning ${rate} (currentLVTRate=${this.currentLVTRate})`);
+        return rate;
     }
 
     /**
@@ -3138,12 +3160,78 @@ class ServerEconomicEngine {
     }
 
     /**
-     * Get current game month from game time
+     * Get month boundaries array (shared between functions)
+     */
+    getMonthBoundaries() {
+        // Real month lengths starting from Sept 2nd (gameTime = 1.0)
+        // Sept: days 1-30 (29 days remaining), Oct: days 31-61 (31 days), etc.
+        return [
+            30,   // Sept (29 days remaining from Sept 2)
+            61,   // Oct (31 days)
+            91,   // Nov (30 days)
+            122,  // Dec (31 days)
+            153,  // Jan (31 days)
+            181,  // Feb (28 days, ignoring leap years for simplicity)
+            212,  // Mar (31 days)
+            242,  // Apr (30 days)
+            273,  // May (31 days)
+            303,  // Jun (30 days)
+            334,  // Jul (31 days)
+            365   // Aug (31 days) - ends at Sept 1
+        ];
+    }
+
+    /**
+     * Get current game month from game time using real calendar boundaries
      */
     getCurrentGameMonth() {
         const monthOrder = ['SEPT', 'OCT', 'NOV', 'DEC', 'JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG'];
-        const monthIndex = Math.floor(this.gameState.gameTime / 30.44) % 12; // ~30.44 days per month
-        return monthOrder[monthIndex];
+        const monthBoundaries = this.getMonthBoundaries();
+        const currentDay = Math.floor(this.gameState.gameTime);
+
+        for (let i = 0; i < monthBoundaries.length; i++) {
+            if (currentDay <= monthBoundaries[i]) {
+                return monthOrder[i];
+            }
+        }
+
+        // Should not reach here unless game goes beyond 1 year
+        return monthOrder[0]; // Default to Sept
+    }
+
+    /**
+     * Get the day when the next month starts
+     */
+    getNextMonthStartDay() {
+        const monthBoundaries = this.getMonthBoundaries();
+        const currentDay = Math.floor(this.gameState.gameTime);
+
+        for (let i = 0; i < monthBoundaries.length; i++) {
+            if (currentDay <= monthBoundaries[i]) {
+                return monthBoundaries[i] + 1; // Next month starts the day after boundary
+            }
+        }
+
+        return 366; // Beyond the game year
+    }
+
+
+    /**
+     * Check if the current day is the first day of a new month
+     */
+    isFirstDayOfMonth(currentDay) {
+        if (currentDay <= 1) return false; // Can't be first day if we're at game start
+
+        const monthBoundaries = this.getMonthBoundaries();
+
+        // Check if current day equals any month boundary + 1 (first day of next month)
+        for (let i = 0; i < monthBoundaries.length; i++) {
+            if (currentDay === monthBoundaries[i] + 1) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
@@ -3258,9 +3346,7 @@ class ServerEconomicEngine {
         }
 
         // Calculate auction expiration (end of current month)
-        const monthLengthDays = 30.44; // Average days per month
-        const currentMonth = Math.floor(this.gameState.gameTime / monthLengthDays);
-        const nextMonthStart = (currentMonth + 1) * monthLengthDays;
+        const nextMonthStart = this.getNextMonthStartDay();
         const expiresAt = Date.now() + ((nextMonthStart - this.gameState.gameTime) * this.GAME_DAY_MS);
 
         // Create listing
@@ -3460,7 +3546,7 @@ class ServerEconomicEngine {
         }
 
         // Calculate month progress (0 = start, 1 = end)
-        const monthLengthDays = 30.44;
+        // Use real calendar month calculation
         const currentMonth = Math.floor(this.gameState.gameTime / monthLengthDays);
         const monthStart = currentMonth * monthLengthDays;
         const monthProgress = (this.gameState.gameTime - monthStart) / monthLengthDays;
@@ -3654,7 +3740,7 @@ class ServerEconomicEngine {
      * Calculate current month progress (0 = start, 1 = end)
      */
     calculateMonthProgress() {
-        const monthLengthDays = 30.44;
+        // Use real calendar month calculation
         const currentMonth = Math.floor(this.gameState.gameTime / monthLengthDays);
         const monthStart = currentMonth * monthLengthDays;
         return (this.gameState.gameTime - monthStart) / monthLengthDays;

@@ -48,8 +48,8 @@ class BeerHallLobby {
         this.isInitialized = false;
         this.onGameStart = null;
 
-        // WebSocket for real-time communication (isolated from main game)
-        this.ws = null;
+        // Connection manager reference for lobby communications
+        this.connectionManager = null;
     }
 
     /**
@@ -81,8 +81,8 @@ class BeerHallLobby {
         // Initialize color selection
         await this.populateColors();
 
-        // Initialize WebSocket connection early to get playerId
-        this.initializeWebSocket();
+        // Initialize connection through ConnectionManager
+        this.initializeConnection();
 
         // Show beer hall lobby
         this.showBeerHallLobby();
@@ -623,215 +623,106 @@ class BeerHallLobby {
     }
 
     /**
-     * Initialize WebSocket connection
+     * Initialize connection through ConnectionManager
      */
-    initializeWebSocket() {
-        if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-            return; // Already connected
-        }
+    async initializeConnection() {
+        this.connectionManager = window.connectionManager;
 
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
         // Connect to the same server that served the page
         const host = window.location.host; // Uses current port automatically
         const wsUrl = `${protocol}//${host}/ws`;
 
-        // Connecting to beer hall WebSocket
-        // Connecting to beer hall WebSocket
-
         try {
-            this.ws = new WebSocket(wsUrl);
+            // Connect to server via ConnectionManager
+            await this.connectionManager.connect(wsUrl);
+            console.log('✅ Beer Hall connected via ConnectionManager');
 
-            this.ws.onopen = () => {
-                console.log('✅ Beer Hall WebSocket connected successfully');
-                // Handle successful connection/reconnection
-                this.handleReconnection();
-            };
-
-            this.ws.onmessage = (event) => {
-                // WebSocket message received
-                try {
-                    const update = JSON.parse(event.data);
-                    this.handleWebSocketUpdate(update);
-                } catch (error) {
-                    console.error('🔌 Failed to parse WebSocket message:', error);
-                }
-            };
-
-            this.ws.onclose = (event) => {
-                console.warn('⚠️ Beer Hall WebSocket disconnected - Code:', event.code);
-                // Attempt to reconnect after a delay
-                this.scheduleReconnection();
-            };
-
-            this.ws.onerror = (error) => {
-                console.error('🔌 DEBUG: Beer Hall WebSocket error:', error);
-                console.error('🔌 Beer Hall WebSocket error:', error);
-            };
+            // Subscribe to lobby-specific messages
+            this.setupLobbySubscriptions();
 
         } catch (error) {
-            console.error('🔌 Failed to initialize WebSocket:', error);
+            console.error('🔌 Failed to initialize connection:', error);
         }
     }
 
     /**
-     * Handle WebSocket updates
+     * Set up message subscriptions for lobby functionality
      */
-    handleWebSocketUpdate(update) {
-        // Processing WebSocket update
+    setupLobbySubscriptions() {
+        // Subscribe to lobby-specific messages
+        this.connectionManager.subscribe('CONNECTED', (message) => {
+            this.playerId = message.playerId;
+            console.log('🍺 Beer Hall received player ID:', this.playerId);
+        });
 
-        switch (update.type) {
-            case 'CONNECTED':
-                // Setting player ID from WebSocket
-                this.playerId = update.playerId;
-                break;
+        this.connectionManager.subscribe('TABLE_FOUND', (message) => {
+            this.handleTableFound(message);
+        });
 
-            case 'READY_CHECK_STARTED':
-                this.showReadyCheck(update);
-                break;
+        this.connectionManager.subscribe('PLAYER_JOINED', (message) => {
+            this.handlePlayerJoined(message);
+        });
 
-            case 'PLAYER_READY':
-                this.updatePlayerReadyStatus(update);
-                break;
+        this.connectionManager.subscribe('PLAYER_LEFT', (message) => {
+            this.handlePlayerLeft(message);
+        });
 
-            case 'GAME_STARTED':
-                this.startGameCinematic(update);
-                break;
+        this.connectionManager.subscribe('PLAYER_DISCONNECTED', (message) => {
+            this.handlePlayerLeft(message);
+        });
 
-            case 'PLAYER_JOINED':
-                this.handlePlayerJoined(update);
-                break;
+        this.connectionManager.subscribe('READY_UPDATE', (message) => {
+            this.handleReadyUpdate(message);
+        });
 
-            case 'PLAYER_LEFT':
-                this.handlePlayerLeft(update);
-                break;
+        this.connectionManager.subscribe('READY_CHECK_STARTED', (message) => {
+            this.showReadyCheck(message);
+        });
 
-            case 'CHAT_MESSAGE':
-                this.handleChatMessage(update);
-                break;
+        this.connectionManager.subscribe('GAME_STARTING', (message) => {
+            this.handleGameStarting(message);
+        });
 
-            case 'START_GAME':
-                this.handleGameStart(update);
-                break;
+        this.connectionManager.subscribe('COUNTDOWN_UPDATE', (message) => {
+            this.handleCountdownUpdate(message);
+        });
 
-            case 'GAME_STARTING':
-                // Game is starting - can be ignored or logged
-                console.log('🎮 Game starting...');
-                break;
+        this.connectionManager.subscribe('START_GAME', (message) => {
+            this.handleGameStart(message);
+        });
 
-            case 'GAME_STATE':
-                // Check if this is a GAME_STARTED event with city names
-                if (update.eventType === 'GAME_STARTED' && update.eventData?.players) {
-                    // GAME_STARTED detected - extracting city names
-                    const players = update.eventData.players;
-                    const currentPlayer = players.find(p => p.id === this.playerId);
+        this.connectionManager.subscribe('GAME_STARTED', (message) => {
+            this.startGameCinematic(message);
+        });
 
-                    if (currentPlayer && currentPlayer.cityName) {
-                                    // Store city name for UI display
-                        localStorage.setItem('playerCityName', currentPlayer.cityName);
-                        // Update UI immediately if game exists
-                        if (window.game && window.game.updateCityNameFromServer) {
-                            window.game.updateCityNameFromServer(currentPlayer.cityName);
-                        }
-                    } else {
-                        console.warn('⚠️ City name not found in GAME_STARTED message');
-                    }
-                }
+        this.connectionManager.subscribe('PLAYER_READY', (message) => {
+            this.updatePlayerReadyStatus(message);
+        });
 
-                // Forward GAME_STATE messages to Economic Client
-                // Forwarding GAME_STATE to Economic Client
-                if (window.game && window.game.economicClient) {
-                    // Calling economicClient.handleWebSocketUpdate
-                    window.game.economicClient.handleWebSocketUpdate(update);
-                } else {
-                    console.warn('⚠️ Economic Client not available for GAME_STATE');
-                }
-                break;
+        this.connectionManager.subscribe('CHAT_MESSAGE', (message) => {
+            this.handleChatMessage(message);
+        });
 
-            case 'GOVERNANCE_UPDATE':
-                // Forward GOVERNANCE_UPDATE messages to Economic Client
-                // Beer Hall: Forwarding GOVERNANCE_UPDATE to Economic Client
-                if (window.game && window.game.economicClient) {
-                    window.game.economicClient.handleWebSocketUpdate(update);
-                } else {
-                    console.warn('⚠️ Economic Client not available for GOVERNANCE_UPDATE');
-                }
-                break;
+        this.connectionManager.subscribe('TABLE_STATUS', (message) => {
+            this.handleTableStatus(message);
+        });
 
-            case 'COMMONWEALTH_UPDATE':
-                // Forward COMMONWEALTH_UPDATE messages to Economic Client
-                if (window.game && window.game.economicClient) {
-                    window.game.economicClient.handleWebSocketUpdate(update);
-                } else {
-                    console.warn('⚠️ Economic Client not available for COMMONWEALTH_UPDATE');
-                }
-                break;
+        // Connection events
+        this.connectionManager.on('connected', () => {
+            console.log('🍺 Beer Hall: Connection established');
+        });
 
-            case 'ERROR':
-                this.addSystemMessage(`❌ ${update.message}`);
-                console.warn('⚠️ Server error:', update.message);
-                break;
+        this.connectionManager.on('disconnected', () => {
+            console.warn('🍺 Beer Hall: Connection lost');
+        });
 
-            default:
-                // Forward any unhandled messages to Economic Client
-                if (window.game && window.game.economicClient) {
-                    console.log(`🔄 Beer Hall forwarding unknown message ${update.type} to Economic Client`);
-                    window.game.economicClient.handleWebSocketUpdate(update);
-                } else {
-                    console.warn('⚠️ Unknown beer hall update:', update.type);
-                }
-        }
+        this.connectionManager.on('reconnecting', (data) => {
+            console.log(`🍺 Beer Hall: Reconnecting (attempt ${data.attempt})`);
+        });
     }
 
-    /**
-     * Schedule reconnection attempt
-     */
-    scheduleReconnection() {
-        console.log('🔄 Beer Hall scheduling reconnection...');
 
-        // Clear any existing reconnection timeout
-        if (this.reconnectionTimeout) {
-            clearTimeout(this.reconnectionTimeout);
-        }
-
-        // Initialize reconnection attempts if not set
-        if (!this.reconnectionAttempts) {
-            this.reconnectionAttempts = 0;
-        }
-
-        this.reconnectionAttempts++;
-        const delay = Math.min(1000 * Math.pow(2, this.reconnectionAttempts - 1), 30000); // Exponential backoff, max 30s
-
-        console.log(`🔄 Beer Hall reconnection attempt ${this.reconnectionAttempts} in ${delay}ms`);
-
-        this.reconnectionTimeout = setTimeout(() => {
-            this.initializeWebSocket();
-        }, delay);
-    }
-
-    /**
-     * Handle successful reconnection
-     */
-    handleReconnection() {
-        console.log('🎉 Beer Hall reconnected successfully!');
-
-        // Reset reconnection attempts
-        this.reconnectionAttempts = 0;
-
-        // Clear reconnection timeout
-        if (this.reconnectionTimeout) {
-            clearTimeout(this.reconnectionTimeout);
-            this.reconnectionTimeout = null;
-        }
-
-        // Notify Economic Client that Beer Hall is ready
-        if (window.game && window.game.economicClient) {
-            console.log('🔄 Notifying Economic Client of Beer Hall reconnection');
-            // Give it a moment to ensure WebSocket is fully ready
-            setTimeout(() => {
-                window.game.economicClient.handleBeerHallReconnection();
-            }, 100);
-        }
-    }
 
     /**
      * Show ready check modal
@@ -870,12 +761,12 @@ class BeerHallLobby {
      * Handle ready up button
      */
     handleReadyUp() {
-        if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-            this.ws.send(JSON.stringify({
+        if (this.connectionManager && this.connectionManager.isConnected) {
+            this.connectionManager.send({
                 type: 'READY',
                 playerId: this.playerId,
                 ready: true
-            }));
+            });
 
             this.isReady = true;
             document.getElementById('ready-btn').textContent = '✅ Ready!';
@@ -894,8 +785,8 @@ class BeerHallLobby {
         this.currentTable = null;
         this.isReady = false;
 
-        if (this.ws) {
-            this.ws.close();
+        if (this.connectionManager) {
+            this.connectionManager.disconnect();
         }
     }
 
@@ -925,12 +816,41 @@ class BeerHallLobby {
     }
 
     /**
+     * Handle game starting message
+     */
+    handleGameStarting(message) {
+        console.log('🎮 Game is starting with countdown:', message.countdown);
+        this.addSystemMessage(`Game starting in ${message.countdown} seconds!`);
+
+        // Show countdown overlay if we have a chat overlay
+        this.showCountdownOverlay(message.countdown);
+    }
+
+    /**
+     * Handle countdown update message
+     */
+    handleCountdownUpdate(message) {
+        console.log(`⏰ Client received countdown update: ${message.countdown}`);
+        this.updateCountdownDisplay(message.countdown);
+        this.addSystemMessage(`Starting in ${message.countdown}...`);
+
+        // Hide countdown when it reaches 0
+        if (message.countdown === 0) {
+            console.log('⏰ Countdown reached 0, hiding overlay');
+            this.hideCountdownOverlay();
+        }
+    }
+
+    /**
      * Start game cinematic
      */
     startGameCinematic(update) {
         if (window.DEBUG_MODE) {
             console.log('✅ Starting game cinematic!');
         }
+
+        // Hide countdown overlay
+        this.hideCountdownOverlay();
 
         // Hide ready check modal
         this.readyCheckModal.style.display = 'none';
@@ -939,10 +859,15 @@ class BeerHallLobby {
         this.gameIntroModal.style.display = 'flex';
 
         // V2: Extract city name for current player from GAME_STARTED message
+        console.log('🏙️ CLIENT DEBUG: GAME_STARTED message received:', JSON.stringify(update, null, 2));
         const players = update.eventData?.players || update.players || [];
+        console.log('🏙️ CLIENT DEBUG: players array:', players);
+        console.log('🏙️ CLIENT DEBUG: current playerId:', this.playerId);
         const currentPlayer = players.find(p => p.id === this.playerId);
+        console.log('🏙️ CLIENT DEBUG: found currentPlayer:', currentPlayer);
 
         if (currentPlayer && currentPlayer.cityName) {
+            console.log('🏙️ CLIENT DEBUG: City name found:', currentPlayer.cityName);
             // Store city name for UI display
             localStorage.setItem('playerCityName', currentPlayer.cityName);
             // Update UI immediately if game exists
@@ -951,6 +876,9 @@ class BeerHallLobby {
             }
         } else {
             console.warn('⚠️ City name not found in GAME_STARTED message');
+            console.warn('⚠️ currentPlayer:', currentPlayer);
+            console.warn('⚠️ playerId:', this.playerId);
+            console.warn('⚠️ players:', players);
         }
 
         // Populate players in cinematic
@@ -1107,14 +1035,14 @@ class BeerHallLobby {
      */
     sendChatMessage(message) {
         // Send to all players (including self) via WebSocket
-        if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-            this.ws.send(JSON.stringify({
+        if (this.connectionManager && this.connectionManager.isConnected) {
+            this.connectionManager.send({
                 type: 'CHAT_MESSAGE',
                 playerId: this.playerId,
                 playerName: this.playerName,
                 message: message,
                 color: this.selectedColor
-            }));
+            });
         }
     }
 
@@ -1245,11 +1173,11 @@ class BeerHallLobby {
      */
     handleStartGame() {
         // Send start game signal to server
-        if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-            this.ws.send(JSON.stringify({
+        if (this.connectionManager && this.connectionManager.isConnected) {
+            this.connectionManager.send({
                 type: 'START_GAME',
                 playerId: this.playerId
-            }));
+            });
         }
 
         this.addSystemMessage('Starting game...');
@@ -1325,20 +1253,25 @@ class BeerHallLobby {
                 this.welcomeScreen.style.display = 'none';
                 this.gameIntroModal.style.display = 'none';
 
-                // Prepare player config for game
-                const playerConfig = {
-                    id: this.playerId,
-                    name: this.playerName,
-                    color: this.selectedColor,
-                    tableData: gameData,
-                    isMultiplayer: true
-                    // Governance preferences now handled by main governance system
-                };
+                // Don't create a new game - just transition the existing one
+                // The game was already started with proper server synchronization
+                console.log('🎮 Countdown complete - transitioning to synchronized game');
 
-                // Start the game!
-                if (this.onGameStart) {
-                    this.onGameStart(playerConfig);
+                // Request chat history before transitioning to in-game
+                console.log('💬 Requesting chat history for in-game transition');
+                this.requestChatHistory();
+
+                // Hide multiplayer chat overlay if active
+                this.hideMultiplayerChat();
+
+                // Remove blur from game container
+                const gameContainer = document.getElementById('game-container');
+                if (gameContainer) {
+                    gameContainer.classList.remove('game-blurred');
                 }
+
+                // Hide any remaining lobby elements
+                document.body.classList.remove('beer-hall-active', 'ready-check-active');
             }
         }, 1000);
     }
@@ -1746,6 +1679,156 @@ class BeerHallLobby {
     }
 
     // broadcastGovernanceChange method removed - now using main governance system directly
+
+    /**
+     * Show countdown overlay for game start
+     */
+    showCountdownOverlay(initialCount) {
+        // Create countdown overlay if it doesn't exist
+        let countdownOverlay = document.getElementById('countdown-overlay');
+        if (!countdownOverlay) {
+            countdownOverlay = document.createElement('div');
+            countdownOverlay.id = 'countdown-overlay';
+            countdownOverlay.className = 'countdown-overlay';
+            countdownOverlay.innerHTML = `
+                <div class="countdown-container">
+                    <div class="countdown-text">Game Starting</div>
+                    <div class="countdown-number">${initialCount}</div>
+                    <div class="countdown-subtitle">Get ready!</div>
+                </div>
+            `;
+            document.body.appendChild(countdownOverlay);
+
+            // Add styles if they don't exist
+            if (!document.getElementById('countdown-styles')) {
+                const style = document.createElement('style');
+                style.id = 'countdown-styles';
+                style.textContent = `
+                    .countdown-overlay {
+                        position: fixed;
+                        top: 0;
+                        left: 0;
+                        width: 100%;
+                        height: 100%;
+                        background: rgba(0, 0, 0, 0.8);
+                        display: flex;
+                        justify-content: center;
+                        align-items: center;
+                        z-index: 10000;
+                        font-family: 'Arial', sans-serif;
+                    }
+                    .countdown-container {
+                        text-align: center;
+                        color: white;
+                    }
+                    .countdown-text {
+                        font-size: 2rem;
+                        font-weight: bold;
+                        margin-bottom: 20px;
+                        opacity: 0.9;
+                    }
+                    .countdown-number {
+                        font-size: 6rem;
+                        font-weight: bold;
+                        color: #10AC84;
+                        animation: pulse 1s ease-in-out infinite;
+                        text-shadow: 0 0 20px rgba(16, 172, 132, 0.5);
+                    }
+                    .countdown-subtitle {
+                        font-size: 1.2rem;
+                        margin-top: 20px;
+                        opacity: 0.8;
+                    }
+                    @keyframes pulse {
+                        0% { transform: scale(1); }
+                        50% { transform: scale(1.1); }
+                        100% { transform: scale(1); }
+                    }
+                `;
+                document.head.appendChild(style);
+            }
+        }
+
+        countdownOverlay.style.display = 'flex';
+    }
+
+    /**
+     * Update countdown display
+     */
+    updateCountdownDisplay(count) {
+        const countdownNumber = document.querySelector('.countdown-number');
+        if (countdownNumber) {
+            countdownNumber.textContent = count;
+        }
+    }
+
+    /**
+     * Hide countdown overlay
+     */
+    hideCountdownOverlay() {
+        const countdownOverlay = document.getElementById('countdown-overlay');
+        if (countdownOverlay) {
+            countdownOverlay.style.display = 'none';
+        }
+    }
+
+    /**
+     * Request chat history from server for in-game transition
+     */
+    requestChatHistory() {
+        if (this.connectionManager) {
+            this.connectionManager.send({
+                type: 'REQUEST_CHAT_HISTORY',
+                playerId: this.playerId,
+                timestamp: Date.now()
+            });
+
+            // Subscribe to chat history response
+            this.connectionManager.subscribe('CHAT_HISTORY', (message) => {
+                this.populateInGameChatHistory(message.messages);
+            });
+        }
+    }
+
+    /**
+     * Populate in-game chat with pre-game chat history
+     */
+    populateInGameChatHistory(messages) {
+        const inGameChatContainer = document.getElementById('in-game-chat-messages');
+        if (!inGameChatContainer || !messages || messages.length === 0) {
+            console.log('💬 No chat history to populate or in-game chat not found');
+            return;
+        }
+
+        console.log(`💬 Populating in-game chat with ${messages.length} historical messages`);
+
+        // Clear existing messages
+        inGameChatContainer.innerHTML = '';
+
+        // Add each historical message
+        messages.forEach(message => {
+            const messageElement = document.createElement('div');
+            messageElement.className = 'chat-message';
+
+            // Format timestamp
+            const time = new Date(message.timestamp).toLocaleTimeString('en-US', {
+                hour12: false,
+                hour: '2-digit',
+                minute: '2-digit'
+            });
+
+            messageElement.innerHTML = `
+                <span class="chat-time">[${time}]</span>
+                <span class="chat-player" style="color: ${message.color}">${message.playerName}:</span>
+                <span class="chat-text">${message.message}</span>
+            `;
+
+            inGameChatContainer.appendChild(messageElement);
+        });
+
+        // Scroll to bottom
+        inGameChatContainer.scrollTop = inGameChatContainer.scrollHeight;
+    }
 
     /**
      * Setup global reference for beer hall lobby access

@@ -195,8 +195,8 @@ class TooltipSystemV2 {
 
             if (!parcel.building) {
                 // Empty parcel
-                // 🚫 GHOST BUSTED! Use server price
-                data.price = this.game.economicClient?.getParcelPrice(row, col) || 'GHOST';
+                // Use server-authoritative price
+                data.price = this.game.economicClient?.getParcelPrice(row, col) || 'Loading...';
                 // Server-authoritative ownership: treat "City" and "unclaimed" as unowned for player interaction
                 data.isOwned = !!(parcel.owner && parcel.owner !== 'City' && parcel.owner !== 'unclaimed');
                 data.owner = parcel.owner;
@@ -580,6 +580,22 @@ class TooltipSystemV2 {
     }
 
     /**
+     * Extract livability value from building definition (handles both number and object formats)
+     */
+    extractLivabilityValue(livabilityData) {
+        if (typeof livabilityData === 'number') {
+            // Convert decimal values (e.g., 0.02, 0.20) to points scale (-100 to +100)
+            // Decimal values are multiplied by 100 to get points
+            return Math.round(livabilityData * 100);
+        } else if (typeof livabilityData === 'object' && livabilityData !== null) {
+            // Handle object format with effect property
+            const effectValue = livabilityData.effect || 0;
+            return Math.round(effectValue * 100);
+        }
+        return 0;
+    }
+
+    /**
      * Render CARENS impacts when JEEFHH needs are satisfied
      */
     renderCarensImpacts(livability) {
@@ -594,7 +610,8 @@ class TooltipSystemV2 {
         ];
 
         carensTypes.forEach(type => {
-            const value = livability[type.key];
+            const rawValue = livability[type.key];
+            const value = this.extractLivabilityValue(rawValue);
             if (value && Math.abs(value) >= 2) { // Only show meaningful impacts
                 impacts.push({
                     name: type.name,
@@ -630,8 +647,8 @@ class TooltipSystemV2 {
 
         const buildingData = this.game.getBuildingDataByName(data.parcel.building);
         const buildingValue = buildingData?.cost || 0;
-        // 🚫 GHOST BUSTED! Use server price
-        const landValue = this.game.economicClient?.getParcelPrice(data.row, data.col) || 'GHOST';
+        // Use server-authoritative price
+        const landValue = this.game.economicClient?.getParcelPrice(data.row, data.col) || 'Loading...';
 
         return `
             <div class="building-values">
@@ -1173,8 +1190,8 @@ class TooltipSystemV2 {
 
     // 🚫 CLIENT CALCULATION - DISABLED! BUSTED!
     calculateTimeRemaining(data) {
-        // CLIENT-SIDE CALCULATION DISABLED - RETURN GHOST PLACEHOLDER
-        return 'GHOST';
+        // Use server data only
+        return 'Loading...';
     }
 
     getBuildingNeeds(row, col, buildingData = null) {
@@ -1266,12 +1283,12 @@ class TooltipSystemV2 {
         // CLIENT-SIDE CALCULATION DISABLED - RETURN GHOST PLACEHOLDER
         // Mock CARENS data was replaced with server-authoritative data
         return {
-            culture: 'GHOST',
-            affordability: 'GHOST',
-            resilience: 'GHOST',
-            environment: 'GHOST',
-            noise: 'GHOST',
-            safety: 'GHOST'
+            culture: 'Loading...',
+            affordability: 'Loading...',
+            resilience: 'Loading...',
+            environment: 'Loading...',
+            noise: 'Loading...',
+            safety: 'Loading...'
         };
     }
 
@@ -1496,8 +1513,8 @@ class TooltipSystemV2 {
 
     // 🚫 CLIENT CALCULATION - DISABLED! BUSTED!
     calculateBuildingContribution(buildingData, metric) {
-        // CLIENT-SIDE CALCULATION DISABLED - RETURN GHOST PLACEHOLDER
-        return 'GHOST';
+        // Use server data only
+        return 'Loading...';
     }
 
     analyzeConnectivity(row, col, buildingData) {
@@ -1658,8 +1675,10 @@ class TooltipSystemV2 {
 
             return `<span class="ownership-badge player" style="background: ${playerColor}; color: ${contrastColor};">${displayText}</span>`;
         } else {
-            // Default state: dark gray with white text
-            return `<span class="ownership-badge city">${playerName}</span>`;
+            // Default state: use player color with contrast for non-hovering state
+            const playerColor = this.getPlayerColor(owner);
+            const contrastColor = this.getContrastingColor(playerColor);
+            return `<span class="ownership-badge player" style="background: ${playerColor}; color: ${contrastColor};">${playerName}</span>`;
         }
     }
 
@@ -1681,8 +1700,8 @@ class TooltipSystemV2 {
             `;
         } else {
             // Show purchase price if available for purchase
-            // 🚫 GHOST BUSTED! Use server price
-            const price = this.game.economicClient?.getParcelPrice(parcel.row, parcel.col) || 'GHOST';
+            // Use server-authoritative price
+            const price = this.game.economicClient?.getParcelPrice(parcel.row, parcel.col) || 'Loading...';
             const priceText = price ? `$${price.toLocaleString()}` : 'AVAILABLE';
             return `
                 <div class="${headerClass}">

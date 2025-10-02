@@ -156,10 +156,10 @@ class ActionMarketplaceV2 {
 
     updateModal() {
         // Update action balance display (server-authoritative)
-        const currentActions = this.game.economicClient?.getCurrentPlayerActions() || 0;
+        const currentActions = this.game.economicClient?.getCurrentPlayerActions();
         const actionBalance = document.getElementById('modal-action-balance');
         if (actionBalance) {
-            actionBalance.textContent = currentActions;
+            actionBalance.textContent = currentActions !== null ? currentActions : 'Loading...';
         }
 
         // Update market stats from server data
@@ -187,10 +187,33 @@ class ActionMarketplaceV2 {
             return;
         }
 
-        // Server-authoritative calculation only when called from server update
+        // Server-authoritative calculation using real month boundaries
         const gameDay = Math.floor(this.game.economicClient.gameTime);
-        const dayInMonth = (gameDay % 30) + 1; // 1-30
-        const daysLeftInMonth = 30 - dayInMonth;
+
+        // Real month boundaries (matching server getMonthBoundaries())
+        const monthBoundaries = [
+            30,   // Sept (29 days remaining from Sept 2)
+            61,   // Oct (31 days)
+            91,   // Nov (30 days)
+            122,  // Dec (31 days)
+            153,  // Jan (31 days)
+            181,  // Feb (28 days)
+            212,  // Mar (31 days)
+            242,  // Apr (30 days)
+            273,  // May (31 days)
+            303,  // Jun (30 days)
+            334,  // Jul (31 days)
+            365   // Aug (31 days)
+        ];
+
+        // Find which month we're in and days left
+        let daysLeftInMonth = 0;
+        for (let i = 0; i < monthBoundaries.length; i++) {
+            if (gameDay <= monthBoundaries[i]) {
+                daysLeftInMonth = monthBoundaries[i] - gameDay;
+                break;
+            }
+        }
 
         console.log(`📅 Server time update: Day ${gameDay}, ${daysLeftInMonth} days left in month`);
 
@@ -238,19 +261,59 @@ class ActionMarketplaceV2 {
      */
 
     async listActionsForSale() {
+        console.log('🏪 DEBUG: listActionsForSale() called');
+
         const quantity = parseInt(document.getElementById('sell-quantity').value) || 0;
         const reservePrice = parseInt(document.getElementById('sell-reserve').value) || 0;
         const buyNowPrice = parseInt(document.getElementById('sell-buynow').value) || 0;
 
+        console.log('🏪 DEBUG: Form values:', { quantity, reservePrice, buyNowPrice });
+
         // Validate
-        const currentActions = this.game.economicClient?.getCurrentPlayerActions() || 0;
+        const currentActions = this.game.economicClient?.getCurrentPlayerActions();
+        console.log('🏪 DEBUG: Current actions:', currentActions);
+
+        if (currentActions === null) {
+            console.log('🏪 DEBUG: Actions data not loaded yet');
+            this.game.showNotification('Loading action data...', 'info');
+            return;
+        }
         if (quantity <= 0 || quantity > currentActions) {
+            console.log('🏪 DEBUG: Invalid quantity validation failed');
             this.game.showNotification('Invalid quantity!', 'error');
             return;
         }
 
         if (reservePrice <= 0) {
+            console.log('🏪 DEBUG: Invalid reserve price validation failed');
             this.game.showNotification('Please set a reserve price!', 'error');
+            return;
+        }
+
+        console.log('🏪 DEBUG: Validation passed, checking economic client');
+        if (!this.game.economicClient) {
+            console.error('🏪 DEBUG: No economic client available');
+            this.game.showNotification('Economic client not ready', 'error');
+            return;
+        }
+
+        console.log('🏪 DEBUG: Checking ConnectionManager state');
+        if (!this.game.economicClient.connectionManager) {
+            console.error('🏪 DEBUG: ConnectionManager not initialized');
+            this.game.showNotification('Connection not ready - please wait', 'error');
+            return;
+        }
+
+        if (!this.game.economicClient.connectionManager.isConnected) {
+            console.error('🏪 DEBUG: ConnectionManager not connected');
+            this.game.showNotification('Connection not established - please wait', 'error');
+            return;
+        }
+
+        console.log('🏪 DEBUG: Checking player ID');
+        if (!this.game.currentPlayerId) {
+            console.error('🏪 DEBUG: No current player ID');
+            this.game.showNotification('Player ID not ready', 'error');
             return;
         }
 
@@ -264,7 +327,9 @@ class ActionMarketplaceV2 {
                 buyNowPrice: buyNowPrice > 0 ? buyNowPrice : null
             };
 
+            console.log('🏪 Action Marketplace: Submitting listing transaction:', transaction);
             const result = await this.game.economicClient.sendTransaction(transaction);
+            console.log('🏪 Action Marketplace: Server response:', result);
 
             if (result.success) {
                 // Clear form
@@ -276,10 +341,11 @@ class ActionMarketplaceV2 {
                 this.updateModal();
                 this.switchTab('marketplace');
             } else {
+                console.error('🏪 DEBUG: Server rejected transaction:', result.error);
                 this.game.showNotification(result.error || 'Failed to create listing', 'error');
             }
         } catch (error) {
-            console.error('Failed to create listing:', error);
+            console.error('🏪 DEBUG: Exception during transaction:', error);
             this.game.showNotification('Failed to create listing', 'error');
         }
     }
@@ -295,7 +361,11 @@ class ActionMarketplaceV2 {
         const minimumBid = Math.max(listing.reservePrice, Math.ceil(listing.currentBid * 1.1));
 
         // Check player balance
-        const currentBalance = this.game.economicClient?.getCurrentPlayerBalance() || 0;
+        const currentBalance = this.game.economicClient?.getCurrentPlayerBalance();
+        if (currentBalance === null) {
+            this.game.showNotification('Loading balance data...', 'info');
+            return;
+        }
         if (currentBalance < minimumBid) {
             this.game.showNotification(`Insufficient funds! Need $${minimumBid.toLocaleString()}`, 'error');
             return;
@@ -334,7 +404,11 @@ class ActionMarketplaceV2 {
         const buyNowPrice = this.calculateBuyNowPrice(listing);
 
         // Check player balance
-        const currentBalance = this.game.economicClient?.getCurrentPlayerBalance() || 0;
+        const currentBalance = this.game.economicClient?.getCurrentPlayerBalance();
+        if (currentBalance === null) {
+            this.game.showNotification('Loading balance data...', 'info');
+            return;
+        }
         if (currentBalance < buyNowPrice) {
             this.game.showNotification(`Insufficient funds! Need $${buyNowPrice.toLocaleString()}`, 'error');
             return;
@@ -564,16 +638,20 @@ class ActionMarketplaceV2 {
         return playerId.slice(-4); // Last 4 characters as fallback
     }
 
-    // 🚫 CLIENT CALCULATION - DISABLED! BUSTED!
+    /**
+     * Get buy now price from server-calculated data
+     */
     calculateBuyNowPrice(listing) {
-        // CLIENT-SIDE CALCULATION DISABLED - RETURN GHOST PLACEHOLDER
-        return 'GHOST';
+        // Use server-calculated value from enhanced listing data
+        return listing.calculatedBuyNowPrice || listing.buyNowPrice || 0;
     }
 
-    // 🚫 CLIENT CALCULATION - DISABLED! BUSTED!
+    /**
+     * Get end early fee from server-calculated data
+     */
     calculateEndEarlyFee(listing) {
-        // CLIENT-SIDE CALCULATION DISABLED - RETURN GHOST PLACEHOLDER
-        return 'GHOST';
+        // Use server-calculated value from enhanced listing data
+        return listing.calculatedEndEarlyFee || 0;
     }
 
     /**

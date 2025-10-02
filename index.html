@@ -47,6 +47,27 @@
             font-family: 'SF Mono', Monaco, Inconsolata, 'Roboto Mono', 'Source Code Pro', monospace;
         }
 
+        /* Development Mode Indicator */
+        .dev-mode-indicator {
+            position: fixed;
+            bottom: 8px;
+            left: 8px;
+            background: rgba(255, 107, 53, 0.9);
+            color: white;
+            padding: 4px 8px;
+            font-size: 10px;
+            font-weight: 500;
+            border-radius: 4px;
+            z-index: 10000;
+            font-family: 'SF Mono', Monaco, Inconsolata, 'Roboto Mono', 'Source Code Pro', monospace;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+            display: none;
+            backdrop-filter: blur(4px);
+        }
+        .dev-mode-indicator.visible {
+            display: block;
+        }
+
         /* Clean transition overlay styling */
         .transition-overlay {
             position: fixed;
@@ -1694,6 +1715,11 @@
 </head>
 <body>
 
+    <!-- Development Mode Indicator -->
+    <div id="dev-mode-indicator" class="dev-mode-indicator">
+        <span id="dev-mode-badge">DEV</span>
+    </div>
+
     <!-- Main Game Interface (hidden until setup complete) -->
     <div id="game-interface" class="game-interface hidden">
     <div id="top-bar">
@@ -1843,7 +1869,7 @@
 
                 <div class="chat-content-tabs">
                     <div class="chat-tab active" data-tab="chat">Chat</div>
-                    <div class="chat-tab" data-tab="governance">Governance</div>
+                    <div class="chat-tab" data-tab="governance" style="display: none">Governance</div>
                 </div>
 
                 <div class="chat-tab-content active" id="chat-content">
@@ -2499,18 +2525,18 @@
                 <div class="leaderboard-table">
                     <div class="leaderboard-header">
                         <div class="lb-rank">Rank</div>
-                        <div class="lb-player">Player</div>
+                        <div class="lb-player">Player Name</div>
                         <div class="lb-wealth">Wealth</div>
-                        <div class="lb-lvt">LVT Contrib</div>
-                        <div class="lb-score">CW Score</div>
+                        <div class="lb-lvt">LVT Contribution</div>
+                        <div class="lb-score">Score</div>
                     </div>
                     <div class="leaderboard-rows" id="leaderboard-rows">
                         <!-- Dynamic content -->
                     </div>
                 </div>
                 <div class="victory-info">
-                    <p><strong>Early Victory:</strong> First to 25.0 CW Score + 15% LVT Contribution</p>
-                    <p><strong>Year-End Victory:</strong> Highest CW Score on Sept 1st</p>
+                    <p><strong>Early Victory:</strong> A Commonwealth Score of 25 with at least 15% LVT Contribution</p>
+                    <p><strong>Year-End Victory:</strong> Highest Commonwealth Score on Sept 1st</p>
                 </div>
             </div>
         </div>
@@ -2924,6 +2950,7 @@
     </div>
 
     <!-- Independent Onboarding System -->
+    <script src="connection-manager.js"></script>
     <script src="beer-hall-lobby.js"></script>
 
     <script src="config.js"></script>
@@ -2963,6 +2990,7 @@
     <script src="context-menu-system.js"></script>
     <script src="action-manager.js"></script>
     <script src="action-marketplace-v2.js"></script>
+    <script src="sync-health-checker.js"></script>
     <script src="game.js?v=13"></script>
 
     <script>
@@ -2976,6 +3004,25 @@
         let serverAssignedPlayerId = null;
 
         document.addEventListener('DOMContentLoaded', async () => {
+            // Check for development mode and show indicator
+            try {
+                const response = await fetch('/api/dev-status');
+                const devStatus = await response.json();
+                const indicator = document.getElementById('dev-mode-indicator');
+                const badge = document.getElementById('dev-mode-badge');
+
+                if (devStatus.isDevelopment) {
+                    indicator.classList.add('visible');
+                    let badgeText = devStatus.gameMode ? devStatus.gameMode.toUpperCase() : 'DEV';
+                    if (devStatus.debug) {
+                        badgeText += '+DBG';
+                    }
+                    badge.textContent = badgeText;
+                }
+            } catch (error) {
+                console.log('🔧 Dev status check failed (normal in production)');
+            }
+
             console.log('🍺 Starting beer hall system for all players...');
             console.log('🔍 DOM Check - welcome-screen:', !!document.getElementById('welcome-screen'));
             console.log('🔍 DOM Check - beer-hall-lobby:', !!document.getElementById('beer-hall-lobby'));
@@ -3076,16 +3123,16 @@
                 // Add message to chat
                 window.addChatMessage(playerName, message, playerColor, true);
 
-                // Send to other players via WebSocket if connected
-                if (window.game?.economicClient?.ws?.readyState === WebSocket.OPEN) {
-                    window.game.economicClient.ws.send(JSON.stringify({
-                        type: 'chat_message',
+                // Send to other players via ConnectionManager if connected
+                if (window.connectionManager?.isConnected) {
+                    window.connectionManager.send({
+                        type: 'CHAT_MESSAGE',
                         playerId: window.playerConfig?.id,
                         playerName: playerName,
                         playerColor: playerColor,
                         message: message,
                         timestamp: Date.now()
-                    }));
+                    });
                 }
 
                 chatInput.value = '';
@@ -3172,13 +3219,15 @@
         // Initialize chat when game is ready
         setTimeout(initializeInGameChat, 1000);
 
-        // Listen for incoming chat messages from other players
-        window.addEventListener('message', (event) => {
-            if (event.data.type === 'chat_message_received') {
-                const data = event.data;
-                addChatMessage(data.playerName, data.message, data.playerColor, false);
-            }
-        });
+        // Listen for incoming chat messages from other players via ConnectionManager
+        if (window.connectionManager) {
+            window.connectionManager.subscribe('CHAT_MESSAGE', (message) => {
+                // Don't display our own messages (they're already shown locally)
+                if (message.playerId !== window.playerConfig?.id) {
+                    addChatMessage(message.playerName, message.message, message.color, false);
+                }
+            });
+        }
 
 
     </script>

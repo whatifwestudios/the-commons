@@ -20,23 +20,10 @@ class EconomicClient {
         this.gameTime = 0;
         this.serverGameTime = 0;
         this.lastSyncTime = Date.now();
+        this.displayTimer = null;
 
-        // Connection resilience state
-        this.reconnectAttempts = 0;
-        this.maxReconnectAttempts = 10;
-        this.reconnectTimeout = null;
-        this.baseReconnectDelay = 1000; // 1 second base delay
-        this.maxReconnectDelay = 30000; // 30 seconds max delay
-        this.isConnected = false;
-        this.connectionId = this.generateConnectionId();
-        this.messageQueue = [];
-        this.lastHeartbeat = Date.now();
-        this.heartbeatInterval = null;
-        this.heartbeatFrequency = 30000; // 30 seconds
-        this.connectionLost = false;
-
-        // ROOT CAUSE FIX: Prevent browser from killing WebSocket
-        this.setupPageVisibilityHandling();
+        // Connection manager reference
+        this.connectionManager = null;
 
         // Economic data from server
         this.jeefhh = {
@@ -59,6 +46,9 @@ class EconomicClient {
         };
         this.totalResidents = 0;
         this.lvtRate = 0.5; // Default LVT rate 50%
+
+        // Server-authoritative action costs
+        this.actionCosts = null; // Will be set from server data
 
         // V2: Processed vitality data for UI (computed from jeefhh)
         this.vitalitySupply = {
@@ -93,9 +83,9 @@ class EconomicClient {
         // Client clock will be started when game begins (not during lobby/chat)
         this.clockStarted = false;
 
-        // Initialize WebSocket connection for real-time updates (if enabled)
+        // Initialize connection for real-time updates (if enabled)
         if (autoConnectWebSocket) {
-            this.initializeWebSocket();
+            this.initializeConnection();
         }
     }
 
@@ -115,50 +105,121 @@ class EconomicClient {
      */
     startClientClock() {
         if (this.clockStarted) {
-                return;
+            return;
         }
-
 
         // Reset game start time to now (when game actually begins)
         this.clientGameStartTime = Date.now();
         this.clockStarted = true;
 
-        // V2: Server-authoritative time only - removed client-side timer
-        // Client displays time only when received from server
+        // V2: Server-authoritative time with client display interpolation
+        // Start display timer for smooth UI updates between server syncs
+        this.startDisplayTimer();
     }
 
     /**
-     * Update client game time (for UI display)
+     * Update client game time (server-authoritative only)
+     * Client no longer calculates its own time - only displays server time
      */
     updateClientGameTime() {
-        const now = Date.now();
-        const elapsedMs = now - this.clientGameStartTime;
-        this.gameTime = elapsedMs / this.GAME_DAY_MS;
+        // No-op: Client receives gameTime from server via sync
+        // This prevents client-server time calculation conflicts
+    }
 
-        // Trigger daily UI updates
-        const currentDay = Math.floor(this.gameTime);
-        if (currentDay > Math.floor(this.gameTime - 1)) {
-            this.triggerUIUpdate('DAILY_TICK');
+    /**
+     * Start display timer for smooth UI updates between server syncs
+     */
+    startDisplayTimer() {
+        if (this.displayTimer) {
+            clearInterval(this.displayTimer);
+        }
+
+        // Update display every 5 seconds for smooth progression
+        this.displayTimer = setInterval(() => {
+            if (this.serverGameTime !== null && this.clockStarted) {
+                // Calculate elapsed time since last server sync
+                const now = Date.now();
+                const elapsedMs = now - this.lastSyncTime;
+                const elapsedGameTime = elapsedMs / this.GAME_DAY_MS;
+
+                // Interpolate current display time (server time + elapsed)
+                this.gameTime = this.serverGameTime + elapsedGameTime;
+
+                // Update game date display
+                if (window.game && typeof window.game.updateGameDate === 'function') {
+                    window.game.currentDay = Math.floor(this.gameTime);
+                    window.game.updateGameDate();
+                }
+            }
+        }, 5000); // Update every 5 seconds
+    }
+
+    /**
+     * Stop display timer
+     */
+    stopDisplayTimer() {
+        if (this.displayTimer) {
+            clearInterval(this.displayTimer);
+            this.displayTimer = null;
         }
     }
 
     /**
-     * Sync client clock with server time
+     * Sync client clock with server time (AUTHORITATIVE TIME SOURCE)
+     *
+     * This is the single source of truth for game time in the client.
+     * All time-dependent systems should use this.gameTime or this.serverGameTime.
+     *
+     * Calendar system uses same month boundaries as server:
+     * - Sept: days 1-30 (gameDay 1 = Sept 2)
+     * - Oct: days 31-61, Nov: days 62-91, etc.
      */
     syncWithServerTime(serverGameTime) {
         const now = Date.now();
         this.serverGameTime = serverGameTime;
+        this.lastSyncTime = now; // Track when we last synced
 
         // Adjust client start time to match server
         const serverElapsedMs = serverGameTime * this.GAME_DAY_MS;
         this.clientGameStartTime = now - serverElapsedMs;
         this.gameTime = serverGameTime;
 
-
         // Update game's date display with server-authoritative time
         if (window.game && typeof window.game.updateGameDate === 'function') {
             window.game.currentDay = Math.floor(this.gameTime);
             window.game.updateGameDate();
+        }
+
+        // Validate time synchronization
+        this.validateTimeSynchronization();
+    }
+
+    /**
+     * Validate that time synchronization is working properly
+     * Helps catch future time-related bugs early
+     */
+    validateTimeSynchronization() {
+        if (!window.DEBUG_MODE) return; // Only run in debug mode
+
+        const currentDay = Math.floor(this.gameTime);
+
+        // Validate date calculation consistency
+        if (window.game && window.game.getGameDate) {
+            const gameDate = window.game.getGameDate();
+
+            // Basic sanity checks
+            if (gameDate.day < 1 || gameDate.day > 31) {
+                console.warn('🐛 TIME SYNC WARNING: Invalid day detected:', gameDate.day);
+            }
+
+            if (currentDay > 365) {
+                console.warn('🐛 TIME SYNC WARNING: Game time beyond 1 year:', currentDay);
+            }
+
+            // Check for the "Sept 31st" bug specifically
+            if (gameDate.month === 'SEPT' && gameDate.day > 30) {
+                console.error('🐛 TIME SYNC ERROR: September has >30 days!', gameDate);
+            }
         }
     }
 
@@ -262,21 +323,19 @@ class EconomicClient {
      */
     async sendTransaction(transaction) {
         try {
-            // Check Beer Hall WebSocket instead
-            const beerHallWS = (typeof window.beerHallLobby !== 'undefined' && window.beerHallLobby && window.beerHallLobby.ws) ? window.beerHallLobby.ws : null;
-
-            if (!beerHallWS || beerHallWS.readyState !== WebSocket.OPEN) {
-                throw new Error('WebSocket not connected');
+            // Check ConnectionManager instead
+            if (!this.connectionManager || !this.connectionManager.isConnected) {
+                throw new Error('ConnectionManager not connected');
             }
 
             // Add transaction ID for tracking
             transaction.id = `${transaction.type}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
-            // Send via Beer Hall WebSocket
-            beerHallWS.send(JSON.stringify({
+            // Send via ConnectionManager
+            this.connectionManager.send({
                 type: 'ECONOMIC_TRANSACTION',
                 transaction: transaction
-            }));
+            });
 
             // Wait for response via WebSocket
             return await this.waitForTransactionResponse(transaction.id);
@@ -400,9 +459,9 @@ class EconomicClient {
             return this.cachedCashflow;
         }
 
-        // Only warn if we have no WebSocket connection at all
-        if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
-            console.warn(`⚠️ No cashflow data available - WebSocket not connected`);
+        // Only warn if we have no connection at all
+        if (!this.connectionManager || !this.connectionManager.isConnected) {
+            console.warn(`⚠️ No cashflow data available - ConnectionManager not connected`);
         }
         return null;
     }
@@ -419,9 +478,9 @@ class EconomicClient {
             return this.gameState.players[targetPlayerId];
         }
 
-        // Only warn if WebSocket is connected but data still not available (actual error)
+        // Only warn if connected but data still not available (actual error)
         // During initialization, it's normal for data to not be available yet
-        if (this.ws && this.ws.readyState === WebSocket.OPEN && this.gameState) {
+        if (this.connectionManager && this.connectionManager.isConnected && this.gameState) {
             console.warn(`⚠️ Player data not found in game state`);
         }
         return null;
@@ -431,8 +490,8 @@ class EconomicClient {
      * V2: Submit governance transaction to server
      */
     async submitGovernanceTransaction(type, data) {
-        if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
-            console.error('Cannot submit governance transaction - WebSocket not connected');
+        if (!this.connectionManager || !this.connectionManager.isConnected) {
+            console.error('Cannot submit governance transaction - ConnectionManager not connected');
             return false;
         }
 
@@ -445,7 +504,7 @@ class EconomicClient {
         };
 
         try {
-            this.ws.send(JSON.stringify(transaction));
+            this.connectionManager.send(transaction);
             // Governance transaction submitted
             return true;
         } catch (error) {
@@ -508,7 +567,7 @@ class EconomicClient {
 
         // No fallbacks - wait for server sync
         // Balance not yet synced with server
-        return 0; // Show 0 instead of misleading 6000
+        return null; // Return null to indicate loading state
     }
 
     /**
@@ -522,7 +581,14 @@ class EconomicClient {
 
         // No fallbacks - wait for server sync
         // Actions not yet synced with server
-        return 0; // Show 0 instead of misleading 20
+        return null; // Return null to indicate loading state
+    }
+
+    /**
+     * Get monthly action allowance from server data
+     */
+    getMonthlyActionAllowance() {
+        return this.monthlyActionAllowance || 0;
     }
 
     /**
@@ -536,7 +602,7 @@ class EconomicClient {
 
         // No fallbacks - wait for server sync
         // Wealth not yet synced with server
-        return 0; // Show 0 instead of misleading amount
+        return null; // Return null to indicate loading state
     }
 
     /**
@@ -545,6 +611,13 @@ class EconomicClient {
     getCityAttractiveness() {
         // UI should NOT calculate attractiveness - only return server value
         return this.attractiveness || null;
+    }
+
+    /**
+     * Get server-authoritative action costs
+     */
+    getActionCosts() {
+        return this.actionCosts;
     }
 
     /**
@@ -666,9 +739,11 @@ class EconomicClient {
             }
         }
 
-        if (update.gameTime) {
-            this.syncWithServerTime(update.gameTime);
-        }
+        // REMOVED: Legacy gameTime sync to prevent conflicts with modern syncGameState
+        // Only use server-authoritative gameTime from GAME_STATE messages
+        // if (update.gameTime) {
+        //     this.syncWithServerTime(update.gameTime);
+        // }
 
         // Clear performance cache for affected buildings
         if (update.transaction && update.transaction.location) {
@@ -815,6 +890,24 @@ class EconomicClient {
         if (gameState.lvtRate !== undefined) {
             this.lvtRate = gameState.lvtRate;
         }
+        // Sync monthly action allowance
+        if (gameState.monthlyActionAllowance !== undefined) {
+            this.monthlyActionAllowance = gameState.monthlyActionAllowance;
+            console.log('🎯 Monthly action allowance synced from server:', this.monthlyActionAllowance);
+            // Update action display when monthly allowance is synced
+            if (this.game && this.game.updateActionDisplay) {
+                this.game.updateActionDisplay();
+            }
+        }
+        // Sync server-authoritative action costs
+        if (gameState.actionCosts) {
+            this.actionCosts = gameState.actionCosts;
+            console.log('🎯 Action costs synced from server:', this.actionCosts);
+            // Update action display when monthly allowance is synced
+            if (this.game && this.game.updateActionDisplay) {
+                this.game.updateActionDisplay();
+            }
+        }
 
         // Sync governance data (treasury, tax rate)
         if (gameState.governance) {
@@ -873,6 +966,11 @@ class EconomicClient {
                 this.playerActions[player.id] = player.actions?.total || 0;
             });
 
+            // Update action display when player actions are synced
+            if (this.game && this.game.updateActionDisplay) {
+                this.game.updateActionDisplay();
+            }
+
             // Balance and action sync logging (reduced frequency)
             // Player data synced
         }
@@ -888,10 +986,12 @@ class EconomicClient {
         }
 
         // Update current player cash if available
+        console.log(`💰 SYNC DEBUG: playerId=${this.playerId}, gameState.players keys:`, Object.keys(gameState.players || {}));
         if (this.playerId && gameState.players[this.playerId]) {
             const playerData = gameState.players[this.playerId];
             const newBalance = playerData.cash;
 
+            console.log(`💰 SYNC SUCCESS: Player ${this.playerId} cash: ${newBalance}`);
 
             // Server-authoritative: Store server balance and wealth
             this.serverBalance = newBalance;
@@ -932,6 +1032,8 @@ class EconomicClient {
                     cashElement.textContent = `$${Math.round(newBalance).toLocaleString()}`;
                 }
             }
+        } else {
+            console.warn(`💰 SYNC FAILED: Player ID mismatch or missing data. playerId=${this.playerId}, available players:`, Object.keys(gameState.players || {}));
         }
 
         // Sync grid/parcel ownership (server-authoritative)
@@ -1122,103 +1224,91 @@ class EconomicClient {
     /**
      * Initialize WebSocket connection for real-time multiplayer updates
      */
-    initializeWebSocket() {
-        // Economic Client now purely relies on Beer Hall for WebSocket connection
-        // No independent connection - Beer Hall handles all WebSocket management
-        console.log('🔌 Economic Client connecting via Beer Hall WebSocket forwarding');
+    initializeConnection() {
+        // Economic Client connects directly via ConnectionManager
+        this.connectionManager = window.connectionManager;
 
-        // Set connection status based on Beer Hall WebSocket
-        if (typeof window.beerHallLobby !== 'undefined' && window.beerHallLobby && window.beerHallLobby.ws && window.beerHallLobby.ws.readyState === WebSocket.OPEN) {
-            this.isConnected = true;
-            this.connectionLost = false;
-            console.log('✅ Economic Client connected via Beer Hall WebSocket');
-        } else {
-            this.isConnected = false;
-            console.log('⚠️ Beer Hall WebSocket not available - waiting for connection...');
-        }
-    }
+        if (!this.connectionManager) {
+            console.error('💥 ConnectionManager not available! Retrying in 1 second...');
 
-    setupWebSocketHandlers() {
-        // Store original onmessage handler from Beer Hall if it exists
-        const originalOnMessage = this.ws.onmessage;
-
-        // Set up our message handler that chains with the original
-        this.ws.onmessage = (event) => {
-            try {
-                const update = JSON.parse(event.data);
-
-                // Handle our economic updates
-                try {
-                    this.handleWebSocketUpdate(update);
-                } catch (error) {
-                    console.error('🔌 Error in handleWebSocketUpdate:', error);
-                }
-
-                // Also call original Beer Hall handler if it exists
-                if (originalOnMessage && typeof originalOnMessage === 'function') {
-                    originalOnMessage.call(this.ws, event);
-                }
-            } catch (error) {
-                console.error('🔌 Failed to parse WebSocket message:', error);
-            }
-        };
-
-        // Only set onopen for new connections (not reused ones)
-        if (!this.ws.onopen || this.ws.readyState === WebSocket.CONNECTING) {
-            this.ws.onopen = () => {
-                console.log('✅ Economic Client WebSocket connected successfully');
-
-                // Handle successful connection/reconnection
-                this.handleReconnection();
-
-                // 🔧 FIX: Send existing player ID with name/color to prevent multiple player creation
-                if (this.game && this.game.currentPlayerId) {
-                    // Get player name and color from Beer Hall Lobby
-                    const playerName = window.beerHallLobby?.playerName || null;
-                    const playerColor = window.beerHallLobby?.selectedColor || null;
-
-                    // Small delay to ensure WebSocket is fully ready
-                    setTimeout(() => {
-                        this.sendMessage({
-                            type: 'IDENTIFY_PLAYER',
-                            playerId: this.game.currentPlayerId,
-                            playerName: playerName,
-                            playerColor: playerColor,
-                            connectionId: this.connectionId
-                        });
-                    }, 10); // 10ms delay
-                }
-            };
-        } else {
-            // WebSocket already open, send identify message immediately
-            // WebSocket already connected
-            this.handleReconnection();
-
-            if (this.game && this.game.currentPlayerId) {
-                // Get player name and color from Beer Hall Lobby
-                const playerName = window.beerHallLobby?.playerName || null;
-                const playerColor = window.beerHallLobby?.selectedColor || null;
-
-                this.sendMessage({
-                    type: 'IDENTIFY_PLAYER',
-                    playerId: this.game.currentPlayerId,
-                    playerName: playerName,
-                    playerColor: playerColor,
-                    connectionId: this.connectionId
-                });
-            }
+            // Retry after 1 second if ConnectionManager isn't ready yet
+            setTimeout(() => {
+                this.initializeConnection();
+            }, 1000);
+            return;
         }
 
-        // Set onclose and onerror handlers (for both new and reused connections)
-        this.ws.onclose = (event) => {
-            console.warn(`⚠️ WebSocket disconnected - Code: ${event.code}, Reason: ${event.reason}`);
-            this.handleDisconnection();
-        };
+        console.log('🔌 Economic Client connecting via ConnectionManager');
 
-        this.ws.onerror = (error) => {
-            console.error('🔌 WebSocket error:', error);
-        };
+        // Subscribe to game-related messages
+        this.setupGameSubscriptions();
     }
+
+    /**
+     * Set up message subscriptions for game functionality
+     */
+    setupGameSubscriptions() {
+        // Subscribe to economic messages
+        this.connectionManager.subscribe('GAME_STATE', (message) => {
+            this.handleWebSocketUpdate(message);
+        });
+
+        this.connectionManager.subscribe('GOVERNANCE_UPDATE', (message) => {
+            this.handleWebSocketUpdate(message);
+        });
+
+        this.connectionManager.subscribe('COMMONWEALTH_UPDATE', (message) => {
+            this.handleWebSocketUpdate(message);
+        });
+
+        this.connectionManager.subscribe('TRANSACTION_RESPONSE', (message) => {
+            this.handleWebSocketUpdate(message);
+        });
+
+        this.connectionManager.subscribe('BUILDING_UPDATE', (message) => {
+            this.handleWebSocketUpdate(message);
+        });
+
+        this.connectionManager.subscribe('ECONOMIC_UPDATE', (message) => {
+            this.handleWebSocketUpdate(message);
+        });
+
+        this.connectionManager.subscribe('TIME_SYNC', (message) => {
+            this.handleWebSocketUpdate(message);
+        });
+
+        // Handle special GAME_STARTED event for city names
+        this.connectionManager.subscribe('GAME_STATE', (message) => {
+            if (message.eventType === 'GAME_STARTED' && message.eventData?.players) {
+                const players = message.eventData.players;
+                const currentPlayer = players.find(p => p.id === this.game?.playerId);
+
+                if (currentPlayer && currentPlayer.cityName) {
+                    localStorage.setItem('playerCityName', currentPlayer.cityName);
+                    if (this.game && this.game.updateCityNameFromServer) {
+                        this.game.updateCityNameFromServer(currentPlayer.cityName);
+                    }
+                } else {
+                    console.warn('⚠️ City name not found in GAME_STARTED message');
+                }
+            }
+        });
+
+        // Connection events
+        this.connectionManager.on('connected', () => {
+            console.log('💰 Economic Client: Connection established');
+        });
+
+        this.connectionManager.on('disconnected', () => {
+            console.warn('💰 Economic Client: Connection lost');
+        });
+
+        this.connectionManager.on('reconnecting', (data) => {
+            console.log(`💰 Economic Client: Reconnecting (attempt ${data.attempt})`);
+        });
+    }
+
+
 
     /**
      * Handle real-time WebSocket updates from server
@@ -1228,12 +1318,10 @@ class EconomicClient {
 
         switch (update.type) {
             case 'CONNECTED':
-                // WebSocket connected
-
-                // V2: Store server-assigned player ID
+                // WebSocket connected via ConnectionManager
                 if (update.playerId) {
                     this.playerId = update.playerId;
-                    // Server assigned player ID
+                    console.log('💰 Economic Client received player ID:', this.playerId);
 
                     // Notify game that player ID is ready
                     if (this.onPlayerIdReady) {
@@ -1583,8 +1671,8 @@ class EconomicClient {
      * Update player information (name/color) and broadcast to other players
      */
     updatePlayerInfo() {
-        if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
-            console.warn('⚠️ Cannot update player info - WebSocket not ready');
+        if (!this.connectionManager || !this.connectionManager.isConnected) {
+            console.warn('⚠️ Cannot update player info - ConnectionManager not ready');
             return;
         }
 
@@ -1593,13 +1681,13 @@ class EconomicClient {
 
         // Broadcasting updated player info
 
-        this.ws.send(JSON.stringify({
+        this.connectionManager.send({
             type: 'PLAYER_INFO_UPDATE',
             playerId: this.playerId,
             playerName: playerName,
             playerColor: playerColor,
             timestamp: Date.now()
-        }));
+        });
     }
 
     /**
@@ -1665,6 +1753,7 @@ class EconomicClient {
         this.isConnected = false;
         this.connectionLost = true;
         this.stopHeartbeat();
+        this.stopDisplayTimer();
 
         // Connection lost - handled silently
     }
@@ -1738,14 +1827,8 @@ class EconomicClient {
             clearInterval(this.heartbeatInterval);
         }
 
-        this.heartbeatInterval = setInterval(() => {
-            if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-                this.sendHeartbeat();
-            } else {
-                console.warn('💓 Heartbeat failed - connection lost');
-                this.handleDisconnection();
-            }
-        }, this.heartbeatFrequency);
+        // ConnectionManager handles heartbeat automatically
+        console.log('💓 ConnectionManager will handle heartbeat');
     }
 
     /**
@@ -1776,24 +1859,18 @@ class EconomicClient {
      * Enhanced message sending with queuing
      */
     sendMessage(message, queueIfOffline = true) {
-        // Send via Beer Hall WebSocket
-        const beerHallWS = (typeof window.beerHallLobby !== 'undefined' && window.beerHallLobby && window.beerHallLobby.ws) ? window.beerHallLobby.ws : null;
-
-        if (beerHallWS && beerHallWS.readyState === WebSocket.OPEN) {
+        // Send via ConnectionManager
+        if (this.connectionManager && this.connectionManager.isConnected) {
             try {
-                beerHallWS.send(JSON.stringify(message));
+                this.connectionManager.send(message);
                 return true;
             } catch (error) {
-                console.error('💥 Failed to send message via Beer Hall:', error);
-                if (queueIfOffline) {
-                    this.queueMessage(message);
-                }
+                console.error('💥 Failed to send message via ConnectionManager:', error);
                 return false;
             }
         } else {
-            console.warn('⚠️ Beer Hall WebSocket not available for sending');
-            if (queueIfOffline) {
-                this.queueMessage(message);
+            if (window.DEBUG_MODE) {
+                console.warn('⚠️ ConnectionManager not connected - message dropped');
             }
             return false;
         }
@@ -1916,13 +1993,13 @@ class EconomicClient {
         window.addEventListener('beforeunload', (event) => {
             console.log('🚪 Page unloading - preserving connection state');
             // Don't prevent unload, but prepare for reconnection
-            if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+            if (this.connectionManager && this.connectionManager.isConnected) {
                 // Send a graceful disconnect message
-                this.sendMessage({
+                this.connectionManager.send({
                     type: 'GRACEFUL_DISCONNECT',
                     playerId: this.game?.currentPlayerId,
                     reason: 'page_unload'
-                }, false);
+                });
             }
         });
 
@@ -1965,9 +2042,8 @@ class EconomicClient {
      * Check connection health and reconnect if needed
      */
     checkConnectionHealth() {
-        if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
-            console.log('🔍 Connection check failed - attempting reconnection');
-            this.handleDisconnection();
+        if (!this.connectionManager || !this.connectionManager.isConnected) {
+            console.log('🔍 Connection check failed - ConnectionManager not connected');
         } else {
             console.log('🔍 Connection check passed - connection healthy');
             // Send immediate ping to verify

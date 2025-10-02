@@ -65,6 +65,12 @@ class GovernanceV3 {
         this.economicClient = economicClient;
         this.modal = document.getElementById('governance-modal');
 
+        // Debug connection manager status
+        console.log('🔍 ConnectionManager availability:', !!window.connectionManager);
+        if (window.connectionManager) {
+            console.log('🔍 ConnectionManager connected:', window.connectionManager.isConnected);
+        }
+
         if (!this.modal) {
             console.error('❌ Governance modal not found in DOM');
             return;
@@ -217,10 +223,18 @@ class GovernanceV3 {
         }
 
         // Get monthly budget data (unallocated funds) from economic client
-        if (this.economicClient && this.economicClient.monthlyBudget) {
+        if (this.economicClient && this.economicClient.governance && this.economicClient.governance.monthlyBudget) {
             // Calculate unallocated funds: total LVT collection minus allocated budget
-            const monthlyBudget = this.economicClient.monthlyBudget;
+            const monthlyBudget = this.economicClient.governance.monthlyBudget;
             this.treasuryData.unallocatedFunds = monthlyBudget.totalRevenue || 0;
+            this.treasuryData.budgetAllocations = monthlyBudget.totalAllocations || {};
+            this.treasuryData.budgetProportions = monthlyBudget.proportions || {};
+
+            console.log('💰 GOVERNANCE: Updated budget data:', {
+                totalAllocations: monthlyBudget.totalAllocations,
+                totalPoints: monthlyBudget.totalPoints,
+                proportions: monthlyBudget.proportions
+            });
         }
 
         this.updateUI();
@@ -367,11 +381,9 @@ class GovernanceV3 {
      * Send changes to server
      */
     async sendToServer(type, data) {
-        // Check Beer Hall WebSocket instead
-        const beerHallWS = (typeof window.beerHallLobby !== 'undefined' && window.beerHallLobby && window.beerHallLobby.ws) ? window.beerHallLobby.ws : null;
-
-        if (!beerHallWS || beerHallWS.readyState !== WebSocket.OPEN) {
-            console.error('❌ No WebSocket connection');
+        // Use ConnectionManager like economic client
+        if (!window.connectionManager || !window.connectionManager.isConnected) {
+            console.error('❌ No ConnectionManager WebSocket connection');
             return;
         }
 
@@ -382,7 +394,8 @@ class GovernanceV3 {
             playerId: this.economicClient.playerId
         };
 
-        beerHallWS.send(JSON.stringify(transaction));
+        console.log('📨 Sending governance transaction:', transaction);
+        window.connectionManager.send(transaction);
     }
 
     /**

@@ -15,6 +15,24 @@ process.on('unhandledRejection', (reason, promise) => {
     // Don't exit in production, just log the error
 });
 
+// ====================================================================
+// DEVELOPMENT ENVIRONMENT CONFIGURATION
+// ====================================================================
+
+const NODE_ENV = process.env.NODE_ENV || 'production';
+const DEBUG = process.env.DEBUG === 'true' || NODE_ENV === 'development';
+const GAME_MODE = process.env.GAME_MODE || 'multiplayer'; // 'solo' or 'multiplayer'
+const PORT = process.env.PORT || 3000;
+
+// Development mode indicators
+if (NODE_ENV === 'development') {
+    console.log('🔧 DEVELOPMENT MODE ACTIVE');
+    console.log(`🎮 Game Mode: ${GAME_MODE.toUpperCase()}`);
+    console.log(`🐛 Debug Mode: ${DEBUG ? 'ON' : 'OFF'}`);
+    console.log(`🚪 Port: ${PORT}`);
+    console.log('────────────────────────────────');
+}
+
 const express = require('express');
 const path = require('path');
 const cors = require('cors');
@@ -26,7 +44,6 @@ const ServerEconomicEngine = require('./server-economic-engine-v2');
 const RoomManager = require('./server-room-manager');
 
 const app = express();
-const PORT = process.env.PORT || 3000;
 
 // Simple pass-through middleware (replaces noAuth)
 const noAuth = (req, res, next) => {
@@ -294,14 +311,21 @@ async function handleWebSocketMessage(ws, data) {
                 return;
             }
             console.log(`💬 Chat message from ${data.playerName || playerId}: ${data.message}`);
-            room.broadcast({
+
+            const chatMessage = {
                 type: 'CHAT_MESSAGE',
                 playerId: playerId,
                 playerName: data.playerName || 'Player',
                 message: data.message,
                 color: data.color,
                 timestamp: Date.now()
-            });
+            };
+
+            // Store message in room chat history
+            room.addChatMessage(chatMessage);
+
+            // Broadcast to all players
+            room.broadcast(chatMessage);
             break;
 
         case 'START_GAME':
@@ -373,12 +397,14 @@ async function handleWebSocketMessage(ws, data) {
 
         case 'GOVERNANCE_VOTE':
             // Handle governance allocation changes
+            console.log('🏛️ Server received GOVERNANCE_VOTE:', data.voteType, 'from player:', data.playerId);
             if (room && room.economicEngine) {
                 const result = room.economicEngine.handleGovernanceVote(
                     data.playerId,
                     data.voteType,
                     data
                 );
+                console.log('🏛️ Governance vote result:', result);
 
                 // Trigger game loop for governance actions
                 if (result && result.success) {
@@ -437,6 +463,7 @@ async function handleWebSocketMessage(ws, data) {
 
         case 'PING':
             // Respond to client heartbeat ping
+            console.log(`💓 PING received from ${ws.playerId}`);
             ws.lastPing = Date.now();
             ws.send(JSON.stringify({
                 type: 'PONG',
@@ -460,6 +487,19 @@ async function handleWebSocketMessage(ws, data) {
                     playerId: data.playerId,
                     connectionId: data.connectionId
                 });
+            }
+            break;
+
+        case 'REQUEST_CHAT_HISTORY':
+            // Send chat history to client when transitioning to in-game
+            console.log(`💬 Chat history requested by ${data.playerId}`);
+            if (room) {
+                const chatHistory = room.getChatHistory();
+                ws.send(JSON.stringify({
+                    type: 'CHAT_HISTORY',
+                    messages: chatHistory,
+                    timestamp: Date.now()
+                }));
             }
             break;
 
@@ -512,7 +552,9 @@ function runGameLoop(triggeredBy = 'timer') {
     lastGameLoopRun = now;
 
     try {
-        console.log(`🎮 Game loop triggered by: ${triggeredBy}`);
+        if (DEBUG) {
+            console.log(`🎮 Game loop triggered by: ${triggeredBy}`);
+        }
 
         // Update each room's game timer
         roomManager.rooms.forEach(room => {
@@ -537,6 +579,7 @@ function runGameLoop(triggeredBy = 'timer') {
 }
 
 // Natural progression: run every game day (~9.86 seconds)
+console.log(`🕒 Setting up daily progression timer: ${GAME_DAY_MS}ms (${(GAME_DAY_MS/1000).toFixed(2)} seconds)`);
 setInterval(() => runGameLoop('daily_progression'), GAME_DAY_MS);
 
 // Make runGameLoop available globally for economic action triggers
@@ -705,6 +748,16 @@ app.get('/api/leaderboard', (req, res) => {
     });
 });
 
+// Development status endpoint
+app.get('/api/dev-status', (req, res) => {
+    res.json({
+        isDevelopment: process.env.NODE_ENV === 'development',
+        debug: process.env.DEBUG === 'true',
+        gameMode: process.env.GAME_MODE || 'normal',
+        port: process.env.PORT || 3000
+    });
+});
+
 // ❌ REMOVED: Governance API endpoints - Now handled via WebSocket only
 // Governance state is provided in the regular game state broadcasts
 // Governance votes should use WebSocket 'GOVERNANCE_VOTE' message type
@@ -735,7 +788,7 @@ server.listen(PORT, () => {
  */
 function startConnectionHealthMonitoring() {
     const HEALTH_CHECK_INTERVAL = 30000; // 30 seconds
-    const STALE_CONNECTION_TIMEOUT = 60000; // 60 seconds
+    const STALE_CONNECTION_TIMEOUT = 120000; // 120 seconds (more forgiving)
 
     console.log('💓 Starting connection health monitoring');
 

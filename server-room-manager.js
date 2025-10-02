@@ -54,6 +54,10 @@ class GameRoom {
         this.players = new Map(); // playerId -> playerData
         this.host = null; // First player becomes host
 
+        // Chat history storage (last 100 messages)
+        this.chatHistory = [];
+        this.maxChatHistory = 100;
+
         // Each room has its own v2 economic engine with server-authoritative state
         // Pass room reference to the engine so it can check for Solo Mode
         this.economicEngine = new ServerEconomicEngine(this);
@@ -458,6 +462,28 @@ class GameRoom {
     }
 
     /**
+     * Store chat message in room history
+     */
+    addChatMessage(message) {
+        this.chatHistory.push({
+            ...message,
+            timestamp: Date.now()
+        });
+
+        // Keep only the most recent messages
+        if (this.chatHistory.length > this.maxChatHistory) {
+            this.chatHistory = this.chatHistory.slice(-this.maxChatHistory);
+        }
+    }
+
+    /**
+     * Get chat history for new players joining
+     */
+    getChatHistory() {
+        return this.chatHistory;
+    }
+
+    /**
      * Get next available color
      */
     getNextColor() {
@@ -523,17 +549,26 @@ class RoomManager {
     constructor() {
         this.rooms = new Map(); // roomId -> GameRoom
         this.playerRooms = new Map(); // playerId -> roomId
-        this.nextRoomNumber = 1;
+        this.nextRoomNumber = 1; // Keep for display names only
         this.cityNameGenerator = new CityNameGenerator();
 
         console.log('🎯 Room Manager initialized');
     }
 
     /**
+     * Generate a truly unique room ID that will never collide across server restarts
+     */
+    generateUniqueRoomId(prefix = 'table') {
+        const timestamp = Date.now();
+        const random = Math.random().toString(36).substr(2, 8);
+        return `${prefix}-${timestamp}-${random}`;
+    }
+
+    /**
      * Create a new room
      */
     createRoom(options = {}) {
-        const roomId = options.roomId || `room-${this.nextRoomNumber++}`;
+        const roomId = options.roomId || this.generateUniqueRoomId('room');
         const room = new GameRoom(roomId, options);
 
         this.rooms.set(roomId, room);
@@ -662,19 +697,21 @@ class RoomManager {
         }
 
         // Create new table optimized for preferences
-        let tableSize, roomName;
+        let tableSize, roomName, uniqueRoomId;
         if (isSoloMode) {
             tableSize = 1;
             roomName = `Solo Table ${this.nextRoomNumber}`;
-            console.log(`🆕 Creating isolated solo table for ${playerId}: solo-${this.nextRoomNumber}`);
+            uniqueRoomId = this.generateUniqueRoomId('solo');
+            console.log(`🆕 Creating isolated solo table for ${playerId}: ${uniqueRoomId} (display: solo-${this.nextRoomNumber})`);
         } else {
             tableSize = Math.max(minPlayers, Math.min(maxPlayers, 6)); // Default to 6 if within range
             roomName = `Table ${this.nextRoomNumber}`;
-            console.log(`🆕 Creating multiplayer table for ${playerId}: table-${this.nextRoomNumber} (${minPlayers}-${tableSize} players)`);
+            uniqueRoomId = this.generateUniqueRoomId('table');
+            console.log(`🆕 Creating multiplayer table for ${playerId}: ${uniqueRoomId} (display: table-${this.nextRoomNumber}, ${minPlayers}-${tableSize} players)`);
         }
 
         const newRoom = this.createRoom({
-            roomId: isSoloMode ? `solo-${this.nextRoomNumber}` : `table-${this.nextRoomNumber}`,
+            roomId: uniqueRoomId,
             roomName: roomName,
             minPlayers: minPlayers,
             maxPlayers: tableSize,

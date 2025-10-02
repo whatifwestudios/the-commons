@@ -30,7 +30,7 @@ body {
 body.beer-hall-active #top-bar {
     backdrop-filter: blur(4px);
     opacity: 0.7;
-    pointer-events: none;
+    /* Removed pointer-events: none to allow top bar clicks during gameplay */
 }
 
 /* Ready check modal should allow top bar access since players might need it */

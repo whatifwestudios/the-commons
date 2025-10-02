@@ -121,7 +121,11 @@ class BuildingSystem {
 
         // V2 Server-authoritative ONLY - no fallbacks
         const cost = fundingInfo ? fundingInfo.playerCost : this.calculateBuildingCostWithFunding(building);
-        const currentBalance = this.game.economicClient?.getCurrentPlayerBalance() || 0;
+        const currentBalance = this.game.economicClient?.getCurrentPlayerBalance();
+        if (currentBalance === null) {
+            this.game.showNotification('Loading balance data...', 'info');
+            return false;
+        }
 
         if (this.game.isCurrentPlayer(owner) && currentBalance < cost) {
             this.game.showNotification('Insufficient funds!', 'error');
@@ -380,15 +384,15 @@ class BuildingSystem {
     // Server already has this data - client should just display server values
     // Likely fate: Complete removal, replace with server data retrieval
     calculateBuildingEconomics(parcel, row, col) {
-        // CLIENT-SIDE CALCULATION DISABLED - RETURN GHOST PLACEHOLDER
+        // Use server data only
         return {
-            buildingName: parcel.building ? 'GHOST' : 'Vacant',
-            revenue: 'GHOST',
-            maintenance: 'GHOST',
-            lvt: 'GHOST',
-            netIncome: 'GHOST',
-            decay: 'GHOST',
-            age: 'GHOST'
+            buildingName: parcel.building ? 'Loading...' : 'Vacant',
+            revenue: 'Loading...',
+            maintenance: 'Loading...',
+            lvt: 'Loading...',
+            netIncome: 'Loading...',
+            decay: 'Loading...',
+            age: 'Loading...'
         };
     }
     
@@ -397,8 +401,8 @@ class BuildingSystem {
      */
     // 🚫 CLIENT CALCULATION - DISABLED! BUSTED!
     getBuildingEfficiency(row, col) {
-        // CLIENT-SIDE CALCULATION DISABLED - RETURN GHOST PLACEHOLDER
-        return 'GHOST';
+        // Use server data only
+        return 'Loading...';
     }
     
     /**
@@ -434,8 +438,8 @@ class BuildingSystem {
      */
     // 🚫 CLIENT CALCULATION - DISABLED! BUSTED!
     getNeedSatisfaction(need, row, col) {
-        // CLIENT-SIDE CALCULATION DISABLED - RETURN GHOST PLACEHOLDER
-        return 'GHOST';
+        // Use server data only
+        return 'Loading...';
     }
 
     /**
@@ -525,8 +529,8 @@ class BuildingSystem {
      */
     // 🚫 CLIENT CALCULATION - DISABLED! BUSTED!
     getAdjacentResourceScore(resourceType, row, col) {
-        // CLIENT-SIDE CALCULATION DISABLED - RETURN GHOST PLACEHOLDER
-        return 'GHOST';
+        // Use server data only
+        return 'Loading...';
     }
 
     /**
@@ -563,8 +567,8 @@ class BuildingSystem {
      */
     // 🚫 CLIENT CALCULATION - DISABLED! BUSTED!
     calculateBuildingCondition(building, ageInDays = 0) {
-        // CLIENT-SIDE CALCULATION DISABLED - RETURN GHOST PLACEHOLDER
-        return 'GHOST';
+        // Use server data only
+        return 'Loading...';
         if (!building || !building.economics) {
             return 1.0; // Perfect condition if no building data
         }
@@ -847,8 +851,8 @@ class BuildingSystem {
      */
     async purchaseParcel(row, col) {
         const coord = this.game.getParcelCoordinate(row, col);
-        // 🚫 GHOST-BUSTING FIX: Client pricing was sending 'GHOST' to server, breaking cash balance tracking!
-        // Issue: getParcelPrice() was disabled and returned 'GHOST', server couldn't process transaction amounts
+        // 🚫 GHOST-BUSTING FIX: Client pricing was sending 'Loading...' to server, breaking cash balance tracking!
+        // Issue: getParcelPrice() was disabled and returned 'Loading...', server couldn't process transaction amounts
         // Solution: Use economicClient.getParcelPrice() for server-authoritative pricing with fallback
         // const price = this.game.getParcelPrice(row, col); // GHOST!
         const price = this.game.economicClient?.getParcelPrice(row, col) || 150; // Server-authoritative pricing
@@ -860,7 +864,8 @@ class BuildingSystem {
         }
         
         // V2 Server-authoritative ONLY - no fallbacks
-        const currentBalance = this.game.economicClient?.getCurrentPlayerBalance() || 0;
+        const currentBalance = this.game.economicClient?.getCurrentPlayerBalance();
+        if (currentBalance === null) return false; // Wait for server data
 
         if (currentBalance < price) {
             // Refund the action since purchase failed
@@ -974,7 +979,8 @@ class BuildingSystem {
         }
 
         // Check if player has enough cash for their portion - use server-authoritative balance
-        const currentBalance = this.game.economicClient?.getCurrentPlayerBalance() || 0;
+        const currentBalance = this.game.economicClient?.getCurrentPlayerBalance();
+        if (currentBalance === null) return false; // Wait for server data
 
         if (currentBalance < playerCostRequired) {
             // Refund the action since construction failed
@@ -1108,7 +1114,8 @@ class BuildingSystem {
         const demolitionFee = Math.round(currentValue * 0.1);
         
         // Check if player can afford demolition fee - use server-authoritative balance
-        const currentBalance = this.game.economicClient?.getCurrentPlayerBalance() || 0;
+        const currentBalance = this.game.economicClient?.getCurrentPlayerBalance();
+        if (currentBalance === null) return false; // Wait for server data
 
         if (currentBalance < demolitionFee) {
             this.game.showInsufficientFundsFeedback();
@@ -1249,7 +1256,8 @@ class BuildingSystem {
         const repairCost = this.game.calculateRepairCost(parcel, building);
 
         // Use server-authoritative balance for repair cost check
-        const currentBalance = this.game.economicClient?.getCurrentPlayerBalance() || 0;
+        const currentBalance = this.game.economicClient?.getCurrentPlayerBalance();
+        if (currentBalance === null) return false; // Wait for server data
 
         if (currentBalance < repairCost) {
             return false;

@@ -226,7 +226,8 @@ class RenderingSystemV2 {
 
         // Owner information
         if (parcel?.owner) {
-            lines.push(`🏠 Owner: Player ${parcel.owner}`);
+            const ownerName = this.getPlayerName(parcel.owner);
+            lines.push(`🏠 Owner: ${ownerName}`);
         } else {
             lines.push(`🏠 <em>Available for purchase</em>`);
         }
@@ -475,6 +476,14 @@ class RenderingSystemV2 {
             return localColor;
         }
 
+        // Check Beer Hall lobby data as a fallback for colors
+        if (window.beerHallLobby && window.beerHallLobby.players) {
+            const roomPlayer = window.beerHallLobby.players.find(p => p.id === playerId);
+            if (roomPlayer && roomPlayer.color) {
+                return roomPlayer.color;
+            }
+        }
+
         // Fallback to default colors for unknown players
         const colors = [
             '#10AC84', '#3498DB', '#E74C3C', '#F39C12',
@@ -509,6 +518,16 @@ class RenderingSystemV2 {
                 player = this.game.economicClient.gameState.players[playerId];
             }
 
+            // Debug logging to trace the issue
+            console.log(`🔍 getPlayerName(${playerId}):`, {
+                hasGameState: !!this.game?.economicClient?.gameState,
+                hasPlayers: !!this.game?.economicClient?.gameState?.players,
+                isMap: this.game?.economicClient?.gameState?.players instanceof Map,
+                availablePlayerIds: Object.keys(this.game?.economicClient?.gameState?.players || {}),
+                foundPlayer: !!player,
+                playerName: player?.name
+            });
+
             if (player && player.name) {
                 return player.name;
             }
@@ -519,6 +538,14 @@ class RenderingSystemV2 {
             playerId === 1 ||
             playerId === this.game.currentPlayerId) {
             return this.game.playerSettings?.name || 'You';
+        }
+
+        // Check Beer Hall lobby data as a fallback
+        if (window.beerHallLobby && window.beerHallLobby.players) {
+            const roomPlayer = window.beerHallLobby.players.find(p => p.id === playerId);
+            if (roomPlayer && roomPlayer.name) {
+                return roomPlayer.name;
+            }
         }
 
         // Fallback to friendlier default names

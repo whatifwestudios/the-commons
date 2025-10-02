@@ -167,7 +167,8 @@ class ParcelHoverV2 {
 
         // Owner
         if (parcel?.owner) {
-            lines.push(`Owner: Player ${parcel.owner}`);
+            const ownerName = this.game.renderer?.getPlayerName?.(parcel.owner) || parcel.owner;
+            lines.push(`Owner: ${ownerName}`);
         } else {
             lines.push(`<em>Unowned</em>`);
         }

@@ -93,7 +93,7 @@ class ContextMenuSystem {
         }
 
         const parcel = this.game.grid[row][col];
-        // 🚫 GHOST BUSTED! Use server price
+        // Use server-authoritative price
         const price = this.game.economicClient?.getParcelPrice(row, col) || 150;
 
         // Use tooltip system's standardized header creation
@@ -400,9 +400,11 @@ class ContextMenuSystem {
         destroyBtn.onclick = () => this.game.buildingSystem.demolishBuilding(row, col);
 
         // V2 Server-authoritative ONLY - no fallbacks
-        const currentBalance = this.game.economicClient?.getCurrentPlayerBalance() || 0;
-
-        if (currentBalance < demolitionFee) {
+        const currentBalance = this.game.economicClient?.getCurrentPlayerBalance();
+        if (currentBalance === null) {
+            destroyBtn.textContent = 'Loading...';
+            destroyBtn.disabled = true;
+        } else if (currentBalance < demolitionFee) {
             destroyBtn.disabled = true;
             destroyBtn.classList.add('disabled');
         }
@@ -474,9 +476,11 @@ class ContextMenuSystem {
             repairBtn.onclick = () => this.game.buildingSystem.repairBuilding(row, col);
 
             // V2 Server-authoritative ONLY - no fallbacks
-            const currentBalance = this.game.economicClient?.getCurrentPlayerBalance() || 0;
-
-            if (currentBalance < repairCost) {
+            const currentBalance = this.game.economicClient?.getCurrentPlayerBalance();
+            if (currentBalance === null) {
+                repairBtn.textContent = 'Loading...';
+                repairBtn.disabled = true;
+            } else if (currentBalance < repairCost) {
                 repairBtn.disabled = true;
                 repairBtn.classList.add('disabled');
             }

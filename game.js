@@ -158,14 +158,53 @@ class IsometricGrid {
         // ❌ REMOVED: Legacy hardcoded date - server manages game time
         // Date is now synced from server gameTime broadcasts
 
-        // Game date calculation from server time
+        // Game date calculation from server time (matches server month boundaries)
         this.getGameDate = () => {
             if (this.economicClient && this.economicClient.gameTime !== undefined) {
                 // Server starts at gameTime = 1.0 = Sept 2 (Henry George's birthday)
                 const gameDay = Math.floor(this.economicClient.gameTime);
                 const monthOrder = ['SEPT', 'OCT', 'NOV', 'DEC', 'JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG'];
-                const month = monthOrder[Math.floor(gameDay / 30) % 12];
-                const day = (gameDay % 30) + 1;
+
+                // Real month boundaries (matching server getMonthBoundaries())
+                const monthBoundaries = [
+                    30,   // Sept (29 days remaining from Sept 2)
+                    61,   // Oct (31 days)
+                    91,   // Nov (30 days)
+                    122,  // Dec (31 days)
+                    153,  // Jan (31 days)
+                    181,  // Feb (28 days)
+                    212,  // Mar (31 days)
+                    242,  // Apr (30 days)
+                    273,  // May (31 days)
+                    303,  // Jun (30 days)
+                    334,  // Jul (31 days)
+                    365   // Aug (31 days)
+                ];
+
+                // Use server-consistent logic: find month first, then calculate day
+                let monthIndex = 0;
+
+                // Find which month we're in (same logic as server getCurrentGameMonth)
+                for (let i = 0; i < monthBoundaries.length; i++) {
+                    if (gameDay <= monthBoundaries[i]) {
+                        monthIndex = i;
+                        break;
+                    }
+                }
+
+                // Calculate day within month
+                let dayInMonth;
+                if (monthIndex === 0) {
+                    // September: gameDay 1 = Sept 2, gameDay 2 = Sept 3, etc.
+                    dayInMonth = gameDay + 1;
+                } else {
+                    // Other months: calculate offset from previous boundary
+                    const previousBoundary = monthBoundaries[monthIndex - 1];
+                    dayInMonth = gameDay - previousBoundary;
+                }
+
+                const month = monthOrder[monthIndex];
+                const day = dayInMonth;
                 return { month, day };
             }
             return { month: 'SEPT', day: 2 }; // Fallback to correct starting date
@@ -491,8 +530,8 @@ class IsometricGrid {
 
         // Force economic WebSocket initialization for all modes
         // Solo and multiplayer both need server-side economic calculations
-        // Initializing economic WebSocket for building performance data
-        this.economicClient.initializeWebSocket();
+        // Initializing economic connection for building performance data
+        this.economicClient.initializeConnection();
 
         // Set currentPlayerId for cash manager and transactions
         this.currentPlayerId = playerConfig.id;
@@ -784,9 +823,22 @@ class IsometricGrid {
     }
     
     updateActionDisplay() {
-        const currentActions = this.actionManager.currentActions;
-        const monthlyAllowance = this.actionManager.monthlyAllowance;
-        
+        // V2: Use server-authoritative data from action manager
+        const currentActions = this.actionManager.getCurrentActions();
+        const monthlyAllowance = this.actionManager.calculateMonthlyActionAllowance();
+
+        // Show loading state if server data not available
+        if (currentActions === null || monthlyAllowance === null || monthlyAllowance === 0) {
+            const currentActionsEl = document.getElementById('currentActions');
+            const rollingOverActionsEl = document.getElementById('rollingOverActions');
+            const expiringActionsEl = document.getElementById('expiringActions');
+
+            if (currentActionsEl) currentActionsEl.textContent = 'Loading...';
+            if (rollingOverActionsEl) rollingOverActionsEl.textContent = 'Loading...';
+            if (expiringActionsEl) expiringActionsEl.textContent = 'Loading...';
+            return;
+        }
+
         // Calculate expiring vs rolling over actions
         const expiringActions = Math.min(currentActions, monthlyAllowance);
         const rollingOverActions = Math.max(0, currentActions - monthlyAllowance);
@@ -1227,10 +1279,10 @@ class IsometricGrid {
 
     // 🚫 CLIENT CALCULATION - DISABLED! BUSTED!
     calculatePopulation() {
-        // CLIENT-SIDE CALCULATION DISABLED - RETURN GHOST PLACEHOLDER
+        // CLIENT-SIDE CALCULATION DISABLED - RETURN Loading... PLACEHOLDER
         // This function was calculating total city population!
         // Server should handle population calculations for server authority!
-        return 'GHOST';
+        return 'Loading...';
     }
 
     calculateTotalWealth() {
@@ -1368,9 +1420,9 @@ class IsometricGrid {
     // Calculate player's total net worth (cash + asset value)
     // 🚫 CLIENT CALCULATION - DISABLED! BUSTED!
     calculatePlayerNetWorth() {
-        // CLIENT-SIDE CALCULATION DISABLED - RETURN GHOST PLACEHOLDER
+        // CLIENT-SIDE CALCULATION DISABLED - RETURN Loading... PLACEHOLDER
         // This massive calculation was iterating through the entire grid!
-        return 'GHOST';
+        return 'Loading...';
     }
     
     // REMOVED: startConstructionAnimationManager() - handled by building system now
@@ -1468,7 +1520,7 @@ class IsometricGrid {
         }
 
         // V2 Server-authoritative cash display ONLY - no fallbacks
-        let currentCash = 0;
+        let currentCash = null;
 
         // ONLY source: Server balance from Economic Client
         if (this.economicClient) {
@@ -1479,11 +1531,12 @@ class IsometricGrid {
         }
 
         // V2 Server-authoritative wealth from Economic Client
-        const totalWealth = this.economicClient?.getCurrentPlayerWealth() || currentCash;
+        const totalWealth = this.economicClient?.getCurrentPlayerWealth();
         // ✅ CLEANED: No more cashManager fallback - V2 server-authoritative only
 
-        // updatePlayerStats cash check completed
-        const safeWealth = isNaN(totalWealth) || totalWealth === null || totalWealth === undefined ? 0 : totalWealth;
+        // updatePlayerStats cash check completed - handle null values properly
+        const safeWealth = (totalWealth !== null && totalWealth !== undefined && !isNaN(totalWealth)) ? totalWealth :
+                          (currentCash !== null && currentCash !== undefined && !isNaN(currentCash)) ? currentCash : 0;
 
         // Update the actual playerCash property for gameplay logic
         this.playerCash = currentCash;
@@ -1580,11 +1633,11 @@ class IsometricGrid {
     
     // 🚫 CLIENT CALCULATION - DISABLED! BUSTED!
     // GHOST-BUSTING VICTORY: This function was disabled during server authority migration.
-    // It was causing cash balance issues by sending 'GHOST' prices to server transactions.
+    // It was causing cash balance issues by sending 'Loading...' prices to server transactions.
     // All callers have been updated to use economicClient.getParcelPrice() instead.
     getParcelPrice(row, col) {
-        // CLIENT-SIDE CALCULATION DISABLED - RETURN GHOST PLACEHOLDER
-        return 'GHOST';
+        // CLIENT-SIDE CALCULATION DISABLED - RETURN Loading... PLACEHOLDER
+        return 'Loading...';
     }
     
     showBuildingDataInsights(row, col) {
@@ -1809,8 +1862,8 @@ class IsometricGrid {
     
     // 🚫 CLIENT CALCULATION - DISABLED! BUSTED!
     calculateMonthlyLVT() {
-        // CLIENT-SIDE CALCULATION DISABLED - RETURN GHOST PLACEHOLDER
-        return 'GHOST';
+        // CLIENT-SIDE CALCULATION DISABLED - RETURN Loading... PLACEHOLDER
+        return 'Loading...';
     }
     
     // Check if public funds can cover building cost
@@ -2248,7 +2301,7 @@ class IsometricGrid {
 
     // 🚫 CLIENT CALCULATION - DISABLED! BUSTED!
     calculateInvestmentScore(buildingData) {
-        // CLIENT-SIDE CALCULATION DISABLED - RETURN GHOST PLACEHOLDER
+        // CLIENT-SIDE CALCULATION DISABLED - RETURN Loading... PLACEHOLDER
         // This function was doing complex financial calculations across ALL buildings!
         // - Getting all buildings for max/min normalization
         // - Extracting revenues, maintenances, decay rates from every building
@@ -2256,10 +2309,10 @@ class IsometricGrid {
         // - Converting to 1-100 scale with Math.max/min/round
         // Server should handle investment scoring for server authority!
         return {
-            score: 'GHOST',
-            revenue: 'GHOST',
-            maintenance: 'GHOST',
-            decayRate: 'GHOST'
+            score: 'Loading...',
+            revenue: 'Loading...',
+            maintenance: 'Loading...',
+            decayRate: 'Loading...'
         };
     }
 
@@ -2886,7 +2939,7 @@ class IsometricGrid {
     // 🚫 CLIENT CALCULATION - DISABLED! BUSTED!
     // Update building revenues based on supply/demand satisfaction
     applySupplyDemandEffects() {
-        // CLIENT-SIDE CALCULATION DISABLED - RETURN GHOST PLACEHOLDER
+        // CLIENT-SIDE CALCULATION DISABLED - RETURN Loading... PLACEHOLDER
         // This massive function was doing complex economic calculations:
         // - Math.max() operations for supply/demand ratios (6+ instances!)
         // - Population change rate calculations with multiplication
@@ -2895,12 +2948,12 @@ class IsometricGrid {
         // - Cumulative population changes with Math.max() limits
         // Server should handle all economic effect calculations for server authority!
         this.economicEffects = {
-            energyMultiplier: 'GHOST',
-            foodMultiplier: 'GHOST',
-            housingMultiplier: 'GHOST',
-            jobsMultiplier: 'GHOST',
-            populationChangeRate: 'GHOST',
-            businessEfficiency: 'GHOST'
+            energyMultiplier: 'Loading...',
+            foodMultiplier: 'Loading...',
+            housingMultiplier: 'Loading...',
+            jobsMultiplier: 'Loading...',
+            populationChangeRate: 'Loading...',
+            businessEfficiency: 'Loading...'
         };
         this.supplyDemandEffects = this.economicEffects;
         return this.economicEffects;
@@ -3517,7 +3570,16 @@ class IsometricGrid {
                     }
                     return 'rgba(255, 255, 255, 0.4)'; // Fallback to white
                 } else {
-                    return this.getCompetitorColor(parcel.owner); // Competitor owned - assigned colors
+                    // Use the unified color system from renderer for consistent colors
+                    const playerColor = this.renderer?.getPlayerColor(parcel.owner);
+                    if (playerColor) {
+                        const hex = playerColor.replace('#', '');
+                        const r = parseInt(hex.substr(0, 2), 16);
+                        const g = parseInt(hex.substr(2, 2), 16);
+                        const b = parseInt(hex.substr(4, 2), 16);
+                        return `rgba(${r}, ${g}, ${b}, 0.4)`;
+                    }
+                    return this.getCompetitorColor(parcel.owner); // Fallback
                 }
         }
     }
@@ -3532,12 +3594,12 @@ class IsometricGrid {
         let landValue;
         if (this.landValueMode === 'paid') {
             // Use most recently paid price
-            // 🚫 GHOST BUSTED! Use server price
-            landValue = this.economicClient?.getParcelPrice(row, col) || 'GHOST';
+            // 🚫 Use server-authoritative data
+            landValue = this.economicClient?.getParcelPrice(row, col) || 'Loading...';
         } else {
             // Use estimated/calculated land value
-            // 🚫 GHOST BUSTED! Use server price
-            landValue = parcel?.landValue?.calculatedValue || this.economicClient?.getParcelPrice(row, col) || 'GHOST';
+            // 🚫 Use server-authoritative data
+            landValue = parcel?.landValue?.calculatedValue || this.economicClient?.getParcelPrice(row, col) || 'Loading...';
         }
 
         // Handle edge cases
@@ -3554,11 +3616,11 @@ class IsometricGrid {
                 const p = this.grid[r][c];
                 let value;
                 if (this.landValueMode === 'paid') {
-                    // 🚫 GHOST BUSTED! Use server price
-                    value = this.economicClient?.getParcelPrice(r, c) || 'GHOST';
+                    // 🚫 Use server-authoritative data
+                    value = this.economicClient?.getParcelPrice(r, c) || 'Loading...';
                 } else {
-                    // 🚫 GHOST BUSTED! Use server price
-                    value = p?.landValue?.calculatedValue || this.economicClient?.getParcelPrice(r, c) || 'GHOST';
+                    // 🚫 Use server-authoritative data
+                    value = p?.landValue?.calculatedValue || this.economicClient?.getParcelPrice(r, c) || 'Loading...';
                 }
                 if (value > 0) {
                     minValue = Math.min(minValue, value);

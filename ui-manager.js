@@ -435,8 +435,11 @@ class UIManager {
 
         // Update player balance
         const playerBalance = economicClient.getCurrentPlayerBalance();
-        if (playerBalance !== undefined) {
+        if (playerBalance !== null && playerBalance !== undefined) {
             this.updatePlayerStats({ cash: playerBalance });
+        } else if (playerBalance === null) {
+            // Show loading state for balance
+            this.updatePlayerStats({ cash: 'Loading...' });
         }
 
         // Update vitality displays
