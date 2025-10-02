@@ -387,6 +387,9 @@ class IsometricGrid {
         // Initialize Action Marketplace V2
         this.actionMarketplace = new ActionMarketplaceV2(this);
 
+        // Initialize Parcel Auction System
+        this.parcelAuctionSystem = new ParcelAuctionSystem(this);
+
         // Multiplayer system removed for clean solo game
     }
     
@@ -483,6 +486,12 @@ class IsometricGrid {
 
         // Start live tooltip updates for time-based tooltips
         this.startLiveTooltipUpdates();
+
+        // Initialize Action Marketplace V2
+        this.actionMarketplace = new ActionMarketplaceV2(this);
+
+        // Initialize Parcel Auction System
+        this.parcelAuctionSystem = new ParcelAuctionSystem(this);
 
         // Initialize real-time synchronization for multiplayer reliability
         this.initializeRealtimeSync();

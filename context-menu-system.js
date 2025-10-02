@@ -420,6 +420,15 @@ class ContextMenuSystem {
         };
         actionsSection.appendChild(dataInsightsBtn);
 
+        // Add Auction button
+        const auctionBtn = document.createElement('button');
+        auctionBtn.className = 'context-btn auction';
+        auctionBtn.textContent = '🔨 AUCTION PARCEL';
+        auctionBtn.onclick = () => {
+            this.game.parcelAuctionSystem?.startAuction(row, col);
+        };
+        actionsSection.appendChild(auctionBtn);
+
         contentEl.appendChild(actionsSection);
 
         // Upgrade section

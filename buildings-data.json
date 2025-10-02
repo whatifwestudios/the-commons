@@ -1,4 +1,210 @@
 {
+  "civic": [
+    {
+      "id": "fire_station",
+      "name": "Fire Station",
+      "category": "civic",
+      "description": "Emergency response services that improve city-wide safety",
+      "resources": {
+        "jobsProvided": 3,
+        "jobsRequired": 0,
+        "energyProvided": 0,
+        "energyRequired": 5,
+        "educationProvided": 0,
+        "educationRequired": 0,
+        "foodProvided": 0,
+        "foodRequired": 0,
+        "housingProvided": 0,
+        "housingRequired": 0,
+        "healthcareProvided": 0,
+        "healthcareRequired": 0
+      },
+      "economics": {
+        "buildCost": 1500,
+        "constructionDays": 5,
+        "maxRevenue": 0,
+        "maintenanceCost": 8,
+        "decayRatePercent": 0.05
+      },
+      "livability": {
+        "culture": 5,
+        "culture_range": 3,
+        "affordability": 2,
+        "affordability_range": 4,
+        "resilience": 10,
+        "resilience_range": 5,
+        "environment": 3,
+        "environment_range": 2,
+        "noise": -15,
+        "noise_range": 10,
+        "safety": 25,
+        "safety_range": 6
+      },
+      "isDefault": true,
+      "graphicsFile": "assets/buildings/civic/fire_station.png",
+      "graphics": {
+        "filename": "fire_station.png",
+        "path": "assets/buildings/civic/fire_station.png",
+        "fallbackPath": "assets/buildings/default.svg"
+      },
+      "images": {
+        "built": "assets/buildings/civic/fire_station.png"
+      }
+    },
+    {
+      "id": "library",
+      "name": "Library",
+      "category": "civic",
+      "description": "Public library providing educational and cultural resources",
+      "resources": {
+        "jobsProvided": 3,
+        "jobsRequired": 1,
+        "energyProvided": 0,
+        "energyRequired": 8,
+        "educationProvided": 8,
+        "educationRequired": 0,
+        "foodProvided": 0,
+        "foodRequired": 0,
+        "housingProvided": 0,
+        "housingRequired": 0,
+        "healthcareProvided": 0,
+        "healthcareRequired": 0
+      },
+      "economics": {
+        "buildCost": 400,
+        "constructionDays": 3,
+        "maxRevenue": 0,
+        "maintenanceCost": 2,
+        "decayRatePercent": 0.05
+      },
+      "livability": {
+        "culture": 25,
+        "culture_range": 12,
+        "affordability": 8,
+        "affordability_range": 5,
+        "resilience": 15,
+        "resilience_range": 8,
+        "environment": -1,
+        "environment_range": 1,
+        "noise": 0,
+        "noise_range": 0,
+        "safety": 3,
+        "safety_range": 5
+      },
+      "isDefault": true,
+      "graphicsFile": "assets/buildings/education/library.png",
+      "graphics": {
+        "filename": "library.png",
+        "path": "assets/buildings/education/library.png",
+        "fallbackPath": "assets/buildings/default.svg"
+      },
+      "images": {
+        "built": "assets/buildings/education/library.png"
+      }
+    },
+    {
+      "id": "public_pool",
+      "name": "Public Pool",
+      "category": "civic",
+      "description": "Community recreation and fitness facility",
+      "resources": {
+        "jobsProvided": 4,
+        "jobsRequired": 1,
+        "energyProvided": 0,
+        "energyRequired": 12,
+        "educationProvided": 0,
+        "educationRequired": 0,
+        "foodProvided": 0,
+        "foodRequired": 0,
+        "housingProvided": 0,
+        "housingRequired": 0,
+        "healthcareProvided": 2,
+        "healthcareRequired": 0
+      },
+      "economics": {
+        "buildCost": 300,
+        "constructionDays": 4,
+        "maxRevenue": 15,
+        "maintenanceCost": 3,
+        "decayRatePercent": 0.12
+      },
+      "livability": {
+        "culture": 12,
+        "culture_range": 10,
+        "affordability": 5,
+        "affordability_range": 8,
+        "resilience": 5,
+        "resilience_range": 8,
+        "environment": -3,
+        "environment_range": 1,
+        "noise": -2,
+        "noise_range": 1,
+        "safety": -5,
+        "safety_range": 1
+      },
+      "isDefault": true,
+      "graphicsFile": "assets/buildings/civic/public_pool.png",
+      "graphics": {
+        "filename": "public_pool.png",
+        "path": "assets/buildings/civic/public_pool.png",
+        "fallbackPath": "assets/buildings/default.svg"
+      },
+      "images": {
+        "built": "assets/buildings/civic/public_pool.png"
+      }
+    },
+    {
+      "id": "park",
+      "name": "Park",
+      "category": "civic",
+      "description": "Green space providing environmental and recreational benefits",
+      "resources": {
+        "jobsProvided": 0,
+        "jobsRequired": 0,
+        "energyProvided": 0,
+        "energyRequired": 0,
+        "educationProvided": 0,
+        "educationRequired": 0,
+        "foodProvided": 0,
+        "foodRequired": 0,
+        "housingProvided": 0,
+        "housingRequired": 0,
+        "healthcareProvided": 0,
+        "healthcareRequired": 0
+      },
+      "economics": {
+        "buildCost": 200,
+        "constructionDays": 2,
+        "maxRevenue": 0,
+        "maintenanceCost": 0,
+        "decayRatePercent": 0
+      },
+      "livability": {
+        "culture": 12,
+        "culture_range": 8,
+        "affordability": 5,
+        "affordability_range": 25,
+        "resilience": 15,
+        "resilience_range": 15,
+        "environment": 6,
+        "environment_range": 1,
+        "noise": 10,
+        "noise_range": 2,
+        "safety": 3,
+        "safety_range": 2
+      },
+      "isDefault": true,
+      "graphicsFile": "assets/buildings/civic/park.png",
+      "graphics": {
+        "filename": "park.png",
+        "path": "assets/buildings/civic/park.png",
+        "fallbackPath": "assets/buildings/default.svg"
+      },
+      "images": {
+        "built": "assets/buildings/civic/park.png"
+      }
+    }
+  ],
   "housing": [
     {
       "id": "cottage",
@@ -27,12 +233,18 @@
         "decayRatePercent": 0.1
       },
       "livability": {
-        "culture": 0.05,
-        "affordability": 0.15,
-        "resilience": 0.05,
-        "environment": 0.10,
-        "noise": 0.05,
-        "safety": 0.10
+        "culture": 5,
+        "culture_range": 2,
+        "affordability": 15,
+        "affordability_range": 3,
+        "resilience": 5,
+        "resilience_range": 2,
+        "environment": 10,
+        "environment_range": 2,
+        "noise": 5,
+        "noise_range": 2,
+        "safety": 10,
+        "safety_range": 2
       },
       "isDefault": true,
       "graphicsFile": "assets/buildings/housing/cottage.png",
@@ -72,12 +284,18 @@
         "decayRatePercent": 0.15
       },
       "livability": {
-        "culture": 0.02,
-        "affordability": 0.20,
-        "resilience": 0.05,
-        "environment": -0.05,
-        "noise": -0.10,
-        "safety": 0.05
+        "culture": 2,
+        "culture_range": 2,
+        "affordability": 20,
+        "affordability_range": 4,
+        "resilience": 5,
+        "resilience_range": 2,
+        "environment": -5,
+        "environment_range": 3,
+        "noise": -10,
+        "noise_range": 5,
+        "safety": 5,
+        "safety_range": 2
       },
       "isDefault": true,
       "graphicsFile": "assets/buildings/housing/apartments.png",
@@ -96,15 +314,15 @@
       "id": "farmers_market",
       "name": "Farmers Market",
       "category": "commercial",
-      "description": "Local food market providing jobs and fresh produce",
+      "description": "Local food distribution center",
       "resources": {
-        "jobsProvided": 8,
-        "jobsRequired": 8,
+        "jobsProvided": 2,
+        "jobsRequired": 1,
         "energyProvided": 0,
-        "energyRequired": 8,
+        "energyRequired": 5,
         "educationProvided": 0,
         "educationRequired": 0,
-        "foodProvided": 25,
+        "foodProvided": 16,
         "foodRequired": 0,
         "housingProvided": 0,
         "housingRequired": 0,
@@ -119,12 +337,18 @@
         "decayRatePercent": 0.12
       },
       "livability": {
-        "culture": 0.08,
-        "affordability": 0.12,
-        "resilience": 0.06,
-        "environment": 0.05,
-        "noise": 0.02,
-        "safety": 0.08
+        "culture": 8,
+        "culture_range": 12,
+        "affordability": 6,
+        "affordability_range": 5,
+        "resilience": 2,
+        "resilience_range": 8,
+        "environment": 10,
+        "environment_range": 0,
+        "noise": 2,
+        "noise_range": 1,
+        "safety": 2,
+        "safety_range": 3
       },
       "isDefault": true,
       "graphicsFile": "assets/buildings/commercial/farmers_market.png",
@@ -136,6 +360,57 @@
       "images": {
         "built": "assets/buildings/commercial/farmers_market.png"
       }
+    },
+    {
+      "id": "taqueria",
+      "name": "Taqueria",
+      "category": "commercial",
+      "description": "A great little place I know",
+      "resources": {
+        "jobsProvided": 6,
+        "jobsRequired": 0,
+        "energyProvided": 0,
+        "energyRequired": 8,
+        "educationProvided": 0,
+        "educationRequired": 0,
+        "foodProvided": 8,
+        "foodRequired": 0,
+        "housingProvided": 0,
+        "housingRequired": 0,
+        "healthcareProvided": 0,
+        "healthcareRequired": 0
+      },
+      "economics": {
+        "buildCost": 700,
+        "constructionDays": 4,
+        "maxRevenue": 30,
+        "maintenanceCost": 4,
+        "decayRatePercent": 0.135
+      },
+      "livability": {
+        "culture": 7,
+        "culture_range": 3,
+        "affordability": 3,
+        "affordability_range": 3,
+        "resilience": 1,
+        "resilience_range": 1,
+        "environment": -2,
+        "environment_range": 1,
+        "noise": 0,
+        "noise_range": 1,
+        "safety": 0,
+        "safety_range": 1
+      },
+      "isDefault": true,
+      "graphicsFile": "assets/buildings/commercial/taqueria.png",
+      "graphics": {
+        "filename": "taqueria.png",
+        "path": "assets/buildings/commercial/taqueria.png",
+        "fallbackPath": "assets/buildings/default.svg"
+      },
+      "images": {
+        "built": "assets/buildings/commercial/taqueria.png"
+      }
     }
   ],
   "education": [
@@ -145,46 +420,10 @@
       "category": "education",
       "description": "Primary education for children ages 5-13",
       "resources": {
-        "jobsProvided": 6,
-        "jobsRequired": 0,
+        "jobsProvided": 8,
+        "jobsRequired": 2,
         "energyProvided": 0,
-        "energyRequired": 18,
-        "educationProvided": 8,
-        "educationRequired": 0,
-        "foodProvided": 0,
-        "foodRequired": 0,
-        "housingProvided": 0,
-        "housingRequired": 0,
-        "healthcareProvided": 0,
-        "healthcareRequired": 0
-      },
-      "economics": {
-        "buildCost": 1500,
-        "constructionDays": 5,
-        "maxRevenue": 0
-      },
-      "livability": {},
-      "isDefault": true,
-      "graphicsFile": "assets/buildings/education/school_elementary.png",
-      "graphics": {
-        "filename": "school_elementary.png",
-        "path": "assets/buildings/education/school_elementary.png",
-        "fallbackPath": "assets/buildings/default.svg"
-      },
-      "images": {
-        "built": "assets/buildings/education/school_elementary.png"
-      }
-    },
-    {
-      "id": "high_school",
-      "name": "High School",
-      "category": "education",
-      "description": "Primary education for children ages 14-18",
-      "resources": {
-        "jobsProvided": 22,
-        "jobsRequired": 0,
-        "energyProvided": 0,
-        "energyRequired": 35,
+        "energyRequired": 15,
         "educationProvided": 12,
         "educationRequired": 0,
         "foodProvided": 0,
@@ -195,11 +434,77 @@
         "healthcareRequired": 0
       },
       "economics": {
-        "buildCost": 2500,
-        "constructionDays": 23,
-        "maxRevenue": 0
+        "buildCost": 600,
+        "constructionDays": 5,
+        "maxRevenue": 0,
+        "maintenanceCost": 4,
+        "decayRatePercent": 0.08
       },
-      "livability": {},
+      "livability": {
+        "culture": 15,
+        "culture_range": 8,
+        "affordability": 8,
+        "affordability_range": 3,
+        "resilience": 10,
+        "resilience_range": 12,
+        "environment": 0,
+        "environment_range": 1,
+        "noise": -1,
+        "noise_range": 2,
+        "safety": 3,
+        "safety_range": 5
+      },
+      "isDefault": true,
+      "graphicsFile": "assets/buildings/education/elementary_school.png",
+      "graphics": {
+        "filename": "elementary_school.png",
+        "path": "assets/buildings/education/elementary_school.png",
+        "fallbackPath": "assets/buildings/default.svg"
+      },
+      "images": {
+        "built": "assets/buildings/education/elementary_school.png"
+      }
+    },
+    {
+      "id": "high_school",
+      "name": "High School",
+      "category": "education",
+      "description": "Secondary education for teenagers ages 14-18",
+      "resources": {
+        "jobsProvided": 12,
+        "jobsRequired": 3,
+        "energyProvided": 0,
+        "energyRequired": 25,
+        "educationProvided": 20,
+        "educationRequired": 0,
+        "foodProvided": 0,
+        "foodRequired": 0,
+        "housingProvided": 0,
+        "housingRequired": 0,
+        "healthcareProvided": 0,
+        "healthcareRequired": 0
+      },
+      "economics": {
+        "buildCost": 1000,
+        "constructionDays": 8,
+        "maxRevenue": 0,
+        "maintenanceCost": 6,
+        "decayRatePercent": 0.08
+      },
+      "livability": {
+        "culture": 18,
+        "culture_range": 5,
+        "affordability": 10,
+        "affordability_range": 3,
+        "resilience": 5,
+        "resilience_range": 15,
+        "environment": -2,
+        "environment_range": 1,
+        "noise": -1,
+        "noise_range": 2,
+        "safety": 3,
+        "safety_range": 5
+      },
       "isDefault": true,
       "graphicsFile": "assets/buildings/education/high_school.png",
       "graphics": {
@@ -210,123 +515,6 @@
       "images": {
         "built": "assets/buildings/education/high_school.png"
       }
-    },
-    {
-      "id": "library",
-      "name": "Library",
-      "category": "education",
-      "description": "Public library providing educational resources",
-      "resources": {
-        "jobsProvided": 7,
-        "jobsRequired": 0,
-        "energyProvided": 0,
-        "energyRequired": 4,
-        "educationProvided": 6,
-        "educationRequired": 0,
-        "foodProvided": 0,
-        "foodRequired": 0,
-        "housingProvided": 0,
-        "housingRequired": 0,
-        "healthcareProvided": 1,
-        "healthcareRequired": 0
-      },
-      "economics": {
-        "buildCost": 600,
-        "constructionDays": 4,
-        "maxRevenue": 0
-      },
-      "livability": {},
-      "isDefault": true,
-      "graphicsFile": "assets/buildings/education/library.png",
-      "graphics": {
-        "filename": "library.png",
-        "path": "assets/buildings/education/library.png",
-        "fallbackPath": "assets/buildings/default.svg"
-      },
-      "images": {
-        "built": "assets/buildings/education/library.png"
-      }
-    }
-  ],
-  "civic": [
-    {
-      "id": "public_pool",
-      "name": "Public Pool",
-      "category": "civic",
-      "description": "A",
-      "resources": {
-        "jobsProvided": 5,
-        "jobsRequired": 0,
-        "energyProvided": 0,
-        "energyRequired": 40,
-        "educationProvided": 1,
-        "educationRequired": 0,
-        "foodProvided": 0,
-        "foodRequired": 0,
-        "housingProvided": 0,
-        "housingRequired": 0,
-        "healthcareProvided": 0,
-        "healthcareRequired": 0
-      },
-      "economics": {
-        "buildCost": 800,
-        "constructionDays": 10,
-        "maxRevenue": 0
-      },
-      "livability": {},
-      "isDefault": true,
-      "graphicsFile": "assets/buildings/civic/public_pool.png",
-      "graphics": {
-        "filename": "public_pool.png",
-        "path": "assets/buildings/civic/public_pool.png",
-        "fallbackPath": "assets/buildings/default.svg"
-      },
-      "images": {
-        "built": "assets/buildings/civic/public_pool.png"
-      }
-    },
-    {
-      "id": "park",
-      "name": "Park",
-      "category": "civic",
-      "description": "Green space for recreation and community",
-      "resources": {
-        "jobsProvided": 1,
-        "jobsRequired": 0,
-        "energyProvided": 0,
-        "energyRequired": 1,
-        "educationProvided": 0,
-        "educationRequired": 0,
-        "foodProvided": 0,
-        "foodRequired": 0,
-        "housingProvided": 0,
-        "housingRequired": 0,
-        "healthcareProvided": 0,
-        "healthcareRequired": 0
-      },
-      "economics": {
-        "buildCost": 200,
-        "constructionDays": 2,
-        "maxRevenue": 0
-      },
-      "livability": {
-        "culture": {"effect": 0.12, "range": 3},
-        "affordability": {"effect": 0.08, "range": 2},
-        "resilience": {"effect": 0.05, "range": 2},
-        "environment": {"effect": 0.25, "range": 4},
-        "noise": {"effect": 0.15, "range": 3},
-        "safety": {"effect": 0.15, "range": 3}
-      },
-      "isDefault": true,
-      "graphicsFile": "assets/buildings/civic/park.png",
-      "graphics": {
-        "filename": "park.png",
-        "path": "assets/buildings/civic/park.png",
-        "fallbackPath": "assets/buildings/default.svg"
-      },
-      "images": {
-        "built": "assets/buildings/civic/park.png"
-      }
     }
   ],
   "energy": [
@@ -334,11 +522,11 @@
       "id": "solar_farm",
       "name": "Solar Farm",
       "category": "energy",
-      "description": "Clean energy generation facility",
+      "description": "Renewable energy generation facility",
       "resources": {
         "jobsProvided": 2,
-        "jobsRequired": 0,
-        "energyProvided": 60,
+        "jobsRequired": 1,
+        "energyProvided": 25,
         "energyRequired": 0,
         "educationProvided": 0,
         "educationRequired": 0,
@@ -357,12 +545,18 @@
         "decayRatePercent": 0.08
       },
       "livability": {
-        "culture": 0.02,
-        "affordability": -0.05,
-        "resilience": 0.15,
-        "environment": 0.30,
-        "noise": 0.05,
-        "safety": 0.03
+        "culture": 2,
+        "culture_range": -5,
+        "affordability": 15,
+        "affordability_range": 30,
+        "resilience": 5,
+        "resilience_range": 3,
+        "environment": 25,
+        "environment_range": 1,
+        "noise": 0,
+        "noise_range": 1,
+        "safety": 5,
+        "safety_range": 3
       },
       "isDefault": true,
       "graphicsFile": "assets/buildings/energy/solar_farm.png",
@@ -374,6 +568,108 @@
       "images": {
         "built": "assets/buildings/energy/solar_farm.png"
       }
+    },
+    {
+      "id": "coal_plant",
+      "name": "Coal Plant",
+      "category": "energy",
+      "description": "\"A coal plant",
+      "resources": {
+        "jobsProvided": 0,
+        "jobsRequired": 28,
+        "energyProvided": 0,
+        "energyRequired": 77,
+        "educationProvided": 0,
+        "educationRequired": 0,
+        "foodProvided": 0,
+        "foodRequired": 0,
+        "housingProvided": 0,
+        "housingRequired": 0,
+        "healthcareProvided": 0,
+        "healthcareRequired": 0
+      },
+      "economics": {
+        "buildCost": 0,
+        "constructionDays": 2300,
+        "maxRevenue": 9,
+        "maintenanceCost": 160,
+        "decayRatePercent": 22
+      },
+      "livability": {
+        "culture": 0,
+        "culture_range": 0,
+        "affordability": 1,
+        "affordability_range": 6,
+        "resilience": 8,
+        "resilience_range": 10,
+        "environment": 12,
+        "environment_range": -40,
+        "noise": 12,
+        "noise_range": -10,
+        "safety": 4,
+        "safety_range": 0
+      },
+      "isDefault": true,
+      "graphicsFile": "1",
+      "graphics": {
+        "filename": "1",
+        "path": "1",
+        "fallbackPath": "assets/buildings/default.svg"
+      },
+      "images": {
+        "built": "1"
+      }
+    },
+    {
+      "id": "natural_gas_plant",
+      "name": "Natural Gas Plant",
+      "category": "energy",
+      "description": "\"They say natural gas is cleaner. Who is \"\"they\"\"?\"",
+      "resources": {
+        "jobsProvided": 20,
+        "jobsRequired": 0,
+        "energyProvided": 100,
+        "energyRequired": 0,
+        "educationProvided": 0,
+        "educationRequired": 0,
+        "foodProvided": 0,
+        "foodRequired": 0,
+        "housingProvided": 0,
+        "housingRequired": 0,
+        "healthcareProvided": 0,
+        "healthcareRequired": 0
+      },
+      "economics": {
+        "buildCost": 3700,
+        "constructionDays": 12,
+        "maxRevenue": 220,
+        "maintenanceCost": 25,
+        "decayRatePercent": 0.1
+      },
+      "livability": {
+        "culture": 0,
+        "culture_range": 1,
+        "affordability": 15,
+        "affordability_range": 12,
+        "resilience": 15,
+        "resilience_range": 12,
+        "environment": -15,
+        "environment_range": 10,
+        "noise": -2,
+        "noise_range": 2,
+        "safety": -2,
+        "safety_range": 12
+      },
+      "isDefault": true,
+      "graphicsFile": "assets/buildings/energy/natural_gas_plant.png",
+      "graphics": {
+        "filename": "natural_gas_plant.png",
+        "path": "assets/buildings/energy/natural_gas_plant.png",
+        "fallbackPath": "assets/buildings/default.svg"
+      },
+      "images": {
+        "built": "assets/buildings/energy/natural_gas_plant.png"
+      }
     }
   ],
   "industrial": [
@@ -381,16 +677,16 @@
       "id": "brewery",
       "name": "Brewery",
       "category": "industrial",
-      "description": "A brewery that brews beer",
+      "description": "Craft beverage production facility",
       "resources": {
-        "jobsProvided": 40,
-        "jobsRequired": 0,
+        "jobsProvided": 8,
+        "jobsRequired": 2,
         "energyProvided": 0,
-        "energyRequired": 60,
-        "educationProvided": 3,
+        "energyRequired": 20,
+        "educationProvided": 0,
         "educationRequired": 0,
-        "foodProvided": 10,
-        "foodRequired": 0,
+        "foodProvided": 0,
+        "foodRequired": 2,
         "housingProvided": 0,
         "housingRequired": 0,
         "healthcareProvided": 0,
@@ -399,15 +695,23 @@
       "economics": {
         "buildCost": 2000,
         "constructionDays": 8,
-        "maxRevenue": 50
+        "maxRevenue": 50,
+        "maintenanceCost": 4,
+        "decayRatePercent": 0.12
       },
       "livability": {
-        "culture": {"effect": 0.08, "range": 3},
-        "affordability": {"effect": -0.02, "range": 2},
-        "resilience": {"effect": 0.03, "range": 2},
-        "environment": {"effect": -0.08, "range": 3},
-        "noise": {"effect": -0.12, "range": 2},
-        "safety": {"effect": -0.05, "range": 2}
+        "culture": 8,
+        "culture_range": -2,
+        "affordability": 3,
+        "affordability_range": -8,
+        "resilience": -12,
+        "resilience_range": -5,
+        "environment": -10,
+        "environment_range": 3,
+        "noise": -6,
+        "noise_range": 2,
+        "safety": -5,
+        "safety_range": 3
       },
       "isDefault": true,
       "graphicsFile": "assets/buildings/industrial/brewery.png",
@@ -418,6 +722,59 @@
       },
       "images": {
         "built": "assets/buildings/industrial/brewery.png"
+      }
+    }
+  ],
+  "recreation": [
+    {
+      "id": "skate_park",
+      "name": "Skate Park",
+      "category": "recreation",
+      "description": "A great place to skate and hang out!",
+      "resources": {
+        "jobsProvided": 0,
+        "jobsRequired": 0,
+        "energyProvided": 0,
+        "energyRequired": 0,
+        "educationProvided": 0,
+        "educationRequired": 0,
+        "foodProvided": 0,
+        "foodRequired": 0,
+        "housingProvided": 0,
+        "housingRequired": 0,
+        "healthcareProvided": 6,
+        "healthcareRequired": 2
+      },
+      "economics": {
+        "buildCost": 650,
+        "constructionDays": 5,
+        "maxRevenue": 0,
+        "maintenanceCost": 1,
+        "decayRatePercent": 0.0075
+      },
+      "livability": {
+        "culture": 12,
+        "culture_range": 6,
+        "affordability": -2,
+        "affordability_range": 5,
+        "resilience": 0,
+        "resilience_range": 0,
+        "environment": 3,
+        "environment_range": 2,
+        "noise": -3,
+        "noise_range": 1,
+        "safety": -5,
+        "safety_range": 1
+      },
+      "isDefault": true,
+      "graphicsFile": "assets/buildings/recreation/skate_park.png",
+      "graphics": {
+        "filename": "skate_park.png",
+        "path": "assets/buildings/recreation/skate_park.png",
+        "fallbackPath": "assets/buildings/default.svg"
+      },
+      "images": {
+        "built": "assets/buildings/recreation/skate_park.png"
       }
     }
   ]

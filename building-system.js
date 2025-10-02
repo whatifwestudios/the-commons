@@ -651,15 +651,14 @@ class BuildingSystem {
     mapBuildingToBudgetCategory(buildingCategory) {
         const mapping = {
             'housing': 'housing',
-            'commercial': 'commercial',
             'education': 'education',
-            'civic': 'civic',
-            'energy': 'infrastructure',  // Energy buildings funded by infrastructure budget
-            'industrial': 'infrastructure',  // Industrial buildings funded by infrastructure budget
-            'healthcare': 'healthcare',
+            'mobility': 'infrastructure',
+            'energy': 'infrastructure',
             'culture': 'culture',
             'recreation': 'recreation',
-            'emergency': 'emergency'
+            'commercial': 'commercial',
+            'industrial': 'commercial',
+            'civic': 'civic'
         };
 
         return mapping[buildingCategory] || 'housing'; // Default fallback

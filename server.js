@@ -562,6 +562,9 @@ function runGameLoop(triggeredBy = 'timer') {
                 if (room.state === 'IN_PROGRESS') {
                     room.economicEngine.updateGameTime();
 
+                    // Process expired parcel auctions
+                    room.economicEngine.processExpiredParcelAuctions();
+
                     // Check victory conditions (less frequently)
                     if (now % 10000 < GAME_LOOP_MIN_INTERVAL) {
                         room.checkVictoryConditions();
