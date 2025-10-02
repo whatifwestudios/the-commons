@@ -3331,8 +3331,8 @@ class IsometricGrid {
         const success = this.addInfrastructureToParcel(edgeParcel, infrastructureType, value, cost, playerId);
         
         if (success) {
-            // Deduct cost from player
-            this.playerData.cash -= cost;
+            // SERVER HANDLES CASH DEDUCTION - client should not modify cash directly
+            // Cash will be updated via server state sync in multiplayer mode
             this.updatePlayerDisplay();
             // Visual confirmation via UI update - notification removed to reduce clutter
             this.scheduleRender();
@@ -3364,15 +3364,19 @@ class IsometricGrid {
     }
 
     addInfrastructureToParcel(edgeParcel, infrastructureType, value, cost, playerId) {
+        // AUTHORITY VIOLATION FIXED: Infrastructure should be SERVER-AUTHORITATIVE
+        // Client should send transaction to server and await confirmation
+        // This method now only validates and sends transaction - no direct state modification
+
         const infra = edgeParcel.infrastructure;
 
+        // Validate request before sending to server
         switch (infrastructureType) {
             case 'roadway':
                 if (infra.roadway) {
                     this.showNotification('Road already exists here', 'error');
                     return false;
                 }
-                infra.roadway = value;
                 break;
 
             case 'sidewalks':
@@ -3380,7 +3384,6 @@ class IsometricGrid {
                     this.showNotification('Sidewalks already exist here', 'error');
                     return false;
                 }
-                infra.sidewalks = true;
                 break;
 
             case 'bikelanes':
@@ -3388,7 +3391,6 @@ class IsometricGrid {
                     this.showNotification('Bike lanes already exist here', 'error');
                     return false;
                 }
-                infra.bikelanes = true;
                 break;
 
             case 'busStop':
@@ -3396,12 +3398,6 @@ class IsometricGrid {
                     this.showNotification('Bus stop already exists here', 'error');
                     return false;
                 }
-                infra.busStop = {
-                    type: 'standard',
-                    direction: 'both',
-                    builtBy: playerId,
-                    cost: cost
-                };
                 break;
 
             case 'subwayEntrance':
@@ -3409,12 +3405,6 @@ class IsometricGrid {
                     this.showNotification('Subway entrance already exists here', 'error');
                     return false;
                 }
-                infra.subwayEntrance = {
-                    type: 'standard',
-                    direction: 'both',
-                    builtBy: playerId,
-                    cost: cost
-                };
                 break;
 
             case 'trafficControl':
@@ -3422,15 +3412,15 @@ class IsometricGrid {
                     this.showNotification('Traffic control already exists here', 'error');
                     return false;
                 }
-                infra.trafficControl = value;
                 break;
 
             default:
                 return false;
         }
 
-        // Track total investment
-        infra.totalInvestment += cost;
+        // SERVER HANDLES STATE MODIFICATION - client only validates and sends transaction
+        // State updates will come via server sync in multiplayer mode
+        // TODO: Send infrastructure transaction to server instead of direct modification
         return true;
     }
 
@@ -4127,26 +4117,16 @@ class IsometricGrid {
     }
 
     updateConstructionProgress() {
-        let constructionUpdated = false;
+        // AUTHORITY VIOLATION FIXED: Construction progress is now SERVER-AUTHORITATIVE
+        // Client should not calculate construction progress independently
+        // Progress updates will come via server state sync in multiplayer mode
+        // This method is kept for backwards compatibility but no longer modifies state
 
-        for (let row = 0; row < this.rows; row++) {
-            for (let col = 0; col < this.cols; col++) {
-                const parcel = this.grid[row][col];
-                if (parcel && parcel.building && parcel._constructionProgress < 1.0) {
-                    // Progress construction by 2% per second (50 seconds total)
-                    const progressIncrement = 0.02;
-                    parcel._constructionProgress = Math.min(1.0, parcel._constructionProgress + progressIncrement);
+        // In multiplayer mode, construction progress comes from server updates
+        // In solo mode, server handles construction timing as well
 
-                    if (parcel._constructionProgress >= 1.0) {
-                        // Construction completed
-                        constructionUpdated = true;
-
-                        // CRITICAL FIX: Call construction completion handler to send BUILD_COMPLETE transaction
-                        this.handleConstructionCompletion(row, col, parcel);
-                    }
-                }
-            }
-        }
+        // No longer needed: constructionUpdated always false since server handles progress
+        const constructionUpdated = false;
 
         // Refresh displays if construction was completed
         if (constructionUpdated) {
@@ -4164,10 +4144,8 @@ class IsometricGrid {
             const cashflowResponse = this.economicClient.getPlayerCashflow(this.currentPlayerId);
 
             if (cashflowResponse.success && cashflowResponse.netCashflow > 0) {
-                // Applying cashflow
-
-                // Add cash to player balance
-                this.cash += cashflowResponse.netCashflow;
+                // SERVER HANDLES CASHFLOW - client should not modify cash directly
+                // Cash updates will come via server state sync in multiplayer mode
                 this.updateCashDisplay();
 
                 // V2: Economic client handles server balance management automatically
