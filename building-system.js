@@ -629,20 +629,40 @@ class BuildingSystem {
      * Get available funding for a category from server game state
      */
     getCategoryFunding(category) {
-        // Check if we have budget data from server
-        if (!this.game.economicClient?.gameState?.monthlyBudget) {
+        // Map building category to budget category (same logic as server)
+        const budgetCategory = this.mapBuildingToBudgetCategory(category);
+
+        // Get actual budget balances from server governance system
+        const budgets = this.game.economicClient?.governance?.budgets;
+        if (!budgets || !budgets[budgetCategory]) {
             return 0;
         }
 
-        const budget = this.game.economicClient.gameState.monthlyBudget;
-        const proportion = budget.proportions?.[category] || 0;
+        // Return the actual allocated budget balance for this category
+        const availableFunds = budgets[budgetCategory] || 0;
+        console.log(`💰 Category funding for ${category} (budget: ${budgetCategory}): $${availableFunds.toFixed(2)}`);
+        return availableFunds;
+    }
 
-        // Get total treasury amount - this would come from governance system
-        // For now, return a placeholder amount based on proportion
-        // TODO: Get actual treasury balance from server
-        const totalTreasury = 10000; // Placeholder
+    /**
+     * Map building categories to budget categories for subsidy funding
+     * Must match server-side logic in server-economic-engine-v2.js
+     */
+    mapBuildingToBudgetCategory(buildingCategory) {
+        const mapping = {
+            'housing': 'housing',
+            'commercial': 'commercial',
+            'education': 'education',
+            'civic': 'civic',
+            'energy': 'infrastructure',  // Energy buildings funded by infrastructure budget
+            'industrial': 'infrastructure',  // Industrial buildings funded by infrastructure budget
+            'healthcare': 'healthcare',
+            'culture': 'culture',
+            'recreation': 'recreation',
+            'emergency': 'emergency'
+        };
 
-        return Math.floor(totalTreasury * proportion);
+        return mapping[buildingCategory] || 'housing'; // Default fallback
     }
     
     /**

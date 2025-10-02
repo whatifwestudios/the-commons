@@ -639,8 +639,32 @@ class ServerEconomicEngine {
             throw new Error(`Unknown building: ${buildingId}`);
         }
 
-        // Deduct cost from playerBalances
-        const newBalance = currentBalance - cost;
+        // Calculate public funding and budget spending
+        const buildingCategory = buildingDef.category || 'housing';
+        const budgetCategory = this.mapBuildingToBudgetCategory(buildingCategory);
+        const fullCost = buildingDef.economics?.buildCost || buildingDef.cost || cost;
+        const categoryBudget = this.governanceSystem ? this.governanceSystem.getBudgets()[budgetCategory] || 0 : 0;
+        const publicFunding = Math.min(categoryBudget, fullCost);
+        const playerCost = Math.max(0, fullCost - publicFunding);
+
+        console.log(`🏗️ BUILD: ${buildingId} at [${row},${col}] - Full cost: $${fullCost}, Public funding: $${publicFunding}, Player cost: $${playerCost}`);
+
+        // Validate that the client sent the correct player cost
+        if (Math.abs(cost - playerCost) > 0.01) {
+            console.warn(`⚠️ Cost mismatch - Client sent: $${cost}, Server calculated: $${playerCost}`);
+            // For now, use server calculation but log the discrepancy
+        }
+
+        // Spend from budget category if public funding is used
+        if (publicFunding > 0 && this.governanceSystem) {
+            const budgetSpent = this.governanceSystem.spendFromBudget(budgetCategory, publicFunding, `Construction of ${buildingId} at [${row},${col}]`);
+            if (!budgetSpent) {
+                throw new Error(`Insufficient ${budgetCategory} budget for public funding`);
+            }
+        }
+
+        // Deduct player cost from playerBalances
+        const newBalance = currentBalance - playerCost;
         this.gameState.playerBalances.set(playerId, newBalance);
 
         console.log(`💰 BUILD_START: ${playerId} balance ${currentBalance} → ${newBalance} (built ${buildingDef.name})`);
@@ -2904,6 +2928,28 @@ class ServerEconomicEngine {
         const rate = this.currentLVTRate || 0.5; // Default to 50%
         console.log(`🏛️ DEBUG: getCurrentLVTRate() returning ${rate} (currentLVTRate=${this.currentLVTRate})`);
         return rate;
+    }
+
+    /**
+     * Map building categories to budget categories for subsidy funding
+     */
+    mapBuildingToBudgetCategory(buildingCategory) {
+        const mapping = {
+            'housing': 'housing',
+            'commercial': 'commercial',
+            'education': 'education',
+            'civic': 'civic',
+            'energy': 'infrastructure',  // Energy buildings funded by infrastructure budget
+            'industrial': 'infrastructure',  // Industrial buildings funded by infrastructure budget
+            'healthcare': 'healthcare',
+            'culture': 'culture',
+            'recreation': 'recreation',
+            'emergency': 'emergency'
+        };
+
+        const budgetCategory = mapping[buildingCategory] || 'housing'; // Default fallback
+        console.log(`🏗️ Building category '${buildingCategory}' → Budget category '${budgetCategory}'`);
+        return budgetCategory;
     }
 
     /**
