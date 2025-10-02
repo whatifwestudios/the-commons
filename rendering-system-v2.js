@@ -22,7 +22,7 @@ class RenderingSystemV2 {
         this.hoverOpacity = 0.4;
         this.adjacentOpacity = 0.2;
         this.tileWidth = 100.0;
-        this.tileHeight = 55.0;
+        this.tileHeight = 50.0;  // Standard 30° isometric (2:1 ratio)
 
         // Performance
         this.renderScheduled = false;
@@ -576,12 +576,14 @@ class RenderingSystemV2 {
 
         const iso = this.toIsometric(col, row);
 
-        // Apply dynamic offsets from position adjuster (if active)
-        const baseYOffset = 36;
-        const dynamicXOffset = this.buildingXOffset || 0;
-        const dynamicYOffset = this.buildingYOffset || baseYOffset;
+        // Calculate true diamond bottom point for proper building placement
+        const diamondBottomY = iso.y + (this.tileHeight / 2);
 
-        const buildingY = iso.y + dynamicYOffset;
+        // Apply dynamic offsets from position adjuster (if active)
+        const dynamicXOffset = this.buildingXOffset || 0;
+        const dynamicYOffset = this.buildingYOffset || 0;
+
+        const buildingY = diamondBottomY + dynamicYOffset;
         const buildingX = iso.x + dynamicXOffset;
 
         // Simple building representation
@@ -602,7 +604,8 @@ class RenderingSystemV2 {
 
         if (imagePath) {
             // Try to load and draw building image
-            this.drawBuildingImage(imagePath, buildingX, buildingY, row, col);
+            // Pass the diamond center coordinates - drawImageAtPosition will calculate the bottom
+            this.drawBuildingImage(imagePath, iso.x, iso.y, row, col);
         } else {
             // Fallback: draw simple rectangle if no graphics found
             if (window.DEBUG_MODE) console.log(`⚠️ No graphics found for building: ${building.id || building.type}`);
@@ -617,9 +620,13 @@ class RenderingSystemV2 {
             const buildingWidth = this.tileWidth * 0.8;
             const buildingHeight = this.tileHeight * 1.5;
 
+            // Calculate diamond bottom for consistent positioning
+            const diamondBottomY = iso.y + (this.tileHeight / 2);
+            const buildingTopY = diamondBottomY - buildingHeight;
+
             this.ctx.fillRect(
                 iso.x - buildingWidth / 2,
-                buildingY - buildingHeight,
+                buildingTopY + (this.buildingYOffset || 0),
                 buildingWidth,
                 buildingHeight
             );
@@ -629,7 +636,7 @@ class RenderingSystemV2 {
             this.ctx.lineWidth = 1;
             this.ctx.strokeRect(
                 iso.x - buildingWidth / 2,
-                buildingY - buildingHeight,
+                buildingTopY + (this.buildingYOffset || 0),
                 buildingWidth,
                 buildingHeight
             );
@@ -698,13 +705,19 @@ class RenderingSystemV2 {
         const aspectRatio = img.naturalWidth / img.naturalHeight;
         const buildingHeight = buildingWidth / aspectRatio;
 
-        // Apply final positioning with user's +19 adjustment
-        const buildingY = y + 19;
+        // x,y from toIsometric is the center of the diamond
+        // Diamond bottom is center + half tile height
+        const diamondCenterY = y;
+        const diamondBottomY = diamondCenterY + (this.tileHeight / 2);
+
+        // Position building so its bottom edge sits on the diamond bottom
+        // drawImage needs top-left corner, so subtract full building height
         const buildingX = x;
+        const buildingTopY = diamondBottomY - buildingHeight;
 
         // Apply dynamic offsets from position adjuster (if active)
-        const finalX = buildingX + (this.buildingXOffset || 0);
-        const finalY = buildingY - buildingHeight + (this.buildingYOffset || 0);
+        const finalX = buildingX - (buildingWidth / 2) + (this.buildingXOffset || 0);  // Center horizontally
+        const finalY = buildingTopY + (this.buildingYOffset || 0);
 
         // Apply building tint if this parcel is connected
         const tint = this.getBuildingTint(row, col);
@@ -712,7 +725,7 @@ class RenderingSystemV2 {
             this.ctx.globalCompositeOperation = 'multiply';
             this.ctx.fillStyle = this.hexToRgba(this.playerColor, 0.8);
             this.ctx.fillRect(
-                finalX - buildingWidth / 2,
+                finalX,
                 finalY,
                 buildingWidth,
                 buildingHeight
@@ -723,8 +736,8 @@ class RenderingSystemV2 {
         // Draw building with edges perfectly aligned to diamond parcel
         this.ctx.drawImage(
             img,
-            finalX - buildingWidth / 2,  // Center horizontally on diamond
-            finalY,                      // Bottom-align with diamond bottom
+            finalX,                      // Left edge (already centered in finalX calculation)
+            finalY,                      // Top edge (building bottom sits on diamond bottom)
             buildingWidth,               // Exactly match parcel width
             buildingHeight               // Maintain aspect ratio
         );
@@ -849,7 +862,13 @@ class RenderingSystemV2 {
             return '#8B4513'; // Brown for construction
         }
 
-        // Based on owner
+        // If there's a building on this parcel, show neutral color
+        // Buildings should visually replace the parcel, not stack on top of colored parcels
+        if (parcel.building) {
+            return '#333333'; // Neutral dark gray for built parcels
+        }
+
+        // Based on owner - only show player colors for EMPTY owned parcels
         if (!parcel.owner || parcel.owner === 'City' || parcel.owner === 'unclaimed') {
             return '#2a2a2a'; // Unowned - charcoal gray
         } else {
@@ -897,7 +916,7 @@ class RenderingSystemV2 {
 
         // Set tile dimensions with proper 2:1 isometric ratio, reduced by 20% for better canvas utilization
         this.tileWidth = Math.max(optimalTileWidth * 0.8, 20); // Minimum tile size for readability, 20% smaller
-        this.tileHeight = this.tileWidth / 2;
+        this.tileHeight = this.tileWidth / 2;  // MUST be exactly /2 for standard 30° isometric
 
         // CORRECT CENTERING CALCULATION
         // Isometric grid bounds (before offset):
