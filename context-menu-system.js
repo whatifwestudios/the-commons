@@ -161,6 +161,7 @@ class ContextMenuSystem {
      * Create menu for unowned parcel
      */
     createUnownedParcelMenu(contentEl, row, col, price) {
+        const parcel = this.game.grid[row][col];
 
         const buyBtn = document.createElement('button');
         buyBtn.className = 'context-btn primary';
@@ -177,6 +178,18 @@ class ContextMenuSystem {
             });
         };
         contentEl.appendChild(buyBtn);
+
+        // Add auction button for unclaimed parcels (not City-owned)
+        if (parcel.owner !== 'City') {
+            const auctionBtn = document.createElement('button');
+            auctionBtn.className = 'context-btn auction';
+            auctionBtn.textContent = '🔨 AUCTION PARCEL';
+            auctionBtn.onclick = () => {
+                this.game.parcelAuctionSystem?.startAuction(row, col);
+                this.hide();
+            };
+            contentEl.appendChild(auctionBtn);
+        }
     }
 
     /**
@@ -210,6 +223,15 @@ class ContextMenuSystem {
             contentEl.appendChild(buildingInfo);
         }
 
+        // Add auction button for competitor-owned parcels
+        const auctionBtn = document.createElement('button');
+        auctionBtn.className = 'context-btn auction';
+        auctionBtn.textContent = '🔨 AUCTION PARCEL';
+        auctionBtn.onclick = () => {
+            this.game.parcelAuctionSystem?.startAuction(row, col);
+            this.hide();
+        };
+        contentEl.appendChild(auctionBtn);
     }
 
     /**

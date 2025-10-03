@@ -589,11 +589,11 @@
         "healthcareRequired": 0
       },
       "economics": {
-        "buildCost": 0,
+        "buildCost": 1900,
         "constructionDays": 2300,
         "maxRevenue": 9,
         "maintenanceCost": 160,
-        "decayRatePercent": 22
+        "decayRatePercent": 0.22
       },
       "livability": {
         "culture": 0,

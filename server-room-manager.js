@@ -46,6 +46,7 @@ class ServerGovernanceSystem {
 
     /**
      * Transfer funds from treasury to allocated budget categories
+     * Budgets accumulate unspent funds month-to-month
      * @param {Object} budgetProportions - Object with category proportions (0-1)
      * @param {number} totalRevenue - Total revenue to allocate
      */
@@ -63,9 +64,10 @@ class ServerGovernanceSystem {
         Object.entries(budgetProportions).forEach(([category, proportion]) => {
             if (proportion > 0) {
                 const allocation = availableFunds * proportion;
+                const previousBalance = this.governance.budgets[category];
                 this.governance.budgets[category] += allocation;
                 totalAllocated += allocation;
-                console.log(`   📊 ${category}: +$${allocation.toFixed(2)} (${(proportion * 100).toFixed(1)}%)`);
+                console.log(`   📊 ${category}: +$${allocation.toFixed(2)} (${(proportion * 100).toFixed(1)}%) → Total: $${this.governance.budgets[category].toFixed(2)} (was $${previousBalance.toFixed(2)})`);
             }
         });
 
@@ -73,6 +75,48 @@ class ServerGovernanceSystem {
         this.governance.treasury -= totalAllocated;
 
         console.log(`💰 ALLOCATION COMPLETE: $${totalAllocated.toFixed(2)} allocated, $${this.governance.treasury.toFixed(2)} remaining in treasury`);
+    }
+
+    /**
+     * Reset all budgets and reallocate total available funds based on current proportions
+     * This ensures fair distribution when voting patterns change
+     * @param {Object} budgetProportions - Object with category proportions (0-1)
+     */
+    reallocateAllBudgets(budgetProportions) {
+        if (!budgetProportions) {
+            console.warn('⚠️ No budget proportions provided for reallocation');
+            return;
+        }
+
+        // Calculate total funds available for reallocation (current budgets + treasury)
+        const currentBudgetTotal = Object.values(this.governance.budgets).reduce((sum, amount) => sum + amount, 0);
+        const totalAvailableFunds = currentBudgetTotal + this.governance.treasury;
+
+        console.log(`🔄 BUDGET REALLOCATION: $${totalAvailableFunds.toFixed(2)} total funds (budgets: $${currentBudgetTotal.toFixed(2)}, treasury: $${this.governance.treasury.toFixed(2)})`);
+
+        // Reset all budgets to 0
+        Object.keys(this.governance.budgets).forEach(category => {
+            this.governance.budgets[category] = 0;
+        });
+
+        // Reset treasury to total available funds
+        this.governance.treasury = totalAvailableFunds;
+
+        // Allocate based on current proportions
+        let totalAllocated = 0;
+        Object.entries(budgetProportions).forEach(([category, proportion]) => {
+            if (proportion > 0) {
+                const allocation = totalAvailableFunds * proportion;
+                this.governance.budgets[category] = allocation;
+                totalAllocated += allocation;
+                console.log(`   🔄 ${category}: $${allocation.toFixed(2)} (${(proportion * 100).toFixed(1)}%)`);
+            }
+        });
+
+        // Deduct allocated funds from treasury
+        this.governance.treasury = totalAvailableFunds - totalAllocated;
+
+        console.log(`🔄 REALLOCATION COMPLETE: $${totalAllocated.toFixed(2)} reallocated, $${this.governance.treasury.toFixed(2)} remaining in treasury`);
     }
 
     /**
@@ -126,6 +170,12 @@ class GameRoom {
         // Players in this room
         this.players = new Map(); // playerId -> playerData
         this.host = null; // First player becomes host
+
+        // Per-room isolated clock system
+        this.gameTimer = null;
+        this.gameStartTime = null;
+        this.emptyRoomTimer = null;
+        this.GAME_DAY_MS = 3600000 / 365; // ~9.86 seconds per game day
 
         // Chat history storage (last 100 messages)
         this.chatHistory = [];
@@ -212,6 +262,9 @@ class GameRoom {
 
         console.log(`👤 Player ${playerId} joined room ${this.id}`);
 
+        // Cancel empty room cleanup since player joined
+        this.cancelEmptyRoomCleanup();
+
         // Check if we should auto-start
         this.checkAutoStart();
 
@@ -237,9 +290,10 @@ class GameRoom {
 
         console.log(`👤 Player ${playerId} left room ${this.id}`);
 
-        // Delete room if empty
+        // Start empty room monitoring if room is now empty
         if (this.players.size === 0) {
-            return true; // Signal to delete room
+            this.startEmptyRoomMonitoring();
+            return true; // Signal to delete room (but now with 30s delay)
         }
 
         return false;
@@ -399,6 +453,9 @@ class GameRoom {
                 roomId: this.id,
                 players: this.getCleanPlayerData()
             });
+
+            // Start the isolated room clock
+            this.startGameClock();
         }, 3000);
 
         // Broadcast countdown
@@ -637,6 +694,123 @@ class GameRoom {
             carens: this.economicEngine.gameState.carens
         };
     }
+
+    /**
+     * START PER-ROOM ISOLATED CLOCK SYSTEM
+     */
+
+    /**
+     * Start the isolated game clock for this room
+     */
+    startGameClock() {
+        if (this.gameTimer) {
+            console.log(`🕒 Room ${this.id}: Clock already running`);
+            return;
+        }
+
+        this.gameStartTime = Date.now();
+        this.economicEngine.gameState.gameStartTime = this.gameStartTime;
+
+        console.log(`🕒 Room ${this.id}: Starting isolated game clock`);
+
+        // Run clock every GAME_DAY_MS (~9.86 seconds)
+        this.gameTimer = setInterval(() => {
+            this.updateRoomGameTime();
+        }, this.GAME_DAY_MS);
+
+        // Start empty room monitoring when game starts
+        this.startEmptyRoomMonitoring();
+    }
+
+    /**
+     * Update game time for this room only
+     */
+    updateRoomGameTime() {
+        if (this.state !== 'IN_PROGRESS') {
+            return;
+        }
+
+        // Calculate elapsed real time since game started
+        const now = Date.now();
+        const elapsedMs = now - this.gameStartTime;
+        const elapsedGameDays = elapsedMs / this.GAME_DAY_MS;
+
+        // Server-authoritative time: 1 + elapsed days
+        const targetGameTime = 1 + elapsedGameDays;
+
+        // Catch up if we're behind (drift compensation)
+        this.economicEngine.gameState.gameTime = targetGameTime;
+
+        // Process daily events, building completion, etc.
+        this.economicEngine.updateGameTime();
+
+        // Process expired parcel auctions
+        this.economicEngine.processExpiredParcelAuctions();
+
+        // Check victory conditions
+        this.checkVictoryConditions();
+
+        // Broadcast updated game state to room players
+        this.broadcastGameState('DAILY_PROGRESSION');
+    }
+
+    /**
+     * Stop the game clock
+     */
+    stopGameClock() {
+        if (this.gameTimer) {
+            clearInterval(this.gameTimer);
+            this.gameTimer = null;
+            console.log(`🕒 Room ${this.id}: Game clock stopped`);
+        }
+    }
+
+    /**
+     * Monitor for empty room and cleanup after 30 seconds
+     */
+    startEmptyRoomMonitoring() {
+        // Clear any existing timer
+        if (this.emptyRoomTimer) {
+            clearTimeout(this.emptyRoomTimer);
+            this.emptyRoomTimer = null;
+        }
+
+        // Check if room is empty
+        if (this.players.size === 0) {
+            console.log(`⏰ Room ${this.id}: Empty room detected, starting 30s cleanup timer`);
+            this.emptyRoomTimer = setTimeout(() => {
+                this.cleanupEmptyRoom();
+            }, 30000); // 30 seconds
+        }
+    }
+
+    /**
+     * Clean up empty room and remove from manager
+     */
+    cleanupEmptyRoom() {
+        if (this.players.size === 0) {
+            console.log(`🧹 Room ${this.id}: Cleaning up empty room after 30s`);
+            this.stopGameClock();
+
+            // Notify room manager to remove this room
+            if (this.roomManager) {
+                this.roomManager.removeRoom(this.id);
+            }
+        } else {
+            console.log(`🔄 Room ${this.id}: Players rejoined, canceling cleanup`);
+        }
+    }
+
+    /**
+     * Cancel empty room cleanup (players rejoined)
+     */
+    cancelEmptyRoomCleanup() {
+        if (this.emptyRoomTimer) {
+            clearTimeout(this.emptyRoomTimer);
+            this.emptyRoomTimer = null;
+            console.log(`✅ Room ${this.id}: Cleanup canceled - players present`);
+        }
+    }
 }
 
 class RoomManager {
@@ -664,6 +838,9 @@ class RoomManager {
     createRoom(options = {}) {
         const roomId = options.roomId || this.generateUniqueRoomId('room');
         const room = new GameRoom(roomId, options);
+
+        // Give room reference to manager for cleanup
+        room.roomManager = this;
 
         this.rooms.set(roomId, room);
 
@@ -970,6 +1147,30 @@ class RoomManager {
      */
     getAllRooms() {
         return Array.from(this.rooms.values());
+    }
+
+    /**
+     * Remove room (called by empty room cleanup)
+     */
+    removeRoom(roomId) {
+        const room = this.rooms.get(roomId);
+        if (room) {
+            // Clean up all player mappings for this room
+            for (const [playerId, mappedRoomId] of this.playerRooms.entries()) {
+                if (mappedRoomId === roomId) {
+                    this.playerRooms.delete(playerId);
+                }
+            }
+
+            // Stop the room's clock if running
+            room.stopGameClock();
+
+            // Remove the room
+            this.rooms.delete(roomId);
+            console.log(`🗑️ Room ${roomId} removed from manager`);
+            return true;
+        }
+        return false;
     }
 }
 

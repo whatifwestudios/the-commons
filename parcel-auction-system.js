@@ -54,6 +54,12 @@ class ParcelAuctionSystem {
             return;
         }
 
+        // Prevent auctions on City-owned parcels
+        if (parcel.owner === 'City') {
+            this.game.showNotification('Cannot auction City-owned parcels', 'error');
+            return;
+        }
+
         // Get parcel info and calculate opening bid
         const parcelInfo = await this.getParcelAuctionInfo(row, col);
         if (!parcelInfo) {

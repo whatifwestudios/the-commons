@@ -977,11 +977,11 @@ class UIManager {
                 // Confirm quit action
                 if (confirm('Are you sure you want to quit this game? You will not be able to rejoin this match.')) {
                     // Send quit game message to server
-                    if (window.gameEconomicClient && window.gameEconomicClient.ws) {
-                        window.gameEconomicClient.ws.send(JSON.stringify({
+                    if (window.connectionManager && window.connectionManager.isConnected) {
+                        window.connectionManager.send({
                             type: 'QUIT_GAME',
                             permanent: true
-                        }));
+                        });
 
                         // Return to beer hall
                         setTimeout(() => {
@@ -1213,10 +1213,10 @@ class UIManager {
         if (!modal) return;
 
         // Request current scores from server
-        if (window.gameEconomicClient && window.gameEconomicClient.ws) {
-            window.gameEconomicClient.ws.send(JSON.stringify({
+        if (window.connectionManager && window.connectionManager.isConnected) {
+            window.connectionManager.send({
                 type: 'REQUEST_LEADERBOARD'
-            }));
+            });
         }
 
         modal.classList.add('visible');

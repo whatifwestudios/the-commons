@@ -2126,8 +2126,8 @@ class IsometricGrid {
             scoreLabel = 'Very Poor';
         }
 
-        // Convert decay rate to factor (multiply by 10000 to get basis points as a factor)
-        const decayFactor = Math.round(scoreData.decayRate * 10000);
+        // Convert decay rate to percentage for display
+        const decayPercent = (scoreData.decayRate * 100).toFixed(2);
 
         return `
             <div style="text-align: center; color: #cccccc;">
@@ -2149,10 +2149,10 @@ class IsometricGrid {
                     </div>
                     <div style="display: flex; justify-content: space-between; align-items: center;">
                         <div style="display: flex; align-items: center; gap: 4px;">
-                            <span style="font-size: 14px; color: #aaa; font-weight: 400;">Decay Factor</span>
-                            <span style="font-size: 11px; color: #888;">(lower is better)</span>
+                            <span style="font-size: 14px; color: #aaa; font-weight: 400;">Decay Rate</span>
+                            <span style="font-size: 11px; color: #888;">(daily)</span>
                         </div>
-                        <span style="font-size: 14px; color: #fff; font-weight: 500;">${decayFactor}</span>
+                        <span style="font-size: 14px; color: #fff; font-weight: 500;">${decayPercent}%/day</span>
                     </div>
                 </div>
             </div>
@@ -2358,18 +2358,65 @@ class IsometricGrid {
 
     // 🚫 CLIENT CALCULATION - DISABLED! BUSTED!
     calculateInvestmentScore(buildingData) {
-        // CLIENT-SIDE CALCULATION DISABLED - RETURN Loading... PLACEHOLDER
-        // This function was doing complex financial calculations across ALL buildings!
-        // - Getting all buildings for max/min normalization
-        // - Extracting revenues, maintenances, decay rates from every building
-        // - Calculating weighted scores with Math operations
-        // - Converting to 1-100 scale with Math.max/min/round
-        // Server should handle investment scoring for server authority!
+        const economics = buildingData.economics;
+        if (!economics) {
+            return {
+                score: 0,
+                revenue: 0,
+                maintenance: 0,
+                decayRate: 0
+            };
+        }
+
+        // Extract economic data
+        const maxRevenue = economics.maxRevenue || 0;
+        const maintenanceCost = economics.maintenanceCost || 0;
+        const decayRate = economics.decayRatePercent || 0;
+        const buildCost = economics.buildCost || 1;
+
+        // Calculate raw investment score
+        const netAnnualProfit = (maxRevenue * 12) - (maintenanceCost * 12);
+        const roi = netAnnualProfit / buildCost;
+        const decayPenalty = (1 - decayRate);
+        const rawScore = roi * decayPenalty;
+
+        // Get all buildings for normalization
+        const allBuildings = this.buildingManager.getAllBuildings();
+        const allScores = allBuildings.map(building => {
+            const econ = building.economics;
+            if (!econ) return 0;
+
+            const revenue = econ.maxRevenue || 0;
+            const maintenance = econ.maintenanceCost || 0;
+            const decay = econ.decayRatePercent || 0;
+            const cost = econ.buildCost || 1;
+
+            const profit = (revenue * 12) - (maintenance * 12);
+            const buildingRoi = profit / cost;
+            const penalty = (1 - decay);
+            return buildingRoi * penalty;
+        }).filter(score => !isNaN(score) && isFinite(score));
+
+        // Normalize to 0-100 scale
+        const minScore = Math.min(...allScores);
+        const maxScore = Math.max(...allScores);
+        const range = maxScore - minScore;
+
+        let normalizedScore;
+        if (range === 0) {
+            normalizedScore = 50; // Default if all scores are equal
+        } else {
+            normalizedScore = ((rawScore - minScore) / range) * 100;
+        }
+
+        // Ensure score is between 0-100
+        normalizedScore = Math.max(0, Math.min(100, normalizedScore));
+
         return {
-            score: 'Loading...',
-            revenue: 'Loading...',
-            maintenance: 'Loading...',
-            decayRate: 'Loading...'
+            score: Math.round(normalizedScore),
+            revenue: maxRevenue,
+            maintenance: maintenanceCost,
+            decayRate: decayRate
         };
     }
 
@@ -4376,12 +4423,12 @@ class IsometricGrid {
             case 'REQUEST_ROOM_SYNC':
                 // Request fresh room state from server via WebSocket
                 // Requesting fresh room state
-                if (this.economicClient.ws && this.economicClient.ws.readyState === 1) {
-                    this.economicClient.ws.send(JSON.stringify({
+                if (window.connectionManager && window.connectionManager.isConnected) {
+                    window.connectionManager.send({
                         type: 'REQUEST_ROOM_STATE',
                         playerId: this.currentPlayerId,
                         timestamp: Date.now()
-                    }));
+                    });
                 }
                 break;
 

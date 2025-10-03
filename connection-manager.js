@@ -27,8 +27,6 @@ class ConnectionManager {
 
     /**
      * Connect to WebSocket server
-     * @param {string} url - WebSocket URL
-     * @returns {Promise<void>}
      */
     async connect(url) {
         this.url = url;
@@ -36,19 +34,16 @@ class ConnectionManager {
         return new Promise((resolve, reject) => {
             try {
                 this.ws = new WebSocket(url);
-
                 this.ws.onopen = (event) => {
                     this.handleOpen(event);
                     resolve();
                 };
-
                 this.ws.onmessage = this.handleMessage;
                 this.ws.onclose = this.handleClose;
                 this.ws.onerror = (event) => {
                     this.handleError(event);
                     reject(new Error('WebSocket connection failed'));
                 };
-
             } catch (error) {
                 reject(error);
             }
@@ -153,7 +148,6 @@ class ConnectionManager {
     // Private methods
 
     handleOpen(event) {
-        console.log('📡 ConnectionManager: Connected to server');
         this.isConnected = true;
         this.reconnectAttempts = 0;
         this.startHeartbeat();
@@ -165,9 +159,14 @@ class ConnectionManager {
         try {
             const message = JSON.parse(event.data);
 
-            // Handle heartbeat responses
+            // Handle heartbeat messages
             if (message.type === 'PONG') {
                 this.handlePong();
+                return;
+            }
+
+            if (message.type === 'PING') {
+                this.handlePing(message);
                 return;
             }
 
@@ -178,32 +177,29 @@ class ConnectionManager {
                     try {
                         callback(message);
                     } catch (error) {
-                        console.error(`📡 Error in message callback for ${message.type}:`, error);
+                        console.error(`Message handler error for ${message.type}:`, error);
                     }
                 });
             } else {
-                console.warn(`📡 No subscribers for message type: ${message.type}`);
+                console.warn(`No subscribers for message type: ${message.type}`);
             }
 
         } catch (error) {
-            console.error('📡 Failed to parse WebSocket message:', error, event.data);
+            console.error('Failed to parse WebSocket message:', error);
         }
     }
 
     handleClose(event) {
-        console.log(`📡 ConnectionManager: Disconnected (${event.code}: ${event.reason})`);
         this.isConnected = false;
         this.stopHeartbeat();
         this.emitConnectionEvent('disconnected', event);
 
-        // Attempt reconnection if not a clean close
         if (event.code !== 1000 && this.reconnectAttempts < this.maxReconnectAttempts) {
             this.attemptReconnection();
         }
     }
 
     handleError(event) {
-        console.error('📡 ConnectionManager: WebSocket error:', event);
         this.emitConnectionEvent('error', event);
     }
 
@@ -215,32 +211,27 @@ class ConnectionManager {
 
         this.reconnectAttempts++;
         const delay = Math.min(this.reconnectDelay * Math.pow(2, this.reconnectAttempts - 1), 30000);
+        const jitter = Math.random() * delay * 0.2; // Add up to 20% jitter
+        const finalDelay = delay + jitter;
 
-        console.log(`📡 Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts})`);
-        this.emitConnectionEvent('reconnecting', { attempt: this.reconnectAttempts, delay });
+        console.log(`📡 Reconnecting in ${finalDelay.toFixed(0)}ms (attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts})`);
+        this.emitConnectionEvent('reconnecting', { attempt: this.reconnectAttempts, delay: finalDelay });
 
         setTimeout(async () => {
             try {
                 await this.connect(this.url);
             } catch (error) {
                 console.error('📡 Reconnection failed:', error);
-                this.attemptReconnection();
+                // this.attemptReconnection(); // The close event will trigger the next attempt
             }
-        }, delay);
+        }, finalDelay);
     }
 
     startHeartbeat() {
         this.stopHeartbeat();
-
         this.heartbeatInterval = setInterval(() => {
             if (this.isConnected && this.ws.readyState === WebSocket.OPEN) {
                 this.send({ type: 'PING', timestamp: Date.now() });
-
-                // Set timeout for pong response
-                this.heartbeatTimeout = setTimeout(() => {
-                    console.warn('📡 Heartbeat timeout - closing connection');
-                    this.ws.close(1000, 'Heartbeat timeout');
-                }, 10000);
             }
         }, 30000);
     }
@@ -263,6 +254,16 @@ class ConnectionManager {
             this.heartbeatTimeout = null;
         }
     }
+
+    handlePing(message) {
+        this.send({
+            type: 'PONG',
+            connectionId: message.connectionId,
+            timestamp: Date.now()
+        });
+    }
+
+
 
     flushMessageQueue() {
         while (this.messageQueue.length > 0 && this.isConnected) {

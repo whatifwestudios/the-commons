@@ -12,7 +12,7 @@ class ActionMarketplaceV2 {
     constructor(game) {
         this.game = game;
         this.isVisible = false;
-        this.activeTab = 'marketplace';
+        this.activeTab = 'your-actions';
 
         // Server-authoritative data (synced via WebSocket)
         this.listings = new Map();
@@ -91,6 +91,10 @@ class ActionMarketplaceV2 {
         if (modal) {
             modal.classList.add('visible');
             this.isVisible = true;
+
+            // Ensure the default tab is active
+            this.switchTab('your-actions');
+
             this.updateModal();
             this.refreshListings();
 
@@ -129,28 +133,20 @@ class ActionMarketplaceV2 {
         // Update tab buttons
         const tabs = document.querySelectorAll('.marketplace-tabs .tab-btn');
         tabs.forEach(tab => {
-            if (tab.getAttribute('data-tab') === tabName) {
-                tab.classList.add('active');
-            } else {
-                tab.classList.remove('active');
-            }
+            tab.classList.toggle('active', tab.getAttribute('data-tab') === tabName);
         });
 
-        // Update tab content
-        const contents = document.querySelectorAll('.action-marketplace .tab-content');
+        // Update tab content - rely only on CSS classes, not inline styles
+        const contents = document.querySelectorAll('#action-marketplace-modal .tab-content');
         contents.forEach(content => {
-            if (content.id === tabName) {
-                content.style.display = 'block';
-            } else {
-                content.style.display = 'none';
-            }
+            content.classList.toggle('active', content.id === tabName);
         });
 
         // Refresh content based on tab
         if (tabName === 'marketplace') {
             this.refreshListings();
-        } else if (tabName === 'history') {
-            this.refreshTransactionHistory();
+        } else if (tabName === 'your-actions') {
+            this.refreshYourActions();
         }
     }
 
@@ -261,58 +257,49 @@ class ActionMarketplaceV2 {
      */
 
     async listActionsForSale() {
-        console.log('🏪 DEBUG: listActionsForSale() called');
 
         const quantity = parseInt(document.getElementById('sell-quantity').value) || 0;
         const reservePrice = parseInt(document.getElementById('sell-reserve').value) || 0;
         const buyNowPrice = parseInt(document.getElementById('sell-buynow').value) || 0;
 
-        console.log('🏪 DEBUG: Form values:', { quantity, reservePrice, buyNowPrice });
 
         // Validate
         const currentActions = this.game.economicClient?.getCurrentPlayerActions();
-        console.log('🏪 DEBUG: Current actions:', currentActions);
 
         if (currentActions === null) {
-            console.log('🏪 DEBUG: Actions data not loaded yet');
             this.game.showNotification('Loading action data...', 'info');
             return;
         }
         if (quantity <= 0 || quantity > currentActions) {
-            console.log('🏪 DEBUG: Invalid quantity validation failed');
             this.game.showNotification('Invalid quantity!', 'error');
             return;
         }
 
         if (reservePrice <= 0) {
-            console.log('🏪 DEBUG: Invalid reserve price validation failed');
             this.game.showNotification('Please set a reserve price!', 'error');
             return;
         }
 
-        console.log('🏪 DEBUG: Validation passed, checking economic client');
         if (!this.game.economicClient) {
-            console.error('🏪 DEBUG: No economic client available');
+            console.error('No economic client available');
             this.game.showNotification('Economic client not ready', 'error');
             return;
         }
 
-        console.log('🏪 DEBUG: Checking ConnectionManager state');
         if (!this.game.economicClient.connectionManager) {
-            console.error('🏪 DEBUG: ConnectionManager not initialized');
+            console.error('ConnectionManager not initialized');
             this.game.showNotification('Connection not ready - please wait', 'error');
             return;
         }
 
         if (!this.game.economicClient.connectionManager.isConnected) {
-            console.error('🏪 DEBUG: ConnectionManager not connected');
+            console.error('ConnectionManager not connected');
             this.game.showNotification('Connection not established - please wait', 'error');
             return;
         }
 
-        console.log('🏪 DEBUG: Checking player ID');
         if (!this.game.currentPlayerId) {
-            console.error('🏪 DEBUG: No current player ID');
+            console.error('No current player ID');
             this.game.showNotification('Player ID not ready', 'error');
             return;
         }
@@ -339,13 +326,13 @@ class ActionMarketplaceV2 {
 
                 this.game.showNotification(`Listed ${quantity} actions for $${reservePrice.toLocaleString()}+`, 'success');
                 this.updateModal();
-                this.switchTab('marketplace');
+                this.switchTab('your-actions');
             } else {
-                console.error('🏪 DEBUG: Server rejected transaction:', result.error);
+                console.error('Server rejected transaction:', result.error);
                 this.game.showNotification(result.error || 'Failed to create listing', 'error');
             }
         } catch (error) {
-            console.error('🏪 DEBUG: Exception during transaction:', error);
+            console.error('Exception during transaction:', error);
             this.game.showNotification('Failed to create listing', 'error');
         }
     }
@@ -516,19 +503,73 @@ class ActionMarketplaceV2 {
      */
 
     refreshListings() {
-        const container = document.getElementById('action-listings');
-        if (!container) return;
+        // Simple: just refresh both marketplace sections
+        this.refreshMarketplaceYourListings();
+        this.refreshMarketplaceOthersListings();
+    }
 
-        container.innerHTML = '';
+    refreshMarketplaceYourListings() {
 
-        const activeListings = Array.from(this.listings.values()).filter(l => l.status === 'active');
-
-        if (activeListings.length === 0) {
-            container.innerHTML = '<p style="color: #888; text-align: center; padding: 20px;">No active listings</p>';
+        const container = document.getElementById('marketplace-your-listings');
+        if (!container) {
             return;
         }
 
-        activeListings.forEach(listing => {
+        // Use the same reliable pattern as refreshYourActions
+        const allListings = Array.from(this.listings.values());
+        const yourListings = allListings.filter(l => l.sellerId === this.game.currentPlayerId && l.status === 'active');
+
+        container.innerHTML = '';
+        if (yourListings.length === 0) {
+            container.innerHTML = '<p style="color: #888; text-align: center; padding: 16px;">You have no active listings</p>';
+        } else {
+            yourListings.forEach(listing => {
+                const listingEl = this.createListingElement(listing);
+                container.appendChild(listingEl);
+            });
+        }
+    }
+
+    refreshMarketplaceOthersListings() {
+
+        const container = document.getElementById('action-listings');
+        if (!container) {
+            return;
+        }
+
+        // Use the same reliable pattern as refreshYourActions
+        const allListings = Array.from(this.listings.values());
+        const othersListings = allListings.filter(l => l.sellerId !== this.game.currentPlayerId && l.status === 'active');
+
+        container.innerHTML = '';
+        if (othersListings.length === 0) {
+            container.innerHTML = '<p style="color: #888; text-align: center; padding: 20px;">No other players have listings</p>';
+        } else {
+            othersListings.forEach(listing => {
+                const listingEl = this.createListingElement(listing);
+                container.appendChild(listingEl);
+            });
+        }
+    }
+
+    refreshYourActions() {
+
+        const container = document.getElementById('your-actions-content');
+        if (!container) {
+            return;
+        }
+
+        container.innerHTML = '';
+
+        const allListings = Array.from(this.listings.values());
+        const yourListings = allListings.filter(l => l.sellerId === this.game.currentPlayerId && l.status === 'active');
+
+        if (yourListings.length === 0) {
+            container.innerHTML = '<p style="color: #888; text-align: center; padding: 20px;">You have no active listings</p>';
+            return;
+        }
+
+        yourListings.forEach(listing => {
             const listingEl = this.createListingElement(listing);
             container.appendChild(listingEl);
         });
@@ -616,13 +657,6 @@ class ActionMarketplaceV2 {
         });
     }
 
-    refreshTransactionHistory() {
-        const container = document.getElementById('transaction-history');
-        if (!container) return;
-
-        container.innerHTML = '<p style="color: #888; text-align: center; padding: 20px;">No transactions yet</p>';
-        // TODO: Implement transaction history from server
-    }
 
     /**
      * UTILITY METHODS
@@ -678,10 +712,15 @@ class ActionMarketplaceV2 {
             this.avgPrice = marketplaceData.avgPrice;
         }
 
-        // Refresh UI if visible
+        // Always refresh marketplace containers if they exist (data should be ready for when user switches to marketplace)
+        this.refreshMarketplaceYourListings();
+        this.refreshMarketplaceOthersListings();
+
+        // Refresh UI if modal is visible
         if (this.isVisible) {
-            this.refreshListings();
+            this.refreshYourActions(); // Also refresh Your Actions tab if modal is open
             this.updateModal();
+        } else {
         }
     }
 

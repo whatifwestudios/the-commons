@@ -1196,6 +1196,14 @@
             display: block;
         }
 
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
         .governance-panel {
             padding: 15px;
             height: 100%;
@@ -2657,56 +2665,75 @@
             <div class="modal-body">
                 <div class="marketplace-tabs">
                     <button class="tab-btn active" data-tab="your-actions">Your Actions</button>
-                    <button class="tab-btn" data-tab="marketplace">Marketplace</button>
-                    <button class="tab-btn" data-tab="history">History</button>
+                    <button class="tab-btn" data-tab="marketplace">Market</button>
                 </div>
                 
                 <div class="tab-content active" id="your-actions">
-                    <div class="action-balance">
-                        <h3>Current Balance</h3>
+                    <div class="action-balance" style="margin-bottom: 20px; padding: 16px; background: rgba(116, 185, 255, 0.1); border-radius: 8px;">
+                        <h3 style="margin: 0 0 12px 0;">Current Balance</h3>
                         <div class="balance-display">
                             <span class="balance-number" id="modal-action-balance">10</span>
                             <span class="balance-label">actions available</span>
                         </div>
-                        <div class="balance-info">
-                            <p>Used this month: <span id="modal-actions-used">0</span></p>
+                        <div class="balance-info" style="margin-top: 12px;">
+                            <p style="margin: 4px 0;">Used this month: <span id="modal-actions-used">0</span></p>
                             <p id="month-end-countdown" style="font-weight: bold; margin: 8px 0;">--</p>
-                            <p class="rollover-text">
+                            <p class="rollover-text" style="margin: 8px 0 0 0; font-size: 13px;">
                                 <strong>✓ Purchased actions never expire and rollover monthly until used</strong>
                             </p>
                         </div>
                     </div>
-                    <div class="sell-actions">
-                        <h3>Sell Actions</h3>
-                        <div class="sell-form">
-                            <input type="number" id="sell-quantity" min="1" max="10" value="1" placeholder="Quantity">
-                            <input type="number" id="sell-reserve" min="1000" placeholder="Starting price per Action">
-                            <input type="number" id="sell-buynow" min="1000" placeholder="Buy now price (optional)">
-                            <button class="btn-primary" onclick="window.game.listActionsForSale()">List for Sale</button>
+
+                    <div class="sell-actions" style="margin-bottom: 20px; padding: 16px; background: rgba(0, 184, 148, 0.1); border-radius: 8px;">
+                        <h3 style="margin: 0 0 12px 0;">Sell Actions</h3>
+                        <div class="sell-form" style="display: flex; flex-direction: column; gap: 8px;">
+                            <input type="number" id="sell-quantity" min="1" max="10" value="1" placeholder="Quantity" style="padding: 8px;">
+                            <input type="number" id="sell-reserve" min="1000" placeholder="Starting price per Action" style="padding: 8px;">
+                            <input type="number" id="sell-buynow" min="1000" placeholder="Buy now price (optional)" style="padding: 8px;">
+                            <button class="btn-primary" onclick="window.game.listActionsForSale()" style="margin-top: 4px; padding: 10px;">List for Sale</button>
+                        </div>
+                    </div>
+
+                    <div class="your-listings" style="padding: 16px; background: rgba(255, 255, 255, 0.05); border-radius: 8px;">
+                        <h3 style="margin: 0 0 12px 0;">Your Active Listings</h3>
+                        <div id="your-actions-content" class="listings-container">
+                            <p style="color: #888; text-align: center; padding: 16px;">No active listings</p>
                         </div>
                     </div>
                 </div>
                 
-                <div class="tab-content" id="marketplace" style="display: none;">
+                <div class="tab-content" id="marketplace">
                     <div class="marketplace-header">
-                        <h3>Active Listings</h3>
+                        <h3>🏪 Action Marketplace</h3>
                         <div class="market-stats">
-                            <span>Avg Price: <span id="modal-avg-price">--</span></span>
-                            <span>Active Listings: <span id="modal-active-listings">0</span></span>
+                            <div class="stat-item">
+                                <span class="stat-label">Average Price:</span>
+                                <span class="stat-value" id="modal-avg-price">--</span>
+                            </div>
+                            <div class="stat-item">
+                                <span class="stat-label">Active Listings:</span>
+                                <span class="stat-value" id="modal-active-listings">0</span>
+                            </div>
                         </div>
                     </div>
-                    <div style="background: #141414; padding: 10px; border-radius: 4px; margin-bottom: 15px; font-size: 12px; color: #888;">
-                        <strong style="color: #42B96E;">Note:</strong> Purchased actions are permanent assets that rollover each month until used. Buy now to build your action reserve!
+
+                    <div class="your-marketplace-listings" style="margin-bottom: 24px;">
+                        <h4 style="margin: 0 0 12px 0; color: #74B9FF;">Your Active Listings</h4>
+                        <div id="marketplace-your-listings" class="listings-container">
+                            <p style="color: #888; text-align: center; padding: 16px;">You have no active listings</p>
+                        </div>
                     </div>
-                    <div class="listings-container" id="action-listings">
-                        <!-- Listings will be populated here -->
-                    </div>
-                </div>
-                
-                <div class="tab-content" id="history" style="display: none;">
-                    <h3>Transaction History</h3>
-                    <div class="history-container" id="transaction-history">
-                        <!-- History will be populated here -->
+
+                    <div class="other-marketplace-listings">
+                        <h4 style="margin: 0 0 12px 0; color: #00B894;">Other Players' Listings</h4>
+                        <div class="marketplace-info" style="margin-bottom: 16px;">
+                            <p style="margin: 0; font-size: 14px; color: #666;"><strong>💡 Tip:</strong> Actions are permanent assets that rollover monthly until used. Buy actions to build your strategic reserve!</p>
+                        </div>
+                        <div class="listings-container" id="action-listings">
+                            <div class="loading-placeholder">
+                                <p>Loading marketplace data...</p>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -2988,7 +3015,6 @@
     <script src="action-manager.js"></script>
     <script src="action-marketplace-v2.js"></script>
     <script src="parcel-auction-system.js"></script>
-    <script src="sync-health-checker.js"></script>
     <script src="game.js?v=13"></script>
 
     <script>

@@ -217,7 +217,9 @@ body.beer-hall-active #top-bar {
 
 .leaderboard-header {
     display: grid;
-    grid-template-columns: 80px 1fr 120px 120px 120px;
+    flex-direction: row;
+    justify-content: space-between;
+    grid-template-columns: 90px .9fr 90px 180px 90px;
     gap: 15px;
     padding: 18px 20px;
     background: #1a1a1a;

@@ -891,32 +891,23 @@ class EconomicClient {
         // Sync monthly action allowance
         if (gameState.monthlyActionAllowance !== undefined) {
             this.monthlyActionAllowance = gameState.monthlyActionAllowance;
-            console.log('🎯 Monthly action allowance synced from server:', this.monthlyActionAllowance);
-            // Update action display when monthly allowance is synced
-            if (this.game && this.game.updateActionDisplay) {
+            if (this.game?.updateActionDisplay) {
                 this.game.updateActionDisplay();
             }
         }
-        // Sync server-authoritative action costs
         if (gameState.actionCosts) {
             this.actionCosts = gameState.actionCosts;
-            console.log('🎯 Action costs synced from server:', this.actionCosts);
-            // Update action display when monthly allowance is synced
-            if (this.game && this.game.updateActionDisplay) {
+            if (this.game?.updateActionDisplay) {
                 this.game.updateActionDisplay();
             }
         }
 
-        // Sync governance data (treasury, tax rate)
         if (gameState.governance) {
             this.governance = gameState.governance;
-            // Treasury synced
         }
 
-        // Sync cashflow data for current player
         if (gameState.cashflow && this.playerId && gameState.cashflow[this.playerId]) {
             this.dailyCashflowTotals = gameState.cashflow[this.playerId];
-            // Cashflow synced
         }
 
         // V2: Process vitality data for UI
@@ -964,13 +955,9 @@ class EconomicClient {
                 this.playerActions[player.id] = player.actions?.total || 0;
             });
 
-            // Update action display when player actions are synced
-            if (this.game && this.game.updateActionDisplay) {
+            if (this.game?.updateActionDisplay) {
                 this.game.updateActionDisplay();
             }
-
-            // Balance and action sync logging (reduced frequency)
-            // Player data synced
         }
 
         // Sync action marketplace data
@@ -984,12 +971,9 @@ class EconomicClient {
         }
 
         // Update current player cash if available
-        console.log(`💰 SYNC DEBUG: playerId=${this.playerId}, gameState.players keys:`, Object.keys(gameState.players || {}));
         if (this.playerId && gameState.players[this.playerId]) {
             const playerData = gameState.players[this.playerId];
             const newBalance = playerData.cash;
-
-            console.log(`💰 SYNC SUCCESS: Player ${this.playerId} cash: ${newBalance}`);
 
             // Server-authoritative: Store server balance and wealth
             this.serverBalance = newBalance;
@@ -1064,10 +1048,8 @@ class EconomicClient {
             this.cachedCashflow = gameState.cashflow;
         }
 
-        // Sync monthly budget data for category funding display
         if (gameState.monthlyBudget) {
             this.monthlyBudget = gameState.monthlyBudget;
-            // Monthly budget data synced: revenue: ${this.monthlyBudget.totalRevenue || 0}
         }
 
         // Skip individual player governance sync - handled via individual transactions
@@ -1126,13 +1108,9 @@ class EconomicClient {
                     images: building.images
                 };
 
-                // Building graphics loaded
                 syncedCount++;
-            } else {
-                console.warn(`⚠️ Invalid building location`);
             }
         });
-
     }
 
     /**
@@ -1220,25 +1198,16 @@ class EconomicClient {
      */
 
     /**
-     * Initialize WebSocket connection for real-time multiplayer updates
+     * Initialize connection via ConnectionManager
      */
     initializeConnection() {
-        // Economic Client connects directly via ConnectionManager
         this.connectionManager = window.connectionManager;
 
         if (!this.connectionManager) {
-            console.error('💥 ConnectionManager not available! Retrying in 1 second...');
-
-            // Retry after 1 second if ConnectionManager isn't ready yet
-            setTimeout(() => {
-                this.initializeConnection();
-            }, 1000);
+            setTimeout(() => this.initializeConnection(), 1000);
             return;
         }
 
-        console.log('🔌 Economic Client connecting via ConnectionManager');
-
-        // Subscribe to game-related messages
         this.setupGameSubscriptions();
     }
 
@@ -1292,17 +1261,13 @@ class EconomicClient {
             }
         });
 
-        // Connection events
+        // Connection status tracking
         this.connectionManager.on('connected', () => {
-            console.log('💰 Economic Client: Connection established');
+            this.requestGameStateSync();
         });
 
         this.connectionManager.on('disconnected', () => {
-            console.warn('💰 Economic Client: Connection lost');
-        });
-
-        this.connectionManager.on('reconnecting', (data) => {
-            console.log(`💰 Economic Client: Reconnecting (attempt ${data.attempt})`);
+            this.stopDisplayTimer();
         });
     }
 
@@ -1312,14 +1277,10 @@ class EconomicClient {
      * Handle real-time WebSocket updates from server
      */
     handleWebSocketUpdate(update) {
-        // Processing WebSocket update
-
         switch (update.type) {
             case 'CONNECTED':
-                // WebSocket connected via ConnectionManager
                 if (update.playerId) {
                     this.playerId = update.playerId;
-                    console.log('💰 Economic Client received player ID:', this.playerId);
 
                     // Notify game that player ID is ready
                     if (this.onPlayerIdReady) {
@@ -1327,17 +1288,8 @@ class EconomicClient {
                     }
                 }
 
-                // Handle room state sync
                 if (update.roomState) {
-                    if (window.DEBUG_MODE) {
-                        // Joined multiplayer room
-                    }
-
-                    // Sync existing buildings from room
                     if (update.roomState.buildings && update.roomState.buildings.length > 0) {
-                        // Syncing existing buildings
-
-                        // Store buildings in local data
                         this.buildings = new Map();
                         update.roomState.buildings.forEach(building => {
                             this.buildings.set(building.locationKey, building);
@@ -1354,33 +1306,24 @@ class EconomicClient {
                 break;
 
             case 'PLAYER_IDENTIFIED':
-                // 🔧 FIX: Confirmation that server accepted our existing player ID
-                // Server confirmed player ID
                 if (update.playerId && this.game.currentPlayerId === update.playerId) {
                     this.playerId = update.playerId;
-                    // Economic client using correct player ID
-                } else {
-                    console.warn('⚠️ Player ID mismatch detected');
                 }
                 break;
 
             case 'ECONOMIC_UPDATE':
-                // Real-time economic state update
                 this.handleEconomicUpdate(update);
                 break;
 
             case 'DAILY_UPDATE':
-                // Daily game progression update
                 this.handleDailyUpdate(update);
                 break;
 
             case 'LEADERBOARD_UPDATE':
-                // Commonwealth Score leaderboard update
                 this.handleLeaderboardUpdate(update);
                 break;
 
             case 'COMMONWEALTH_UPDATE':
-                // Real-time Commonwealth Score updates
                 this.handleCommonwealthUpdate(update);
                 break;
 
@@ -1731,268 +1674,46 @@ class EconomicClient {
     }
 
     // ===============================================
-    // 🚀 UNBREAKABLE CONNECTION RESILIENCE SYSTEM
+    // 🚀 SIMPLIFIED CONNECTION HANDLING
     // ===============================================
 
     /**
-     * Generate unique connection ID for tracking
+     * Send message via ConnectionManager
      */
-    generateConnectionId() {
-        return 'conn_' + Math.random().toString(36).substr(2, 9) + '_' + Date.now();
-    }
-
-    /**
-     * Handle disconnection - Beer Hall now manages reconnection
-     */
-    handleDisconnection() {
-        console.log('⚠️ Economic Client detected disconnection - Beer Hall will handle reconnection');
-
-        // Just update status - Beer Hall handles the actual reconnection
-        this.isConnected = false;
-        this.connectionLost = true;
-        this.stopHeartbeat();
-        this.stopDisplayTimer();
-
-        // Connection lost - handled silently
-    }
-
-    /**
-     * Attempt to reconnect to WebSocket
-     */
-    attemptReconnection() {
-        console.log(`🔌 Attempting reconnection (${this.reconnectAttempts}/${this.maxReconnectAttempts})...`);
-
-        try {
-            // Generate new connection ID for this attempt
-            this.connectionId = this.generateConnectionId();
-
-            // Initialize new WebSocket connection
-            this.initializeWebSocket();
-
-        } catch (error) {
-            console.error('🔥 Reconnection failed:', error);
-            this.handleDisconnection(); // Try again
+    sendMessage(message) {
+        if (this.connectionManager?.isConnected) {
+            this.connectionManager.send(message);
+            return true;
         }
+        return false;
     }
 
     /**
-     * Handle Beer Hall reconnection
+     * Request game state sync via ConnectionManager
      */
-    handleBeerHallReconnection() {
-        console.log('🎉 Economic Client notified of Beer Hall reconnection!');
-        this.isConnected = true;
-        this.connectionLost = false;
 
-        // Request fresh game state
-        this.requestGameStateSync();
-
-        // Start heartbeat
-        this.startHeartbeat();
-    }
-
-    /**
-     * Handle successful reconnection
-     */
-    handleReconnection() {
-        console.log('🎉 WebSocket reconnected successfully!');
-        this.isConnected = true;
-        this.connectionLost = false;
-        this.reconnectAttempts = 0; // Reset counter
-
-        // Clear any reconnection timeout
-        if (this.reconnectTimeout) {
-            clearTimeout(this.reconnectTimeout);
-            this.reconnectTimeout = null;
-        }
-
-        // Start heartbeat
-        this.startHeartbeat();
-
-        // Process queued messages
-        this.processMessageQueue();
-
-        // Request fresh game state
-        this.requestGameStateSync();
-
-        // Reconnection successful - handled silently
-    }
-
-    /**
-     * Start heartbeat to monitor connection health
-     */
-    startHeartbeat() {
-        if (this.heartbeatInterval) {
-            clearInterval(this.heartbeatInterval);
-        }
-
-        // ConnectionManager handles heartbeat automatically
-        console.log('💓 ConnectionManager will handle heartbeat');
-    }
-
-    /**
-     * Stop heartbeat monitoring
-     */
-    stopHeartbeat() {
-        if (this.heartbeatInterval) {
-            clearInterval(this.heartbeatInterval);
-            this.heartbeatInterval = null;
-        }
-    }
-
-    /**
-     * Send heartbeat ping to server
-     */
-    sendHeartbeat() {
-        const ping = {
-            type: 'PING',
-            connectionId: this.connectionId,
-            timestamp: Date.now()
-        };
-
-        this.sendMessage(ping, false); // Don't queue heartbeats
-        this.lastHeartbeat = Date.now();
-    }
-
-    /**
-     * Enhanced message sending with queuing
-     */
-    sendMessage(message, queueIfOffline = true) {
-        // Send via ConnectionManager
-        if (this.connectionManager && this.connectionManager.isConnected) {
-            try {
-                this.connectionManager.send(message);
-                return true;
-            } catch (error) {
-                console.error('💥 Failed to send message via ConnectionManager:', error);
-                return false;
-            }
-        } else {
-            if (window.DEBUG_MODE) {
-                console.warn('⚠️ ConnectionManager not connected - message dropped');
-            }
-            return false;
-        }
-    }
-
-    /**
-     * Queue message for sending when reconnected
-     */
-    queueMessage(message) {
-        // Don't queue heartbeats or duplicate messages
-        if (message.type === 'PING' || message.type === 'PONG') {
-            return;
-        }
-
-        // Limit queue size to prevent memory issues
-        if (this.messageQueue.length >= 100) {
-            this.messageQueue.shift(); // Remove oldest message
-        }
-
-        message.queuedAt = Date.now();
-        this.messageQueue.push(message);
-        console.log(`📦 Queued message: ${message.type} (${this.messageQueue.length} in queue)`);
-    }
-
-    /**
-     * Process queued messages after reconnection
-     */
-    processMessageQueue() {
-        if (this.messageQueue.length === 0) {
-            return;
-        }
-
-        console.log(`📨 Processing ${this.messageQueue.length} queued messages...`);
-
-        const now = Date.now();
-        const maxAge = 60000; // 1 minute max age
-
-        // Filter out stale messages
-        const validMessages = this.messageQueue.filter(msg => {
-            return (now - msg.queuedAt) < maxAge;
-        });
-
-        // Send valid messages
-        validMessages.forEach(message => {
-            delete message.queuedAt; // Remove queue metadata
-            this.sendMessage(message, false); // Don't re-queue
-        });
-
-        this.messageQueue = [];
-        console.log(`✅ Processed ${validMessages.length} valid messages`);
-    }
-
-    /**
-     * Request full game state sync after reconnection
-     */
     requestGameStateSync() {
         const syncRequest = {
             type: 'REQUEST_GAME_STATE_SYNC',
-            connectionId: this.connectionId,
             playerId: this.game?.currentPlayerId,
             timestamp: Date.now()
         };
 
         this.sendMessage(syncRequest);
-        console.log('🔄 Requested game state synchronization');
     }
 
     /**
-     * Show reconnecting UI indicator
-     */
-    showReconnectingUI(attempt, delay) {
-        // Silent reconnection - no UI distraction
-    }
-
-    /**
-     * Show connection lost UI
-     */
-    showConnectionLostUI() {
-        // Silent connection handling - no UI distraction
-    }
-
-    /**
-     * Hide reconnection UI
-     */
-    hideReconnectingUI() {
-        // Remove any existing connection status UI silently
-        const statusDiv = document.getElementById('connection-status');
-        if (statusDiv && statusDiv.parentNode) {
-            statusDiv.parentNode.removeChild(statusDiv);
-        }
-    }
-
-    // ===============================================
-    // 🎯 ROOT CAUSE FIX: PAGE VISIBILITY HANDLING
-    // ===============================================
-
-    /**
-     * Prevent browser from killing WebSocket when tab goes background
+     * Handle page visibility changes
      */
     setupPageVisibilityHandling() {
-        console.log('🎯 Setting up page visibility handling to prevent disconnections');
-
-        // Handle page visibility changes
         document.addEventListener('visibilitychange', () => {
-            if (document.hidden) {
-                console.log('📱 Tab backgrounded - maintaining WebSocket connection');
-                // Reduce heartbeat frequency to save battery but keep connection alive
-                this.adjustHeartbeatForBackground(true);
-            } else {
-                console.log('📱 Tab foregrounded - resuming normal operation');
-                // Resume normal heartbeat frequency
-                this.adjustHeartbeatForBackground(false);
-
-                // Request fresh game state in case we missed updates
+            if (!document.hidden) {
                 this.requestGameStateSync();
             }
         });
 
-        // Handle page beforeunload (prevent accidental disconnections)
-        window.addEventListener('beforeunload', (event) => {
-            console.log('🚪 Page unloading - preserving connection state');
-            // Don't prevent unload, but prepare for reconnection
-            if (this.connectionManager && this.connectionManager.isConnected) {
-                // Send a graceful disconnect message
+        window.addEventListener('beforeunload', () => {
+            if (this.connectionManager?.isConnected) {
                 this.connectionManager.send({
                     type: 'GRACEFUL_DISCONNECT',
                     playerId: this.game?.currentPlayerId,
@@ -2000,53 +1721,6 @@ class EconomicClient {
                 });
             }
         });
-
-        // Handle focus/blur events for additional stability
-        window.addEventListener('focus', () => {
-            console.log('🎯 Window focused - ensuring connection health');
-            this.checkConnectionHealth();
-            // Resume normal heartbeat frequency
-            this.adjustHeartbeatForBackground(false);
-        });
-
-        window.addEventListener('blur', () => {
-            console.log('🎯 Window blurred - entering background mode');
-            // Send immediate heartbeat to keep connection alive
-            this.sendHeartbeat();
-            // Adjust heartbeat for background mode
-            this.adjustHeartbeatForBackground(true);
-        });
-    }
-
-    /**
-     * Adjust heartbeat frequency based on page visibility
-     */
-    adjustHeartbeatForBackground(isBackground) {
-        if (isBackground) {
-            // Slower heartbeat to save battery but keep connection alive
-            this.heartbeatFrequency = 60000; // 60 seconds
-            console.log('💓 Reduced heartbeat to 60s for background mode');
-        } else {
-            // Normal heartbeat frequency
-            this.heartbeatFrequency = 30000; // 30 seconds
-            console.log('💓 Restored heartbeat to 30s for foreground mode');
-        }
-
-        // Restart heartbeat with new frequency
-        this.startHeartbeat();
-    }
-
-    /**
-     * Check connection health and reconnect if needed
-     */
-    checkConnectionHealth() {
-        if (!this.connectionManager || !this.connectionManager.isConnected) {
-            console.log('🔍 Connection check failed - ConnectionManager not connected');
-        } else {
-            console.log('🔍 Connection check passed - connection healthy');
-            // Send immediate ping to verify
-            this.sendHeartbeat();
-        }
     }
 }
 

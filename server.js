@@ -53,7 +53,7 @@ const noAuth = (req, res, next) => {
 // Initialize room manager with v2 economic engine
 const roomManager = new RoomManager();
 
-// Clean multiplayer-only server - no legacy default rooms
+// Multiplayer server with room-based game management
 
 
 // Middleware
@@ -142,8 +142,13 @@ wss.on('connection', (ws, req) => {
 
     console.log(`🔌 Player ${playerId} connected, awaiting room assignment`);
 
-    // Beer hall system will handle room assignment - no auto-assignment needed
-    // Players will be assigned when they click "Enter the Commons" with their preferences
+    ws.on('pong', () => {
+        ws.lastPong = Date.now();
+        ws.isAlive = true; // Mark connection as alive when pong received
+        if (DEBUG) {
+            console.log(`💓 PONG received from ${ws.playerId}`);
+        }
+    });
 
     ws.on('message', (message) => {
         try {
@@ -164,6 +169,7 @@ wss.on('connection', (ws, req) => {
         } else {
             console.log(`❌ Player ${playerId} UNEXPECTED disconnect - Code: ${code}, Reason: ${reasonText}`);
             console.log(`🕐 Connection duration: ${duration}ms`);
+            console.log(`💓 Last ping: ${ws.lastPing ? Date.now() - ws.lastPing : 'N/A'}ms ago, Last pong: ${ws.lastPong ? Date.now() - ws.lastPong : 'N/A'}ms ago`);
 
             // Log common close codes for debugging
             const closeReasons = {
@@ -406,14 +412,9 @@ async function handleWebSocketMessage(ws, data) {
                 );
                 console.log('🏛️ Governance vote result:', result);
 
-                // Trigger game loop for governance actions
-                if (result && result.success) {
-                    global.triggerGameLoop(`governance_${data.voteType}`);
-                }
+                // No global trigger needed - room handles its own updates
 
-                // 🚫 BANDAID ELIMINATED! Economic engine auto-broadcasts on success
-                // Pure flow: action → calculated impact → server broadcast → player reaction
-                // No manual broadcast needed!
+                // Economic engine handles broadcasting automatically
             }
             break;
 
@@ -435,10 +436,7 @@ async function handleWebSocketMessage(ws, data) {
                 console.log('📥 Room-aware transaction received via WebSocket:', data.transaction.type, 'for room:', room.id);
                 const result = await room.economicEngine.processTransaction(data.transaction);
 
-                // Trigger game loop for economic actions
-                if (result.success) {
-                    global.triggerGameLoop(`websocket_${data.transaction.type}`);
-                }
+                // No global trigger needed - room handles its own updates
 
                 // Send response back via WebSocket
                 ws.send(JSON.stringify({
@@ -476,6 +474,7 @@ async function handleWebSocketMessage(ws, data) {
         case 'PONG':
             // Handle client pong response (if server initiates ping)
             ws.lastPong = Date.now();
+            ws.isAlive = true; // Mark connection as alive when pong received
             break;
 
         case 'REQUEST_GAME_STATE_SYNC':
@@ -536,57 +535,8 @@ function broadcastToAllClients(update) {
 
 // Clean multiplayer - room broadcast functions are set per room in RoomManager
 
-// Smart game loop system - runs on demand with throttling
-let lastGameLoopRun = 0;
-const GAME_LOOP_MIN_INTERVAL = 250; // 0.25 seconds minimum
-const GAME_DAY_MS = 3600000 / 365; // ~9.86 seconds per game day
-
-function runGameLoop(triggeredBy = 'timer') {
-    const now = Date.now();
-
-    // Throttle: don't run more often than every 0.25s
-    if (now - lastGameLoopRun < GAME_LOOP_MIN_INTERVAL) {
-        return;
-    }
-
-    lastGameLoopRun = now;
-
-    try {
-        if (DEBUG) {
-            console.log(`🎮 Game loop triggered by: ${triggeredBy}`);
-        }
-
-        // Update each room's game timer
-        roomManager.rooms.forEach(room => {
-            try {
-                if (room.state === 'IN_PROGRESS') {
-                    room.economicEngine.updateGameTime();
-
-                    // Process expired parcel auctions
-                    room.economicEngine.processExpiredParcelAuctions();
-
-                    // Check victory conditions (less frequently)
-                    if (now % 10000 < GAME_LOOP_MIN_INTERVAL) {
-                        room.checkVictoryConditions();
-                    }
-                }
-            } catch (roomError) {
-                console.error(`❌ Room ${room.id} processing error:`, roomError);
-                // Continue with other rooms instead of crashing
-            }
-        });
-    } catch (globalError) {
-        console.error('❌ Game loop error:', globalError);
-        // Don't exit, keep the server running
-    }
-}
-
-// Natural progression: run every game day (~9.86 seconds)
-console.log(`🕒 Setting up daily progression timer: ${GAME_DAY_MS}ms (${(GAME_DAY_MS/1000).toFixed(2)} seconds)`);
-setInterval(() => runGameLoop('daily_progression'), GAME_DAY_MS);
-
-// Make runGameLoop available globally for economic action triggers
-global.triggerGameLoop = (reason) => runGameLoop(reason);
+// REMOVED: Global game loop replaced by per-room isolated clocks
+// Each room now manages its own timer independently
 console.log('🏭 Server-side Economic Engine initialized');
 
 // ====================================================================
@@ -791,7 +741,7 @@ server.listen(PORT, () => {
  */
 function startConnectionHealthMonitoring() {
     const HEALTH_CHECK_INTERVAL = 30000; // 30 seconds
-    const STALE_CONNECTION_TIMEOUT = 120000; // 120 seconds (more forgiving)
+    const STALE_CONNECTION_TIMEOUT = 60000; // 60 seconds
 
     console.log('💓 Starting connection health monitoring');
 
@@ -800,23 +750,15 @@ function startConnectionHealthMonitoring() {
         let healthyConnections = 0;
         let staleConnections = 0;
 
-        connectedClients.forEach(ws => {
-            if (ws.readyState === WebSocket.OPEN) {
-                // Check if connection is stale (no ping in timeout period)
-                const timeSinceLastPing = now - (ws.lastPing || ws.connectionTime);
-
-                if (timeSinceLastPing > STALE_CONNECTION_TIMEOUT) {
-                    console.log(`🔥 Terminating stale connection for player ${ws.playerId} (${timeSinceLastPing}ms since last ping)`);
-                    ws.terminate();
-                    staleConnections++;
-                } else {
-                    healthyConnections++;
-                }
-            } else {
-                // Remove dead connections
-                connectedClients.delete(ws);
+        wss.clients.forEach(ws => {
+            if (ws.isAlive === false) {
                 staleConnections++;
+                return ws.terminate();
             }
+
+            ws.isAlive = false;
+            ws.ping(() => {});
+            healthyConnections++;
         });
 
         if (healthyConnections > 0 || staleConnections > 0) {

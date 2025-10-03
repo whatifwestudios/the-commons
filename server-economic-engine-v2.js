@@ -224,7 +224,7 @@ class ServerEconomicEngine {
     }
 
     /**
-     * 🚫 BANDAID ELIMINATED! Centralized player balance access
+     * Centralized player balance access
      * Get player balance with proper error handling (no fallbacks that mask missing data)
      */
     getPlayerBalance(playerId) {
@@ -299,12 +299,9 @@ class ServerEconomicEngine {
      * Update game time and trigger time-based events
      */
     updateGameTime() {
-        const previousDay = Math.floor(this.gameState.gameTime);
-
-        // Simple increment: 1 game day = GAME_DAY_MS real time
-        const timeIncrement = 1 / 365; // 1 day increment per call
-        this.gameState.gameTime += timeIncrement;
-
+        // Room now sets gameTime directly based on elapsed time
+        // This method just processes events based on current time
+        const previousDay = Math.floor(this.lastProcessedDay || 0);
         const currentDay = Math.floor(this.gameState.gameTime);
 
         // Check for building completion every update (not just daily)
@@ -314,6 +311,7 @@ class ServerEconomicEngine {
         if (currentDay > previousDay) {
             console.log(`🕒 DAY TRANSITION: ${previousDay} → ${currentDay} (time: ${this.gameState.gameTime.toFixed(3)})`);
             this.processDailyEvents();
+            this.lastProcessedDay = currentDay;
         }
 
         return this.gameState.gameTime;
@@ -478,6 +476,7 @@ class ServerEconomicEngine {
 
         // Calculate and apply budget allocations based on governance votes
         this.calculateMonthlyBudgets();
+        this.transferMonthlyFunds();
 
         console.log(`📊 Monthly events completed for ${monthName}`);
     }
@@ -629,7 +628,7 @@ class ServerEconomicEngine {
         const [row, col] = location;
         const locationKey = `${row},${col}`;
 
-        // 🔧 FIX: Use playerBalances Map directly instead of legacy players Map
+        // Use playerBalances Map for balance tracking
         const currentBalance = this.getPlayerBalance(playerId);
 
 
@@ -940,7 +939,7 @@ class ServerEconomicEngine {
         const carens = this.gameState.carens;
         const buildingCount = this.gameState.buildings.size;
 
-        console.log(`🏛️ DEBUG: Calculating CARENS with ${buildingCount} buildings`);
+        // Governance debug: Calculating CARENS with ${buildingCount} buildings`);
 
         // Start CARENS scores at neutral (0 points on -100 to +100 scale)
         let culturePoints = 0;
@@ -994,7 +993,7 @@ class ServerEconomicEngine {
         // Convert to multiplier (0.6x to 1.4x)
         carens.multiplier = 0.6 + (normalizedAvg * 0.8);
 
-        console.log(`🏛️ DEBUG: CARENS calculation - avgPoints=${avgPoints.toFixed(1)}, multiplier=${carens.multiplier.toFixed(3)}`);
+        // Governance debug: CARENS calculation - avgPoints=${avgPoints.toFixed(1)}, multiplier=${carens.multiplier.toFixed(3)}`);
         console.log('🏛️ Room-wide CARENS updated:', carens);
     }
 
@@ -1369,8 +1368,8 @@ class ServerEconomicEngine {
         const attractiveness = (coreScore * 0.7) + (qualityScore * 0.3);
 
         console.log(`🧲 Economic attractiveness: ${attractiveness.toFixed(3)} (core: ${coreScore.toFixed(3)}, quality: ${qualityScore.toFixed(3)})`);
-        console.log(`🧲 DEBUG JEEFHH multipliers: jobs=${jeefhh.jobs.multiplier.toFixed(3)}, housing=${jeefhh.housing.multiplier.toFixed(3)}, food=${jeefhh.food.multiplier.toFixed(3)}, energy=${jeefhh.energy.multiplier.toFixed(3)}`);
-        console.log(`🧲 DEBUG Quality multipliers: education=${jeefhh.education.multiplier.toFixed(3)}, healthcare=${jeefhh.healthcare.multiplier.toFixed(3)}, carens=${carens.multiplier.toFixed(3)}`);
+        // Economics debug JEEFHH multipliers: jobs=${jeefhh.jobs.multiplier.toFixed(3)}, housing=${jeefhh.housing.multiplier.toFixed(3)}, food=${jeefhh.food.multiplier.toFixed(3)}, energy=${jeefhh.energy.multiplier.toFixed(3)}`);
+        // Economics debug Quality multipliers: education=${jeefhh.education.multiplier.toFixed(3)}, healthcare=${jeefhh.healthcare.multiplier.toFixed(3)}, carens=${carens.multiplier.toFixed(3)}`);
         return attractiveness;
     }
 
@@ -1410,7 +1409,7 @@ class ServerEconomicEngine {
                 newPopulation = currentPop + dailyImmigration;
                 console.log(`🏠 EARLY GAME: ${dailyImmigration.toFixed(1)} residents move in (${currentPop.toFixed(1)} → ${newPopulation.toFixed(1)}, attractiveness: ${attractiveness.toFixed(3)})`);
             } else {
-                console.log(`🏠 DEBUG: Early game immigration blocked - attractiveness too low (${attractiveness.toFixed(3)} < 0.8)`);
+                // Housing debug: Early game immigration blocked - attractiveness too low (${attractiveness.toFixed(3)} < 0.8)`);
             }
         }
         // Established city immigration (100+ residents): economic conditions matter more
@@ -1426,13 +1425,13 @@ class ServerEconomicEngine {
                 console.log(`🏠 DEBUG Immigration Calc: immigrationRate=${immigrationRate.toFixed(3)}, availableHousing=${availableHousing.toFixed(1)}, cappedAt=${cappedImmigration.toFixed(3)}, result=${newPopulation.toFixed(3)}`);
                 console.log(`🏠 Immigration: ${dailyImmigration.toFixed(1)} new residents attracted by economic conditions (attractiveness: ${attractiveness.toFixed(3)})`);
             } else {
-                console.log(`🏠 DEBUG: No immigration - housing at capacity (${currentPop}/${maxHousingCapacity})`);
+                // Housing debug: No immigration - housing at capacity (${currentPop}/${maxHousingCapacity})`);
             }
         } else {
             if (currentPop < 100) {
-                console.log(`🏠 DEBUG: No immigration - waiting for better conditions (${currentPop}/100 residents, attractiveness: ${attractiveness.toFixed(3)})`);
+                // Housing debug: No immigration - waiting for better conditions (${currentPop}/100 residents, attractiveness: ${attractiveness.toFixed(3)})`);
             } else {
-                console.log(`🏠 DEBUG: No immigration - attractiveness=${attractiveness.toFixed(3)} (needs >1.05)`);
+                // Housing debug: No immigration - attractiveness=${attractiveness.toFixed(3)} (needs >1.05)`);
             }
         }
 
@@ -1442,7 +1441,7 @@ class ServerEconomicEngine {
             if (attractiveness < 0.95) {
                 this.gameState.emigrationTracking.poorConditionsDays++;
                 const days = this.gameState.emigrationTracking.poorConditionsDays;
-                console.log(`🏠 DEBUG: Poor conditions day ${days}/7 (attractiveness: ${attractiveness.toFixed(3)})`);
+                // Housing debug: Poor conditions day ${days}/7 (attractiveness: ${attractiveness.toFixed(3)})`);
 
                 // Graduated emigration: 3 days = warning, 5 days = small loss, 7 days = major exodus
                 if (days >= 7) {
@@ -1464,14 +1463,14 @@ class ServerEconomicEngine {
             } else {
                 // Reset counter when conditions improve
                 if (this.gameState.emigrationTracking.poorConditionsDays > 0) {
-                    console.log(`🏠 DEBUG: Conditions improved (${attractiveness.toFixed(3)}), resetting emigration counter`);
+                    // Housing debug: Conditions improved (${attractiveness.toFixed(3)}), resetting emigration counter`);
                     this.gameState.emigrationTracking.poorConditionsDays = 0;
                 }
             }
         } else if (currentPop > 0) {
             // Reset emigration tracking for early game cities (below 100 residents)
             if (this.gameState.emigrationTracking.poorConditionsDays > 0) {
-                console.log(`🏠 DEBUG: Early game - resetting emigration tracking (${currentPop}/100 residents)`);
+                // Housing debug: Early game - resetting emigration tracking (${currentPop}/100 residents)`);
                 this.gameState.emigrationTracking.poorConditionsDays = 0;
             }
         }
@@ -1502,23 +1501,23 @@ class ServerEconomicEngine {
     calculateMaxHousingCapacity() {
         let totalCapacity = 0;
 
-        console.log(`🏠 DEBUG: Calculating housing capacity from ${this.gameState.buildings.size} buildings`);
+        // Housing debug: Calculating housing capacity from ${this.gameState.buildings.size} buildings`);
         for (const [locationKey, building] of this.gameState.buildings) {
-            console.log(`🏠 DEBUG: Building ${building.id} at ${locationKey}, underConstruction: ${building.underConstruction}`);
+            // Housing debug: Building ${building.id} at ${locationKey}, underConstruction: ${building.underConstruction}`);
             if (building.underConstruction) continue;
 
             const buildingDef = this.buildingDefinitions.get(building.id);
             if (buildingDef && buildingDef.resources) {
-                console.log(`🏠 DEBUG: Building ${building.id} housing provided: ${buildingDef.resources.housingProvided}`);
+                // Housing debug: Building ${building.id} housing provided: ${buildingDef.resources.housingProvided}`);
                 if (buildingDef.resources.housingProvided > 0) {
                     totalCapacity += buildingDef.resources.housingProvided;
                 }
             } else {
-                console.log(`🏠 DEBUG: No building definition or resources for ${building.id}`);
+                // Housing debug: No building definition or resources for ${building.id}`);
             }
         }
 
-        console.log(`🏠 DEBUG: Total housing capacity: ${totalCapacity} units = ${totalCapacity * 2} people`);
+        // Housing debug: Total housing capacity: ${totalCapacity} units = ${totalCapacity * 2} people`);
         return totalCapacity * 2; // Assume 2 people per bedroom on average
     }
 
@@ -1880,7 +1879,7 @@ class ServerEconomicEngine {
      * Get or create player state
      */
     getOrCreatePlayer(playerId, playerName = null, playerColor = null) {
-        console.log(`🔍 DEBUG: getOrCreatePlayer called for ${playerId}, exists: ${this.gameState.players.has(playerId)}`);
+        // System debug: getOrCreatePlayer called for ${playerId}, exists: ${this.gameState.players.has(playerId)}`);
         if (!this.gameState.players.has(playerId)) {
             // Generate default name and color if not provided
             const defaultName = playerName || `Player ${playerId.slice(-4)}`;
@@ -1909,13 +1908,7 @@ class ServerEconomicEngine {
                         culture: 0, recreation: 0, commercial: 0, civic: 0,
                         emergency: 0, ubi: 0
                     },
-                    votes: {
-                        education: 0, healthcare: 0, infrastructure: 0, housing: 0,
-                        culture: 0, recreation: 0, commercial: 0, civic: 0,
-                        emergency: 0, ubi: 0
-                    },
-                    lvtVotesIncrease: 0, // Votes to increase LVT rate
-                    lvtVotesDecrease: 0  // Votes to decrease LVT rate
+                    lvtVote: 0 // LVT vote value (-1000 to +1000 range)
                 }
             });
 
@@ -1980,7 +1973,7 @@ class ServerEconomicEngine {
      * Calculate cashflow for all players (called daily)
      */
     calculateAllPlayerCashflows() {
-        // 🔧 FIX: Use playerBalances Map instead of legacy players Map
+        // Use playerBalances Map for balance tracking
         for (const [playerId, balance] of this.gameState.playerBalances) {
             this.calculatePlayerCashflow(playerId);
         }
@@ -1990,7 +1983,7 @@ class ServerEconomicEngine {
      * Calculate cashflow for a specific player
      */
     calculatePlayerCashflow(playerId) {
-        // 🔧 FIX: Use playerBalances Map directly instead of legacy players Map
+        // Use playerBalances Map for balance tracking
         const currentBalance = this.getPlayerBalance(playerId);
 
         let totalRevenue = 0;
@@ -2107,6 +2100,65 @@ class ServerEconomicEngine {
 
 
     /**
+     * Get marketplace data formatted for client broadcast
+     */
+    getMarketplaceDataForBroadcast() {
+        const actionMarketplace = this.gameState.actionMarketplace;
+        console.log('🏪 DEBUG: Getting marketplace data for broadcast:', {
+            hasActionMarketplace: !!actionMarketplace,
+            hasListings: !!actionMarketplace?.listings,
+            listingsIsMap: actionMarketplace?.listings instanceof Map,
+            listingsSize: actionMarketplace?.listings?.size,
+            fullActionMarketplace: actionMarketplace
+        });
+
+        if (!actionMarketplace || !(actionMarketplace.listings instanceof Map)) {
+            console.log('🏪 DEBUG: No actionMarketplace or invalid listings, returning null');
+            return null;
+        }
+
+        // Enhance each listing with server-calculated values
+        const enhancedListings = Array.from(actionMarketplace.listings.values()).map(listing => {
+            const enhanced = { ...listing };
+
+            // Add calculated buy now price with time-based premium
+            if (listing.buyNowPrice && listing.status === 'active') {
+                enhanced.calculatedBuyNowPrice = this.calculateBuyNowPrice(listing);
+            }
+
+            // Add calculated cancellation/end early fee
+            if (listing.status === 'active') {
+                const monthProgress = this.calculateMonthProgress();
+                let fee = 0;
+                if (listing.currentBid > 0) {
+                    const maxFeeRate = 5.0; // 500% of current bid
+                    const currentFeeRate = maxFeeRate * (1 - monthProgress);
+                    fee = Math.floor(listing.currentBid * currentFeeRate);
+                }
+                enhanced.calculatedEndEarlyFee = fee;
+                enhanced.calculatedCancelFee = fee;
+            }
+
+            return enhanced;
+        });
+
+        const result = {
+            ...actionMarketplace,
+            listings: enhancedListings,
+            monthProgress: this.calculateMonthProgress() // Include month progress for client use
+        };
+
+        console.log('🏪 DEBUG: Marketplace data prepared for broadcast:', {
+            originalMapSize: actionMarketplace.listings.size,
+            enhancedListingsLength: enhancedListings.length,
+            enhancedListings: enhancedListings,
+            result: result
+        });
+
+        return result;
+    }
+
+    /**
      * Robust server-authoritative state broadcaster
      * Sends complete, normalized game state to all clients
      */
@@ -2147,13 +2199,12 @@ class ServerEconomicEngine {
         this.gameState.playerBalances.forEach((cash, playerId) => {
             const wealth = this.calculatePlayerWealth(playerId, cash);
             const playerState = this.gameState.players.get(playerId);
-            const governance = playerState?.governance || { votingPoints: 0, allocations: {}, votes: {} };
-            console.log(`🏛️ DEBUG: Broadcasting governance for ${playerId}:`);
+            const governance = playerState?.governance || { votingPoints: 0, allocations: {} };
+            // Governance debug: Broadcasting governance for ${playerId}:`);
             console.log(`  votingPoints: ${governance.votingPoints}`);
             console.log(`  allocations: ${JSON.stringify(governance.allocations || {})}`);
-            console.log(`  votes: ${JSON.stringify(governance.votes || {})}`);
-            console.log(`🏛️ DEBUG: Full governance object type: ${typeof governance}`);
-            console.log(`🏛️ DEBUG: Governance keys:`, Object.keys(governance));
+            // Governance debug: Full governance object type: ${typeof governance}`);
+            // Governance debug: Governance keys:`, Object.keys(governance));
             players[playerId] = {
                 id: playerId,
                 cash: cash,
@@ -2205,17 +2256,14 @@ class ServerEconomicEngine {
                     budgets: this.governanceSystem ? this.governanceSystem.getBudgets() : {}
                 },
                 monthlyActionAllowance: this.calculateMonthlyActionAllowance(),
-                lvtRate: this.getCurrentLVTRate()  // Include current LVT rate
+                lvtRate: this.getCurrentLVTRate(),  // Include current LVT rate
+                // Add action marketplace data
+                actionMarketplace: this.getMarketplaceDataForBroadcast()
             }
         };
 
         console.log(`📡 Broadcasting complete game state: ${buildings.length} buildings, ${Object.keys(players).length} players, event: ${eventType}`);
-        console.log(`🕒 DEBUG: Broadcasting gameTime = ${this.gameState.gameTime}, gameDay = ${Math.floor(this.gameState.gameTime)}`);
-        console.log(`💰 DEBUG: Player data being broadcast:`, Object.keys(players).map(id => `${id}: $${players[id].cash}`));
-        console.log(`👥 DEBUG: Broadcasting totalResidents = ${this.gameState.totalResidents}, demographics.total = ${this.gameState.demographics.total}`);
-        console.log(`🎯 DEBUG: Broadcasting monthlyActionAllowance = ${this.calculateMonthlyActionAllowance()}`);
-        console.log(`🎯 DEBUG: Player actions being broadcast:`, Object.keys(players).map(id => `${id}: ${players[id].actions?.total || 'NO_ACTIONS'} total`));
-        console.log(`📅 DEBUG: Game state includes gameTime for client sync`); // FORCE RESTART
+        // Broadcasting complete game state to all clients
 
         // V2: Debug log eventData for GAME_STARTED to verify city names are included
         if (eventType === 'GAME_STARTED' && eventData.players) {
@@ -2394,9 +2442,7 @@ class ServerEconomicEngine {
                         culture: 0, recreation: 0, commercial: 0, civic: 0,
                         emergency: 0, ubi: 0
                     },
-                    votes: roomPlayerData.governance?.votes || {},
-                    lvtVotesIncrease: 0,
-                    lvtVotesDecrease: 0
+                    lvtVote: 0
                 }
             };
 
@@ -2434,7 +2480,7 @@ class ServerEconomicEngine {
 
         console.log(`💰 Processing parcel purchase: ${playerId} spending $${amount} for ${description || 'parcel'}`);
 
-        // 🔧 FIX: Use playerBalances Map directly instead of legacy players Map
+        // Use playerBalances Map for balance tracking
         const currentBalance = this.getPlayerBalance(playerId);
 
         // Check if player has enough cash
@@ -2485,7 +2531,7 @@ class ServerEconomicEngine {
 
         console.log(`💰 Processing cash spend: ${playerId} spending $${amount} for ${description || 'purchase'}`);
 
-        // 🔧 FIX: Use playerBalances Map directly instead of legacy players Map
+        // Use playerBalances Map for balance tracking
         const currentBalance = this.getPlayerBalance(playerId);
 
         // Check if player has enough cash
@@ -2565,24 +2611,43 @@ class ServerEconomicEngine {
             timestamp: this.gameState.gameTime
         };
 
-        console.log(`💰 Monthly budget calculated - totalPoints: ${totalPoints}, proportions:`, budgetProportions);
+        console.log(`💰 Monthly budget calculated - totalPoints: ${totalPoints}`);
         console.log(`💰 Total allocations by category:`, totalAllocations);
+        console.log(`💰 Proportions calculated:`, budgetProportions);
         console.log(`   Total voting points allocated: ${totalPoints}`);
 
         if (totalPoints === 0) {
             console.log(`   📦 No allocations - tax revenue remains in treasury`);
-        } else {
-            // Transfer treasury funds to allocated budget categories
-            if (this.governanceSystem) {
-                const treasuryBalance = this.governanceSystem.getTreasury();
-                console.log(`💰 MONTHLY TRANSFER: Allocating $${treasuryBalance.toFixed(2)} from treasury to budgets`);
-                this.governanceSystem.allocateBudgets(budgetProportions, treasuryBalance);
-            } else {
-                console.warn('⚠️ No governance system - cannot allocate budget funds');
-            }
         }
 
         // TODO: Apply budget effects (building subsidies, service bonuses, etc.)
+    }
+
+    /**
+     * Transfer treasury funds to budget categories based on stored proportions
+     * Called ONLY during monthly events, not when votes change
+     */
+    transferMonthlyFunds() {
+        if (!this.gameState.monthlyBudget || !this.gameState.monthlyBudget.proportions) {
+            console.warn('⚠️ No budget proportions available for monthly transfer');
+            return;
+        }
+
+        const budgetProportions = this.gameState.monthlyBudget.proportions;
+        const totalPoints = this.gameState.monthlyBudget.totalPoints;
+
+        if (totalPoints === 0) {
+            console.log(`📦 MONTHLY TRANSFER: No allocations - treasury funds remain unallocated`);
+            return;
+        }
+
+        if (this.governanceSystem) {
+            const treasuryBalance = this.governanceSystem.getTreasury();
+            console.log(`💰 MONTHLY TRANSFER: Allocating $${treasuryBalance.toFixed(2)} from treasury to budgets`);
+            this.governanceSystem.allocateBudgets(budgetProportions, treasuryBalance);
+        } else {
+            console.warn('⚠️ No governance system - cannot transfer monthly funds');
+        }
     }
 
     /**
@@ -2678,236 +2743,6 @@ class ServerEconomicEngine {
         });
     }
 
-    /**
-     * Process governance transaction from client (V2 governance integration)
-     */
-    async processGovernanceTransaction(playerId, transactionType, data) {
-        console.log(`🏛️ Processing governance transaction: ${transactionType} from player ${playerId}`, data);
-
-        try {
-            switch (transactionType) {
-                case 'budget_vote':
-                    return await this.processGovernanceVote({
-                        playerId,
-                        category: data.category,
-                        action: data.amount > 0 ? 'add' : 'remove'
-                    });
-
-                case 'lvt_vote':
-                    return await this.processLVTVote(playerId, data.voteType, data.action);
-
-                default:
-                    console.error(`❌ Unknown governance transaction type: ${transactionType}`);
-                    return {
-                        success: false,
-                        error: `Unknown governance transaction type: ${transactionType}`
-                    };
-            }
-        } catch (error) {
-            console.error(`❌ Error processing governance transaction:`, error);
-            return {
-                success: false,
-                error: `Failed to process governance transaction: ${error.message}`
-            };
-        }
-    }
-
-    /**
-     * Process governance vote allocation from client
-     */
-    async processGovernanceVote(transaction) {
-        const { playerId, category, action } = transaction; // action: 'add' or 'remove'
-
-        console.log(`🗳️ Processing governance vote: ${playerId} ${action} vote for ${category}`);
-
-        const player = this.getOrCreatePlayer(playerId);
-
-        // Handle LVT rate voting separately
-        if (category === 'lvt_increase' || category === 'lvt_decrease') {
-            return this.processLVTVote(playerId, category, action);
-        }
-
-        if (action === 'add') {
-            // Check if player can allocate more points (has unallocated points)
-            const totalAllocated = Object.values(player.governance.votes || {}).reduce((sum, votes) => sum + votes, 0);
-            const maxPoints = player.governance.votingPoints; // votingPoints now represents total allocation capacity
-
-            if (totalAllocated >= maxPoints) {
-                return {
-                    success: false,
-                    error: `Cannot allocate more points. You have ${totalAllocated}/${maxPoints} points allocated.`,
-                    votingPoints: maxPoints,
-                    allocated: totalAllocated
-                };
-            }
-
-            // Allocate point (no spending - just tracking allocation)
-            player.governance.votes[category] = (player.governance.votes[category] || 0) + 1;
-
-            const newTotalAllocated = totalAllocated + 1;
-            console.log(`🗳️ Allocated vote to ${category}. Player ${playerId} now has ${newTotalAllocated}/${maxPoints} points allocated, ${player.governance.votes[category]} to ${category}`);
-
-        } else if (action === 'remove') {
-            // Check if player has votes to remove
-            if (!player.governance.votes[category] || player.governance.votes[category] <= 0) {
-                return {
-                    success: false,
-                    error: 'No votes to remove from this category',
-                    votes: player.governance.votes[category] || 0
-                };
-            }
-
-            // Deallocate point (no refunding - just tracking allocation)
-            player.governance.votes[category] -= 1;
-
-            const totalAllocated = Object.values(player.governance.votes || {}).reduce((sum, votes) => sum + votes, 0);
-            console.log(`🗳️ Deallocated vote from ${category}. Player ${playerId} now has ${totalAllocated}/${player.governance.votingPoints} points allocated, ${player.governance.votes[category]} to ${category}`);
-        }
-
-        return {
-            success: true,
-            votingPoints: player.governance.votingPoints,
-            votes: player.governance.votes,
-            category,
-            action
-        };
-    }
-
-    /**
-     * Process LVT rate voting (separate from budget category voting)
-     */
-    async processLVTVote(playerId, voteType, action) {
-        const player = this.getOrCreatePlayer(playerId);
-
-        // Check if we're in pre-game mode (range-based allocation) or in-game mode (spending-based)
-        const isPreGame = !this.gameState.gameStarted;
-
-        if (action === 'add') {
-            const currentIncrease = player.governance.lvtVotesIncrease || 0;
-            const currentDecrease = player.governance.lvtVotesDecrease || 0;
-
-            if (isPreGame) {
-                // PRE-GAME: Range-based allocation system
-                const currentNetLVT = currentIncrease - currentDecrease; // Net can be negative
-                const maxRange = player.governance.votingPoints; // e.g., 4 points = range -4 to +4
-
-                let projectedNetLVT = currentNetLVT;
-                if (voteType === 'lvt_increase') {
-                    projectedNetLVT += 1;
-                } else {
-                    projectedNetLVT -= 1;
-                }
-
-                // Check if within allowed range
-                if (Math.abs(projectedNetLVT) > maxRange) {
-                    return {
-                        success: false,
-                        error: `LVT vote outside allowed range (±${maxRange})`,
-                        votingPoints: player.governance.votingPoints
-                    };
-                }
-
-                // In pre-game, voting points don't change - they represent the range
-                if (voteType === 'lvt_increase') {
-                    player.governance.lvtVotesIncrease += 1;
-                } else {
-                    player.governance.lvtVotesDecrease += 1;
-                }
-
-                console.log(`🗳️ Pre-game: Added ${voteType} vote. Net LVT: ${projectedNetLVT}, Range: ±${maxRange}`);
-            } else {
-                // IN-GAME: Allocation-based system (same as pre-game)
-                const currentNetLVT = currentIncrease - currentDecrease; // Net can be negative
-                const totalBudgetVotes = Object.values(player.governance.votes || {}).reduce((sum, votes) => sum + votes, 0);
-                const totalLVTVotes = Math.abs(currentNetLVT);
-                const totalAllocated = totalBudgetVotes + totalLVTVotes;
-                const maxPoints = player.governance.votingPoints; // Total allocation capacity
-
-                let projectedNetLVT = currentNetLVT;
-                if (voteType === 'lvt_increase') {
-                    projectedNetLVT += 1;
-                } else {
-                    projectedNetLVT -= 1;
-                }
-
-                const projectedLVTVotes = Math.abs(projectedNetLVT);
-                const projectedTotalAllocated = totalBudgetVotes + projectedLVTVotes;
-
-                if (projectedTotalAllocated > maxPoints) {
-                    return {
-                        success: false,
-                        error: `Cannot allocate more points. You have ${totalAllocated}/${maxPoints} points allocated. LVT vote would make it ${projectedTotalAllocated}/${maxPoints}.`,
-                        votingPoints: maxPoints,
-                        allocated: totalAllocated
-                    };
-                }
-
-                // Allocate LVT vote (no point spending)
-                if (voteType === 'lvt_increase') {
-                    player.governance.lvtVotesIncrease += 1;
-                } else {
-                    player.governance.lvtVotesDecrease += 1;
-                }
-
-                console.log(`🗳️ In-game: Allocated ${voteType} vote. Net LVT: ${projectedNetLVT}, Total allocated: ${projectedTotalAllocated}/${maxPoints}`);
-            }
-
-            // Calculate new LVT rate based on all player votes
-            this.calculateLVTRate();
-
-        } else if (action === 'remove') {
-            const currentIncrease = player.governance.lvtVotesIncrease || 0;
-            const currentDecrease = player.governance.lvtVotesDecrease || 0;
-            const currentVotes = voteType === 'lvt_increase' ? currentIncrease : currentDecrease;
-
-            if (currentVotes <= 0) {
-                return {
-                    success: false,
-                    error: 'No LVT votes to remove',
-                    votes: currentVotes
-                };
-            }
-
-            if (isPreGame) {
-                // PRE-GAME: Simple vote removal, no point refunding needed
-                if (voteType === 'lvt_increase') {
-                    player.governance.lvtVotesIncrease -= 1;
-                } else {
-                    player.governance.lvtVotesDecrease -= 1;
-                }
-
-                const newNetLVT = (player.governance.lvtVotesIncrease || 0) - (player.governance.lvtVotesDecrease || 0);
-                console.log(`🗳️ Pre-game: Removed ${voteType} vote. Net LVT: ${newNetLVT}`);
-            } else {
-                // IN-GAME: Allocation-based system (same as pre-game)
-                // Simple vote removal, no point refunding needed
-                if (voteType === 'lvt_increase') {
-                    player.governance.lvtVotesIncrease -= 1;
-                } else {
-                    player.governance.lvtVotesDecrease -= 1;
-                }
-
-                const newNetLVT = (player.governance.lvtVotesIncrease || 0) - (player.governance.lvtVotesDecrease || 0);
-                const totalBudgetVotes = Object.values(player.governance.votes || {}).reduce((sum, votes) => sum + votes, 0);
-                const totalLVTVotes = Math.abs(newNetLVT);
-                const totalAllocated = totalBudgetVotes + totalLVTVotes;
-                console.log(`🗳️ In-game: Deallocated ${voteType} vote. Net LVT: ${newNetLVT}, Total allocated: ${totalAllocated}/${player.governance.votingPoints}`);
-            }
-
-            // Recalculate LVT rate
-            this.calculateLVTRate();
-        }
-
-        return {
-            success: true,
-            votingPoints: player.governance.votingPoints,
-            lvtRate: this.getCurrentLVTRate(),
-            lvtVotesIncrease: player.governance.lvtVotesIncrease || 0,
-            lvtVotesDecrease: player.governance.lvtVotesDecrease || 0,
-            category: voteType,
-            action
-        };
-    }
 
     /**
      * Calculate LVT rate based on all player votes (V3 system)
@@ -2922,7 +2757,7 @@ class ServerEconomicEngine {
                 if (playerState.governance.lvtVote !== undefined) {
                     totalLVTVotes += playerState.governance.lvtVote;
                 }
-                // Legacy system: separate increase/decrease votes
+                // Legacy system compatibility - remove this block after migration
                 else if (playerState.governance.lvtVotesIncrease !== undefined || playerState.governance.lvtVotesDecrease !== undefined) {
                     const increaseVotes = playerState.governance.lvtVotesIncrease || 0;
                     const decreaseVotes = playerState.governance.lvtVotesDecrease || 0;
@@ -2953,7 +2788,7 @@ class ServerEconomicEngine {
      */
     getCurrentLVTRate() {
         const rate = this.currentLVTRate || 0.5; // Default to 50%
-        console.log(`🏛️ DEBUG: getCurrentLVTRate() returning ${rate} (currentLVTRate=${this.currentLVTRate})`);
+        // Governance debug: getCurrentLVTRate() returning ${rate} (currentLVTRate=${this.currentLVTRate})`);
         return rate;
     }
 
@@ -3148,21 +2983,15 @@ class ServerEconomicEngine {
             for (let col = 0; col < this.gameState.gridSize; col++) {
                 const parcel = this.gameState.grid[row][col];
 
-                // Debug first few parcels to see structure
-                if (row === 0 && col < 3) {
-                    console.log(`🔍 Grid[${row},${col}]: ${JSON.stringify(parcel)}`);
-                }
 
                 // Only tax player-owned parcels (not City-owned)
                 if (parcel && parcel.owner && parcel.owner !== 'City') {
                     parcelCount++;
 
-                    // For now, use standard parcel price ($100) until auction system is implemented
-                    // TODO: Replace with actual purchase price when auction system is added
-                    const landValue = 100; // Current standard parcel price
+                    // Use actual parcel price (or default if not set)
+                    const landValue = parcel.price || parcel.basePrice || 100;
                     const dailyLVT = (landValue * lvtRate) / 365; // Daily portion of annual LVT
 
-                    console.log(`🔍 Parcel [${row},${col}]: owner=${parcel.owner}, landValue=$${landValue}, dailyLVT=$${dailyLVT.toFixed(4)}`);
 
                     if (dailyLVT > 0) {
                         const playerId = parcel.owner;
@@ -3189,7 +3018,7 @@ class ServerEconomicEngine {
             }
         }
 
-        console.log(`🔍 DEBUG: Assessed LVT on ${parcelCount} player-owned parcels`);
+        // System debug: Assessed LVT on ${parcelCount} player-owned parcels`);
 
         if (totalLVT > 0) {
             console.log(`💰 Daily LVT collected: $${totalLVT.toFixed(2)} from ${parcelCount} parcels`);
@@ -3683,10 +3512,7 @@ class ServerEconomicEngine {
         }
 
         // Calculate month progress (0 = start, 1 = end)
-        // Use real calendar month calculation
-        const currentMonth = Math.floor(this.gameState.gameTime / monthLengthDays);
-        const monthStart = currentMonth * monthLengthDays;
-        const monthProgress = (this.gameState.gameTime - monthStart) / monthLengthDays;
+        const monthProgress = this.calculateMonthProgress();
 
         // Premium starts at 500% and decays to 0%
         const maxPremiumRate = 5.0; // 500%
@@ -3877,10 +3703,24 @@ class ServerEconomicEngine {
      * Calculate current month progress (0 = start, 1 = end)
      */
     calculateMonthProgress() {
-        // Use real calendar month calculation
-        const currentMonth = Math.floor(this.gameState.gameTime / monthLengthDays);
-        const monthStart = currentMonth * monthLengthDays;
-        return (this.gameState.gameTime - monthStart) / monthLengthDays;
+        const currentDay = Math.floor(this.gameState.gameTime);
+        const monthBoundaries = this.getMonthBoundaries();
+
+        // Find current month boundary
+        let monthStart = 1; // Game starts at day 1
+        let monthEnd = monthBoundaries[0];
+
+        for (let i = 0; i < monthBoundaries.length; i++) {
+            if (currentDay <= monthBoundaries[i]) {
+                monthEnd = monthBoundaries[i];
+                monthStart = i === 0 ? 1 : monthBoundaries[i - 1] + 1;
+                break;
+            }
+        }
+
+        const monthLength = monthEnd - monthStart + 1;
+        const dayInMonth = currentDay - monthStart + 1;
+        return dayInMonth / monthLength;
     }
 
     /**
@@ -3975,8 +3815,9 @@ class ServerEconomicEngine {
         }
 
         const parcel = this.gameState.grid[row][col];
-        if (!parcel.owner || parcel.owner === 'City') {
-            throw new Error('Cannot auction unowned or city parcels');
+        // Only prevent auctions on City-owned parcels
+        if (parcel.owner === 'City') {
+            throw new Error('Cannot auction City-owned parcels');
         }
 
         // Check if parcel already being auctioned
@@ -4003,7 +3844,7 @@ class ServerEconomicEngine {
             row: row,
             col: col,
             startedBy: playerId,
-            currentOwner: parcel.owner,
+            currentOwner: parcel.owner || 'unclaimed',
             openingBid: lastPaidPrice,
             currentBid: lastPaidPrice,
             highBidderId: null,
@@ -4414,6 +4255,14 @@ class ServerEconomicEngine {
 
         // Convert actionMarketplace listings Map to Array with calculated values
         let actionMarketplace = this.gameState.actionMarketplace;
+        console.log('🏪 DEBUG: Checking actionMarketplace for broadcast:', {
+            hasActionMarketplace: !!actionMarketplace,
+            hasListings: !!actionMarketplace?.listings,
+            listingsIsMap: actionMarketplace?.listings instanceof Map,
+            listingsSize: actionMarketplace?.listings?.size,
+            fullActionMarketplace: actionMarketplace
+        });
+
         if (actionMarketplace && actionMarketplace.listings instanceof Map) {
             // Enhance each listing with server-calculated values
             const enhancedListings = Array.from(actionMarketplace.listings.values()).map(listing => {
@@ -4445,6 +4294,13 @@ class ServerEconomicEngine {
                 listings: enhancedListings,
                 monthProgress: this.calculateMonthProgress() // Include month progress for client use
             };
+
+            console.log('🏪 DEBUG: Server broadcasting marketplace data:', {
+                originalMapSize: this.gameState.actionMarketplace.listings.size,
+                enhancedListingsLength: enhancedListings.length,
+                enhancedListings: enhancedListings,
+                actionMarketplace: actionMarketplace
+            });
         }
 
         return {
@@ -4614,7 +4470,7 @@ class ServerEconomicEngine {
             const delta = this.generateDeltaUpdate();
 
             if (this.broadcastFunction) {
-                console.log(`📤 Broadcasting delta update: ${delta.changes.buildings?.length || 0} buildings, ${Object.keys(delta.changes.players || {}).length} players`);
+                // Broadcasting delta update to clients
                 this.broadcastFunction(delta);
             }
         }
