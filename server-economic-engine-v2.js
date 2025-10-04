@@ -516,6 +516,9 @@ class ServerEconomicEngine {
         // Always broadcast gameTime updates to keep all clients synchronized
         // Even on quiet days, time must stay in sync across all players
         this.broadcastGameState({ type: 'DAILY_UPDATE', source: 'timer' });
+
+        // Broadcast Commonwealth scores update every day
+        this.broadcastCommonwealthScores();
     }
 
     /**
@@ -3114,6 +3117,33 @@ class ServerEconomicEngine {
             }));
 
         return sortedScores;
+    }
+
+    /**
+     * Broadcast Commonwealth Scores to all players
+     */
+    broadcastCommonwealthScores() {
+        if (!this.broadcastFunction) return;
+
+        const scores = this.calculateCommonwealthScores();
+
+        // Format scores for broadcast
+        const formattedScores = scores.map(s => ({
+            playerId: s.playerId,
+            playerName: this.gameState.players.get(s.playerId)?.name || 'Player',
+            playerColor: this.gameState.players.get(s.playerId)?.color,
+            wealth: s.wealth,
+            lvtRatio: s.lvtRatio,
+            score: s.score,
+            rank: s.rank
+        }));
+
+        // Broadcast to all players
+        this.broadcastFunction({
+            type: 'COMMONWEALTH_UPDATE',
+            scores: formattedScores,
+            timestamp: Date.now()
+        });
     }
 
     /**

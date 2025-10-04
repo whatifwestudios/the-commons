@@ -1672,7 +1672,7 @@ class EconomicClient {
      */
     handleCommonwealthUpdate(update) {
         if (window.uiManager && update.scores) {
-            // Find current player's score
+            // Find current player's score from scores array
             const currentPlayerScore = update.scores.find(s => s.playerId === this.playerId);
 
             // Update top bar display
@@ -1683,11 +1683,9 @@ class EconomicClient {
                 );
             }
 
-            // If leaderboard modal is open, update it too
-            const modal = document.getElementById('leaderboard-modal');
-            if (modal && modal.style.display === 'block') {
-                window.uiManager.updateLeaderboard(update.scores, this.playerId);
-            }
+            // Always update leaderboard data (whether modal is open or not)
+            // This ensures the leaderboard has data when it's opened
+            window.uiManager.updateLeaderboard(update.scores, this.playerId);
         }
     }
 

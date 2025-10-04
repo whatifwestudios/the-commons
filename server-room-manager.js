@@ -456,6 +456,9 @@ class GameRoom {
                 players: this.getCleanPlayerData()
             });
 
+            // Broadcast initial Commonwealth scores
+            this.economicEngine.broadcastCommonwealthScores();
+
             // Start the isolated room clock
             this.startGameClock();
         }, 3000);

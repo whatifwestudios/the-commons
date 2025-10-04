@@ -2131,8 +2131,9 @@ class IsometricGrid {
             scoreLabel = 'Very Poor';
         }
 
-        // Convert decay rate to percentage for display
-        const decayPercent = (scoreData.decayRate * 100).toFixed(2);
+        // Decay rate is stored as a percentage value (e.g., 0.12 for 0.12%), not a ratio
+        // So we display it directly without multiplying by 100
+        const decayPercent = scoreData.decayRate.toFixed(2);
 
         return `
             <div style="text-align: center; color: #cccccc;">
@@ -2776,8 +2777,9 @@ class IsometricGrid {
             scoreLabel = 'Very Poor';
         }
 
-        // Format decay rate as basis points
-        const decayBasisPoints = (scoreData.decayRate * 100).toFixed(4);
+        // Decay rate is stored as a percentage value (e.g., 0.12 for 0.12%), not a ratio
+        // So we display it directly without multiplying by 100
+        const decayBasisPoints = scoreData.decayRate.toFixed(4);
 
         container.innerHTML = `
             <div class="vitality-group-title">Investment Score</div>

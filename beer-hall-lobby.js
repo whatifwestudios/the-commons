@@ -1404,11 +1404,18 @@ class BeerHallLobby {
             countdownOverlay = document.createElement('div');
             countdownOverlay.id = 'countdown-overlay';
             countdownOverlay.className = 'countdown-overlay';
+
+            // Get all players for display
+            const players = this.getPlayersForCountdown();
+            const playerBadgesHTML = this.createPlayerBadgesHTML(players);
+
             countdownOverlay.innerHTML = `
                 <div class="countdown-container">
-                    <div class="countdown-text">Game Starting</div>
-                    <div class="countdown-number">${initialCount}</div>
-                    <div class="countdown-subtitle">Get ready!</div>
+                    <h1 class="countdown-welcome">Welcome to The Commons</h1>
+                    <div class="countdown-underline"></div>
+                    <div class="player-badges-grid">
+                        ${playerBadgesHTML}
+                    </div>
                 </div>
             `;
             document.body.appendChild(countdownOverlay);
@@ -1424,39 +1431,62 @@ class BeerHallLobby {
                         left: 0;
                         width: 100%;
                         height: 100%;
-                        background: rgba(0, 0, 0, 0.8);
+                        background: #000000;
                         display: flex;
                         justify-content: center;
                         align-items: center;
                         z-index: 10000;
                         font-family: 'Arial', sans-serif;
+                        opacity: 1;
+                        transition: opacity 0.5s ease-out;
+                    }
+                    .countdown-overlay.fade-out {
+                        opacity: 0;
                     }
                     .countdown-container {
                         text-align: center;
                         color: white;
+                        max-width: 800px;
+                        padding: 40px;
                     }
-                    .countdown-text {
-                        font-size: 2rem;
-                        font-weight: bold;
-                        margin-bottom: 20px;
-                        opacity: 0.9;
+                    .countdown-welcome {
+                        font-size: 3rem;
+                        font-weight: 600;
+                        margin: 0 0 30px 0;
+                        color: #ffffff;
+                        letter-spacing: 1px;
                     }
-                    .countdown-number {
-                        font-size: 6rem;
-                        font-weight: bold;
-                        color: #10AC84;
-                        animation: pulse 1s ease-in-out infinite;
-                        text-shadow: 0 0 20px rgba(16, 172, 132, 0.5);
+                    .countdown-underline {
+                        width: 50%;
+                        height: 2px;
+                        background: #ffffff;
+                        margin: 0 auto 50px auto;
+                        animation: subtle-pulse 2s ease-in-out infinite;
                     }
-                    .countdown-subtitle {
-                        font-size: 1.2rem;
-                        margin-top: 20px;
-                        opacity: 0.8;
+                    .player-badges-grid {
+                        display: grid;
+                        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+                        gap: 16px;
+                        max-width: 760px;
+                        margin: 0 auto;
+                        justify-items: center;
                     }
-                    @keyframes pulse {
-                        0% { transform: scale(1); }
-                        50% { transform: scale(1.1); }
-                        100% { transform: scale(1); }
+                    .player-badge {
+                        display: inline-flex;
+                        align-items: center;
+                        justify-content: center;
+                        padding: 12px 24px;
+                        border-radius: 8px;
+                        font-size: 16px;
+                        font-weight: 500;
+                        color: #ffffff;
+                        min-width: 160px;
+                        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+                    }
+                    @keyframes subtle-pulse {
+                        0% { opacity: 0.9; }
+                        50% { opacity: 1; }
+                        100% { opacity: 0.9; }
                     }
                 `;
                 document.head.appendChild(style);
@@ -1464,25 +1494,110 @@ class BeerHallLobby {
         }
 
         countdownOverlay.style.display = 'flex';
+        countdownOverlay.classList.remove('fade-out');
+
+        // Track when overlay was shown
+        this.countdownStartTime = Date.now();
+        this.isServerReady = false;
+
+        // Check periodically if we should hide the overlay
+        const checkInterval = setInterval(() => {
+            const minTimeElapsed = Date.now() - this.countdownStartTime >= 2500;
+            if (this.isServerReady && minTimeElapsed) {
+                clearInterval(checkInterval);
+                this.hideCountdownOverlay();
+            }
+        }, 100);
     }
 
     /**
-     * Update countdown display
+     * Get players for countdown display
+     */
+    getPlayersForCountdown() {
+        const players = [];
+
+        // Add current player
+        if (this.playerName && this.selectedColor) {
+            players.push({
+                name: this.playerName,
+                color: this.selectedColor
+            });
+        }
+
+        // Get other players from chat list if available
+        const chatPlayers = document.querySelectorAll('.chat-player');
+        chatPlayers.forEach(playerEl => {
+            const name = playerEl.querySelector('.chat-player-name')?.textContent;
+            const colorEl = playerEl.querySelector('.chat-player-color');
+            const color = colorEl?.style.backgroundColor;
+
+            if (name && color && name !== this.playerName) {
+                players.push({ name, color });
+            }
+        });
+
+        return players;
+    }
+
+    /**
+     * Create player badges HTML for countdown
+     */
+    createPlayerBadgesHTML(players) {
+        if (!players || players.length === 0) {
+            return '';
+        }
+
+        return players.map(player => `
+            <div class="player-badge" style="background-color: ${player.color};">
+                ${player.name}
+            </div>
+        `).join('');
+    }
+
+    /**
+     * Update countdown display (no longer used with new design)
      */
     updateCountdownDisplay(count) {
-        const countdownNumber = document.querySelector('.countdown-number');
-        if (countdownNumber) {
-            countdownNumber.textContent = count;
+        // New design doesn't show countdown number
+        // Mark server as ready when countdown reaches 0
+        if (count === 0) {
+            this.markServerReady();
         }
     }
 
     /**
-     * Hide countdown overlay
+     * Mark server as ready and hide overlay if minimum time has elapsed
+     */
+    markServerReady() {
+        this.isServerReady = true;
+        this.tryHideCountdownOverlay();
+    }
+
+    /**
+     * Try to hide countdown overlay if both conditions are met
+     */
+    tryHideCountdownOverlay() {
+        const minTimeElapsed = Date.now() - (this.countdownStartTime || 0) >= 2500; // 2.5 seconds
+
+        if (this.isServerReady && minTimeElapsed) {
+            this.hideCountdownOverlay();
+        } else if (this.isServerReady && !minTimeElapsed) {
+            // Server ready but min time not elapsed - wait for remaining time
+            const remainingTime = 2500 - (Date.now() - this.countdownStartTime);
+            setTimeout(() => this.hideCountdownOverlay(), remainingTime);
+        }
+    }
+
+    /**
+     * Hide countdown overlay with fade out
      */
     hideCountdownOverlay() {
         const countdownOverlay = document.getElementById('countdown-overlay');
         if (countdownOverlay) {
-            countdownOverlay.style.display = 'none';
+            countdownOverlay.classList.add('fade-out');
+            setTimeout(() => {
+                countdownOverlay.style.display = 'none';
+            }, 500); // Match transition duration
         }
     }
 
