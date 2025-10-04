@@ -260,7 +260,7 @@ class ActionMarketplaceV2 {
 
         const quantity = parseInt(document.getElementById('sell-quantity').value) || 0;
         const reservePrice = parseInt(document.getElementById('sell-reserve').value) || 0;
-        const buyNowPrice = parseInt(document.getElementById('sell-buynow').value) || 0;
+        const buyNowPrice = 0; // Buy now price field removed from UI
 
 
         // Validate
@@ -322,11 +322,11 @@ class ActionMarketplaceV2 {
                 // Clear form
                 document.getElementById('sell-quantity').value = 1;
                 document.getElementById('sell-reserve').value = '';
-                document.getElementById('sell-buynow').value = '';
+                // Buy now field removed from UI
 
                 this.game.showNotification(`Listed ${quantity} actions for $${reservePrice.toLocaleString()}+`, 'success');
                 this.updateModal();
-                this.switchTab('your-actions');
+                this.switchTab('marketplace');
             } else {
                 console.error('Server rejected transaction:', result.error);
                 this.game.showNotification(result.error || 'Failed to create listing', 'error');
@@ -537,19 +537,25 @@ class ActionMarketplaceV2 {
             return;
         }
 
-        // Use the same reliable pattern as refreshYourActions
+        // Show ALL active listings (both yours and others)
         const allListings = Array.from(this.listings.values());
-        const othersListings = allListings.filter(l => l.sellerId !== this.game.currentPlayerId && l.status === 'active');
+        const activeListings = allListings.filter(l => l.status === 'active');
 
         container.innerHTML = '';
-        if (othersListings.length === 0) {
-            container.innerHTML = '<p style="color: #888; text-align: center; padding: 20px;">No other players have listings</p>';
+        if (activeListings.length === 0) {
+            container.innerHTML = '<p style="color: #888; text-align: center; padding: 20px;">No active listings in the marketplace</p>';
         } else {
-            othersListings.forEach(listing => {
+            activeListings.forEach(listing => {
                 const listingEl = this.createListingElement(listing);
                 container.appendChild(listingEl);
             });
         }
+
+        // Update the Market tab with listing count
+        this.updateMarketTabCount(activeListings.length);
+
+        // Update sidebar market listings count
+        this.updateSidebarMarketCount(activeListings.length);
     }
 
     refreshYourActions() {
@@ -582,17 +588,18 @@ class ActionMarketplaceV2 {
         const isOwnListing = listing.sellerId === this.game.currentPlayerId;
         const buyNowPrice = this.calculateBuyNowPrice(listing);
         const endEarlyFee = this.calculateEndEarlyFee(listing);
+        const playerInfo = this.getPlayerInfo(listing.sellerId);
+        const sellerBadge = this.createSellerBadge(playerInfo.name, playerInfo.color);
 
         listingEl.innerHTML = `
             <div class="listing-info">
-                <div class="listing-seller">Seller: ${this.getPlayerDisplayName(listing.sellerId)}</div>
+                <div class="listing-seller">Seller: ${sellerBadge}</div>
                 <div class="listing-quantity">${listing.quantity} actions</div>
                 <div class="listing-prices">
-                    <span class="listing-reserve">${listing.currentBid >= listing.reservePrice ? 'Starting Price Met' : `Starting Price: $${listing.reservePrice.toLocaleString()}`}</span>
-                    ${listing.currentBid > 0 ? `<span class="listing-current-bid">Current Bid: $${listing.currentBid.toLocaleString()}</span>` : ''}
+                    <span class="listing-reserve">Current Price: $${listing.currentBid > 0 ? listing.currentBid.toLocaleString() : listing.reservePrice.toLocaleString()}</span>
                     ${listing.buyNowPrice ? `<span class="listing-buynow">Buy Now: $${buyNowPrice.toLocaleString()}</span>` : ''}
                 </div>
-                <div class="listing-time" id="listing-timer-${listing.id}">Expires: End of ${listing.month}</div>
+                <div class="listing-time" id="listing-timer-${listing.id}">Offer expires end of ${listing.month}</div>
             </div>
             <div class="listing-actions">
                 ${isOwnListing ? `
@@ -602,22 +609,24 @@ class ActionMarketplaceV2 {
                         <button class="btn-cancel" onclick="window.game.actionMarketplace.cancelListing(${listing.id})" title="Cancel auction and take back actions for the fee">
                             Cancel ($${endEarlyFee.toLocaleString()} fee)
                         </button>
-                        <button class="btn-end-now" onclick="window.game.actionMarketplace.endAuctionEarly(${listing.id})" title="End auction early for a fee">
-                            End It Now ($${endEarlyFee.toLocaleString()} fee)
-                        </button>
                     `}
                 ` : `
-                    <button class="btn-bid" onclick="window.game.actionMarketplace.bidOnListing(${listing.id})">
-                        Bid $${Math.max(listing.reservePrice, Math.ceil(listing.currentBid * 1.1)).toLocaleString()}
-                    </button>
-                    ${listing.buyNowPrice ? `
-                        <button class="btn-buynow" onclick="window.game.actionMarketplace.buyNowListing(${listing.id})">
-                            Buy Now $${buyNowPrice.toLocaleString()}
-                        </button>
-                    ` : ''}
+                    ${this.createBidButtons(listing)}
                 `}
             </div>
         `;
+
+        // Add event listeners for quick bid buttons
+        if (!isOwnListing) {
+            const quickBidButtons = listingEl.querySelectorAll('.btn-quick-bid');
+            quickBidButtons.forEach(button => {
+                button.addEventListener('click', (event) => {
+                    const listingId = parseInt(button.getAttribute('data-listing-id'));
+                    const bidAmount = parseInt(button.getAttribute('data-bid-amount'));
+                    this.quickBid(listingId, bidAmount, event);
+                });
+            });
+        }
 
         return listingEl;
     }
@@ -670,6 +679,57 @@ class ActionMarketplaceV2 {
         }
 
         return playerId.slice(-4); // Last 4 characters as fallback
+    }
+
+    getPlayerInfo(playerId) {
+        if (!playerId) return { name: 'Unknown', color: '#666' };
+
+        if (playerId === this.game.currentPlayerId) {
+            // Try to get current player's info from game state
+            const playerColor = this.game.playerSettings?.color || '#4CAF50';
+            return { name: 'You', color: playerColor };
+        }
+
+        // For other players, try to get from economic client or fallback
+        const playerData = this.game.economicClient?.getPlayerData?.(playerId);
+        return {
+            name: playerData?.name || playerId.slice(-4),
+            color: playerData?.color || '#666'
+        };
+    }
+
+    createSellerBadge(name, color) {
+        return `<span class="player-badge" style="background-color: ${color}; color: white; padding: 2px 8px; border-radius: 12px; font-size: 12px; font-weight: bold;">${name}</span>`;
+    }
+
+    createBidButtons(listing) {
+        const currentBid = listing.currentBid || 0;
+        const reservePrice = listing.reservePrice;
+        const minBid = Math.max(reservePrice, Math.ceil(currentBid * 1.1));
+        const buyNowPrice = this.calculateBuyNowPrice(listing);
+        const endEarlyFee = this.calculateEndEarlyFee(listing);
+
+        // Calculate quick bid amounts ensuring they meet minimum bid requirement
+        const bid5Percent = Math.max(minBid, Math.ceil(minBid * 1.05));
+        const bid20Percent = Math.max(minBid, Math.ceil(minBid * 1.20));
+
+        return `
+            <div class="bid-buttons-container">
+                <div class="quick-bids">
+                    <button class="btn-quick-bid" data-listing-id="${listing.id}" data-bid-amount="${bid5Percent}" data-bid-type="5percent">
+                        +5% ($${bid5Percent.toLocaleString()})
+                    </button>
+                    <button class="btn-quick-bid" data-listing-id="${listing.id}" data-bid-amount="${bid20Percent}" data-bid-type="20percent">
+                        +20% ($${bid20Percent.toLocaleString()})
+                    </button>
+                </div>
+                ${listing.buyNowPrice && listing.sellerId !== this.game.currentPlayerId ? `
+                    <button class="btn-buynow" onclick="window.game.actionMarketplace.buyNowListing(${listing.id})" title="Buy immediately for the listed buy-now price">
+                        Buy It Now ($${buyNowPrice.toLocaleString()})
+                    </button>
+                ` : ''}
+            </div>
+        `;
     }
 
     /**
@@ -738,6 +798,142 @@ class ActionMarketplaceV2 {
             this.refreshListings();
             this.updateModal();
         }
+    }
+
+    /**
+     * Place a bid on a listing
+     */
+    async placeBid(listingId, bidAmount, buttonElement = null) {
+        console.log(`💰 Placing bid for listing ${listingId}: ${bidAmount}`);
+
+        if (!this.game.currentPlayerId) {
+            console.error('No current player ID');
+            this.game.showNotification('Player ID not ready', 'error');
+            return;
+        }
+
+        // Check connection
+        if (!this.game.economicClient.connectionManager) {
+            this.game.showNotification('Not connected to server', 'error');
+            return;
+        }
+
+        if (!this.game.economicClient.connectionManager.isConnected) {
+            this.game.showNotification('Not connected to server', 'error');
+            return;
+        }
+
+        // Check player balance
+        const currentBalance = this.game.economicClient?.getCurrentPlayerBalance();
+        if (currentBalance === null) {
+            this.game.showNotification('Loading balance data...', 'info');
+            return;
+        }
+        if (currentBalance < bidAmount) {
+            // Add visual feedback for insufficient funds
+            if (buttonElement) {
+                buttonElement.classList.add('insufficient-funds-blink');
+                setTimeout(() => {
+                    buttonElement.classList.remove('insufficient-funds-blink');
+                }, 500);
+            }
+            this.game.showNotification(`Insufficient funds! Need $${bidAmount.toLocaleString()}`, 'error');
+            return;
+        }
+
+        try {
+            const transaction = {
+                type: 'ACTION_BID',
+                playerId: this.game.currentPlayerId,
+                listingId: listingId,
+                bidAmount: bidAmount
+            };
+
+            const result = await this.game.economicClient.sendTransaction(transaction);
+
+            if (result.success) {
+                this.game.showNotification(`Bid placed: $${bidAmount.toLocaleString()}`, 'success');
+                this.refreshListings();
+            } else {
+                this.game.showNotification(result.error || 'Bid failed', 'error');
+            }
+        } catch (error) {
+            console.error('❌ Error placing bid:', error);
+            this.game.showNotification('Error placing bid', 'error');
+        }
+    }
+
+    /**
+     * Quick bid with predetermined amounts
+     */
+    quickBid(listingId, bidAmount, event = null) {
+        console.log(`💰 Quick bid for listing ${listingId}: ${bidAmount}`);
+
+        const listing = this.listings.get(listingId);
+        if (!listing) {
+            console.error(`❌ Listing ${listingId} not found`);
+            return;
+        }
+
+        if (bidAmount < listing.minBid) {
+            alert(`Bid must be at least ${listing.minBid.toLocaleString()}`);
+            return;
+        }
+
+        // Get the button element from the event
+        const buttonElement = event ? event.target : null;
+        this.placeBid(listingId, bidAmount, buttonElement);
+    }
+
+    /**
+     * Update Market tab text with listing count
+     */
+    updateMarketTabCount(count) {
+        const tabBtn = document.getElementById('marketplace-tab-btn');
+        if (tabBtn) {
+            tabBtn.textContent = count > 0 ? `Market (${count})` : 'Market';
+        }
+    }
+
+    /**
+     * Update sidebar market listings count
+     */
+    updateSidebarMarketCount(count) {
+        const sidebarElement = document.getElementById('market-listings');
+        if (sidebarElement) {
+            sidebarElement.textContent = count === 1 ? '1 listing' : `${count} listings`;
+        }
+    }
+
+    /**
+     * Custom bid from input field
+     */
+    customBid(listingId) {
+        const input = document.getElementById(`custom-bid-${listingId}`);
+        if (!input) {
+            console.error(`❌ Custom bid input for listing ${listingId} not found`);
+            return;
+        }
+
+        const bidAmount = parseInt(input.value);
+        if (!bidAmount || isNaN(bidAmount)) {
+            alert('Please enter a valid bid amount');
+            return;
+        }
+
+        const listing = this.listings.get(listingId);
+        if (!listing) {
+            console.error(`❌ Listing ${listingId} not found`);
+            return;
+        }
+
+        if (bidAmount < listing.minBid) {
+            alert(`Bid must be at least ${listing.minBid.toLocaleString()}`);
+            return;
+        }
+
+        this.placeBid(listingId, bidAmount);
+        input.value = '';
     }
 
     /**

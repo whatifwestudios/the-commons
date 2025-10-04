@@ -19,17 +19,7 @@
 
     "cleanup": "pkill -f 'node.*server.js' || true",
     "reset": "npm run cleanup && sleep 2 && npm run dev",
-    "status": "ps aux | grep 'node.*server.js' | grep -v grep || echo 'No server processes running'",
-
-    "lint": "node master-linter.js",
-    "lint:all": "node master-linter.js all --verbose",
-    "lint:multiplayer": "node master-linter.js multiplayer",
-    "lint:v2": "node master-linter.js multiplayer --verbose",
-    "lint:performance": "node master-linter.js performance",
-    "lint:security": "node master-linter.js security",
-    "lint:quality": "node master-linter.js quality",
-    "lint:fix": "node master-linter.js --fix",
-    "lint:report": "node master-linter.js --format=html all"
+    "status": "ps aux | grep 'node.*server.js' | grep -v grep || echo 'No server processes running'"
   },
   "keywords": [
     "game",

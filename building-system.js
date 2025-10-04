@@ -95,12 +95,6 @@ class BuildingSystem {
         this.populateBuildingCategories();
     }
     
-    /**
-     * Build a building with funding info (called from game.js) - DEPRECATED, use constructBuilding
-     */
-    async buildBuilding(row, col, buildingId, fundingInfo) {
-        return await this.constructBuilding(row, col, buildingId);
-    }
     
     /**
      * Place a building on a parcel
@@ -374,33 +368,7 @@ class BuildingSystem {
         return true;
     }
     
-    /**
-     * Calculate building economics (revenue, maintenance, etc.)
-     */
-    // 🚫 CLIENT CALCULATION - DISABLED! BUSTED!
-    // Server already has this data - client should just display server values
-    // Likely fate: Complete removal, replace with server data retrieval
-    calculateBuildingEconomics(parcel, row, col) {
-        // Use server data only
-        return {
-            buildingName: parcel.building ? 'Loading...' : 'Vacant',
-            revenue: 'Loading...',
-            maintenance: 'Loading...',
-            lvt: 'Loading...',
-            netIncome: 'Loading...',
-            decay: 'Loading...',
-            age: 'Loading...'
-        };
-    }
     
-    /**
-     * Get building efficiency based on needs satisfaction
-     */
-    // 🚫 CLIENT CALCULATION - DISABLED! BUSTED!
-    getBuildingEfficiency(row, col) {
-        // Use server data only
-        return 'Loading...';
-    }
     
     /**
      * Get building needs based on type
@@ -430,14 +398,6 @@ class BuildingSystem {
         return needs;
     }
     
-    /**
-     * Get need satisfaction level
-     */
-    // 🚫 CLIENT CALCULATION - DISABLED! BUSTED!
-    getNeedSatisfaction(need, row, col) {
-        // Use server data only
-        return 'Loading...';
-    }
 
     /**
      * Get resource supply/demand balance using road network connectivity
@@ -521,14 +481,6 @@ class BuildingSystem {
         };
     }
 
-    /**
-     * Get resource access score from adjacent 8 cells (puzzle-like gameplay)
-     */
-    // 🚫 CLIENT CALCULATION - DISABLED! BUSTED!
-    getAdjacentResourceScore(resourceType, row, col) {
-        // Use server data only
-        return 'Loading...';
-    }
 
     /**
      * Get resource supply from a building for specific JEEFHH resource
@@ -559,25 +511,6 @@ class BuildingSystem {
         }
     }
 
-    /**
-     * Calculate building condition (0-1 scale based on age and decay rate)
-     */
-    // 🚫 CLIENT CALCULATION - DISABLED! BUSTED!
-    calculateBuildingCondition(building, ageInDays = 0) {
-        // Use server data only
-        return 'Loading...';
-        if (!building || !building.economics) {
-            return 1.0; // Perfect condition if no building data
-        }
-
-        const dailyDecayRate = (building.economics.decayRatePercent || 0) / 100;
-
-        // Condition decreases over time based on decay rate
-        const condition = Math.pow(1 - dailyDecayRate, ageInDays);
-
-        // Minimum 10% condition (buildings never become completely worthless)
-        return Math.max(0.1, condition);
-    }
 
     /**
      * Get supply/demand multiplier for building revenue
@@ -744,35 +677,6 @@ class BuildingSystem {
         }
     }
 
-    /**
-     * Age all buildings and update decay
-     */
-    // 🚫 CLIENT CALCULATION - DISABLED! BUSTED!
-    // Server tracks building age and decay - client should receive updates via WebSocket
-    ageBuildings(deltaTime = 1) {
-        // CLIENT-SIDE CALCULATION DISABLED - NO MORE AGING CALCULATIONS
-        return;
-        for (let row = 0; row < this.game.gridSize; row++) {
-            for (let col = 0; col < this.game.gridSize; col++) {
-                const parcel = this.game.grid[row][col];
-
-                if (parcel && parcel.building) {
-                    // Age building
-                    parcel.buildingAge = (parcel.buildingAge || 0) + deltaTime;
-
-                    // Update decay
-                    const building = this.buildingManager.getBuildingById(parcel.building);
-                    if (building && building.economics) {
-                        const decayRate = building.economics.decayRatePercent ?
-                            building.economics.decayRatePercent / 100 : 0.001;
-                        parcel.decay = Math.min(1, (parcel.decay || 0) + decayRate * deltaTime);
-                    }
-
-                    // Construction progress is now handled by updateConstructionProgress()
-                }
-            }
-        }
-    }
     
     /**
      * Populate building category selector
@@ -1039,6 +943,11 @@ class BuildingSystem {
                 } else {
                     console.log('✅ BUILD_START transaction successful');
                     spendResult = true; // For compatibility with rest of function
+
+                    // Start client-side construction visual effects
+                    if (this.game.renderingSystem?.startConstructionTracking) {
+                        this.game.renderingSystem.startConstructionTracking(row, col);
+                    }
                 }
             } catch (buildStartError) {
                 console.error('❌ BUILD_START transaction failed:', buildStartError);
@@ -1333,48 +1242,54 @@ class BuildingSystem {
 
 
     /**
-     * Calculate repair cost for building based on exponential decay
-     * Moved from game.js for proper modularity
+     * Calculate repair cost - SERVER PREFERRED, CLIENT FALLBACK
+     * TODO: Replace with server-authoritative calculation
      */
-    // 🚫 CLIENT CALCULATION - ELIMINATED FOR SERVER AUTHORITY
-    calculateRepairCost(parcel, building) {
-        // Calculate cost to repair building based on maintenance increase due to exponential decay
-        // Cost = 200 × (current_maintenance - original_maintenance)
+    calculateRepairCost(parcel, building, row = null, col = null) {
+        // Try server data first if coordinates provided
+        if (this.game.economicClient && row !== null && col !== null) {
+            const serverRepairCost = this.game.economicClient.getBuildingRepairCost?.(row, col);
+            if (serverRepairCost !== undefined && serverRepairCost !== null) {
+                return serverRepairCost;
+            }
+        }
+
+        // Fallback to client calculation
         if (!parcel || !building || !parcel.buildingAge || parcel.buildingAge <= 0) {
             return 0;
         }
 
-        // Get base maintenance cost and decay rate
         const baseMaintenance = building.economics.maintenanceCost || 0;
-        const decayRate = building.economics.decayRatePercent ? building.economics.decayRatePercent / 100 : 0.001;
+        const decayRate = building.economics.decayRate ? building.economics.decayRate / 100 : 0.001;
         const buildingAgeInDays = parcel.buildingAge || 0;
 
-        // Calculate current maintenance using exponential formula: baseMaintenance * (1 + decayRate)^days
         const maintenanceMultiplier = Math.pow(1 + decayRate, buildingAgeInDays);
         const currentMaintenance = baseMaintenance * maintenanceMultiplier;
-
-        // Calculate maintenance increase due to decay
         const maintenanceIncrease = currentMaintenance - baseMaintenance;
-
-        // Repair cost is 200x the maintenance increase
         const repairCost = maintenanceIncrease * 200;
 
-        return Math.round(repairCost * 100) / 100; // Round to nearest cent
+        return Math.round(repairCost * 100) / 100;
     }
 
     /**
-     * Calculate current building value accounting for decay
-     * Moved from game.js for proper modularity
+     * Calculate current building value - SERVER PREFERRED, CLIENT FALLBACK
+     * TODO: Replace with server-authoritative calculation
      */
-    // 🚫 CLIENT CALCULATION - ELIMINATED FOR SERVER AUTHORITY
-    calculateCurrentBuildingValue(parcel, building) {
-        // Calculate current building value accounting for decay
+    calculateCurrentBuildingValue(parcel, building, row = null, col = null) {
+        // Try server data first if coordinates provided
+        if (this.game.economicClient && row !== null && col !== null) {
+            const serverBuildingValue = this.game.economicClient.getBuildingValue?.(row, col);
+            if (serverBuildingValue !== undefined && serverBuildingValue !== null) {
+                return serverBuildingValue;
+            }
+        }
+
+        // Fallback to client calculation
         if (!building || !building.economics) return 0;
 
         const baseCost = building.economics.buildCost || 0;
         const decayFactor = 1 - (parcel.decay || 0);
 
-        // Current value is base cost reduced by decay
         return Math.round(baseCost * decayFactor);
     }
 }

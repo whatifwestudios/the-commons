@@ -2235,6 +2235,83 @@ class UIManager {
         });
 
     }
+
+    /**
+     * Toast Notification System
+     * Display user-friendly notifications for errors, successes, warnings, etc.
+     */
+    showToast(message, type = 'info', title = null, duration = 4000) {
+        const container = document.getElementById('toast-container');
+        if (!container) {
+            console.warn('Toast container not found');
+            return;
+        }
+
+        const icons = {
+            success: '✓',
+            error: '✕',
+            warning: '⚠',
+            info: 'ⓘ'
+        };
+
+        const titles = {
+            success: title || 'Success',
+            error: title || 'Error',
+            warning: title || 'Warning',
+            info: title || 'Info'
+        };
+
+        const toast = document.createElement('div');
+        toast.className = `toast ${type}`;
+        toast.innerHTML = `
+            <div class="toast-icon">${icons[type] || icons.info}</div>
+            <div class="toast-content">
+                <div class="toast-title">${titles[type]}</div>
+                <div class="toast-message">${message}</div>
+            </div>
+        `;
+
+        container.appendChild(toast);
+
+        // Auto-dismiss after duration
+        setTimeout(() => {
+            toast.classList.add('toast-hiding');
+            setTimeout(() => {
+                if (toast.parentNode) {
+                    toast.parentNode.removeChild(toast);
+                }
+            }, 300);
+        }, duration);
+
+        // Allow manual dismiss on click
+        toast.addEventListener('click', () => {
+            toast.classList.add('toast-hiding');
+            setTimeout(() => {
+                if (toast.parentNode) {
+                    toast.parentNode.removeChild(toast);
+                }
+            }, 300);
+        });
+
+        return toast;
+    }
+
+    // Convenience methods for common toast types
+    showSuccess(message, title = null, duration = 3000) {
+        return this.showToast(message, 'success', title, duration);
+    }
+
+    showError(message, title = null, duration = 5000) {
+        return this.showToast(message, 'error', title, duration);
+    }
+
+    showWarning(message, title = null, duration = 4000) {
+        return this.showToast(message, 'warning', title, duration);
+    }
+
+    showInfo(message, title = null, duration = 4000) {
+        return this.showToast(message, 'info', title, duration);
+    }
 }
 
 if (typeof module !== 'undefined' && module.exports) {

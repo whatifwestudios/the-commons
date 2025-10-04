@@ -8,6 +8,8 @@
 const ServerEconomicEngine = require('./server-economic-engine-v2');
 // GameState removed - using v2 server-authoritative economic engine
 const CityNameGenerator = require('./city-name-generator');
+const Logger = require('./logger');
+const logger = new Logger('room-manager');
 
 // Simple server-side governance system for treasury operations
 class ServerGovernanceSystem {
@@ -32,7 +34,7 @@ class ServerGovernanceSystem {
 
     addFunds(amount, description) {
         this.governance.treasury += amount;
-        console.log(`🏛️ Treasury: +$${amount.toFixed(2)} from ${description} (Total: $${this.governance.treasury.toFixed(2)})`);
+        // console.log(`🏛️ Treasury: +$${amount.toFixed(2)} from ${description} (Total: $${this.governance.treasury.toFixed(2)})`);
     }
 
     getTreasury() {
@@ -41,7 +43,7 @@ class ServerGovernanceSystem {
 
     setTaxRate(rate) {
         this.governance.taxRate = Math.max(0, Math.min(1, rate)); // Clamp 0-1
-        console.log(`🏛️ Tax rate set to ${(this.governance.taxRate * 100).toFixed(1)}%`);
+        // console.log(`🏛️ Tax rate set to ${(this.governance.taxRate * 100).toFixed(1)}%`);
     }
 
     /**
@@ -52,14 +54,14 @@ class ServerGovernanceSystem {
      */
     allocateBudgets(budgetProportions, totalRevenue) {
         if (totalRevenue <= 0 || !budgetProportions) {
-            console.log(`📦 No budget allocation: totalRevenue=${totalRevenue}, proportions=${!!budgetProportions}`);
+        // console.log(`📦 No budget allocation: totalRevenue=${totalRevenue}, proportions=${!!budgetProportions}`);
             return;
         }
 
         const availableFunds = Math.min(totalRevenue, this.governance.treasury);
         let totalAllocated = 0;
 
-        console.log(`💰 BUDGET ALLOCATION: $${availableFunds.toFixed(2)} available from treasury`);
+        // console.log(`💰 BUDGET ALLOCATION: $${availableFunds.toFixed(2)} available from treasury`);
 
         Object.entries(budgetProportions).forEach(([category, proportion]) => {
             if (proportion > 0) {
@@ -67,14 +69,14 @@ class ServerGovernanceSystem {
                 const previousBalance = this.governance.budgets[category];
                 this.governance.budgets[category] += allocation;
                 totalAllocated += allocation;
-                console.log(`   📊 ${category}: +$${allocation.toFixed(2)} (${(proportion * 100).toFixed(1)}%) → Total: $${this.governance.budgets[category].toFixed(2)} (was $${previousBalance.toFixed(2)})`);
+        // console.log(`   📊 ${category}: +$${allocation.toFixed(2)} (${(proportion * 100).toFixed(1)}%) → Total: $${this.governance.budgets[category].toFixed(2)} (was $${previousBalance.toFixed(2)})`);
             }
         });
 
         // Deduct allocated funds from treasury
         this.governance.treasury -= totalAllocated;
 
-        console.log(`💰 ALLOCATION COMPLETE: $${totalAllocated.toFixed(2)} allocated, $${this.governance.treasury.toFixed(2)} remaining in treasury`);
+        // console.log(`💰 ALLOCATION COMPLETE: $${totalAllocated.toFixed(2)} allocated, $${this.governance.treasury.toFixed(2)} remaining in treasury`);
     }
 
     /**
@@ -84,7 +86,7 @@ class ServerGovernanceSystem {
      */
     reallocateAllBudgets(budgetProportions) {
         if (!budgetProportions) {
-            console.warn('⚠️ No budget proportions provided for reallocation');
+            logger.warn('⚠️ No budget proportions provided for reallocation');
             return;
         }
 
@@ -92,7 +94,7 @@ class ServerGovernanceSystem {
         const currentBudgetTotal = Object.values(this.governance.budgets).reduce((sum, amount) => sum + amount, 0);
         const totalAvailableFunds = currentBudgetTotal + this.governance.treasury;
 
-        console.log(`🔄 BUDGET REALLOCATION: $${totalAvailableFunds.toFixed(2)} total funds (budgets: $${currentBudgetTotal.toFixed(2)}, treasury: $${this.governance.treasury.toFixed(2)})`);
+        // console.log(`🔄 BUDGET REALLOCATION: $${totalAvailableFunds.toFixed(2)} total funds (budgets: $${currentBudgetTotal.toFixed(2)}, treasury: $${this.governance.treasury.toFixed(2)})`);
 
         // Reset all budgets to 0
         Object.keys(this.governance.budgets).forEach(category => {
@@ -109,14 +111,14 @@ class ServerGovernanceSystem {
                 const allocation = totalAvailableFunds * proportion;
                 this.governance.budgets[category] = allocation;
                 totalAllocated += allocation;
-                console.log(`   🔄 ${category}: $${allocation.toFixed(2)} (${(proportion * 100).toFixed(1)}%)`);
+        // console.log(`   🔄 ${category}: $${allocation.toFixed(2)} (${(proportion * 100).toFixed(1)}%)`);
             }
         });
 
         // Deduct allocated funds from treasury
         this.governance.treasury = totalAvailableFunds - totalAllocated;
 
-        console.log(`🔄 REALLOCATION COMPLETE: $${totalAllocated.toFixed(2)} reallocated, $${this.governance.treasury.toFixed(2)} remaining in treasury`);
+        // console.log(`🔄 REALLOCATION COMPLETE: $${totalAllocated.toFixed(2)} reallocated, $${this.governance.treasury.toFixed(2)} remaining in treasury`);
     }
 
     /**
@@ -135,23 +137,23 @@ class ServerGovernanceSystem {
      */
     spendFromBudget(category, amount, description) {
         if (!this.governance.budgets[category]) {
-            console.warn(`⚠️ Invalid budget category: ${category}`);
+            logger.warn(`⚠️ Invalid budget category: ${category}`);
             return false;
         }
 
         if (this.governance.budgets[category] < amount) {
-            console.warn(`⚠️ Insufficient ${category} budget: $${this.governance.budgets[category].toFixed(2)} < $${amount.toFixed(2)}`);
+            logger.warn(`⚠️ Insufficient ${category} budget: $${this.governance.budgets[category].toFixed(2)} < $${amount.toFixed(2)}`);
             return false;
         }
 
         this.governance.budgets[category] -= amount;
-        console.log(`💸 ${category} budget: -$${amount.toFixed(2)} for ${description} (Remaining: $${this.governance.budgets[category].toFixed(2)})`);
+        // console.log(`💸 ${category} budget: -$${amount.toFixed(2)} for ${description} (Remaining: $${this.governance.budgets[category].toFixed(2)})`);
         return true;
     }
 
     startGameplay() {
         // Called when game starts - could adjust voting points or settings for gameplay
-        console.log(`🏛️ Governance system ready for gameplay`);
+        // console.log(`🏛️ Governance system ready for gameplay`);
     }
 }
 
@@ -192,13 +194,13 @@ class GameRoom {
         this.governanceSystem = new ServerGovernanceSystem();
         this.economicEngine.governanceSystem = this.governanceSystem;
 
-        console.log(`🏛️ Governance system connected to economic engine`);
+        // console.log(`🏛️ Governance system connected to economic engine`);
 
         // CRITICAL: Connect economic engine broadcast to room broadcast
         // This enables building completions to reach the right players
         this.economicEngine.broadcastFunction = (message) => {
             this.broadcast(message);
-            console.log(`📡 Room ${this.id}: Economic engine broadcasted to ${this.connections.size} players`);
+        // console.log(`📡 Room ${this.id}: Economic engine broadcasted to ${this.connections.size} players`);
         };
 
         // WebSocket connections for this room
@@ -207,14 +209,14 @@ class GameRoom {
         // Beer hall ready-check state
         this.readyCheckTriggered = false;
 
-        console.log(`🎲 Created game room: ${this.id} - "${this.roomName}"`);
+        // console.log(`🎲 Created game room: ${this.id} - "${this.roomName}"`);
     }
 
     /**
      * Add player to room
      */
     addPlayer(playerId, playerData, ws, roomManager = null) {
-        console.log(`🚨 FRESH DEBUG: Room.addPlayer() called for ${playerId} - if you see this, the function is working!`);
+        // console.log(`🚨 FRESH DEBUG: Room.addPlayer() called for ${playerId} - if you see this, the function is working!`);
 
         if (this.players.size >= this.maxPlayers) {
             throw new Error('Room is full');
@@ -236,7 +238,7 @@ class GameRoom {
             this.cityName = roomManager?.cityNameGenerator ?
                 roomManager.cityNameGenerator.generateCityName() :
                 `${playerData.name || 'Player'} City`;
-            console.log(`🏙️ SHARED: Generated city name for room ${this.id}: ${this.cityName} (roomManager: ${roomManager ? 'YES' : 'NO'})`);
+        // console.log(`🏙️ SHARED: Generated city name for room ${this.id}: ${this.cityName} (roomManager: ${roomManager ? 'YES' : 'NO'})`);
         }
 
         // Add player with default data including shared city name
@@ -260,7 +262,7 @@ class GameRoom {
             this.connections.set(playerId, ws);
         }
 
-        console.log(`👤 Player ${playerId} joined room ${this.id}`);
+        // console.log(`👤 Player ${playerId} joined room ${this.id}`);
 
         // Cancel empty room cleanup since player joined
         this.cancelEmptyRoomCleanup();
@@ -288,7 +290,7 @@ class GameRoom {
             this.host = this.players.keys().next().value;
         }
 
-        console.log(`👤 Player ${playerId} left room ${this.id}`);
+        // console.log(`👤 Player ${playerId} left room ${this.id}`);
 
         // Start empty room monitoring if room is now empty
         if (this.players.size === 0) {
@@ -323,7 +325,7 @@ class GameRoom {
         if (hasMinPlayers && !this.readyCheckTriggered) {
             if (isSoloTable) {
                 // Solo tables: Auto-start immediately without ready check modal
-                console.log(`🎮 Solo table ${this.id} auto-starting for single player`);
+        // console.log(`🎮 Solo table ${this.id} auto-starting for single player`);
                 this.startGame();
                 return;
             } else {
@@ -339,7 +341,7 @@ class GameRoom {
                         maxPlayers: this.maxPlayers
                     }
                 });
-                console.log(`🍻 Ready check started for table ${this.id} with ${this.players.size} players`);
+        // console.log(`🍻 Ready check started for table ${this.id} with ${this.players.size} players`);
             }
         }
 
@@ -353,15 +355,15 @@ class GameRoom {
      */
     startGame() {
         if (this.state !== 'WAITING') {
-            console.log(`⚠️ Cannot start game - room is in state: ${this.state}`);
+        // console.log(`⚠️ Cannot start game - room is in state: ${this.state}`);
             return;
         }
 
-        console.log(`🎮 Starting game for room ${this.id} - transitioning from WAITING to STARTING`);
+        // console.log(`🎮 Starting game for room ${this.id} - transitioning from WAITING to STARTING`);
         this.state = 'STARTING';
 
         // Broadcast game starting with countdown
-        console.log('🎯 Broadcasting GAME_STARTING with 3 second countdown');
+        // console.log('🎯 Broadcasting GAME_STARTING with 3 second countdown');
         this.broadcast({
             type: 'GAME_STARTING',
             countdown: 3,
@@ -372,7 +374,7 @@ class GameRoom {
         let countdown = 3;
         const countdownInterval = setInterval(() => {
             countdown--;
-            console.log(`⏰ Countdown: ${countdown}`);
+        // console.log(`⏰ Countdown: ${countdown}`);
             if (countdown >= 0) {
                 this.broadcast({
                     type: 'COUNTDOWN_UPDATE',
@@ -381,20 +383,20 @@ class GameRoom {
             }
             if (countdown <= 0) {
                 clearInterval(countdownInterval);
-                console.log('⏰ Countdown complete - game will start');
+        // console.log('⏰ Countdown complete - game will start');
             }
         }, 1000);
 
         setTimeout(() => {
-            console.log('🚀 3 second timeout complete - starting game');
+        // console.log('🚀 3 second timeout complete - starting game');
             this.state = 'IN_PROGRESS';
 
             // 🍺 BEER HALL FRESH START: Reset everything for new game (only if not already started)
             if (!this.economicEngine.gameState.gameStarted) {
-                console.log('🎲 Resetting game state for fresh start');
+        // console.log('🎲 Resetting game state for fresh start');
                 this.economicEngine.resetGameState();
             } else {
-                console.log('⚠️ Game already started - skipping reset to preserve game progress');
+        // console.log('⚠️ Game already started - skipping reset to preserve game progress');
             }
 
             // Initialize economic engine players with room player data (including governance points)
@@ -402,7 +404,7 @@ class GameRoom {
 
             // Set fresh starting conditions only for new games
             if (!this.economicEngine.gameState.gameStarted) {
-                console.log('🎲 Setting fresh starting conditions: September 2nd, $6k per player');
+        // console.log('🎲 Setting fresh starting conditions: September 2nd, $6k per player');
 
                 // Set fresh starting conditions: September 2nd, $6k per player
                 this.economicEngine.gameState.gameTime = 1.0; // Day 1 (Sept 2)
@@ -412,7 +414,7 @@ class GameRoom {
                 const GAME_DAY_MS = 3600000 / 365; // Same constant as in economic engine
                 this.economicEngine.gameState.gameStartTime = Date.now() - (1 * GAME_DAY_MS);
             } else {
-                console.log('⚠️ Game already in progress - preserving current game time and conditions');
+        // console.log('⚠️ Game already in progress - preserving current game time and conditions');
             }
 
             // Initialize player balances if not exists
@@ -423,13 +425,13 @@ class GameRoom {
             // Give each player $6,000 starting money
             this.players.forEach((player, playerId) => {
                 this.economicEngine.gameState.playerBalances.set(playerId, 6000);
-                console.log(`💰 Player ${playerId} starts with $6,000`);
+        // console.log(`💰 Player ${playerId} starts with $6,000`);
             });
 
             // Start game timer from Day 1
             this.economicEngine.updateGameTime();
 
-            console.log(`🍺 Beer Hall table ${this.id} started! ${this.players.size} players, Day 1, fresh board`);
+        // console.log(`🍺 Beer Hall table ${this.id} started! ${this.players.size} players, Day 1, fresh board`);
 
             // Lock in pre-game governance settings and reset for gameplay
             if (this.economicEngine.governanceSystem) {
@@ -437,13 +439,13 @@ class GameRoom {
 
                 // CRITICAL FIX: Sync governance system's updated voting points to economic engine player data
                 const gameplayVotingPoints = this.economicEngine.governanceSystem.governance.votingPoints || 2; // Default to 2 if undefined
-                console.log(`🏛️ SYNC: Updating all players to ${gameplayVotingPoints} gameplay voting points (governance system had: ${this.economicEngine.governanceSystem.governance.votingPoints})`);
+        // console.log(`🏛️ SYNC: Updating all players to ${gameplayVotingPoints} gameplay voting points (governance system had: ${this.economicEngine.governanceSystem.governance.votingPoints})`);
 
                 // Update all players in the economic engine with the correct gameplay voting points
                 this.economicEngine.gameState.players.forEach((playerState, playerId) => {
                     if (playerState.governance) {
                         playerState.governance.votingPoints = gameplayVotingPoints;
-                        console.log(`🏛️ SYNC: Player ${playerId} updated from pre-game to ${gameplayVotingPoints} gameplay points`);
+        // console.log(`🏛️ SYNC: Player ${playerId} updated from pre-game to ${gameplayVotingPoints} gameplay points`);
                     }
                 });
             }
@@ -541,7 +543,7 @@ class GameRoom {
         this.state = 'COMPLETED';
 
         const winnerData = this.players.get(winnerId);
-        console.log(`🏆 Game ended! Winner: ${winnerId} - ${victoryType}`);
+        // console.log(`🏆 Game ended! Winner: ${winnerId} - ${victoryType}`);
 
         // Broadcast victory
         this.broadcast({
@@ -562,7 +564,7 @@ class GameRoom {
             for (const playerId of this.players.keys()) {
                 this.removePlayer(playerId);
             }
-            console.log(`🗑️ Game room ${this.id} cleaned up after victory`);
+        // console.log(`🗑️ Game room ${this.id} cleaned up after victory`);
         }, 30000);
     }
 
@@ -704,14 +706,14 @@ class GameRoom {
      */
     startGameClock() {
         if (this.gameTimer) {
-            console.log(`🕒 Room ${this.id}: Clock already running`);
+        // console.log(`🕒 Room ${this.id}: Clock already running`);
             return;
         }
 
         this.gameStartTime = Date.now();
         this.economicEngine.gameState.gameStartTime = this.gameStartTime;
 
-        console.log(`🕒 Room ${this.id}: Starting isolated game clock`);
+        // console.log(`🕒 Room ${this.id}: Starting isolated game clock`);
 
         // Run clock every GAME_DAY_MS (~9.86 seconds)
         this.gameTimer = setInterval(() => {
@@ -751,7 +753,10 @@ class GameRoom {
         this.checkVictoryConditions();
 
         // Broadcast updated game state to room players
-        this.broadcastGameState('DAILY_PROGRESSION');
+        this.economicEngine.broadcastGameState('DAILY_PROGRESSION');
+
+        // Broadcast building state updates for rendering
+        this.economicEngine.broadcastBuildingStates();
     }
 
     /**
@@ -761,7 +766,7 @@ class GameRoom {
         if (this.gameTimer) {
             clearInterval(this.gameTimer);
             this.gameTimer = null;
-            console.log(`🕒 Room ${this.id}: Game clock stopped`);
+        // console.log(`🕒 Room ${this.id}: Game clock stopped`);
         }
     }
 
@@ -777,7 +782,7 @@ class GameRoom {
 
         // Check if room is empty
         if (this.players.size === 0) {
-            console.log(`⏰ Room ${this.id}: Empty room detected, starting 30s cleanup timer`);
+        // console.log(`⏰ Room ${this.id}: Empty room detected, starting 30s cleanup timer`);
             this.emptyRoomTimer = setTimeout(() => {
                 this.cleanupEmptyRoom();
             }, 30000); // 30 seconds
@@ -789,7 +794,7 @@ class GameRoom {
      */
     cleanupEmptyRoom() {
         if (this.players.size === 0) {
-            console.log(`🧹 Room ${this.id}: Cleaning up empty room after 30s`);
+        // console.log(`🧹 Room ${this.id}: Cleaning up empty room after 30s`);
             this.stopGameClock();
 
             // Notify room manager to remove this room
@@ -797,7 +802,7 @@ class GameRoom {
                 this.roomManager.removeRoom(this.id);
             }
         } else {
-            console.log(`🔄 Room ${this.id}: Players rejoined, canceling cleanup`);
+        // console.log(`🔄 Room ${this.id}: Players rejoined, canceling cleanup`);
         }
     }
 
@@ -808,7 +813,7 @@ class GameRoom {
         if (this.emptyRoomTimer) {
             clearTimeout(this.emptyRoomTimer);
             this.emptyRoomTimer = null;
-            console.log(`✅ Room ${this.id}: Cleanup canceled - players present`);
+        // console.log(`✅ Room ${this.id}: Cleanup canceled - players present`);
         }
     }
 }
@@ -820,7 +825,7 @@ class RoomManager {
         this.nextRoomNumber = 1; // Keep for display names only
         this.cityNameGenerator = new CityNameGenerator();
 
-        console.log('🎯 Room Manager initialized');
+        // console.log('🎯 Room Manager initialized');
     }
 
     /**
@@ -851,7 +856,7 @@ class RoomManager {
      * Join a room
      */
     joinRoom(roomId, playerId, playerData, ws) {
-        console.log(`🚀 DEBUG: joinRoom called - roomId: ${roomId}, playerId: ${playerId}, playerData:`, playerData);
+        // console.log(`🚀 DEBUG: joinRoom called - roomId: ${roomId}, playerId: ${playerId}, playerData:`, playerData);
 
         const room = this.rooms.get(roomId);
         if (!room) {
@@ -861,13 +866,13 @@ class RoomManager {
         // Leave current room if in one
         this.leaveCurrentRoom(playerId);
 
-        console.log(`🚀 DEBUG: About to call room.addPlayer with roomManager: ${this ? 'YES' : 'NO'}`);
+        // console.log(`🚀 DEBUG: About to call room.addPlayer with roomManager: ${this ? 'YES' : 'NO'}`);
 
         // Add to new room
         const player = room.addPlayer(playerId, playerData, ws, this);
         this.playerRooms.set(playerId, roomId);
 
-        console.log(`🚀 DEBUG: room.addPlayer returned player:`, player);
+        // console.log(`🚀 DEBUG: room.addPlayer returned player:`, player);
 
         // Broadcast player joined
         room.broadcast({
@@ -899,7 +904,7 @@ class RoomManager {
                 // Delete room if empty
                 if (shouldDelete) {
                     this.rooms.delete(currentRoomId);
-                    console.log(`🗑️ Deleted empty room ${currentRoomId}`);
+        // console.log(`🗑️ Deleted empty room ${currentRoomId}`);
                 }
             }
 
@@ -933,16 +938,18 @@ class RoomManager {
      * Beer Hall Table Finder - Find or create table based on player preferences
      */
     findTableWithPreferences(playerId, playerData, ws, preferences = {}) {
-        console.log(`🚀 DEBUG: findTableWithPreferences called - playerId: ${playerId}, playerData:`, playerData, 'preferences:', preferences);
+        console.log(`🚀 ROOM MATCHING DEBUG: findTableWithPreferences called - playerId: ${playerId}, preferences:`, preferences);
 
         const minPlayers = preferences.minPlayers || 3;
         const maxPlayers = Math.min(preferences.maxPlayers || 12, 12); // Cap at 12
         const isSoloMode = minPlayers === 1 && maxPlayers === 1;
 
+        console.log(`🎯 ROOM MATCHING: Processed preferences - minPlayers: ${minPlayers}, maxPlayers: ${maxPlayers}, isSoloMode: ${isSoloMode}`);
+
         if (isSoloMode) {
-            console.log(`🎮 Player ${playerId} requesting solo table (1 player only)`);
+        // console.log(`🎮 Player ${playerId} requesting solo table (1 player only)`);
         } else {
-            console.log(`🍺 Player ${playerId} looking for multiplayer table: ${minPlayers}-${maxPlayers} players`);
+        // console.log(`🍺 Player ${playerId} looking for multiplayer table: ${minPlayers}-${maxPlayers} players`);
         }
 
         // Leave current table if in one
@@ -950,10 +957,13 @@ class RoomManager {
 
         // Solo mode: Always create a new isolated table (no sharing)
         if (isSoloMode) {
-            console.log(`🎮 Creating new solo table for ${playerId}`);
+        // console.log(`🎮 Creating new solo table for ${playerId}`);
         } else {
             // Multiplayer: Try to find existing suitable table first
+            console.log(`🔍 ROOM SEARCH: Looking for existing tables. Total rooms: ${this.rooms.size}`);
             for (const room of this.rooms.values()) {
+                console.log(`🏠 ROOM CHECK: ${room.id} - isPublic: ${room.isPublic}, state: ${room.state}, players: ${room.players.size}/${room.maxPlayers}`);
+
                 if (room.isPublic &&
                     room.state === 'WAITING' &&
                     room.id.startsWith('table-') && // V2: Only beer hall tables
@@ -961,10 +971,13 @@ class RoomManager {
                     room.maxPlayers <= maxPlayers &&
                     room.players.size < room.maxPlayers) {
 
-                    console.log(`🎯 Found suitable beer hall table: ${room.id} (${room.players.size}/${room.maxPlayers})`);
+                    console.log(`✅ ROOM MATCH: Found suitable table ${room.id} for player ${playerId}`);
                     return this.joinRoom(room.id, playerId, playerData, ws);
+                } else {
+                    console.log(`❌ ROOM MISMATCH: ${room.id} failed checks - isPublic:${room.isPublic}, waiting:${room.state === 'WAITING'}, table:${room.id.startsWith('table-')}, maxValid:${room.maxPlayers >= minPlayers && room.maxPlayers <= maxPlayers}, hasSpace:${room.players.size < room.maxPlayers}`);
                 }
             }
+            console.log(`🆕 ROOM CREATE: No suitable room found, creating new table`);
         }
 
         // Create new table optimized for preferences
@@ -973,12 +986,12 @@ class RoomManager {
             tableSize = 1;
             roomName = `Solo Table ${this.nextRoomNumber}`;
             uniqueRoomId = this.generateUniqueRoomId('solo');
-            console.log(`🆕 Creating isolated solo table for ${playerId}: ${uniqueRoomId} (display: solo-${this.nextRoomNumber})`);
+        // console.log(`🆕 Creating isolated solo table for ${playerId}: ${uniqueRoomId} (display: solo-${this.nextRoomNumber})`);
         } else {
             tableSize = Math.max(minPlayers, Math.min(maxPlayers, 6)); // Default to 6 if within range
             roomName = `Table ${this.nextRoomNumber}`;
             uniqueRoomId = this.generateUniqueRoomId('table');
-            console.log(`🆕 Creating multiplayer table for ${playerId}: ${uniqueRoomId} (display: table-${this.nextRoomNumber}, ${minPlayers}-${tableSize} players)`);
+        // console.log(`🆕 Creating multiplayer table for ${playerId}: ${uniqueRoomId} (display: table-${this.nextRoomNumber}, ${minPlayers}-${tableSize} players)`);
         }
 
         const newRoom = this.createRoom({
@@ -1044,7 +1057,7 @@ class RoomManager {
                     const currentPlayer = currentRoom?.players.get(playerId);
 
                     if (currentPlayer && !currentPlayer.connected) {
-                        console.log(`⏰ Auto-removing player ${playerId} after 5 minutes of disconnection`);
+        // console.log(`⏰ Auto-removing player ${playerId} after 5 minutes of disconnection`);
 
                         // Remove player permanently
                         currentRoom.removePlayer(playerId);
@@ -1061,7 +1074,7 @@ class RoomManager {
                         // Check if room should be deleted
                         if (currentRoom.players.size === 0) {
                             this.rooms.delete(this.playerRooms.get(playerId));
-                            console.log(`🗑️ Deleted empty room after auto-removal`);
+        // console.log(`🗑️ Deleted empty room after auto-removal`);
                         }
                     }
                 }, 5 * 60 * 1000); // 5 minutes
@@ -1097,7 +1110,7 @@ class RoomManager {
         // Check if room should be deleted
         if (room.players.size === 0) {
             this.rooms.delete(currentRoomId);
-            console.log(`🗑️ Deleted empty room ${currentRoomId} after last player quit`);
+        // console.log(`🗑️ Deleted empty room ${currentRoomId} after last player quit`);
         }
     }
 
@@ -1116,7 +1129,7 @@ class RoomManager {
                 if (player.reconnectTimeout) {
                     clearTimeout(player.reconnectTimeout);
                     player.reconnectTimeout = null;
-                    console.log(`🔄 Cancelled auto-removal for reconnected player ${playerId}`);
+        // console.log(`🔄 Cancelled auto-removal for reconnected player ${playerId}`);
                 }
 
                 // Send full room state to reconnected player
@@ -1167,7 +1180,7 @@ class RoomManager {
 
             // Remove the room
             this.rooms.delete(roomId);
-            console.log(`🗑️ Room ${roomId} removed from manager`);
+        // console.log(`🗑️ Room ${roomId} removed from manager`);
             return true;
         }
         return false;

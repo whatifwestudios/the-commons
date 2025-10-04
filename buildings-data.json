@@ -24,21 +24,33 @@
         "constructionDays": 5,
         "maxRevenue": 0,
         "maintenanceCost": 8,
-        "decayRatePercent": 0.05
+        "decayRate": 0.05
       },
       "livability": {
-        "culture": 5,
-        "culture_range": 3,
-        "affordability": 2,
-        "affordability_range": 4,
-        "resilience": 10,
-        "resilience_range": 5,
-        "environment": 3,
-        "environment_range": 2,
-        "noise": -15,
-        "noise_range": 10,
-        "safety": 25,
-        "safety_range": 6
+        "culture": {
+          "impact": 5,
+          "attenuation": 3
+        },
+        "affordability": {
+          "impact": 2,
+          "attenuation": 4
+        },
+        "resilience": {
+          "impact": 10,
+          "attenuation": 5
+        },
+        "environment": {
+          "impact": 3,
+          "attenuation": 2
+        },
+        "noise": {
+          "impact": -15,
+          "attenuation": 10
+        },
+        "safety": {
+          "impact": 25,
+          "attenuation": 6
+        }
       },
       "isDefault": true,
       "graphicsFile": "assets/buildings/civic/fire_station.png",
@@ -75,21 +87,33 @@
         "constructionDays": 3,
         "maxRevenue": 0,
         "maintenanceCost": 2,
-        "decayRatePercent": 0.05
+        "decayRate": 0.05
       },
       "livability": {
-        "culture": 25,
-        "culture_range": 12,
-        "affordability": 8,
-        "affordability_range": 5,
-        "resilience": 15,
-        "resilience_range": 8,
-        "environment": -1,
-        "environment_range": 1,
-        "noise": 0,
-        "noise_range": 0,
-        "safety": 3,
-        "safety_range": 5
+        "culture": {
+          "impact": 25,
+          "attenuation": 12
+        },
+        "affordability": {
+          "impact": 8,
+          "attenuation": 5
+        },
+        "resilience": {
+          "impact": 15,
+          "attenuation": 8
+        },
+        "environment": {
+          "impact": -1,
+          "attenuation": 1
+        },
+        "noise": {
+          "impact": 0,
+          "attenuation": 0
+        },
+        "safety": {
+          "impact": 3,
+          "attenuation": 5
+        }
       },
       "isDefault": true,
       "graphicsFile": "assets/buildings/education/library.png",
@@ -126,21 +150,33 @@
         "constructionDays": 4,
         "maxRevenue": 15,
         "maintenanceCost": 3,
-        "decayRatePercent": 0.12
+        "decayRate": 0.12
       },
       "livability": {
-        "culture": 12,
-        "culture_range": 10,
-        "affordability": 5,
-        "affordability_range": 8,
-        "resilience": 5,
-        "resilience_range": 8,
-        "environment": -3,
-        "environment_range": 1,
-        "noise": -2,
-        "noise_range": 1,
-        "safety": -5,
-        "safety_range": 1
+        "culture": {
+          "impact": 12,
+          "attenuation": 10
+        },
+        "affordability": {
+          "impact": 5,
+          "attenuation": 8
+        },
+        "resilience": {
+          "impact": 5,
+          "attenuation": 8
+        },
+        "environment": {
+          "impact": -3,
+          "attenuation": 1
+        },
+        "noise": {
+          "impact": -2,
+          "attenuation": 1
+        },
+        "safety": {
+          "impact": -5,
+          "attenuation": 1
+        }
       },
       "isDefault": true,
       "graphicsFile": "assets/buildings/civic/public_pool.png",
@@ -177,21 +213,33 @@
         "constructionDays": 2,
         "maxRevenue": 0,
         "maintenanceCost": 0,
-        "decayRatePercent": 0
+        "decayRate": 0
       },
       "livability": {
-        "culture": 12,
-        "culture_range": 8,
-        "affordability": 5,
-        "affordability_range": 25,
-        "resilience": 15,
-        "resilience_range": 15,
-        "environment": 6,
-        "environment_range": 1,
-        "noise": 10,
-        "noise_range": 2,
-        "safety": 3,
-        "safety_range": 2
+        "culture": {
+          "impact": 12,
+          "attenuation": 8
+        },
+        "affordability": {
+          "impact": 5,
+          "attenuation": 25
+        },
+        "resilience": {
+          "impact": 15,
+          "attenuation": 15
+        },
+        "environment": {
+          "impact": 6,
+          "attenuation": 1
+        },
+        "noise": {
+          "impact": 10,
+          "attenuation": 2
+        },
+        "safety": {
+          "impact": 3,
+          "attenuation": 2
+        }
       },
       "isDefault": true,
       "graphicsFile": "assets/buildings/civic/park.png",
@@ -230,21 +278,33 @@
         "constructionDays": 1,
         "maxRevenue": 10,
         "maintenanceCost": 1,
-        "decayRatePercent": 0.1
+        "decayRate": 0.1
       },
       "livability": {
-        "culture": 5,
-        "culture_range": 2,
-        "affordability": 15,
-        "affordability_range": 3,
-        "resilience": 5,
-        "resilience_range": 2,
-        "environment": 10,
-        "environment_range": 2,
-        "noise": 5,
-        "noise_range": 2,
-        "safety": 10,
-        "safety_range": 2
+        "culture": {
+          "impact": 5,
+          "attenuation": 2
+        },
+        "affordability": {
+          "impact": 15,
+          "attenuation": 3
+        },
+        "resilience": {
+          "impact": 5,
+          "attenuation": 2
+        },
+        "environment": {
+          "impact": 10,
+          "attenuation": 2
+        },
+        "noise": {
+          "impact": 5,
+          "attenuation": 2
+        },
+        "safety": {
+          "impact": 10,
+          "attenuation": 2
+        }
       },
       "isDefault": true,
       "graphicsFile": "assets/buildings/housing/cottage.png",
@@ -281,21 +341,33 @@
         "constructionDays": 7,
         "maxRevenue": 80,
         "maintenanceCost": 5,
-        "decayRatePercent": 0.15
+        "decayRate": 0.15
       },
       "livability": {
-        "culture": 2,
-        "culture_range": 2,
-        "affordability": 20,
-        "affordability_range": 4,
-        "resilience": 5,
-        "resilience_range": 2,
-        "environment": -5,
-        "environment_range": 3,
-        "noise": -10,
-        "noise_range": 5,
-        "safety": 5,
-        "safety_range": 2
+        "culture": {
+          "impact": 2,
+          "attenuation": 2
+        },
+        "affordability": {
+          "impact": 20,
+          "attenuation": 4
+        },
+        "resilience": {
+          "impact": 5,
+          "attenuation": 2
+        },
+        "environment": {
+          "impact": -5,
+          "attenuation": 3
+        },
+        "noise": {
+          "impact": -10,
+          "attenuation": 5
+        },
+        "safety": {
+          "impact": 5,
+          "attenuation": 2
+        }
       },
       "isDefault": true,
       "graphicsFile": "assets/buildings/housing/apartments.png",
@@ -334,21 +406,33 @@
         "constructionDays": 2,
         "maxRevenue": 25,
         "maintenanceCost": 2,
-        "decayRatePercent": 0.12
+        "decayRate": 0.12
       },
       "livability": {
-        "culture": 8,
-        "culture_range": 12,
-        "affordability": 6,
-        "affordability_range": 5,
-        "resilience": 2,
-        "resilience_range": 8,
-        "environment": 10,
-        "environment_range": 0,
-        "noise": 2,
-        "noise_range": 1,
-        "safety": 2,
-        "safety_range": 3
+        "culture": {
+          "impact": 8,
+          "attenuation": 12
+        },
+        "affordability": {
+          "impact": 6,
+          "attenuation": 5
+        },
+        "resilience": {
+          "impact": 2,
+          "attenuation": 8
+        },
+        "environment": {
+          "impact": 10,
+          "attenuation": 0
+        },
+        "noise": {
+          "impact": 2,
+          "attenuation": 1
+        },
+        "safety": {
+          "impact": 2,
+          "attenuation": 3
+        }
       },
       "isDefault": true,
       "graphicsFile": "assets/buildings/commercial/farmers_market.png",
@@ -385,21 +469,33 @@
         "constructionDays": 4,
         "maxRevenue": 30,
         "maintenanceCost": 4,
-        "decayRatePercent": 0.135
+        "decayRate": 0.135
       },
       "livability": {
-        "culture": 7,
-        "culture_range": 3,
-        "affordability": 3,
-        "affordability_range": 3,
-        "resilience": 1,
-        "resilience_range": 1,
-        "environment": -2,
-        "environment_range": 1,
-        "noise": 0,
-        "noise_range": 1,
-        "safety": 0,
-        "safety_range": 1
+        "culture": {
+          "impact": 7,
+          "attenuation": 3
+        },
+        "affordability": {
+          "impact": 3,
+          "attenuation": 3
+        },
+        "resilience": {
+          "impact": 1,
+          "attenuation": 1
+        },
+        "environment": {
+          "impact": -2,
+          "attenuation": 1
+        },
+        "noise": {
+          "impact": 0,
+          "attenuation": 1
+        },
+        "safety": {
+          "impact": 0,
+          "attenuation": 1
+        }
       },
       "isDefault": true,
       "graphicsFile": "assets/buildings/commercial/taqueria.png",
@@ -438,21 +534,33 @@
         "constructionDays": 5,
         "maxRevenue": 0,
         "maintenanceCost": 4,
-        "decayRatePercent": 0.08
+        "decayRate": 0.08
       },
       "livability": {
-        "culture": 15,
-        "culture_range": 8,
-        "affordability": 8,
-        "affordability_range": 3,
-        "resilience": 10,
-        "resilience_range": 12,
-        "environment": 0,
-        "environment_range": 1,
-        "noise": -1,
-        "noise_range": 2,
-        "safety": 3,
-        "safety_range": 5
+        "culture": {
+          "impact": 15,
+          "attenuation": 8
+        },
+        "affordability": {
+          "impact": 8,
+          "attenuation": 3
+        },
+        "resilience": {
+          "impact": 10,
+          "attenuation": 12
+        },
+        "environment": {
+          "impact": 0,
+          "attenuation": 1
+        },
+        "noise": {
+          "impact": -1,
+          "attenuation": 2
+        },
+        "safety": {
+          "impact": 3,
+          "attenuation": 5
+        }
       },
       "isDefault": true,
       "graphicsFile": "assets/buildings/education/elementary_school.png",
@@ -489,21 +597,33 @@
         "constructionDays": 8,
         "maxRevenue": 0,
         "maintenanceCost": 6,
-        "decayRatePercent": 0.08
+        "decayRate": 0.08
       },
       "livability": {
-        "culture": 18,
-        "culture_range": 5,
-        "affordability": 10,
-        "affordability_range": 3,
-        "resilience": 5,
-        "resilience_range": 15,
-        "environment": -2,
-        "environment_range": 1,
-        "noise": -1,
-        "noise_range": 2,
-        "safety": 3,
-        "safety_range": 5
+        "culture": {
+          "impact": 18,
+          "attenuation": 5
+        },
+        "affordability": {
+          "impact": 10,
+          "attenuation": 3
+        },
+        "resilience": {
+          "impact": 5,
+          "attenuation": 15
+        },
+        "environment": {
+          "impact": -2,
+          "attenuation": 1
+        },
+        "noise": {
+          "impact": -1,
+          "attenuation": 2
+        },
+        "safety": {
+          "impact": 3,
+          "attenuation": 5
+        }
       },
       "isDefault": true,
       "graphicsFile": "assets/buildings/education/high_school.png",
@@ -542,21 +662,33 @@
         "constructionDays": 4,
         "maxRevenue": 15,
         "maintenanceCost": 1,
-        "decayRatePercent": 0.08
+        "decayRate": 0.08
       },
       "livability": {
-        "culture": 2,
-        "culture_range": -5,
-        "affordability": 15,
-        "affordability_range": 30,
-        "resilience": 5,
-        "resilience_range": 3,
-        "environment": 25,
-        "environment_range": 1,
-        "noise": 0,
-        "noise_range": 1,
-        "safety": 5,
-        "safety_range": 3
+        "culture": {
+          "impact": 2,
+          "attenuation": -5
+        },
+        "affordability": {
+          "impact": 15,
+          "attenuation": 30
+        },
+        "resilience": {
+          "impact": 5,
+          "attenuation": 3
+        },
+        "environment": {
+          "impact": 25,
+          "attenuation": 1
+        },
+        "noise": {
+          "impact": 0,
+          "attenuation": 1
+        },
+        "safety": {
+          "impact": 5,
+          "attenuation": 3
+        }
       },
       "isDefault": true,
       "graphicsFile": "assets/buildings/energy/solar_farm.png",
@@ -593,31 +725,43 @@
         "constructionDays": 2300,
         "maxRevenue": 9,
         "maintenanceCost": 160,
-        "decayRatePercent": 0.22
+        "decayRate": 0.22
       },
       "livability": {
-        "culture": 0,
-        "culture_range": 0,
-        "affordability": 1,
-        "affordability_range": 6,
-        "resilience": 8,
-        "resilience_range": 10,
-        "environment": 12,
-        "environment_range": -40,
-        "noise": 12,
-        "noise_range": -10,
-        "safety": 4,
-        "safety_range": 0
+        "culture": {
+          "impact": 0,
+          "attenuation": 0
+        },
+        "affordability": {
+          "impact": 1,
+          "attenuation": 6
+        },
+        "resilience": {
+          "impact": 8,
+          "attenuation": 10
+        },
+        "environment": {
+          "impact": 12,
+          "attenuation": -40
+        },
+        "noise": {
+          "impact": 12,
+          "attenuation": -10
+        },
+        "safety": {
+          "impact": 4,
+          "attenuation": 0
+        }
       },
       "isDefault": true,
-      "graphicsFile": "1",
+      "graphicsFile": "assets/buildings/energy/coal_plant.png",
       "graphics": {
-        "filename": "1",
-        "path": "1",
+        "filename": "coal_plant.png",
+        "path": "assets/buildings/energy/coal_plant.png",
         "fallbackPath": "assets/buildings/default.svg"
       },
       "images": {
-        "built": "1"
+        "built": "assets/buildings/energy/coal_plant.png"
       }
     },
     {
@@ -644,21 +788,33 @@
         "constructionDays": 12,
         "maxRevenue": 220,
         "maintenanceCost": 25,
-        "decayRatePercent": 0.1
+        "decayRate": 0.1
       },
       "livability": {
-        "culture": 0,
-        "culture_range": 1,
-        "affordability": 15,
-        "affordability_range": 12,
-        "resilience": 15,
-        "resilience_range": 12,
-        "environment": -15,
-        "environment_range": 10,
-        "noise": -2,
-        "noise_range": 2,
-        "safety": -2,
-        "safety_range": 12
+        "culture": {
+          "impact": 0,
+          "attenuation": 1
+        },
+        "affordability": {
+          "impact": 15,
+          "attenuation": 12
+        },
+        "resilience": {
+          "impact": 15,
+          "attenuation": 12
+        },
+        "environment": {
+          "impact": -15,
+          "attenuation": 10
+        },
+        "noise": {
+          "impact": -2,
+          "attenuation": 2
+        },
+        "safety": {
+          "impact": -2,
+          "attenuation": 12
+        }
       },
       "isDefault": true,
       "graphicsFile": "assets/buildings/energy/natural_gas_plant.png",
@@ -697,21 +853,33 @@
         "constructionDays": 8,
         "maxRevenue": 50,
         "maintenanceCost": 4,
-        "decayRatePercent": 0.12
+        "decayRate": 0.12
       },
       "livability": {
-        "culture": 8,
-        "culture_range": -2,
-        "affordability": 3,
-        "affordability_range": -8,
-        "resilience": -12,
-        "resilience_range": -5,
-        "environment": -10,
-        "environment_range": 3,
-        "noise": -6,
-        "noise_range": 2,
-        "safety": -5,
-        "safety_range": 3
+        "culture": {
+          "impact": 8,
+          "attenuation": -2
+        },
+        "affordability": {
+          "impact": 3,
+          "attenuation": -8
+        },
+        "resilience": {
+          "impact": -12,
+          "attenuation": -5
+        },
+        "environment": {
+          "impact": -10,
+          "attenuation": 3
+        },
+        "noise": {
+          "impact": -6,
+          "attenuation": 2
+        },
+        "safety": {
+          "impact": -5,
+          "attenuation": 3
+        }
       },
       "isDefault": true,
       "graphicsFile": "assets/buildings/industrial/brewery.png",
@@ -750,21 +918,33 @@
         "constructionDays": 5,
         "maxRevenue": 0,
         "maintenanceCost": 1,
-        "decayRatePercent": 0.0075
+        "decayRate": 0.0075
       },
       "livability": {
-        "culture": 12,
-        "culture_range": 6,
-        "affordability": -2,
-        "affordability_range": 5,
-        "resilience": 0,
-        "resilience_range": 0,
-        "environment": 3,
-        "environment_range": 2,
-        "noise": -3,
-        "noise_range": 1,
-        "safety": -5,
-        "safety_range": 1
+        "culture": {
+          "impact": 12,
+          "attenuation": 6
+        },
+        "affordability": {
+          "impact": -2,
+          "attenuation": 5
+        },
+        "resilience": {
+          "impact": 0,
+          "attenuation": 0
+        },
+        "environment": {
+          "impact": 3,
+          "attenuation": 2
+        },
+        "noise": {
+          "impact": -3,
+          "attenuation": 1
+        },
+        "safety": {
+          "impact": -5,
+          "attenuation": 1
+        }
       },
       "isDefault": true,
       "graphicsFile": "assets/buildings/recreation/skate_park.png",

@@ -874,7 +874,7 @@ body.beer-hall-active #top-bar {
     will-change: transform;
 }
 
-#gameCanvas.loaded {
+#gameCanvas {
     opacity: 1;
     transform: scale(1);
 }
@@ -1022,21 +1022,22 @@ body.beer-hall-active #top-bar {
 
 .action-btn {
     width: 100%;
-    padding: 9px;
-    background: linear-gradient(135deg, #42B96E 0%, #2E8B57 100%);
+    padding: 13px;
+    background: #161616;
     color: white;
     border: 1px solid #ffffff9e;
     border-radius: 4px;
-    font-size: 10px;
-    font-weight: 600;
+    font-size: 13px;
+    font-weight: 500;
     letter-spacing: 1px;
     cursor: pointer;
     transition: all 0.2s ease;
 }
 
 .action-btn:hover {
-    background: linear-gradient(135deg, #52C97E 0%, #3E9B67 100%);
-    transform: translateY(-1px);
+    background: #0a0a0a;
+    transform: translate(-1px, 1px);
+    border: 1px solid white;
 }
 
 .action-btn:active {
@@ -2234,11 +2235,6 @@ body.beer-hall-active #top-bar {
     accent-color: #42B96E;
 }
 
-#service-level-section {
-    margin-top: 12px;
-    padding-top: 12px;
-    border-top: 1px solid #1a1a1a;
-}
 
 .road-design-actions {
     padding: 12px 16px;
@@ -2899,10 +2895,6 @@ body.beer-hall-active #top-bar {
     border-color: #ff6b6b;
 }
 
-#add-building-image {
-    width: 100%;
-    margin-bottom: 0;
-}
 
 .image-preview {
     margin-top: 8px;
@@ -4043,39 +4035,8 @@ body.beer-hall-active #top-bar {
 }
 
 
-.amenities-section {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 4px 8px;
-    width: 100%;
-    padding: 8px;
-    background: #0a0a0a;
-    border: 1px solid #2a2a2a;
-    border-radius: 4px;
-}
 
-.amenity-checkbox {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    color: #bbbbbb;
-    font-size: 10px;
-    cursor: pointer;
-    padding: 2px;
-    white-space: nowrap;
-}
 
-.amenity-checkbox input[type="checkbox"] {
-    width: 12px;
-    height: 12px;
-    accent-color: #0066cc;
-    margin: 0;
-    flex-shrink: 0;
-}
-
-.amenity-checkbox:hover {
-    color: #ffffff;
-}
 
 /* Network Design Panels */
 .network-design-panel {
@@ -6004,99 +5965,143 @@ body.beer-hall-active #top-bar {
     font-style: italic;
 }
 
-/* Hide magic link buttons by default for production */
-#magic-link-btn,
-#send-magic-link {
-    display: none !important;
-}
 
 
-/* Responsive Design for Setup Screen */
-
-/* Authentication Components */
-.auth-modal {
-    display: none;
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: rgba(0, 0, 0, 0.9);
-    z-index: 15000;
-    align-items: center;
-    justify-content: center;
-}
-
-.auth-modal:not(.hidden) {
+/* Action Market Modal Redesign */
+.action-marketplace .modal-header {
     display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 16px;
+    background: #111;
+    border-bottom: 1px solid #333;
 }
 
-.auth-content {
-    background: #0a0a0a;
-    border: 1px solid #2a2a2a;
-    border-radius: 8px;
-    padding: 0;
-    max-width: 450px;
-    width: 90%;
-    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.6);
-    overflow: hidden;
+.action-marketplace .modal-header h2 {
+    font-size: 14px;
+    font-weight: 500;
+    color: #fff;
+    margin: 0;
 }
 
-.auth-header {
-    padding: 32px 32px 24px 32px;
-    text-align: center;
-    background: #111111;
-    border-bottom: 1px solid #2a2a2a;
+.action-availability {
+    font-size: 13px;
+    color: #888;
+    margin-left: auto;
+    margin-right: 16px;
 }
 
-.auth-header h2 {
+.action-availability strong {
     color: #52C77E;
-    margin: 0 0 8px 0;
-    font-size: 20px;
     font-weight: 600;
 }
 
-.auth-header p {
-    color: #888888;
-    margin: 0;
+.marketplace-tabs {
+    display: flex;
+    gap: 0;
+    border-bottom: 1px solid #333;
+    background: #0a0a0a;
+}
+
+.marketplace-tabs .tab-btn {
+    flex: 1;
+    padding: 12px 16px;
+    background: #1a1a1a;
+    border: none;
+    border-radius: 0;
+    color: #666;
     font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.marketplace-tabs .tab-btn:hover {
+    background: #222;
+    color: #999;
+}
+
+.marketplace-tabs .tab-btn.active {
+    background: #fff;
+    color: #000;
+}
+
+.sell-actions-row {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    padding: 16px;
+    background: rgba(0, 184, 148, 0.05);
+    border-radius: 4px;
+}
+
+.sell-actions-row input {
+    flex: 1;
+    padding: 8px 12px;
+    background: #1a1a1a;
+    border: 1px solid #333;
+    border-radius: 4px;
+    color: #fff;
+    font-size: 13px;
+}
+
+.sell-actions-row button {
+    padding: 8px 20px;
+}
+
+/* Remove action-balance styles */
+.action-balance,
+.action-balance-section {
+    display: none !important;
+}
+
+/* Inline Style Replacements */
+.quit-game-btn-danger {
+    color: #ff4444;
+    border-top: 1px solid #333;
+    margin-top: 5px;
+}
+
+.hidden-element {
+    display: none;
+}
+
+.game-title-main {
+    font-size: 28px;
+    color: #fff;
+    margin: 0 0 8px 0;
+    font-weight: 600;
+}
+
+.game-subtitle {
+    font-size: 14px;
+    color: #888;
+    margin: 0 0 24px 0;
     line-height: 1.4;
 }
 
-.auth-form {
-    padding: 24px 32px 32px 32px;
-}
 
-.form-field {
+.sell-actions-section {
     margin-bottom: 20px;
+    padding: 16px;
+    background: rgba(0, 184, 148, 0.1);
+    border-radius: 8px;
 }
 
-.form-field label {
-    display: block;
-    color: #cccccc;
-    font-size: 12px;
-    font-weight: 500;
-    margin-bottom: 6px;
-    letter-spacing: 0.3px;
+.sell-form {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
 }
 
-.form-field input {
-    width: 100%;
-    background: #1a1a1a;
-    border: 1px solid #2a2a2a;
-    color: #ffffff;
-    padding: 12px 14px;
-    border-radius: 4px;
-    font-size: 14px;
-    font-family: inherit;
-    transition: border-color 0.2s ease;
+.sell-form input {
+    padding: 8px;
 }
 
-.form-field input:focus {
-    outline: none;
-    border-color: #52C77E;
-    box-shadow: 0 0 0 2px rgba(82, 199, 126, 0.1);
-}
+/* Responsive Design for Setup Screen */
+
+
+
 
 .form-field input::placeholder {
     color: #666666;

@@ -383,12 +383,9 @@ class IsometricGrid {
         }, 1000);
         
         // Periodic sync removed - not needed for solo game
-        
-        // Initialize Action Marketplace V2
-        this.actionMarketplace = new ActionMarketplaceV2(this);
 
-        // Initialize Parcel Auction System
-        this.parcelAuctionSystem = new ParcelAuctionSystem(this);
+        // Action Manager and Auctions are disabled in solo mode
+        // (Only available in multiplayer mode)
 
         // Multiplayer system removed for clean solo game
     }
@@ -487,11 +484,15 @@ class IsometricGrid {
         // Start live tooltip updates for time-based tooltips
         this.startLiveTooltipUpdates();
 
-        // Initialize Action Marketplace V2
-        this.actionMarketplace = new ActionMarketplaceV2(this);
+        // Initialize Action Marketplace V2 (multiplayer only)
+        if (!this.actionMarketplace) {
+            this.actionMarketplace = new ActionMarketplaceV2(this);
+        }
 
-        // Initialize Parcel Auction System
-        this.parcelAuctionSystem = new ParcelAuctionSystem(this);
+        // Initialize Parcel Auction System (multiplayer only)
+        if (!this.parcelAuctionSystem) {
+            this.parcelAuctionSystem = new ParcelAuctionSystem(this);
+        }
 
         // Initialize real-time synchronization for multiplayer reliability
         this.initializeRealtimeSync();
@@ -1334,12 +1335,16 @@ class IsometricGrid {
         return count;
     }
 
-    // 🚫 CLIENT CALCULATION - DISABLED! BUSTED!
+    /**
+     * Calculate population - SERVER ONLY
+     * Returns server data or placeholder
+     */
     calculatePopulation() {
-        // CLIENT-SIDE CALCULATION DISABLED - RETURN Loading... PLACEHOLDER
-        // This function was calculating total city population!
-        // Server should handle population calculations for server authority!
-        return 'Loading...';
+        // Use server data if available
+        if (this.economicClient?.getCityPopulation) {
+            return this.economicClient.getCityPopulation() || 0;
+        }
+        return 0; // Return 0 instead of 'Loading...' for calculations
     }
 
     calculateTotalWealth() {
@@ -1598,8 +1603,8 @@ class IsometricGrid {
         // Update the actual playerCash property for gameplay logic
         this.playerCash = currentCash;
 
-        // Round cash and wealth to nearest dollar for display
-        this.uiManager.get('playerCash').textContent = `$${Math.round(currentCash).toLocaleString()}`;
+        // Cash display managed by Economic Client (server-authoritative)
+        // Only update wealth display here since it's calculated from client state
         this.uiManager.get('playerWealth').textContent = `$${Math.round(safeWealth).toLocaleString()}`;
 
         // Update cashflow with proper formatting and color coding
@@ -2371,7 +2376,7 @@ class IsometricGrid {
         // Extract economic data
         const maxRevenue = economics.maxRevenue || 0;
         const maintenanceCost = economics.maintenanceCost || 0;
-        const decayRate = economics.decayRatePercent || 0;
+        const decayRate = economics.decayRate || 0;
         const buildCost = economics.buildCost || 1;
 
         // Calculate raw investment score
@@ -2388,7 +2393,7 @@ class IsometricGrid {
 
             const revenue = econ.maxRevenue || 0;
             const maintenance = econ.maintenanceCost || 0;
-            const decay = econ.decayRatePercent || 0;
+            const decay = econ.decayRate || 0;
             const cost = econ.buildCost || 1;
 
             const profit = (revenue * 12) - (maintenance * 12);
@@ -3476,7 +3481,27 @@ class IsometricGrid {
 
         // SERVER HANDLES STATE MODIFICATION - client only validates and sends transaction
         // State updates will come via server sync in multiplayer mode
-        // TODO: Send infrastructure transaction to server instead of direct modification
+
+        // Send infrastructure transaction to server in multiplayer mode
+        if (this.economicClient && this.economicClient.isMultiplayer) {
+            const infrastructureTransaction = {
+                type: 'BUILD_INFRASTRUCTURE',
+                data: {
+                    row: row,
+                    col: col,
+                    infrastructureType: type,
+                    cost: cost,
+                    timestamp: Date.now()
+                }
+            };
+
+            this.economicClient.sendTransaction(infrastructureTransaction);
+        } else {
+            // In solo mode, apply directly
+            parcel.infrastructure = type;
+            this.money -= cost;
+        }
+
         return true;
     }
 
@@ -3803,7 +3828,7 @@ class IsometricGrid {
         
         // Calculate maintenance costs using exponential decay formula
         const baseMaintenance = building.economics.maintenanceCost || 0;
-        const decayRate = building.economics.decayRatePercent ? building.economics.decayRatePercent / 100 : 0.001;
+        const decayRate = building.economics.decayRate ? building.economics.decayRate / 100 : 0.001;
         const buildingAgeInDays = parcel.buildingAge || 0;
         const maintenanceMultiplier = Math.pow(1 + decayRate, buildingAgeInDays);
         let maintenanceCost = baseMaintenance * maintenanceMultiplier;
@@ -4202,7 +4227,7 @@ class IsometricGrid {
             if (cashflowResponse.success && cashflowResponse.netCashflow > 0) {
                 // SERVER HANDLES CASHFLOW - client should not modify cash directly
                 // Cash updates will come via server state sync in multiplayer mode
-                this.updateCashDisplay();
+                // Cash display managed by Economic Client - no manual updates needed
 
                 // V2: Economic client handles server balance management automatically
                 // No manual sync needed - server balance updated through economic client

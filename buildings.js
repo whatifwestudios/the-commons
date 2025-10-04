@@ -197,10 +197,6 @@ class BuildingManager {
                 decayRate: this.parseFloat(row.decay_rate, 0.05)
             },
 
-            construction: {
-                days: this.parseInt(row.construction_days, 1)
-            },
-
             // JEEFHH Resources (supply/demand)
             resources: {
                 jobsProvided: this.parseInt(row.jobs_provided, 0),

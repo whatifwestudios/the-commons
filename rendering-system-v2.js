@@ -589,11 +589,9 @@ class RenderingSystemV2 {
         // Simple building representation
         this.ctx.save();
 
-        // Get building graphics from building data
-        // parcel.building is now just the building ID, need to look up full data
+        // Get building graphics from building manager
         const buildingId = parcel.building;
-        const locationKey = `${row},${col}`;
-        const building = this.game.economicClient?.buildings?.get(locationKey);
+        const building = this.game.buildingManager?.getBuildingById(buildingId);
 
         if (!building) {
             if (window.DEBUG_MODE) console.log(`⚠️ No building data found for ${buildingId} at [${row},${col}]`);
@@ -609,6 +607,35 @@ class RenderingSystemV2 {
         } else {
             // Fallback: draw simple rectangle if no graphics found
             if (window.DEBUG_MODE) console.log(`⚠️ No graphics found for building: ${building.id || building.type}`);
+
+            // Calculate visual effects for fallback as well
+            const constructionDimming = this.calculateConstructionDimming(row, col);
+            const performanceSaturation = this.calculatePerformanceSaturation(row, col);
+            const conditionSepia = this.calculateConditionSepia(row, col);
+
+            // Build combined filter string for fallback rectangle
+            let filterParts = [];
+
+            // Apply construction dimming
+            if (constructionDimming > 0) {
+                const brightness = Math.round((1.0 - constructionDimming) * 100);
+                filterParts.push(`brightness(${brightness}%)`);
+            }
+
+            // Apply sepia filter for building condition
+            if (conditionSepia > 0) {
+                filterParts.push(`sepia(${Math.round(conditionSepia * 100)}%)`);
+            }
+
+            // Apply performance-based saturation
+            if (performanceSaturation < 1.0) {
+                filterParts.push(`saturate(${Math.round(performanceSaturation * 100)}%)`);
+            }
+
+            // Apply combined filter if we have any effects
+            if (filterParts.length > 0) {
+                this.ctx.filter = filterParts.join(' ');
+            }
 
             const tint = this.getBuildingTint(row, col);
             if (tint === 'yellow') {
@@ -676,6 +703,37 @@ class RenderingSystemV2 {
         const diamondBottomY = y + (this.tileHeight / 2);
         const finalY = diamondBottomY - buildingHeight;
 
+        // Calculate visual effects for placeholder as well
+        const constructionDimming = this.calculateConstructionDimming(row, col);
+        const performanceSaturation = this.calculatePerformanceSaturation(row, col);
+        const conditionSepia = this.calculateConditionSepia(row, col);
+
+        this.ctx.save();
+
+        // Build combined filter string for placeholder
+        let filterParts = [];
+
+        // Apply construction dimming
+        if (constructionDimming > 0) {
+            const brightness = Math.round((1.0 - constructionDimming) * 100);
+            filterParts.push(`brightness(${brightness}%)`);
+        }
+
+        // Apply sepia filter for building condition
+        if (conditionSepia > 0) {
+            filterParts.push(`sepia(${Math.round(conditionSepia * 100)}%)`);
+        }
+
+        // Apply performance-based saturation
+        if (performanceSaturation < 1.0) {
+            filterParts.push(`saturate(${Math.round(performanceSaturation * 100)}%)`);
+        }
+
+        // Apply combined filter if we have any effects
+        if (filterParts.length > 0) {
+            this.ctx.filter = filterParts.join(' ');
+        }
+
         // Draw a simple colored rectangle as fallback
         this.ctx.fillStyle = '#888'; // Gray fallback
         this.ctx.fillRect(
@@ -691,6 +749,145 @@ class RenderingSystemV2 {
         this.ctx.textAlign = 'center';
         this.ctx.textBaseline = 'middle';
         this.ctx.fillText('?', x, finalY + buildingHeight / 2);
+
+        this.ctx.restore();
+    }
+
+    /**
+     * Calculate deterministic construction progress (0.0 to 1.0)
+     */
+    calculateConstructionProgress(row, col) {
+        const parcel = this.game.grid[row]?.[col];
+        if (!parcel?.building) return 1.0;
+
+        // Get building state from server data (via economic client)
+        const serverState = this.game.economicClient?.getBuildingState?.(row, col);
+
+        // Check client-side construction tracking first (for UX)
+        const locationKey = `${row},${col}`;
+        if (!this.clientConstructionTimes) {
+            this.clientConstructionTimes = new Map();
+        }
+
+        // If we have a client-side construction timer, use it
+        if (this.clientConstructionTimes.has(locationKey)) {
+            const startTime = this.clientConstructionTimes.get(locationKey);
+            const buildingId = parcel.building;
+            const buildingDef = this.game.buildingManager?.getBuildingById(buildingId);
+            const constructionDays = buildingDef?.economics?.constructionDays || 1;
+            const gameTimeMs = this.game.GAME_DAY_MS || 10000;
+
+            const elapsed = Date.now() - startTime;
+            const required = constructionDays * gameTimeMs;
+            const progress = Math.min(1.0, elapsed / required);
+
+            // Remove from tracking once complete
+            if (progress >= 1.0) {
+                this.clientConstructionTimes.delete(locationKey);
+            }
+
+            return progress;
+        }
+
+        // Start client-side tracking if server says it's under construction
+        if (serverState && serverState.isUnderConstruction) {
+            this.clientConstructionTimes.set(locationKey, Date.now());
+            return 0.0; // Just started
+        }
+
+        // If server explicitly says it's not under construction, it's complete
+        if (serverState && !serverState.isUnderConstruction) {
+            return 1.0; // Complete
+        }
+
+        // If server provides construction progress, use it
+        if (serverState && serverState.constructionProgress !== undefined) {
+            return serverState.constructionProgress;
+        }
+
+        // Check local parcel data for construction state
+        if (parcel.underConstruction === false) {
+            return 1.0; // Complete according to local data
+        }
+
+        // Get building definition for construction days
+        const buildingId = parcel.building;
+        const buildingDef = this.game.buildingManager?.getBuildingById(buildingId);
+        if (!buildingDef) return 1.0;
+
+        const constructionDays = buildingDef.economics?.constructionDays || 1;
+        const gameTimeMs = this.game.GAME_DAY_MS || 10000; // ~9.86 seconds per day
+
+        // Fallback: use local construction timing
+        let constructionStartTime = parcel.constructionStartTime;
+
+        // If no start time in parcel, check if we have server state with start time
+        if (!constructionStartTime && serverState?.constructionStartTime) {
+            constructionStartTime = serverState.constructionStartTime;
+        }
+
+        if (constructionStartTime) {
+            const elapsed = Date.now() - constructionStartTime;
+            const required = constructionDays * gameTimeMs;
+            return Math.min(1.0, elapsed / required);
+        }
+
+        // If building exists but no construction data, assume it's completed
+        return 1.0;
+    }
+
+    /**
+     * Start client-side construction tracking for a building (called when construction is approved)
+     */
+    startConstructionTracking(row, col) {
+        const locationKey = `${row},${col}`;
+        if (!this.clientConstructionTimes) {
+            this.clientConstructionTimes = new Map();
+        }
+        this.clientConstructionTimes.set(locationKey, Date.now());
+        console.log(`🏗️ Started client-side construction tracking for [${row},${col}]`);
+    }
+
+    /**
+     * Calculate construction dimming (60% to 0% as progress goes from 0 to 1)
+     */
+    calculateConstructionDimming(row, col) {
+        const progress = this.calculateConstructionProgress(row, col);
+        if (progress >= 1.0) return 0.0; // No dimming when complete
+
+        // Start at 60% dimming (0.6), decrease to 0% as progress reaches 1.0
+        // This will make brightness go from 40% to 100% (more visible)
+        return 0.6 * (1.0 - progress);
+    }
+
+    /**
+     * Calculate performance-based saturation (10% to 100% based on server data)
+     * Low performance = more B&W (desaturated), High performance = full color
+     */
+    calculatePerformanceSaturation(row, col) {
+        // Get building state from server
+        const serverState = this.game.economicClient?.getBuildingState?.(row, col);
+        if (!serverState) return 1.0; // Default full saturation
+
+        const performance = serverState.performance || 0.0;
+        // Map 0.0-1.0 performance to 10%-100% saturation
+        // Low performance (0.0) = 10% saturation (mostly B&W)
+        // High performance (1.0) = 100% saturation (full color)
+        return 0.1 + (performance * 0.9);
+    }
+
+    /**
+     * Calculate condition-based sepia filter (0% to 70% based on condition)
+     */
+    calculateConditionSepia(row, col) {
+        // Get building state from server
+        const serverState = this.game.economicClient?.getBuildingState?.(row, col);
+        if (!serverState) return 0.0; // No sepia filter
+
+        const condition = serverState.condition || 1.0;
+        // Map 1.0-0.0 condition to 0%-70% sepia (lower condition = more sepia)
+        const sepiaStrength = (1.0 - condition) * 0.7;
+        return Math.max(0.0, Math.min(0.7, sepiaStrength));
     }
 
     /**
@@ -719,9 +916,63 @@ class RenderingSystemV2 {
         const finalX = buildingX - (buildingWidth / 2) + (this.buildingXOffset || 0);  // Center horizontally
         const finalY = buildingTopY + (this.buildingYOffset || 0);
 
-        // Apply building tint if this parcel is connected
+        // Calculate visual effects
+        const constructionDimming = this.calculateConstructionDimming(row, col);
+        const performanceSaturation = this.calculatePerformanceSaturation(row, col);
+        const conditionSepia = this.calculateConditionSepia(row, col);
+
+        // DEBUG: Log visual effects
+        if ((window.DEBUG_MODE || true) && (constructionDimming > 0 || performanceSaturation < 1.0 || conditionSepia > 0)) {
+            console.log(`🎨 Visual effects for [${row},${col}]:`, {
+                constructionDimming,
+                performanceSaturation,
+                conditionSepia
+            });
+        }
+
+        // Save canvas state for effects
+        this.ctx.save();
+
+        // Build combined filter string to apply all effects at once
+        let filterParts = [];
+
+        // Apply construction dimming (makes building darker during construction)
+        if (constructionDimming > 0) {
+            const brightness = Math.round((1.0 - constructionDimming) * 100); // 40% to 100% brightness
+            filterParts.push(`brightness(${brightness}%)`);
+        }
+
+        // Apply sepia filter for building condition
+        if (conditionSepia > 0) {
+            filterParts.push(`sepia(${Math.round(conditionSepia * 100)}%)`);
+        }
+
+        // Apply performance-based saturation (desaturation for poor performance)
+        if (performanceSaturation < 1.0) {
+            filterParts.push(`saturate(${Math.round(performanceSaturation * 100)}%)`);
+        }
+
+        // Apply combined filter if we have any effects
+        if (filterParts.length > 0) {
+            this.ctx.filter = filterParts.join(' ');
+        }
+
+        // Draw building with effects applied
+        this.ctx.drawImage(
+            img,
+            finalX,                      // Left edge (already centered in finalX calculation)
+            finalY,                      // Top edge (building bottom sits on diamond bottom)
+            buildingWidth,               // Exactly match parcel width
+            buildingHeight               // Maintain aspect ratio
+        );
+
+        // Restore canvas state (removes all effects)
+        this.ctx.restore();
+
+        // Apply building tint if this parcel is connected (after main image)
         const tint = this.getBuildingTint(row, col);
         if (tint === 'yellow') {
+            this.ctx.save();
             this.ctx.globalCompositeOperation = 'multiply';
             this.ctx.fillStyle = this.hexToRgba(this.playerColor, 0.8);
             this.ctx.fillRect(
@@ -730,17 +981,8 @@ class RenderingSystemV2 {
                 buildingWidth,
                 buildingHeight
             );
-            this.ctx.globalCompositeOperation = 'source-over';
+            this.ctx.restore();
         }
-
-        // Draw building with edges perfectly aligned to diamond parcel
-        this.ctx.drawImage(
-            img,
-            finalX,                      // Left edge (already centered in finalX calculation)
-            finalY,                      // Top edge (building bottom sits on diamond bottom)
-            buildingWidth,               // Exactly match parcel width
-            buildingHeight               // Maintain aspect ratio
-        );
     }
 
     /**

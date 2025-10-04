@@ -717,7 +717,33 @@ class GovernanceV3 {
             cache.container.classList.remove('governance-glow');
         }, 500);
 
-        // TODO: Add player color dot when multiplayer is active
+        // Add player color dot when multiplayer is active
+        if (this.economicClient?.isMultiplayer && this.economicClient?.playerId) {
+            const playerColor = PlayerUtils.getPlayerColor(this.economicClient.playerId);
+
+            // Create or update player indicator dot
+            let indicatorDot = cache.container.querySelector('.player-indicator-dot');
+            if (!indicatorDot) {
+                indicatorDot = document.createElement('div');
+                indicatorDot.className = 'player-indicator-dot';
+                indicatorDot.style.cssText = `
+                    position: absolute;
+                    top: 5px;
+                    right: 5px;
+                    width: 8px;
+                    height: 8px;
+                    border-radius: 50%;
+                    opacity: 0.8;
+                    pointer-events: none;
+                    z-index: 10;
+                `;
+                cache.container.style.position = 'relative';
+                cache.container.appendChild(indicatorDot);
+            }
+
+            indicatorDot.style.backgroundColor = playerColor;
+            indicatorDot.style.boxShadow = `0 0 4px ${playerColor}`;
+        }
     }
 
     /**

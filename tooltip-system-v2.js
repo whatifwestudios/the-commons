@@ -218,8 +218,21 @@ class TooltipSystemV2 {
                     }
                 }
                 data.buildingName = buildingName;
-                data.isUnderConstruction = parcel._isUnderConstruction || false;
-                data.constructionProgress = parcel._constructionProgress || 1.0;
+
+                // Get server-synced building state from economic client (AUTHORITATIVE)
+                const serverBuilding = this.game.economicClient?.buildings?.get(`${row},${col}`);
+                if (serverBuilding) {
+                    // Use server data as authoritative source
+                    data.isUnderConstruction = serverBuilding.isUnderConstruction || false;
+                    data.constructionProgress = serverBuilding.constructionProgress || 1.0;
+                    data.condition = (serverBuilding.condition || 1.0) * 100; // Convert 0-1 to 0-100%
+                } else {
+                    // Fallback to parcel data (for backward compatibility)
+                    data.isUnderConstruction = parcel._isUnderConstruction || false;
+                    data.constructionProgress = parcel._constructionProgress || 1.0;
+                    data.condition = parcel.condition || 100;
+                }
+
                 data.constructionStartTime = parcel._constructionStartTime;
                 data.constructionDays = parcel._constructionDays;
 
@@ -231,7 +244,7 @@ class TooltipSystemV2 {
                 data.carens = this.getBuildingCarens(row, col);
                 data.performance = this.getBuildingPerformance(row, col);
                 data.netRevenue = this.getBuildingRevenue(row, col);
-                data.condition = parcel.condition || 100;
+                // condition already set above from server data
             }
 
             return data;
@@ -375,10 +388,13 @@ class TooltipSystemV2 {
         // Get enhanced performance data from server with JEEFHH/CARENS
         const performance = data.performance || this.getBuildingPerformance(data.row, data.col);
 
-        const efficiency = performance.efficiency || 90;
+        // Use server-synced data if available
+        const serverBuilding = this.game.economicClient?.buildings?.get(`${data.row},${data.col}`);
+
+        const efficiency = serverBuilding?.efficiency || performance.efficiency || 0;
         const efficiencyPercent = Math.round(efficiency);
-        const condition = performance.condition || 100;
-        const netRevenue = Math.round(performance.netRevenue || 0);
+        const condition = data.condition || performance.condition || 100; // Already set from server data
+        const netRevenue = Math.round(serverBuilding?.netIncome || performance.netRevenue || 0);
 
         // Use performance-based blue-to-red color system
         const efficiencyColor = this.getPerformanceColor(efficiency);

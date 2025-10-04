@@ -6,6 +6,7 @@
 
 class ParcelAuctionSystem {
     constructor(game) {
+        // console.log('🔨 ParcelAuctionSystem constructor called');
         this.game = game;
         this.activeAuctions = new Map(); // auctionId -> auction data
         this.maxConcurrentAuctions = 2;
@@ -13,8 +14,177 @@ class ParcelAuctionSystem {
         // UI elements
         this.auctionModal = null;
         this.auctionSidebar = null;
+
         this.setupUI();
+        this.setupWebSocketHandlers();
+        this.startTimerUpdates();
+        // console.log('🔨 ParcelAuctionSystem initialization complete');
+
+        // Add global test function for debugging
+        window.testAuctionModal = () => {
+        // console.log('🔨 Testing auction modal...');
+        // console.log('🔨 Modal element:', this.auctionModal);
+        // console.log('🔨 Active auctions:', this.activeAuctions);
+
+            // Create a test auction to show the modal
+            const testAuction = {
+                id: 'test-1',
+                row: 5,
+                col: 5,
+                currentBid: 1000,
+                buildingValue: 0,
+                endTime: Date.now() + 30000,
+                currentOwner: 'TestOwner'
+            };
+
+            this.activeAuctions.set('test-1', testAuction);
+            this.showBiddingModal('test-1');
+        };
     }
+
+    /**
+     * Start timer updates for real-time countdown
+     */
+    startTimerUpdates() {
+        // Update timers every second
+        setInterval(() => {
+            this.updateTimers();
+        }, 1000);
+    }
+
+    /**
+     * Update all auction timers and urgency indicators
+     */
+    updateTimers() {
+        // Update sidebar timers
+        for (const [auctionId, auction] of this.activeAuctions) {
+            const timeRemaining = auction.endTime - Date.now();
+
+            // Remove expired auctions
+            if (timeRemaining <= 0) {
+                this.activeAuctions.delete(auctionId);
+                continue;
+            }
+
+            // Update timer display in sidebar
+            const auctionItem = document.querySelector(`[data-auction-id="${auctionId}"] .auction-time`);
+            const progressBar = document.querySelector(`[data-auction-id="${auctionId}"] .auction-progress`);
+
+            if (auctionItem) {
+                const timeText = this.formatTimeRemaining(auction.endTime);
+                auctionItem.textContent = timeText;
+
+                // Calculate time progress (assuming 60 second auctions)
+                const totalAuctionTime = 60000; // 60 seconds in ms
+                const elapsed = totalAuctionTime - timeRemaining;
+                const progressPercent = Math.min(100, Math.max(0, (elapsed / totalAuctionTime) * 100));
+
+                // Update progress bar
+                if (progressBar) {
+                    progressBar.style.width = `${progressPercent}%`;
+
+                    // Color the progress bar based on urgency
+                    const isUrgent = timeRemaining <= 10000; // 10 seconds
+                    const isCritical = timeRemaining <= 5000; // 5 seconds
+
+                    if (isCritical) {
+                        progressBar.style.backgroundColor = '#ff4444';
+                        progressBar.style.animation = 'pulse-red 0.5s infinite alternate';
+                    } else if (isUrgent) {
+                        progressBar.style.backgroundColor = '#ffa500';
+                        progressBar.style.animation = 'none';
+                    } else {
+                        progressBar.style.backgroundColor = '#4CAF50';
+                        progressBar.style.animation = 'none';
+                    }
+                }
+
+                // Update text urgency styling and play sound alerts
+                const isUrgent = timeRemaining <= 10000;
+                const isCritical = timeRemaining <= 5000;
+
+                if (isCritical) {
+                    auctionItem.classList.add('critical');
+                    auctionItem.classList.add('urgent');
+                } else if (isUrgent) {
+                    auctionItem.classList.add('urgent');
+                    auctionItem.classList.remove('critical');
+                } else {
+                    auctionItem.classList.remove('urgent', 'critical');
+                }
+            }
+        }
+
+        // Update modal timer if open
+        const modalTimer = document.getElementById('auction-time-remaining');
+        if (modalTimer && this.currentModalAuctionId) {
+            const auction = this.activeAuctions.get(this.currentModalAuctionId);
+            if (auction) {
+                modalTimer.textContent = this.formatTimeRemaining(auction.endTime);
+            }
+        }
+
+        // Update indicator urgency
+        this.updateIndicatorUrgency();
+
+        // Refresh sidebar if auctions changed
+        if (this.activeAuctions.size === 0) {
+            this.updateAuctionSidebar();
+        }
+    }
+
+    /**
+     * Update indicator urgency based on auction status
+     */
+    updateIndicatorUrgency() {
+        const indicator = document.getElementById('auction-indicator');
+        if (!indicator || this.activeAuctions.size === 0) return;
+
+        let hasUrgent = false;
+        let hasCritical = false;
+        for (const auction of this.activeAuctions.values()) {
+            const timeRemaining = auction.endTime - Date.now();
+            if (timeRemaining <= 5000) {
+                hasCritical = true;
+                break;
+            } else if (timeRemaining <= 10000) {
+                hasUrgent = true;
+            }
+        }
+
+        // Update indicator based on most urgent state
+        if (hasCritical) {
+            indicator.textContent = '●';
+            indicator.style.color = '#ff4444';
+            indicator.style.animation = 'none';
+            if (!indicator.blinkInterval) {
+                indicator.blinkInterval = setInterval(() => {
+                    indicator.style.opacity = indicator.style.opacity === '0.3' ? '1' : '0.3';
+                }, 300); // Faster blinking for critical
+            }
+        } else if (hasUrgent) {
+            indicator.textContent = '●';
+            indicator.style.color = '#ffa500';
+            indicator.style.animation = 'none';
+            indicator.style.opacity = '1';
+            // Clear any existing blink interval
+            if (indicator.blinkInterval) {
+                clearInterval(indicator.blinkInterval);
+                indicator.blinkInterval = null;
+            }
+        } else {
+            indicator.textContent = '●';
+            indicator.style.color = '#4CAF50';
+            indicator.style.animation = 'none';
+            indicator.style.opacity = '1';
+            // Clear any existing blink interval
+            if (indicator.blinkInterval) {
+                clearInterval(indicator.blinkInterval);
+                indicator.blinkInterval = null;
+            }
+        }
+    }
+
 
     /**
      * Setup auction UI elements
@@ -25,6 +195,25 @@ class ParcelAuctionSystem {
 
         // Create auction sidebar panel
         this.createAuctionSidebar();
+    }
+
+    /**
+     * Setup WebSocket message handlers for auction updates
+     */
+    setupWebSocketHandlers() {
+        // Wait for economic client to be ready, then subscribe to auction updates
+        const setupSubscription = () => {
+            if (this.game.economicClient?.connectionManager) {
+                this.game.economicClient.connectionManager.subscribe('PARCEL_AUCTION_UPDATE', (data) => {
+                    this.handleAuctionUpdate(data);
+                });
+        // console.log('🔨 Parcel auction system subscribed to WebSocket updates');
+            } else {
+                // Retry after a short delay if not ready yet
+                setTimeout(setupSubscription, 100);
+            }
+        };
+        setupSubscription();
     }
 
     /**
@@ -92,27 +281,192 @@ class ParcelAuctionSystem {
      * Show bidding modal for an auction
      */
     showBiddingModal(auctionId) {
+        // console.log('🔨 showBiddingModal called:', auctionId);
         const auction = this.activeAuctions.get(auctionId);
-        if (!auction) return;
+        if (!auction) {
+            console.error('🔨 No auction found for ID:', auctionId);
+            return;
+        }
+
+        // console.log('🔨 Found auction:', auction);
 
         // Populate modal with auction data
         this.populateAuctionModal(auction);
 
         // Show modal
-        this.auctionModal.classList.add('visible');
+        if (this.auctionModal) {
+        // console.log('🔨 Showing auction modal');
+            this.auctionModal.classList.add('visible');
+        } else {
+            console.error('🔨 Auction modal not found!');
+        }
+    }
+
+    /**
+     * Populate auction modal with auction data
+     */
+    populateAuctionModal(auction) {
+        // Clear any existing status messages and show bid controls
+        this.clearStatusMessages();
+
+        // Update auction info with Letter-Number coordinate
+        const parcelCoord = this.game.getParcelCoordinate(auction.row, auction.col);
+        document.getElementById('auction-parcel-coords').textContent = parcelCoord;
+        document.getElementById('auction-current-owner').textContent = auction.currentOwner || 'Unclaimed';
+        document.getElementById('auction-time-remaining').textContent = this.formatTimeRemaining(auction.endTime);
+
+        // Update bid info
+        document.getElementById('auction-current-bid').textContent = auction.currentBid.toLocaleString();
+        document.getElementById('auction-land-price').textContent = auction.currentBid.toLocaleString();
+        document.getElementById('auction-building-value').textContent = auction.buildingValue.toLocaleString();
+        document.getElementById('auction-total-cost').textContent = (auction.currentBid + auction.buildingValue).toLocaleString();
+
+
+        // Store current auction ID for form submission
+        this.currentModalAuctionId = auction.id;
+    }
+
+    /**
+     * Populate modal for challenger (auction starter)
+     */
+    populateChallengerModal(auction) {
+        // Update basic auction info
+        const parcelCoord = this.game.getParcelCoordinate(auction.row, auction.col);
+        document.getElementById('auction-parcel-coords').textContent = parcelCoord;
+        document.getElementById('auction-current-owner').textContent = auction.currentOwner || 'Unclaimed';
+        document.getElementById('auction-time-remaining').textContent = this.formatTimeRemaining(auction.endTime);
+
+        // Update bid info
+        document.getElementById('auction-current-bid').textContent = auction.currentBid.toLocaleString();
+        document.getElementById('auction-land-price').textContent = auction.currentBid.toLocaleString();
+        document.getElementById('auction-building-value').textContent = auction.buildingValue.toLocaleString();
+        document.getElementById('auction-total-cost').textContent = (auction.currentBid + auction.buildingValue).toLocaleString();
+
+        // Clear any existing status messages
+        this.clearStatusMessages();
+
+        // Hide bid controls and show challenger status
+        const bidControls = this.auctionModal.querySelector('.bid-controls');
+        if (bidControls) {
+            bidControls.style.display = 'none';
+        }
+
+        // Add challenger status message
+        const modalBody = this.auctionModal.querySelector('.modal-body');
+        if (modalBody) {
+            let statusMessage = modalBody.querySelector('.challenger-status');
+            if (!statusMessage) {
+                statusMessage = document.createElement('div');
+                statusMessage.className = 'challenger-status';
+                modalBody.appendChild(statusMessage);
+            }
+            statusMessage.innerHTML = `
+                <div style="background: #2a2a2a; border: 2px solid #4CAF50; border-radius: 4px; padding: 15px; margin-top: 15px; text-align: center;">
+                    <h3 style="color: #4CAF50; margin: 0 0 10px 0;">🎯 Your Auction is Active</h3>
+                    <p style="margin: 0; color: #ccc;">You started this auction. Other players can now bid on this parcel.</p>
+                    <p style="margin: 10px 0 0 0; color: #fff; font-weight: bold;">Current bid: $${auction.currentBid.toLocaleString()}</p>
+                </div>
+            `;
+        }
+
+        this.currentModalAuctionId = auction.id;
+    }
+
+    /**
+     * Populate modal for property owner (being challenged)
+     */
+    populateOwnerNotificationModal(auction) {
+        // Update basic auction info
+        const parcelCoord = this.game.getParcelCoordinate(auction.row, auction.col);
+        document.getElementById('auction-parcel-coords').textContent = parcelCoord;
+        document.getElementById('auction-current-owner').textContent = auction.currentOwner || 'Unclaimed';
+        document.getElementById('auction-time-remaining').textContent = this.formatTimeRemaining(auction.endTime);
+
+        // Update bid info
+        document.getElementById('auction-current-bid').textContent = auction.currentBid.toLocaleString();
+        document.getElementById('auction-land-price').textContent = auction.currentBid.toLocaleString();
+        document.getElementById('auction-building-value').textContent = auction.buildingValue.toLocaleString();
+        document.getElementById('auction-total-cost').textContent = (auction.currentBid + auction.buildingValue).toLocaleString();
+
+        // Clear any existing status messages
+        this.clearStatusMessages();
+
+        // Hide bid controls and show owner notification
+        const bidControls = this.auctionModal.querySelector('.bid-controls');
+        if (bidControls) {
+            bidControls.style.display = 'none';
+        }
+
+        // Add owner notification message
+        const modalBody = this.auctionModal.querySelector('.modal-body');
+        if (modalBody) {
+            let statusMessage = modalBody.querySelector('.owner-notification');
+            if (!statusMessage) {
+                statusMessage = document.createElement('div');
+                statusMessage.className = 'owner-notification';
+                modalBody.appendChild(statusMessage);
+            }
+            statusMessage.innerHTML = `
+                <div style="background: #2a2a2a; border: 2px solid #ffa500; border-radius: 4px; padding: 15px; margin-top: 15px; text-align: center;">
+                    <h3 style="color: #ffa500; margin: 0 0 10px 0;">⚠️ Your Property is Being Auctioned</h3>
+                    <p style="margin: 0; color: #ccc;">Someone has started an auction for your parcel ${parcelCoord}.</p>
+                    <p style="margin: 10px 0 0 0; color: #fff; font-weight: bold;">Opening bid: $${auction.currentBid.toLocaleString()}</p>
+                    <p style="margin: 5px 0 0 0; color: #ccc; font-size: 14px;">You'll have 30 seconds to match the winning bid if the auction is successful.</p>
+                </div>
+            `;
+        }
+
+        this.currentModalAuctionId = auction.id;
+    }
+
+    /**
+     * Clear any existing status messages from modal
+     */
+    clearStatusMessages() {
+        if (!this.auctionModal) return;
+
+        const modalBody = this.auctionModal.querySelector('.modal-body');
+        if (modalBody) {
+            const existingMessages = modalBody.querySelectorAll('.challenger-status, .owner-notification');
+            existingMessages.forEach(msg => msg.remove());
+        }
+
+        // Show bid controls for normal bidding
+        const bidControls = this.auctionModal.querySelector('.bid-controls');
+        if (bidControls) {
+            bidControls.style.display = 'block';
+        }
+    }
+
+    /**
+     * Close the auction modal
+     */
+    closeModal() {
+        if (this.auctionModal) {
+            this.auctionModal.classList.remove('visible');
+        }
     }
 
     /**
      * Place a bid on an auction
      */
     async placeBid(auctionId, bidAmount) {
+        // console.log('🔨 placeBid called:', { auctionId, bidAmount });
         try {
+            if (!this.game.economicClient) {
+                console.error('🔨 No economic client available');
+                this.game.showNotification('Economic client not available', 'error');
+                return;
+            }
+
+        // console.log('🔨 Sending bid transaction...');
             const result = await this.game.economicClient.sendTransaction({
                 type: 'PARCEL_AUCTION_BID',
                 auctionId: auctionId,
                 bidAmount: bidAmount
             });
 
+        // console.log('🔨 Bid result:', result);
             if (result.success) {
                 this.game.showNotification(`Bid placed: $${bidAmount.toLocaleString()}`, 'success');
                 this.updateAuctionDisplay(auctionId);
@@ -152,15 +506,29 @@ class ParcelAuctionSystem {
      * Get parcel information for auction
      */
     async getParcelAuctionInfo(row, col) {
-        // This would get parcel info from server including last paid price
-        // For now, using placeholder
+        const parcel = this.game.grid[row][col];
+
+        // Get last paid price from parcel data or game state
+        let lastPaidPrice = 100; // Default base price
+
+        if (parcel?.lastPurchasePrice) {
+            lastPaidPrice = parcel.lastPurchasePrice;
+        } else if (this.game.economicClient?.gameState?.parcels) {
+            // Try to get from server game state
+            const serverParcel = this.game.economicClient.gameState.parcels
+                .find(p => p.row === row && p.col === col);
+            if (serverParcel?.lastPurchasePrice) {
+                lastPaidPrice = serverParcel.lastPurchasePrice;
+            }
+        }
+
         return {
             row: row,
             col: col,
-            owner: this.game.grid[row][col]?.owner,
-            lastPaidPrice: 100, // TODO: Get actual last paid price from server
+            owner: parcel?.owner,
+            lastPaidPrice: lastPaidPrice,
             buildingValue: this.calculateBuildingValue(row, col),
-            hasBuilding: !!this.game.grid[row][col]?.building
+            hasBuilding: !!parcel?.building
         };
     }
 
@@ -199,48 +567,48 @@ class ParcelAuctionSystem {
      */
     createAuctionModal() {
         const modal = document.createElement('div');
-        modal.className = 'auction-modal hidden';
+        modal.className = 'modal';
         modal.id = 'auction-modal';
 
         modal.innerHTML = `
-            <div class="auction-modal-content">
-                <div class="auction-modal-header">
-                    <h3>Parcel Auction</h3>
-                    <button class="close-btn" onclick="this.closest('.auction-modal').classList.remove('visible')">&times;</button>
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h2>Parcel Auction</h2>
+                    <button class="modal-close" onclick="game.parcelAuctionSystem.closeModal()">&times;</button>
                 </div>
-
-                <div class="auction-info">
-                    <div class="parcel-location">Parcel: <span id="auction-parcel-coords">[0,0]</span></div>
-                    <div class="current-owner">Owner: <span id="auction-current-owner">-</span></div>
-                    <div class="time-remaining">Time: <span id="auction-time-remaining">-</span></div>
-                </div>
-
-                <div class="bid-info">
-                    <div class="current-bid">Current Bid: $<span id="auction-current-bid">0</span></div>
-                    <div class="total-cost">Total Cost: $<span id="auction-total-cost">0</span></div>
-                    <div class="cost-breakdown">
-                        <small>Land Price: $<span id="auction-land-price">0</span> + Building Value: $<span id="auction-building-value">0</span></small>
-                    </div>
-                </div>
-
-                <div class="bid-controls">
-                    <div class="quick-bid-buttons">
-                        <button class="bid-btn" onclick="game.parcelAuctionSystem.quickBid(1)">+1%</button>
-                        <button class="bid-btn" onclick="game.parcelAuctionSystem.quickBid(5)">+5%</button>
-                        <button class="bid-btn" onclick="game.parcelAuctionSystem.quickBid(10)">+10%</button>
+                <div class="modal-body">
+                    <div class="auction-info">
+                        <div class="parcel-location">Parcel: <span id="auction-parcel-coords">A-1</span></div>
+                        <div class="current-owner">Owner: <span id="auction-current-owner">-</span></div>
+                        <div class="time-remaining">Time: <span id="auction-time-remaining">-</span></div>
                     </div>
 
-                    <div class="custom-bid">
-                        <input type="number" id="custom-bid-amount" placeholder="Enter bid amount">
-                        <button onclick="game.parcelAuctionSystem.customBid()">Place Bid</button>
+                    <div class="bid-info">
+                        <div class="current-bid">Current Bid: $<span id="auction-current-bid">0</span></div>
+                        <div class="total-cost">Total Cost: $<span id="auction-total-cost">0</span></div>
+                        <div class="cost-breakdown">
+                            <small>Land Price: $<span id="auction-land-price">0</span> + Building Value: $<span id="auction-building-value">0</span></small>
+                        </div>
                     </div>
-                </div>
 
-                <div class="owner-response hidden" id="owner-response-section">
-                    <div class="response-timer">Response Time: <span id="response-time-remaining">30s</span></div>
-                    <div class="response-buttons">
-                        <button class="match-btn" onclick="game.parcelAuctionSystem.ownerResponse('match')">Match Bid</button>
-                        <button class="decline-btn" onclick="game.parcelAuctionSystem.ownerResponse('decline')">Decline</button>
+                    <div class="bid-controls">
+                        <div class="quick-bid-buttons">
+                            <button class="bid-btn" onclick="game.parcelAuctionSystem.quickBid(5)">+5%</button>
+                            <button class="bid-btn" onclick="game.parcelAuctionSystem.quickBid(10)">+10%</button>
+                        </div>
+
+                        <div class="custom-bid">
+                            <input type="number" id="custom-bid-amount" placeholder="Enter bid amount">
+                            <button onclick="game.parcelAuctionSystem.customBid()">Place Bid</button>
+                        </div>
+                    </div>
+
+                    <div class="owner-response hidden" id="owner-response-section">
+                        <div class="response-timer">Response Time: <span id="response-time-remaining">30s</span></div>
+                        <div class="response-buttons">
+                            <button class="match-btn" onclick="game.parcelAuctionSystem.ownerResponse('match')">Match Bid</button>
+                            <button class="decline-btn" onclick="game.parcelAuctionSystem.ownerResponse('decline')">Decline</button>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -248,37 +616,69 @@ class ParcelAuctionSystem {
 
         document.body.appendChild(modal);
         this.auctionModal = modal;
+        // console.log('🔨 Auction modal created and added to DOM:', modal);
     }
 
     /**
      * Create auction sidebar panel
      */
     createAuctionSidebar() {
-        // Find sidebar container or create it
-        let sidebarContainer = document.querySelector('.sidebar-container');
-        if (!sidebarContainer) {
-            sidebarContainer = document.createElement('div');
-            sidebarContainer.className = 'sidebar-container';
-            document.body.appendChild(sidebarContainer);
+        // Find existing sidebar or create it
+        let sidebar = document.getElementById('sidebar');
+        if (!sidebar) {
+            sidebar = document.createElement('div');
+            sidebar.id = 'sidebar';
+            document.body.appendChild(sidebar);
         }
 
-        const sidebar = document.createElement('div');
-        sidebar.className = 'sidebar-panel auction-sidebar hidden';
-        sidebar.id = 'auction-sidebar';
+        // Check if auction section already exists
+        const existingAuctionSection = document.getElementById('auction-section');
+        if (existingAuctionSection) {
+        // console.log('🔨 Auction section already exists, removing it first');
+            existingAuctionSection.remove();
+        }
 
-        sidebar.innerHTML = `
-            <div class="sidebar-header">
-                <h3>Active Auctions</h3>
-                <button class="close-sidebar-btn" onclick="this.closest('.sidebar-panel').classList.add('hidden')">&times;</button>
+        const auctionSection = document.createElement('div');
+        auctionSection.className = 'sidebar-section collapsible collapsed';
+        auctionSection.id = 'auction-section';
+
+        auctionSection.innerHTML = `
+            <div class="section-header" data-target="auction-content">
+                <span>AUCTIONS <span id="auction-indicator" class="auction-indicator" style="display: none;">●</span></span>
+                <span class="collapse-icon"></span>
             </div>
-
-            <div class="auction-list" id="auction-list">
-                <div class="no-auctions">No active auctions</div>
+            <div id="auction-content" class="section-content">
+                <div class="auction-list" id="auction-list">
+                    <div class="no-auctions">No active auctions</div>
+                </div>
             </div>
         `;
 
-        sidebarContainer.appendChild(sidebar);
-        this.auctionSidebar = sidebar;
+        // Insert after Action Manager section
+        const actionManagerSection = document.getElementById('action-manager-section');
+        if (actionManagerSection) {
+        // console.log('🔨 Inserting auction section after Action Manager');
+            sidebar.insertBefore(auctionSection, actionManagerSection.nextSibling);
+        } else {
+        // console.log('🔨 Action Manager not found, appending auction section to sidebar');
+            sidebar.appendChild(auctionSection);
+        }
+
+        this.auctionSidebar = auctionSection;
+        // console.log('🔨 Auction sidebar created successfully:', auctionSection);
+
+        // Add click event listener for collapse functionality
+        const sectionHeader = auctionSection.querySelector('.section-header');
+        if (sectionHeader) {
+            sectionHeader.addEventListener('click', function() {
+                const collapsibleSection = this.parentElement;
+                if (collapsibleSection && collapsibleSection.classList.contains('collapsible')) {
+                    collapsibleSection.classList.toggle('collapsed');
+        // console.log('🔨 Auction section toggled, collapsed:', collapsibleSection.classList.contains('collapsed'));
+                }
+            });
+        // console.log('🔨 Added click event listener to auction section header');
+        }
     }
 
     /**
@@ -290,21 +690,100 @@ class ParcelAuctionSystem {
 
         if (this.activeAuctions.size === 0) {
             auctionList.innerHTML = '<div class="no-auctions">No active auctions</div>';
+            this.hideAuctionIndicator();
             return;
         }
 
         let html = '';
         for (const [auctionId, auction] of this.activeAuctions) {
+            const timeRemaining = auction.endTime - Date.now();
+            const isUrgent = timeRemaining <= 5000; // Final 5 seconds
+            const timeText = this.formatTimeRemaining(auction.endTime);
+            const currentBid = auction.currentBid;
+            const quickBid1 = Math.ceil(currentBid * 1.05); // +5%
+            const quickBid2 = Math.ceil(currentBid * 1.10); // +10%
+            const parcelCoord = this.game.getParcelCoordinate(auction.row, auction.col);
+
+            // Determine user role for this auction
+            const isChallenger = auction.startedBy === this.game.currentPlayerId;
+            const isCurrentOwner = auction.currentOwner === this.game.currentPlayerId;
+
+            // Choose appropriate modal function and sidebar content
+            let modalFunction, sidebarContent;
+
+            if (isChallenger) {
+                modalFunction = 'showChallengerModal';
+                sidebarContent = `
+                    <div class="auction-status">
+                        Your Auction
+                    </div>
+                `;
+            } else if (isCurrentOwner) {
+                modalFunction = 'showOwnerNotificationModal';
+                sidebarContent = `
+                    <div class="auction-status">
+                        Your Property Under Auction
+                    </div>
+                `;
+            } else {
+                modalFunction = 'showBiddingModal';
+                sidebarContent = `
+                    <div class="auction-quick-bids">
+                        <button class="quick-bid-btn" onclick="event.stopPropagation(); game.parcelAuctionSystem.quickBidOnAuction('${auctionId}', ${quickBid1})">
+                            +5% ($${quickBid1.toLocaleString()})
+                        </button>
+                        <button class="quick-bid-btn" onclick="event.stopPropagation(); game.parcelAuctionSystem.quickBidOnAuction('${auctionId}', ${quickBid2})">
+                            +10% ($${quickBid2.toLocaleString()})
+                        </button>
+                    </div>
+                `;
+            }
+
             html += `
-                <div class="auction-item" onclick="game.parcelAuctionSystem.showBiddingModal('${auctionId}')">
-                    <div class="auction-parcel">[${auction.row},${auction.col}]</div>
-                    <div class="auction-current-bid">$${auction.currentBid.toLocaleString()}</div>
-                    <div class="auction-time">${this.formatTimeRemaining(auction.endTime)}</div>
+                <div class="auction-item" data-auction-id="${auctionId}">
+                    <div class="auction-header" onclick="console.log('🔨 Header clicked:', '${auctionId}'); game.parcelAuctionSystem.${modalFunction}('${auctionId}')">
+                        <div class="auction-parcel">${parcelCoord}</div>
+                        <div class="auction-time ${isUrgent ? 'urgent' : ''}">${timeText}</div>
+                    </div>
+                    <div class="auction-progress-container">
+                        <div class="auction-progress-bar">
+                            <div class="auction-progress" style="width: 0%; background-color: #4CAF50; transition: width 0.3s ease;"></div>
+                        </div>
+                    </div>
+                    <div class="auction-bid-info" onclick="console.log('🔨 Bid info clicked:', '${auctionId}'); game.parcelAuctionSystem.${modalFunction}('${auctionId}')">
+                        <div class="auction-current-bid">$${currentBid.toLocaleString()}</div>
+                    </div>
+                    ${sidebarContent}
                 </div>
             `;
         }
 
         auctionList.innerHTML = html;
+        this.showAuctionIndicator();
+    }
+
+    /**
+     * Show auction indicator when auctions are active
+     */
+    showAuctionIndicator() {
+        const indicator = document.getElementById('auction-indicator');
+        if (indicator) {
+            indicator.style.display = 'inline';
+            indicator.textContent = '●';
+            indicator.style.color = '#4CAF50'; // Always green initially
+            indicator.style.animation = 'none';
+        }
+    }
+
+    /**
+     * Hide auction indicator when no auctions are active
+     */
+    hideAuctionIndicator() {
+        const indicator = document.getElementById('auction-indicator');
+        if (indicator) {
+            indicator.style.display = 'none';
+            indicator.style.animation = 'none';
+        }
     }
 
     /**
@@ -328,25 +807,78 @@ class ParcelAuctionSystem {
      * Handle WebSocket auction updates
      */
     handleAuctionUpdate(data) {
-        switch (data.type) {
+        // console.log('🔨 Auction update received:', data);
+        // console.log('🔨 Message type:', data.type, 'subtype:', data.subtype);
+        switch (data.subtype) {
             case 'AUCTION_STARTED':
+        // console.log('🔨 AUCTION_STARTED:', data);
+        // console.log('🔨 Current player ID:', this.game.currentPlayerId);
+        // console.log('🔨 Started by:', data.auction.startedBy);
                 this.activeAuctions.set(data.auctionId, data.auction);
                 this.updateAuctionSidebar();
+
+
+                // Show appropriate interface based on user role
+                const isChallenger = data.auction.startedBy === this.game.currentPlayerId;
+                const isCurrentOwner = data.auction.currentOwner === this.game.currentPlayerId;
+
+                if (isChallenger) {
+        // console.log('🔨 Showing challenger status modal');
+                    this.showChallengerModal(data.auctionId);
+                } else if (isCurrentOwner) {
+        // console.log('🔨 Showing owner notification modal');
+                    this.showOwnerNotificationModal(data.auctionId);
+                } else {
+                    // Show notification for others who can bid
+                    const parcelCoord = this.game.getParcelCoordinate(data.auction.row, data.auction.col);
+                    this.game.showNotification(`🔨 Auction started on parcel ${parcelCoord} - Check sidebar to bid!`, 'info');
+                }
                 break;
 
-            case 'AUCTION_BID':
+            case 'NEW_BID':
                 if (this.activeAuctions.has(data.auctionId)) {
                     this.activeAuctions.get(data.auctionId).currentBid = data.bidAmount;
                     this.activeAuctions.get(data.auctionId).highBidderId = data.bidderId;
+
+
                     this.updateAuctionDisplay(data.auctionId);
                 }
                 break;
 
-            case 'AUCTION_ENDED':
-                this.handleAuctionEnd(data);
+            case 'OWNER_RESPONSE_PHASE':
+                // Auction moved to owner response phase
+                if (this.activeAuctions.has(data.auctionId)) {
+                    const auction = this.activeAuctions.get(data.auctionId);
+                    auction.phase = 'owner_response';
+                    auction.ownerResponseEnd = data.responseTimeEnd;
+
+                    // Show modal automatically for the current owner
+                    const isCurrentOwner = auction.currentOwnerId === this.game.currentPlayerId;
+                    if (isCurrentOwner) {
+        // console.log('🔨 Showing owner response modal for current owner');
+                        this.showBiddingModal(data.auctionId);
+                    }
+
+                    this.updateAuctionDisplay(data.auctionId);
+                }
                 break;
 
             case 'AUCTION_COMPLETED':
+        // console.log('🔨 AUCTION_COMPLETED:', data);
+                // Get auction data before deleting it
+                const auction = this.activeAuctions.get(data.auctionId);
+                if (auction) {
+
+                    this.showAuctionConclusionModal({
+                        auctionId: data.auctionId,
+                        auction: auction,
+                        result: {
+                            success: data.finalResult === 'ownership_transferred',
+                            action: data.action,
+                            finalResult: data.finalResult
+                        }
+                    });
+                }
                 this.activeAuctions.delete(data.auctionId);
                 this.updateAuctionSidebar();
                 break;
@@ -354,18 +886,224 @@ class ParcelAuctionSystem {
     }
 
     /**
+     * Show challenger status modal (auction starter)
+     */
+    showChallengerModal(auctionId) {
+        // console.log('🔨 showChallengerModal called:', auctionId);
+        const auction = this.activeAuctions.get(auctionId);
+        if (!auction) {
+            console.error('🔨 No auction found for ID:', auctionId);
+            return;
+        }
+
+        // Populate modal with challenger-specific content
+        this.populateChallengerModal(auction);
+
+        // Show modal
+        if (this.auctionModal) {
+        // console.log('🔨 Showing challenger status modal');
+            this.auctionModal.classList.add('visible');
+        } else {
+            console.error('🔨 Auction modal not found!');
+        }
+    }
+
+    /**
+     * Show owner notification modal (current property owner)
+     */
+    showOwnerNotificationModal(auctionId) {
+        // console.log('🔨 showOwnerNotificationModal called:', auctionId);
+        const auction = this.activeAuctions.get(auctionId);
+        if (!auction) {
+            console.error('🔨 No auction found for ID:', auctionId);
+            return;
+        }
+
+        // Populate modal with owner-specific content
+        this.populateOwnerNotificationModal(auction);
+
+        // Show modal
+        if (this.auctionModal) {
+        // console.log('🔨 Showing owner notification modal');
+            this.auctionModal.classList.add('visible');
+        } else {
+            console.error('🔨 Auction modal not found!');
+        }
+    }
+
+    /**
+     * Update auction modal display based on current phase
+     */
+    updateAuctionDisplay(auctionId) {
+        const auction = this.activeAuctions.get(auctionId);
+        if (!auction || !this.auctionModal) return;
+
+        const currentPlayerId = this.game.currentPlayerId;
+        const isCurrentOwner = auction.currentOwnerId === currentPlayerId;
+
+        // Get UI elements
+        const bidControls = this.auctionModal.querySelector('.bid-controls');
+        const ownerResponseSection = this.auctionModal.querySelector('#owner-response-section');
+
+        if (auction.phase === 'owner_response' && isCurrentOwner) {
+            // Show owner response UI, hide bidding UI
+            if (bidControls) bidControls.style.display = 'none';
+            if (ownerResponseSection) {
+                ownerResponseSection.classList.remove('hidden');
+
+                // Update the response buttons to include auctionId
+                const matchBtn = ownerResponseSection.querySelector('.match-btn');
+                const declineBtn = ownerResponseSection.querySelector('.decline-btn');
+
+                if (matchBtn) {
+                    matchBtn.onclick = () => this.ownerResponse(auctionId, 'match');
+                }
+                if (declineBtn) {
+                    declineBtn.onclick = () => this.ownerResponse(auctionId, 'decline');
+                }
+
+                // Start countdown timer
+                this.startOwnerResponseTimer(auction.ownerResponseEnd);
+            }
+        } else {
+            // Show normal bidding UI, hide owner response
+            if (bidControls) bidControls.style.display = 'block';
+            if (ownerResponseSection) ownerResponseSection.classList.add('hidden');
+        }
+
+        // Update modal content with current auction data
+        this.populateAuctionModal(auction);
+    }
+
+    /**
+     * Start countdown timer for owner response
+     */
+    startOwnerResponseTimer(endTime) {
+        const timerElement = this.auctionModal?.querySelector('#response-time-remaining');
+        if (!timerElement) return;
+
+        const updateTimer = () => {
+            const timeLeft = Math.max(0, endTime - Date.now());
+            const seconds = Math.ceil(timeLeft / 1000);
+
+            if (timerElement) {
+                timerElement.textContent = `${seconds}s`;
+
+                if (seconds <= 5) {
+                    timerElement.style.color = '#ff4444';
+                } else {
+                    timerElement.style.color = '#fff';
+                }
+            }
+
+            if (timeLeft > 0) {
+                setTimeout(updateTimer, 100);
+            }
+        };
+
+        updateTimer();
+    }
+
+    /**
+     * Show auction conclusion modal
+     */
+    showAuctionConclusionModal(auctionData) {
+        const { auctionId, result, auction } = auctionData;
+        const parcelCoord = this.game.getParcelCoordinate(auction.row, auction.col);
+
+        // Determine if current player was involved
+        const currentPlayerId = this.game.currentPlayerId;
+        const isOwnershipTransferred = result.finalResult === 'ownership_transferred';
+        const isOriginalOwner = auction.currentOwnerId === currentPlayerId;
+        const isChallenger = auction.startedBy === currentPlayerId;
+        const isHighestBidder = auction.highestBidderId === currentPlayerId;
+
+        // Show modal for involved parties
+        if (!isOriginalOwner && !isChallenger && !isHighestBidder) {
+            return;
+        }
+
+        let title, message, resultClass;
+
+        if (isOwnershipTransferred) {
+            // Property changed hands - someone won the auction
+            if (isHighestBidder) {
+                title = "🎉 Auction Won!";
+                message = `You won the auction for parcel ${parcelCoord} with a bid of $${auction.currentBid.toLocaleString()}`;
+                resultClass = "auction-success";
+            } else if (isOriginalOwner) {
+                title = "📉 Property Lost";
+                message = `Your property at parcel ${parcelCoord} was sold for $${auction.currentBid.toLocaleString()}`;
+                resultClass = "auction-failure";
+            } else if (isChallenger) {
+                title = "📉 Auction Lost";
+                message = `You lost the auction for parcel ${parcelCoord}. Winning bid: $${auction.currentBid.toLocaleString()}`;
+                resultClass = "auction-failure";
+            }
+        } else {
+            // Owner kept property or auction expired without bids
+            if (isOriginalOwner) {
+                title = "🏠 Property Retained";
+                message = `You kept your property at parcel ${parcelCoord}`;
+                resultClass = "auction-success";
+            } else {
+                title = "⏰ Auction Expired";
+                message = `The auction for parcel ${parcelCoord} has ended. Property remains with original owner.`;
+                resultClass = "auction-neutral";
+            }
+        }
+
+        // Reuse the auction modal but modify it for conclusion
+        if (this.auctionModal) {
+            const modalContent = this.auctionModal.querySelector('.modal-content');
+            modalContent.innerHTML = `
+                <div class="modal-header">
+                    <h2>${title}</h2>
+                    <button class="modal-close" onclick="game.parcelAuctionSystem.closeModal()">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <div class="auction-conclusion ${resultClass}">
+                        <p>${message}</p>
+                        <div class="auction-details">
+                            <div>Parcel: ${parcelCoord}</div>
+                            ${isOwnershipTransferred ? `<div>Final Bid: $${auction.currentBid.toLocaleString()}</div>` : ''}
+                            ${isOwnershipTransferred && auction.highestBidderId ? `<div>Winner: ${auction.highestBidderId}</div>` : ''}
+                        </div>
+                        <button class="btn-primary" onclick="game.parcelAuctionSystem.closeModal()">OK</button>
+                    </div>
+                </div>
+            `;
+            this.auctionModal.classList.add('visible');
+        }
+    }
+
+    /**
      * Quick bid with percentage increase
      */
     quickBid(percentage) {
-        // Implementation for quick bid buttons
-        const currentAuctionId = this.getCurrentAuctionId();
-        if (!currentAuctionId) return;
+        // Implementation for quick bid buttons in modal
+        if (!this.currentModalAuctionId) {
+            this.game.showNotification('No auction selected', 'error');
+            return;
+        }
 
-        const auction = this.activeAuctions.get(currentAuctionId);
+        const auction = this.activeAuctions.get(this.currentModalAuctionId);
+        if (!auction) return;
+
         const newBid = Math.ceil(auction.currentBid * (1 + percentage / 100));
 
-        this.placeBid(currentAuctionId, newBid);
+
+        this.placeBid(this.currentModalAuctionId, newBid);
     }
+
+    /**
+     * Quick bid on specific auction from sidebar
+     */
+    quickBidOnAuction(auctionId, bidAmount) {
+        // console.log('🔨 Quick bid clicked:', auctionId, bidAmount);
+        this.placeBid(auctionId, bidAmount);
+    }
+
 
     /**
      * Custom bid amount
@@ -379,10 +1117,12 @@ class ParcelAuctionSystem {
             return;
         }
 
-        const currentAuctionId = this.getCurrentAuctionId();
-        if (!currentAuctionId) return;
+        if (!this.currentModalAuctionId) {
+            this.game.showNotification('No auction selected', 'error');
+            return;
+        }
 
-        this.placeBid(currentAuctionId, amount);
+        this.placeBid(this.currentModalAuctionId, amount);
         input.value = '';
     }
 
@@ -394,6 +1134,7 @@ class ParcelAuctionSystem {
         // For now, returning first active auction
         return Array.from(this.activeAuctions.keys())[0];
     }
+
 
     /**
      * Show/hide auction sidebar

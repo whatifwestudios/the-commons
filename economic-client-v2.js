@@ -50,7 +50,7 @@ class EconomicClient {
         // Server-authoritative action costs
         this.actionCosts = null; // Will be set from server data
 
-        // V2: Processed vitality data for UI (computed from jeefhh)
+        // Processed vitality data for UI (computed from jeefhh)
         this.vitalitySupply = {
             JOBS: 0, ENERGY: 0, EDUCATION: 0, FOOD: 0, HOUSING: 0, HEALTHCARE: 0
         };
@@ -72,7 +72,7 @@ class EconomicClient {
         // Transaction response callbacks for WebSocket transactions
         this.transactionCallbacks = new Map();
 
-        // V2: Player ID ready callback
+        // Player ID ready callback
         this.onPlayerIdReady = null;
 
         // Client game time tracking (sync'd with server)
@@ -112,7 +112,7 @@ class EconomicClient {
         this.clientGameStartTime = Date.now();
         this.clockStarted = true;
 
-        // V2: Server-authoritative time with client display interpolation
+        // Server-authoritative time with client display interpolation
         // Start display timer for smooth UI updates between server syncs
         this.startDisplayTimer();
     }
@@ -323,7 +323,11 @@ class EconomicClient {
         try {
             // Check ConnectionManager instead
             if (!this.connectionManager || !this.connectionManager.isConnected) {
-                throw new Error('ConnectionManager not connected');
+                const errorMsg = 'Not connected to server';
+                if (window.uiManager) {
+                    window.uiManager.showError(errorMsg, 'Connection Error');
+                }
+                throw new Error(errorMsg);
             }
 
             // Add transaction ID for tracking
@@ -340,6 +344,9 @@ class EconomicClient {
 
         } catch (error) {
             console.error('❌ Economic transaction failed:', error);
+            if (window.uiManager && error.message !== 'Not connected to server') {
+                window.uiManager.showError(error.message || 'Transaction failed', 'Transaction Error');
+            }
             throw error;
         }
     }
@@ -348,7 +355,11 @@ class EconomicClient {
         return new Promise((resolve, reject) => {
             const timeout = setTimeout(() => {
                 this.transactionCallbacks.delete(transactionId);
-                reject(new Error('Transaction timeout'));
+                const errorMsg = 'Transaction timed out';
+                if (window.uiManager) {
+                    window.uiManager.showError('Server did not respond in time', 'Transaction Timeout');
+                }
+                reject(new Error(errorMsg));
             }, 10000); // 10 second timeout
 
             this.transactionCallbacks.set(transactionId, (result) => {
@@ -369,7 +380,16 @@ class EconomicClient {
                     }
                 }
 
-                resolve(result);
+                // Check for errors in result
+                if (result.success === false) {
+                    const errorMsg = result.error || 'Transaction failed';
+                    if (window.uiManager) {
+                        window.uiManager.showError(errorMsg, 'Transaction Failed');
+                    }
+                    reject(new Error(errorMsg));
+                } else {
+                    resolve(result);
+                }
             });
         });
     }
@@ -910,7 +930,7 @@ class EconomicClient {
             this.dailyCashflowTotals = gameState.cashflow[this.playerId];
         }
 
-        // V2: Process vitality data for UI
+        // Process vitality data for UI
         this.updateVitalityData();
 
         // Sync buildings (server-authoritative, includes performance data)
@@ -985,21 +1005,24 @@ class EconomicClient {
                 }
             }
 
-            // Update UI directly with server balance (no client state mutations)
+            // 🏦 SINGLE AUTHORITY: Economic Client manages all cash display updates
+            // This is the ONLY system that should update playerCash display
             const playerCashElement = window.game?.uiManager?.get('playerCash');
             if (playerCashElement) {
                 playerCashElement.textContent = `$${Math.round(newBalance).toLocaleString()}`;
 
-                // Check if something overrides our update within 100ms
-                setTimeout(() => {
-                    const currentDisplay = playerCashElement.textContent;
-                    if (currentDisplay !== `$${Math.round(newBalance).toLocaleString()}`) {
-                        console.warn('⚠️ Cash display was overridden');
-                    }
-                }, 100);
+                // Check if something overrides our update within 100ms (debug only)
+                if (window.DEBUG_MODE) {
+                    setTimeout(() => {
+                        const currentDisplay = playerCashElement.textContent;
+                        if (currentDisplay !== `$${Math.round(newBalance).toLocaleString()}`) {
+                            console.debug('💰 Cash display race condition detected');
+                        }
+                    }, 100);
+                }
             }
 
-            // V2: Update city name from server if available
+            // Update city name from server if available
             if (playerData.cityName && window.game && typeof window.game.updateCityNameFromServer === 'function') {
                 window.game.updateCityNameFromServer(playerData.cityName);
             } else {
@@ -1052,13 +1075,6 @@ class EconomicClient {
             this.monthlyBudget = gameState.monthlyBudget;
         }
 
-        // Skip individual player governance sync - handled via individual transactions
-        // This prevents the client governance system from being overwritten by legacy server data
-        if (gameState.governance && this.game.governanceSystem && false) {
-            this.game.governanceSystem.governance = gameState.governance;
-            this.game.governanceSystem.updateGovernanceModal();
-            // Governance data synced
-        }
 
         // V2: Trigger UI updates with processed data instead of raw sync
         this.triggerUIUpdate('VITALITY_UPDATE', {
@@ -1244,6 +1260,11 @@ class EconomicClient {
             this.handleWebSocketUpdate(message);
         });
 
+        // Subscribe to building state updates for rendering
+        this.connectionManager.subscribe('BUILDING_STATES', (message) => {
+            this.handleWebSocketUpdate(message);
+        });
+
         // Handle special GAME_STARTED event for city names
         this.connectionManager.subscribe('GAME_STATE', (message) => {
             if (message.eventType === 'GAME_STARTED' && message.eventData?.players) {
@@ -1420,7 +1441,7 @@ class EconomicClient {
                     this.totalResidents = update.totalResidents;
                 }
 
-                // V2: Process vitality data for UI
+                // Process vitality data for UI
                 this.updateVitalityData();
 
                 // Trigger UI update
@@ -1433,17 +1454,6 @@ class EconomicClient {
 
             case 'MONTHLY_UPDATE':
                 // Monthly update received
-                // Update governance points in local game state
-                // DISABLED: Legacy local governance point update - V2 uses server-authoritative governance
-                if (this.game && this.game.governanceSystem && false) {
-                    this.game.governanceSystem.governance.votingPoints += 2;
-                    // Governance points updated
-                    // Update the governance modal if it's open
-                    // DISABLED: Legacy governance modal update - V2 facade handles this via WebSocket sync
-                    // this.game.governanceSystem.updateGovernanceModal();
-                    // Animate governance button with gold fade animation
-                    this.game.governanceSystem.animateGovernanceButtonGold();
-                }
                 break;
 
             case 'GOVERNANCE_UPDATE':
@@ -1487,14 +1497,22 @@ class EconomicClient {
                 if (update.transactionId && this.transactionCallbacks.has(update.transactionId)) {
                     const callback = this.transactionCallbacks.get(update.transactionId);
                     callback(update.result);
-                } else {
-                    console.warn('⚠️ Received transaction response with no matching callback');
+                    this.transactionCallbacks.delete(update.transactionId);
+                } else if (window.DEBUG_MODE) {
+                    // Some transactions don't use callbacks (fire-and-forget style)
+                    console.debug(`💼 Transaction response received: ${update.transactionId || 'no-id'}`);
                 }
                 break;
 
             case 'PONG':
                 // Heartbeat response - connection is healthy
                 this.lastPongTime = Date.now();
+                break;
+
+            case 'BUILDING_STATES':
+                // Building rendering states from server
+                console.log(`📡 Received ${update.buildings?.length || 0} building states from server`);
+                this.updateBuildingStates(update.buildings);
                 break;
 
             default:
@@ -1721,6 +1739,187 @@ class EconomicClient {
                 });
             }
         });
+    }
+
+    /**
+     * Get building repair cost from server
+     */
+    async getBuildingRepairCost(row, col) {
+        try {
+            const response = await fetch(`${this.baseUrl}/api/building-repair-cost`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    roomId: this.game?.currentRoomId,
+                    row,
+                    col
+                })
+            });
+
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}`);
+            }
+
+            const data = await response.json();
+            return data.repairCost || 0;
+        } catch (error) {
+            console.warn('Failed to get building repair cost from server:', error);
+            return 0;
+        }
+    }
+
+    /**
+     * Get building value from server
+     */
+    async getBuildingValue(row, col) {
+        try {
+            const response = await fetch(`${this.baseUrl}/api/building-value`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    roomId: this.game?.currentRoomId,
+                    row,
+                    col
+                })
+            });
+
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}`);
+            }
+
+            const data = await response.json();
+            return data.value || 0;
+        } catch (error) {
+            console.warn('Failed to get building value from server:', error);
+            return 0;
+        }
+    }
+
+    /**
+     * Get city population from server
+     */
+    getCityPopulation() {
+        // Use cached data if available
+        if (this.totalResidents !== undefined) {
+            return this.totalResidents;
+        }
+
+        // Fallback: try to fetch from server
+        this.fetchCityPopulation();
+        return 0;
+    }
+
+    /**
+     * Fetch city population from server
+     */
+    async fetchCityPopulation() {
+        try {
+            const response = await fetch(`${this.baseUrl}/api/city-population`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    roomId: this.game?.currentRoomId
+                })
+            });
+
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}`);
+            }
+
+            const data = await response.json();
+            this.totalResidents = data.population || 0;
+            return this.totalResidents;
+        } catch (error) {
+            console.warn('Failed to get city population from server:', error);
+            return 0;
+        }
+    }
+
+    /**
+     * Update building states from server broadcasts
+     */
+    updateBuildingStates(buildingStates) {
+        if (!buildingStates || !Array.isArray(buildingStates)) {
+            return;
+        }
+
+        // Initialize building states cache if not exists
+        if (!this.buildingStates) {
+            this.buildingStates = new Map();
+        }
+
+        // Initialize buildings Map for tooltip data if not exists
+        if (!this.buildings) {
+            this.buildings = new Map();
+        }
+
+        // Update each building state
+        buildingStates.forEach(state => {
+            const key = `${state.row},${state.col}`;
+
+            // Store in buildingStates for rendering system
+            this.buildingStates.set(key, {
+                ...state,
+                lastUpdated: Date.now()
+            });
+
+            // ALSO store in buildings Map for tooltip system
+            // This is the critical missing link!
+            const buildingData = {
+                id: state.buildingId,
+                owner: state.owner,
+                row: state.row,
+                col: state.col,
+                condition: state.condition,
+                isUnderConstruction: state.isUnderConstruction,
+                constructionProgress: state.constructionProgress,
+
+                // Tooltip data
+                efficiency: state.efficiency || 0,
+                netIncome: state.netIncome || 0,
+                revenue: state.revenue || 0,
+                maintenance: state.maintenance || 0,
+                performance: state.performanceDetails || null,
+
+                // Additional rendering data
+                repairCost: state.repairCost,
+                currentValue: state.currentValue,
+                lastUpdated: Date.now()
+            };
+
+            this.buildings.set(key, buildingData);
+
+            // DEBUG: Log received data for first few buildings
+            console.log(`📥 CLIENT received [${key}] ${state.buildingId}:`, {
+                efficiency: state.efficiency,
+                netIncome: state.netIncome,
+                revenue: state.revenue,
+                maintenance: state.maintenance,
+                hasPerformanceDetails: !!state.performanceDetails
+            });
+        });
+
+        // Trigger rendering update if game exists
+        if (this.game?.scheduleRender) {
+            this.game.scheduleRender();
+        }
+
+        if (window.DEBUG_MODE) {
+            console.log('🏗️ Building states updated:', buildingStates.length, 'buildings');
+            console.log('📊 Sample building data:', this.buildings.get(Array.from(this.buildings.keys())[0]));
+        }
+    }
+
+    /**
+     * Get building state for rendering at specific coordinates
+     */
+    getBuildingState(row, col) {
+        if (!this.buildingStates) {
+            return null;
+        }
+
+        const key = `${row},${col}`;
+        return this.buildingStates.get(key) || null;
     }
 }
 

@@ -13,6 +13,14 @@
 
 class BeerHallLobby {
     constructor() {
+        // Create logger for development mode
+        this.logger = {
+            debug: (...args) => {},  // Disabled by default
+            info: console.log,
+            warn: console.warn,
+            error: console.error
+        };
+
         this.availableColors = [
             '#10AC84', '#EE5A6F', '#F8B500', '#6C5CE7', '#74B9FF',
             '#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7',
@@ -26,7 +34,7 @@ class BeerHallLobby {
         // Player state
         this.selectedColor = null;
         this.playerName = '';
-        this.playerPreferences = { minPlayers: 4, maxPlayers: 8 };
+        this.playerPreferences = { minPlayers: 2, maxPlayers: 12 }; // Default to "Small 2+ players"
         this.playerId = null;
         // Governance integration - use main system instead of parallel state
 
@@ -42,7 +50,6 @@ class BeerHallLobby {
         this.colorSelector = null;
         this.findTableBtn = null;
         this.readyCheckModal = null;
-        this.gameIntroModal = null;
 
         // State
         this.isInitialized = false;
@@ -69,7 +76,6 @@ class BeerHallLobby {
         this.colorSelector = document.getElementById('color-selector');
         this.findTableBtn = document.getElementById('find-table-btn');
         this.readyCheckModal = document.getElementById('ready-check-modal');
-        this.gameIntroModal = document.getElementById('game-intro-cinematic');
 
         if (!this.validateElements()) {
             throw new Error('Required beer hall elements not found in DOM');
@@ -83,6 +89,11 @@ class BeerHallLobby {
 
         // Initialize connection through ConnectionManager
         this.initializeConnection();
+
+        // Ensure ready check modal is hidden on initialization
+        if (this.readyCheckModal) {
+            this.readyCheckModal.style.display = 'none';
+        }
 
         // Show beer hall lobby
         this.showBeerHallLobby();
@@ -99,8 +110,7 @@ class BeerHallLobby {
                this.playerNameInput &&
                this.colorSelector &&
                this.findTableBtn &&
-               this.readyCheckModal &&
-               this.gameIntroModal;
+               this.readyCheckModal;
     }
 
     setupEventListeners() {
@@ -474,18 +484,44 @@ class BeerHallLobby {
      * Check if solo mode is already selected on initialization
      */
     checkInitialSizeSelection() {
+        // Always show the beer hall lobby first - no auto-starting
+        // The user must see the lobby and click "Enter The Commons" to proceed
+        this.welcomeScreen.style.display = 'flex';
+
         const activeButton = document.querySelector('.size-btn.active');
-        if (activeButton && activeButton.dataset.size === '1') {
-            // SOLO mode detected - showing welcome screen
-            // Show welcome screen - player will start game by clicking "Enter the Commons"
-            this.welcomeScreen.style.display = 'flex';
-        } else if (activeButton) {
-            // Set the correct player count for the active button
+        if (activeButton) {
+            // Set the correct player preferences and count for the active button
             const sizeData = activeButton.dataset.size;
-            let maxPlayers = 6; // Default
-            if (sizeData === '2+') maxPlayers = 12;
-            else if (sizeData === '6+') maxPlayers = 12;
-            else if (sizeData === '12') maxPlayers = 12;
+
+            // Parse the size data and set preferences (same logic as handleSizeSelection)
+            let minPlayers, maxPlayers;
+            if (sizeData === '1') {
+                minPlayers = 1;
+                maxPlayers = 1;
+            } else if (sizeData.includes('+')) {
+                minPlayers = parseInt(sizeData.replace('+', ''));
+                maxPlayers = 12; // Default max for "6+" and "2+"
+            } else if (sizeData === '12') {
+                minPlayers = 12;
+                maxPlayers = 12;
+            } else if (sizeData.includes('-')) {
+                // Handle range format like "3-6"
+                const [min, max] = sizeData.split('-').map(n => parseInt(n));
+                minPlayers = min;
+                maxPlayers = max;
+            } else {
+                // Fallback - treat as single number
+                minPlayers = parseInt(sizeData);
+                maxPlayers = minPlayers;
+            }
+
+            // Set the player preferences
+            this.playerPreferences = {
+                minPlayers: minPlayers,
+                maxPlayers: maxPlayers
+            };
+
+            this.logger.debug(`🎮 Initial size selection: ${sizeData}, preferences:`, this.playerPreferences);
 
             this.updatePlayerCount(1, maxPlayers);
         }
@@ -628,21 +664,23 @@ class BeerHallLobby {
     async initializeConnection() {
         this.connectionManager = window.connectionManager;
 
-        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        // Connect to the same server that served the page
-        const host = window.location.host; // Uses current port automatically
-        const wsUrl = `${protocol}//${host}/ws`;
+        // Subscribe to lobby-specific messages first
+        this.setupLobbySubscriptions();
 
-        try {
-            // Connect to server via ConnectionManager
-            await this.connectionManager.connect(wsUrl);
-            console.log('✅ Beer Hall connected via ConnectionManager');
+        // Only connect if not already connected
+        if (!this.connectionManager.isConnected) {
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const host = window.location.host; // Uses current port automatically
+            const wsUrl = `${protocol}//${host}/ws`;
 
-            // Subscribe to lobby-specific messages
-            this.setupLobbySubscriptions();
-
-        } catch (error) {
-            console.error('🔌 Failed to initialize connection:', error);
+            try {
+                await this.connectionManager.connect(wsUrl);
+                this.logger.debug('✅ Beer Hall established new connection via ConnectionManager');
+            } catch (error) {
+                console.error('🔌 Failed to initialize connection:', error);
+            }
+        } else {
+            this.logger.debug('✅ Beer Hall using existing ConnectionManager connection');
         }
     }
 
@@ -653,7 +691,7 @@ class BeerHallLobby {
         // Subscribe to lobby-specific messages
         this.connectionManager.subscribe('CONNECTED', (message) => {
             this.playerId = message.playerId;
-            console.log('🍺 Beer Hall received player ID:', this.playerId);
+            this.logger.debug('🍺 Beer Hall received player ID:', this.playerId);
         });
 
         this.connectionManager.subscribe('TABLE_FOUND', (message) => {
@@ -692,8 +730,10 @@ class BeerHallLobby {
             this.handleGameStart(message);
         });
 
-        this.connectionManager.subscribe('GAME_STARTED', (message) => {
-            this.startGameCinematic(message);
+        this.connectionManager.subscribe('GAME_STATE', (message) => {
+            if (message.eventType === 'GAME_STARTED') {
+                this.handleGameStarted(message);
+            }
         });
 
         this.connectionManager.subscribe('PLAYER_READY', (message) => {
@@ -710,7 +750,7 @@ class BeerHallLobby {
 
         // Connection events
         this.connectionManager.on('connected', () => {
-            console.log('🍺 Beer Hall: Connection established');
+            this.logger.debug('🍺 Beer Hall: Connection established');
         });
 
         this.connectionManager.on('disconnected', () => {
@@ -718,7 +758,7 @@ class BeerHallLobby {
         });
 
         this.connectionManager.on('reconnecting', (data) => {
-            console.log(`🍺 Beer Hall: Reconnecting (attempt ${data.attempt})`);
+            this.logger.debug(`🍺 Beer Hall: Reconnecting (attempt ${data.attempt})`);
         });
     }
 
@@ -819,7 +859,7 @@ class BeerHallLobby {
      * Handle game starting message
      */
     handleGameStarting(message) {
-        console.log('🎮 Game is starting with countdown:', message.countdown);
+        this.logger.debug('🎮 Game is starting with countdown:', message.countdown);
         this.addSystemMessage(`Game starting in ${message.countdown} seconds!`);
 
         // Show countdown overlay if we have a chat overlay
@@ -830,23 +870,23 @@ class BeerHallLobby {
      * Handle countdown update message
      */
     handleCountdownUpdate(message) {
-        console.log(`⏰ Client received countdown update: ${message.countdown}`);
+        this.logger.debug(`⏰ Client received countdown update: ${message.countdown}`);
         this.updateCountdownDisplay(message.countdown);
         this.addSystemMessage(`Starting in ${message.countdown}...`);
 
         // Hide countdown when it reaches 0
         if (message.countdown === 0) {
-            console.log('⏰ Countdown reached 0, hiding overlay');
+            this.logger.debug('⏰ Countdown reached 0, hiding overlay');
             this.hideCountdownOverlay();
         }
     }
 
     /**
-     * Start game cinematic
+     * Handle game started message
      */
-    startGameCinematic(update) {
+    handleGameStarted(update) {
         if (window.DEBUG_MODE) {
-            console.log('✅ Starting game cinematic!');
+            this.logger.debug('✅ Game started!');
         }
 
         // Hide countdown overlay
@@ -855,19 +895,32 @@ class BeerHallLobby {
         // Hide ready check modal
         this.readyCheckModal.style.display = 'none';
 
-        // Show cinematic
-        this.gameIntroModal.style.display = 'flex';
-
         // V2: Extract city name for current player from GAME_STARTED message
-        console.log('🏙️ CLIENT DEBUG: GAME_STARTED message received:', JSON.stringify(update, null, 2));
+        this.logger.debug('🏙️ CLIENT DEBUG: GAME_STARTED message received:', JSON.stringify(update, null, 2));
         const players = update.eventData?.players || update.players || [];
-        console.log('🏙️ CLIENT DEBUG: players array:', players);
-        console.log('🏙️ CLIENT DEBUG: current playerId:', this.playerId);
+        this.logger.debug('🏙️ CLIENT DEBUG: players array:', players);
+        this.logger.debug('🏙️ CLIENT DEBUG: current playerId:', this.playerId);
         const currentPlayer = players.find(p => p.id === this.playerId);
-        console.log('🏙️ CLIENT DEBUG: found currentPlayer:', currentPlayer);
+        this.logger.debug('🏙️ CLIENT DEBUG: found currentPlayer:', currentPlayer);
+
+        // CRITICAL FIX: Ensure the game is properly started for multiplayer
+        if (window.game) {
+            this.logger.debug('🎮 MULTIPLAYER FIX: Starting game systems for synchronized multiplayer');
+            // For multiplayer, we need to start the game time and rendering systems
+            // that normally get started by startGame() but are skipped in multiplayer mode
+            if (window.game.startGameTime && typeof window.game.startGameTime === 'function') {
+                window.game.startGameTime();
+            }
+            if (window.game.scheduleRender && typeof window.game.scheduleRender === 'function') {
+                window.game.scheduleRender();
+            }
+            this.logger.debug('🎮 MULTIPLAYER FIX: Game systems initialized successfully');
+        } else {
+            console.error('❌ MULTIPLAYER ERROR: window.game not found when GAME_STARTED received');
+        }
 
         if (currentPlayer && currentPlayer.cityName) {
-            console.log('🏙️ CLIENT DEBUG: City name found:', currentPlayer.cityName);
+            this.logger.debug('🏙️ CLIENT DEBUG: City name found:', currentPlayer.cityName);
             // Store city name for UI display
             localStorage.setItem('playerCityName', currentPlayer.cityName);
             // Update UI immediately if game exists
@@ -881,21 +934,6 @@ class BeerHallLobby {
             console.warn('⚠️ players:', players);
         }
 
-        // Populate players in cinematic
-        const playersContainer = document.getElementById('cinematic-players');
-        playersContainer.innerHTML = '';
-
-        players.forEach((player, index) => {
-            const playerDiv = document.createElement('div');
-            playerDiv.className = 'cinematic-player';
-            playerDiv.style.animationDelay = `${index * 0.1}s`;
-            playerDiv.innerHTML = `
-                <div class="cinematic-player-name">${player.name}</div>
-                <div class="cinematic-player-color" style="background-color: ${player.color}"></div>
-            `;
-            playersContainer.appendChild(playerDiv);
-        });
-
         // Start countdown
         this.startCountdown(update);
     }
@@ -905,14 +943,22 @@ class BeerHallLobby {
      */
     showMultiplayerChat() {
         const chatOverlay = document.getElementById('multiplayer-chat-overlay');
-        const gameContainer = document.getElementById('game-container');
+        const gameInterface = document.getElementById('game-interface');
 
-        if (chatOverlay && gameContainer) {
-            // Add blur effect to game
-            gameContainer.classList.add('game-blurred');
+        this.logger.debug('🎮 showMultiplayerChat called');
+        this.logger.debug('🎮 chatOverlay:', !!chatOverlay);
+        this.logger.debug('🎮 gameInterface:', !!gameInterface);
 
-            // Show chat overlay
+        if (chatOverlay && gameInterface) {
+            // Add blur effect to game interface (includes top-bar, game-container, and sidebar)
+            gameInterface.classList.add('game-blurred');
+
+            // Remove hidden-element class and show chat overlay
+            chatOverlay.classList.remove('hidden-element');
             chatOverlay.style.display = 'flex';
+
+            this.logger.debug('🎮 Chat overlay shown, display style:', chatOverlay.style.display);
+            this.logger.debug('🎮 Chat overlay classes:', chatOverlay.className);
 
             // Update waiting text based on player preferences
             this.updateWaitingText();
@@ -932,11 +978,12 @@ class BeerHallLobby {
      */
     hideMultiplayerChat() {
         const chatOverlay = document.getElementById('multiplayer-chat-overlay');
-        const gameContainer = document.getElementById('game-container');
+        const gameInterface = document.getElementById('game-interface');
 
-        if (chatOverlay && gameContainer) {
+        if (chatOverlay && gameInterface) {
             chatOverlay.style.display = 'none';
-            gameContainer.classList.remove('game-blurred');
+            chatOverlay.classList.add('hidden-element');
+            gameInterface.classList.remove('game-blurred');
         }
     }
 
@@ -979,7 +1026,6 @@ class BeerHallLobby {
         this.setupEmojiButtons();
 
         // Setup governance panel
-        this.setupGovernancePanel();
 
         // Setup tab switching
         this.setupTabSwitching();
@@ -1175,6 +1221,44 @@ class BeerHallLobby {
         }
 
         this.addSystemMessage('Starting game...');
+
+        // Fallback: if server doesn't respond within 3 seconds, proceed anyway
+        // This handles cases where server multiplayer isn't fully configured
+        setTimeout(() => {
+            // Check if we're still waiting (chat modal still visible)
+            const chatOverlay = document.getElementById('multiplayer-chat-overlay');
+            if (chatOverlay && chatOverlay.style.display === 'flex') {
+                this.logger.debug('🎮 Server timeout - proceeding to game without server response');
+                this.addSystemMessage('Game starting now!');
+
+                // Proceed to game after brief delay
+                setTimeout(() => {
+                    this.hideMultiplayerChat();
+                    this.proceedToGame();
+                }, 500);
+            }
+        }, 3000);
+    }
+
+    /**
+     * Proceed directly to game without countdown
+     */
+    proceedToGame() {
+        this.logger.debug('🎮 Proceeding directly to game');
+
+        // Hide welcome screen
+        if (this.welcomeScreen) {
+            this.welcomeScreen.style.display = 'none';
+        }
+
+        // Remove blur from game interface
+        const gameInterface = document.getElementById('game-interface');
+        if (gameInterface) {
+            gameInterface.classList.remove('game-blurred');
+        }
+
+        // Hide any remaining lobby elements
+        document.body.classList.remove('beer-hall-active', 'ready-check-active');
     }
 
     /**
@@ -1214,7 +1298,6 @@ class BeerHallLobby {
         this.addChatMessage(update.playerName, update.message, update.color);
     }
 
-    // syncGovernanceFromServer method removed - now using main governance system
 
     /**
      * Handle game start event
@@ -1237,31 +1320,33 @@ class BeerHallLobby {
         const countdownElement = document.getElementById('countdown');
 
         const countdownInterval = setInterval(() => {
-            countdownElement.textContent = countdown;
+            if (countdownElement) {
+                countdownElement.textContent = countdown;
+            }
+            this.logger.debug(`🎮 Countdown: ${countdown}`);
             countdown--;
 
             if (countdown < 0) {
                 clearInterval(countdownInterval);
 
-                // Hide welcome screen and cinematic
+                // Hide welcome screen
                 this.welcomeScreen.style.display = 'none';
-                this.gameIntroModal.style.display = 'none';
 
                 // Don't create a new game - just transition the existing one
                 // The game was already started with proper server synchronization
-                console.log('🎮 Countdown complete - transitioning to synchronized game');
+                this.logger.debug('🎮 Countdown complete - transitioning to synchronized game');
 
                 // Request chat history before transitioning to in-game
-                console.log('💬 Requesting chat history for in-game transition');
+                this.logger.debug('💬 Requesting chat history for in-game transition');
                 this.requestChatHistory();
 
                 // Hide multiplayer chat overlay if active
                 this.hideMultiplayerChat();
 
-                // Remove blur from game container
-                const gameContainer = document.getElementById('game-container');
-                if (gameContainer) {
-                    gameContainer.classList.remove('game-blurred');
+                // Remove blur from game interface
+                const gameInterface = document.getElementById('game-interface');
+                if (gameInterface) {
+                    gameInterface.classList.remove('game-blurred');
                 }
 
                 // Hide any remaining lobby elements
@@ -1301,378 +1386,13 @@ class BeerHallLobby {
         });
     }
 
-    /**
-     * Setup governance priorities panel using main governance system
-     */
-    setupGovernancePanel() {
-        this.renderGovernanceCategories();
-        this.setupGovernanceHandlers();
-    }
 
-    /**
-     * Render governance categories using static category list
-     */
-    renderGovernanceCategories() {
-        const container = document.getElementById('governance-categories');
-        if (!container) return;
 
-        container.innerHTML = '';
 
-        // Pre-game LVT setup only - get current rate
-        const governanceSystem = window.game?.governanceSystem;
-        const currentRate = governanceSystem?.governance?.taxRate || 0.50;
-        const ratePercent = (currentRate * 100).toFixed(0);
 
-        // Create enhanced LVT voting interface
-        const lvtVotingDiv = document.createElement('div');
-        lvtVotingDiv.className = 'lvt-voting-interface';
-        lvtVotingDiv.innerHTML = `
-            <div class="lvt-main-display">
-                <div class="lvt-title">
-                    <span class="lvt-icon">🏛️</span>
-                    <h4>Land Value Tax Rate</h4>
-                    <span class="lvt-subtitle">The Heart of Your City's Economics</span>
-                </div>
-                <div class="lvt-current-rate">
-                    <span class="rate-value">${ratePercent}%</span>
-                    <span class="rate-label">Current Rate</span>
-                </div>
-            </div>
 
-            <div class="lvt-voting-section">
-                <div class="voting-controls">
-                    <button class="lvt-vote-btn decrease" data-action="decrease" data-category="lvt">
-                        <span class="vote-symbol">−</span>
-                        <span class="vote-text">Lower Rate</span>
-                    </button>
 
-                    <div class="voting-status">
-                        <div class="my-votes">
-                            <span class="vote-count" data-category="lvt">0</span>
-                            <span class="vote-label">Your Votes</span>
-                        </div>
-                        <div class="points-remaining">
-                            <span class="points-count">${governanceSystem?.governance?.votingPoints || 4}</span>
-                            <span class="points-label">Points Left</span>
-                        </div>
-                    </div>
 
-                    <button class="lvt-vote-btn increase" data-action="increase" data-category="lvt">
-                        <span class="vote-symbol">+</span>
-                        <span class="vote-text">Raise Rate</span>
-                    </button>
-                </div>
-
-            </div>
-        `;
-        container.appendChild(lvtVotingDiv);
-
-        this.updatePointsDisplay();
-    }
-
-    /**
-     * Setup governance event handlers
-     */
-    setupGovernanceHandlers() {
-        // Point allocation buttons (legacy and new LVT buttons)
-        document.addEventListener('click', (e) => {
-            if (e.target.classList.contains('point-btn') || e.target.classList.contains('lvt-vote-btn') || e.target.closest('.lvt-vote-btn')) {
-                const button = e.target.closest('.point-btn, .lvt-vote-btn') || e.target;
-                const action = button.dataset.action;
-                const category = button.dataset.category;
-                this.handlePointAllocation(category, action);
-            }
-        });
-
-        // Reset button
-        const resetBtn = document.getElementById('reset-governance');
-        if (resetBtn) {
-            resetBtn.addEventListener('click', () => {
-                this.resetGovernancePoints();
-            });
-        }
-
-        // Save button
-        const saveBtn = document.getElementById('save-governance');
-        if (saveBtn) {
-            saveBtn.addEventListener('click', () => {
-                this.saveGovernancePreferences();
-            });
-        }
-    }
-
-    /**
-     * Handle point allocation using main governance system
-     */
-    async handlePointAllocation(category, action) {
-        // Get main governance system
-        const governanceSystem = window.game?.governanceSystem;
-        if (!governanceSystem) {
-            console.error('🏛️ Governance system not available');
-            return;
-        }
-
-        try {
-            let result = false;
-
-            if (category === 'lvt') {
-                // Check if game has started to determine which LVT voting system to use
-                if (governanceSystem.governance.gameStarted) {
-                    // Use server-side governance system for in-game LVT voting
-                    if (action === 'increase') {
-                        result = await governanceSystem.increaseLVTRate();
-                    } else if (action === 'decrease') {
-                        result = await governanceSystem.decreaseLVTRate();
-                    }
-                } else {
-                    // Handle pre-game LVT voting locally with undo functionality
-                if (!this.playerLVTVotes) this.playerLVTVotes = 0; // Track net votes: +1 for increase, -1 for decrease
-
-                if (action === 'increase') {
-                    if (governanceSystem.governance.votingPoints > 0) {
-                        // Add increase vote
-                        governanceSystem.governance.votingPoints -= 1;
-                        this.playerLVTVotes += 1;
-                        governanceSystem.governance.taxRate = Math.min(1.0, governanceSystem.governance.taxRate + 0.01);
-                        result = true;
-                    } else if (this.playerLVTVotes < 0) {
-                        // Undo a decrease vote (refund point)
-                        governanceSystem.governance.votingPoints += 1;
-                        this.playerLVTVotes += 1;
-                        governanceSystem.governance.taxRate = Math.min(1.0, governanceSystem.governance.taxRate + 0.01);
-                        result = true;
-                    } else {
-                        result = false;
-                    }
-                } else if (action === 'decrease') {
-                    if (governanceSystem.governance.votingPoints > 0) {
-                        // Add decrease vote
-                        governanceSystem.governance.votingPoints -= 1;
-                        this.playerLVTVotes -= 1;
-                        governanceSystem.governance.taxRate = Math.max(0.0, governanceSystem.governance.taxRate - 0.01);
-                        result = true;
-                    } else if (this.playerLVTVotes > 0) {
-                        // Undo an increase vote (refund point)
-                        governanceSystem.governance.votingPoints += 1;
-                        this.playerLVTVotes -= 1;
-                        governanceSystem.governance.taxRate = Math.max(0.0, governanceSystem.governance.taxRate - 0.01);
-                        result = true;
-                    } else {
-                        result = false;
-                    }
-                }
-
-                if (result) {
-                    // Pre-game LVT vote processed
-                }
-                }
-            } else {
-                // Handle regular category voting
-                if (action === 'increase') {
-                    result = await governanceSystem.addCategoryVote(category);
-                } else if (action === 'decrease') {
-                    result = await governanceSystem.removeCategoryVote(category);
-                }
-            }
-
-            if (result) {
-                // Update display after successful vote
-                this.updatePointsDisplay();
-
-                // Send chat message about the change
-                const categoryName = this.getCategoryDisplayName(category);
-                const actionText = action === 'increase' ? 'increased' : 'decreased';
-                this.sendChatMessage(`${actionText} ${categoryName} priority`);
-            }
-        } catch (error) {
-            console.error('🏛️ Error handling point allocation:', error);
-        }
-    }
-
-    /**
-     * Get display name for category
-     */
-    getCategoryDisplayName(category) {
-        const categoryNames = {
-            education: 'Education',
-            healthcare: 'Healthcare',
-            infrastructure: 'Infrastructure',
-            housing: 'Housing',
-            culture: 'Culture',
-            recreation: 'Recreation',
-            commercial: 'Commercial',
-            civic: 'Civic Services',
-            emergency: 'Emergency',
-            ubi: 'UBI',
-            lvt: 'Land Value Tax'
-        };
-        return categoryNames[category] || category;
-    }
-
-    /**
-     * Update points display using main governance system
-     */
-    updatePointsDisplay() {
-        const governanceSystem = window.game?.governanceSystem;
-        if (!governanceSystem) {
-            return;
-        }
-
-        // Update available points from main system
-        const availablePointsSpan = document.getElementById('available-points');
-        if (availablePointsSpan) {
-            availablePointsSpan.textContent = governanceSystem.governance.votingPoints;
-        }
-
-        // Update points-count in new interface
-        const pointsCountSpan = document.querySelector('.points-count');
-        if (pointsCountSpan) {
-            pointsCountSpan.textContent = governanceSystem.governance.votingPoints;
-        }
-
-        // Update LVT vote count and rate
-        const lvtVotes = governanceSystem.governance.playerVotes?.player?.lvtVotes || 0;
-        const currentRate = governanceSystem?.governance?.taxRate || 0.50;
-        const ratePercent = (currentRate * 100).toFixed(0);
-
-        // Update vote count display
-        const voteCountSpan = document.querySelector('.vote-count[data-category="lvt"]');
-        if (voteCountSpan) {
-            voteCountSpan.textContent = Math.abs(lvtVotes);
-        }
-
-        // Update current rate display
-        const rateValueSpan = document.querySelector('.rate-value');
-        if (rateValueSpan) {
-            rateValueSpan.textContent = `${ratePercent}%`;
-        }
-
-        // Update legacy points display if it exists
-        const pointsDisplay = document.querySelector(`[data-category="lvt"].points-display`);
-        if (pointsDisplay) {
-            pointsDisplay.textContent = Math.abs(lvtVotes);
-        }
-
-        // Update button states
-        const increaseBtn = document.querySelector(`[data-category="lvt"][data-action="increase"]`);
-        const decreaseBtn = document.querySelector(`[data-category="lvt"][data-action="decrease"]`);
-
-        if (increaseBtn) increaseBtn.disabled = governanceSystem.governance.votingPoints === 0;
-        if (decreaseBtn) decreaseBtn.disabled = governanceSystem.governance.votingPoints === 0;
-
-    }
-
-    /**
-     * Update player votes display to show who has voted and in what direction
-     */
-    updatePlayerVotesDisplay() {
-        const displayContainer = document.getElementById('player-votes-display');
-        if (!displayContainer) return;
-
-        const governanceSystem = window.game?.governanceSystem;
-        if (!governanceSystem) return;
-
-        const playerVotes = governanceSystem.governance.playerVotes || {};
-        const players = Object.keys(playerVotes);
-
-        if (players.length === 0) {
-            displayContainer.innerHTML = '<div class="no-votes">No players have voted yet</div>';
-            return;
-        }
-
-        displayContainer.innerHTML = `
-            <div class="player-votes-header">
-                <h5>Player Voting Status</h5>
-            </div>
-            <div class="player-votes-grid">
-                ${players.map(playerId => {
-                    const playerData = playerVotes[playerId];
-                    const lvtVotes = playerData.lvtVotes || 0;
-                    const direction = lvtVotes > 0 ? 'increase' : lvtVotes < 0 ? 'decrease' : 'neutral';
-                    const votes = Math.abs(lvtVotes);
-                    const arrow = direction === 'increase' ? '↗️' : direction === 'decrease' ? '↘️' : '⚪';
-
-                    return `
-                        <div class="player-vote-item ${direction}">
-                            <span class="player-name">${playerId === 'player' ? 'You' : `Player ${playerId.slice(-4)}`}</span>
-                            <span class="vote-direction">${arrow}</span>
-                            <span class="vote-amount">${votes > 0 ? votes : '—'}</span>
-                        </div>
-                    `;
-                }).join('')}
-            </div>
-        `;
-    }
-
-    /**
-     * Get category mapping for display
-     */
-    getCategoryMap() {
-        return {
-            education: 'Education',
-            healthcare: 'Healthcare',
-            infrastructure: 'Infrastructure',
-            housing: 'Housing',
-            culture: 'Culture',
-            recreation: 'Recreation',
-            commercial: 'Commercial',
-            civic: 'Civic Services',
-            emergency: 'Emergency',
-            ubi: 'UBI',
-            lvt: 'Land Value Tax'
-        };
-    }
-
-    /**
-     * Reset governance points using main governance system
-     */
-    async resetGovernancePoints() {
-        const governanceSystem = window.game?.governanceSystem;
-        if (!governanceSystem) {
-            console.error('🏛️ Governance system not available');
-            return;
-        }
-
-        try {
-            // Reset all player votes to zero using the main governance system
-            const playerVotes = governanceSystem.governance.playerVotes?.player?.categories || {};
-
-            // Remove all category votes
-            for (const [category, points] of Object.entries(playerVotes)) {
-                for (let i = 0; i < points; i++) {
-                    await governanceSystem.removeCategoryVote(category);
-                }
-            }
-
-            // Reset LVT to default 50% and restore all voting points
-            governanceSystem.governance.taxRate = 0.50; // Reset to 50%
-            governanceSystem.governance.votingPoints = 4; // Restore all 4 pre-game points
-            this.playerLVTVotes = 0; // Clear vote tracking
-
-            this.updatePointsDisplay();
-            this.addChatMessage('System', 'Reset governance priorities to default', '#888');
-        } catch (error) {
-            console.error('🏛️ Error resetting governance points:', error);
-        }
-    }
-
-    /**
-     * Save governance preferences (now redundant - votes are saved automatically)
-     */
-    saveGovernancePreferences() {
-        const governanceSystem = window.game?.governanceSystem;
-        if (!governanceSystem) {
-            console.error('🏛️ Governance system not available');
-            return;
-        }
-
-        // Simply close the governance modal and return to chat
-        // All governance votes are automatically saved to server in real-time
-        // Returning to chat - all votes automatically synchronized
-        governanceSystem.closeGovernanceModal();
-    }
-
-    // broadcastGovernanceChange method removed - now using main governance system directly
 
     /**
      * Show countdown overlay for game start
@@ -1790,11 +1510,11 @@ class BeerHallLobby {
     populateInGameChatHistory(messages) {
         const inGameChatContainer = document.getElementById('in-game-chat-messages');
         if (!inGameChatContainer || !messages || messages.length === 0) {
-            console.log('💬 No chat history to populate or in-game chat not found');
+            this.logger.debug('💬 No chat history to populate or in-game chat not found');
             return;
         }
 
-        console.log(`💬 Populating in-game chat with ${messages.length} historical messages`);
+        this.logger.debug(`💬 Populating in-game chat with ${messages.length} historical messages`);
 
         // Clear existing messages
         inGameChatContainer.innerHTML = '';

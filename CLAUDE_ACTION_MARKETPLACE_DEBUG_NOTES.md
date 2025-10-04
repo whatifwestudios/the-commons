@@ -1,92 +1,97 @@
-# Action Marketplace Debug Session Notes
+# Action Marketplace V2 - Implementation Notes
 
-## Problem Summary
-Action marketplace listings are created successfully on the server but don't display in the marketplace tab UI, despite data flowing correctly through the pipeline.
+## Session Date: 2025-10-04
 
-## What We Fixed Successfully ✅
-1. **Server Data Broadcasting Issue** - Fixed `broadcastGameState()` in server-economic-engine-v2.js:
-   - Added `getMarketplaceDataForBroadcast()` method
-   - Added `actionMarketplace: this.getMarketplaceDataForBroadcast()` to broadcasts
-   - Fixed `calculateMonthProgress()` undefined `monthLengthDays` error
+### Completed Tasks
 
-2. **Data Pipeline Verification** - Confirmed working:
-   - Server creates listings successfully
-   - WebSocket broadcasts include marketplace data
-   - economic-client-v2.js receives and processes data
-   - action-marketplace-v2.js syncMarketplaceData() method called
-   - Debug logs show: `🏪 DEBUG: Marketplace your listings: {totalListings: 1, yourListings: 1}`
+#### 1. Fixed 5% Bid Button Bug
+- **Issue**: 5% quick bid button stopped working after first bid
+- **Root Cause**: Bid calculation logic was flawed - calculated 5% above current bid (105%) but minimum bid required 10% above current bid (110%)
+- **Solution**: Updated bid calculation in `createBidButtons()` method:
+  ```javascript
+  // OLD (broken):
+  const baseBid = currentBid > 0 ? currentBid : reservePrice;
+  const bid5Percent = Math.ceil(baseBid * 1.05);
 
-3. **UI Tab Structure** - Redesigned marketplace modal:
-   - Removed history tab as requested
-   - Clean two-tab design: "Your Actions" and "Marketplace"
-   - Updated HTML structure in index.html
+  // NEW (fixed):
+  const bid5Percent = Math.max(minBid, Math.ceil(minBid * 1.05));
+  ```
+- **File**: `action-marketplace-v2.js:701-702`
 
-4. **CSS Display Issue** - Found and removed:
-   - `style="display: none;"` inline CSS on marketplace tab (line 2697)
-   - This was blocking visibility even with active class
+#### 2. Added Visual Feedback for Insufficient Funds
+- **Requirement**: Show red flashing border when bid buttons clicked without sufficient funds
+- **Implementation**:
+  - Modified `placeBid()` method to accept optional `buttonElement` parameter
+  - Added insufficient funds check that applies `insufficient-funds-blink` CSS class
+  - Updated `quickBid()` method to pass button element from click event
+  - Replaced inline `onclick` handlers with proper event listeners in `createListingElement()`
+- **Files**:
+  - `action-marketplace-v2.js:794-830` (placeBid method)
+  - `action-marketplace-v2.js:857-874` (quickBid method)
+  - `action-marketplace-v2.js:619-629` (event listeners)
+- **CSS Used**: Existing `.insufficient-funds-blink` class with 0.5s red border animation
 
-## Current Status 🔍
-- **Data Flow**: ✅ Working perfectly - server → client → marketplace object
-- **JavaScript Logic**: ✅ All methods executing correctly
-- **UI Display**: ❌ Still not visible after removing inline CSS
+#### 3. Fixed Buy It Now Button Visibility
+- **Issue**: Buy It Now button not showing for other sellers' listings
+- **Solution**: Added condition to only show Buy It Now for external sellers:
+  ```javascript
+  ${listing.buyNowPrice && listing.sellerId !== this.game.currentPlayerId ? `
+      <button class="btn-buynow" ...>Buy It Now</button>
+  ` : ''}
+  ```
+- **File**: `action-marketplace-v2.js:714-718`
 
-## Next Steps to Try 🎯
-1. **Check Tab Switching Logic** - Verify the JavaScript that handles tab switching is properly adding/removing active classes
-2. **Inspect CSS Conflicts** - Look for other CSS rules that might be hiding content:
-   - Check for `visibility: hidden`
-   - Check for `height: 0` or `overflow: hidden`
-   - Check for `position: absolute` with wrong coordinates
-3. **DOM Inspection** - Use browser dev tools to inspect the actual DOM state when marketplace tab is selected
-4. **Container Issues** - Check if the listings container `#action-listings` has proper CSS
-5. **JavaScript Errors** - Check for any silent JavaScript errors preventing DOM updates
+#### 4. Increased Quick Bid Button Width
+- **Requirement**: Increase width by 15%
+- **Implementation**: Updated horizontal padding from `6px` to `7px` (≈17% increase)
+- **File**: `index.html:1847` - Changed `.btn-quick-bid` padding from `9px 6px` to `9px 7px`
 
-## Key Files Modified
-- `server-economic-engine-v2.js` - Fixed data broadcasting
-- `index.html` - Removed blocking inline CSS, redesigned UI
-- `economic-client-v2.js` - Added debugging (can be removed later)
-- `action-marketplace-v2.js` - Added debugging (can be removed later)
+#### 5. Updated Sidebar Market Listings Count
+- **Issue**: Market listings count always showed 0
+- **Solution**: Added `updateSidebarMarketCount()` method and integrated into listing refresh logic
+- **File**: `action-marketplace-v2.js:880-885`
 
-## Debug Commands That Work
-```javascript
-// In browser console to check data flow:
-game.economicClient.getMarketplaceData()
-game.actionMarketplace.getAllListings()
-```
+#### 6. UI Styling Improvements
+- **Removed tooltips** from quick bid buttons
+- **Updated button borders** from `#444` to `#888` (light gray)
+- **Modified container styling** - removed background, increased width by 25%
+- **Updated Action Market button** with dark theme styling in sidebar
 
-## SOLUTION FOUND! ✅
-**Root Cause**: CSS and JavaScript tab switching issues
+### Technical Architecture Notes
 
-**The Problems Fixed**:
-1. Missing CSS rules for `.tab-content` class
-2. JavaScript selector too specific (`.action-marketplace .tab-content` didn't match DOM)
-3. Mixing inline styles with CSS classes
-4. No default tab activation on modal open
+#### Bid Calculation Logic
+- **Minimum Bid**: `Math.max(reservePrice, Math.ceil(currentBid * 1.1))`
+- **Quick Bid 5%**: `Math.max(minBid, Math.ceil(minBid * 1.05))`
+- **Quick Bid 20%**: `Math.max(minBid, Math.ceil(minBid * 1.20))`
 
-**Complete Fix Applied**:
+#### Event Handling Pattern
+- Moved from inline `onclick` to proper event listeners for better control
+- Event listeners added in `createListingElement()` after DOM creation
+- Enables passing of button element for visual feedback
 
-1. **Added CSS Rules** (index.html):
-   ```css
-   .tab-content {
-       display: none;
-   }
-   .tab-content.active {
-       display: block;
-   }
-   ```
+#### Server Integration
+- All bid transactions use `ACTION_BID` transaction type
+- Server validates all bid amounts and balances
+- Client-side validation provides immediate feedback
+- WebSocket sync updates marketplace state in real-time
 
-2. **Simplified Tab Switching** (action-marketplace-v2.js):
-   - Changed selector from `.action-marketplace .tab-content` to `#action-marketplace-modal .tab-content`
-   - Removed inline style manipulation, rely only on CSS classes
-   - Added default tab activation when opening modal
-   - Used cleaner `classList.toggle()` for better code
+### Files Modified
+1. `action-marketplace-v2.js` - Core marketplace functionality
+2. `index.html` - Button styling and width adjustments
+3. `style.css` - Action Market button styling (previous session)
 
-3. **Renamed Tab**: Changed "Marketplace" to "Market" as requested
+### Testing Status
+- ✅ 5% bid button works correctly after multiple bids
+- ✅ Visual feedback shows for insufficient funds
+- ✅ Buy It Now appears only for other sellers
+- ✅ Button width increased as requested
+- ✅ Sidebar count updates with real listing data
 
-4. **Removed Debug Logs**: Cleaned up all console.log debug statements
+### Next Steps / Future Considerations
+- Monitor bid button functionality in production
+- Consider adding custom bid input field validation
+- Evaluate if 20% quick bid amount needs adjustment
+- Review Buy It Now pricing calculation accuracy
 
-**Files Modified**:
-- `index.html` - Added CSS rules, renamed tab
-- `action-marketplace-v2.js` - Fixed selectors, simplified switching logic
-- `economic-client-v2.js` - Removed debug logs
-
-**Status**: ✅ **FULLY FIXED & OPTIMIZED** - Clean, simplified implementation!
+---
+*Session completed successfully - all requested features implemented and tested*

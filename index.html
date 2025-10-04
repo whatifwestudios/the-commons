@@ -68,6 +68,181 @@
             display: block;
         }
 
+        /* Connection Status Indicator */
+        .connection-status {
+            position: fixed;
+            bottom: 8px;
+            left: 100px;
+            background: rgba(26, 26, 26, 0.95);
+            color: white;
+            padding: 6px 12px;
+            font-size: 11px;
+            font-weight: 500;
+            border-radius: 6px;
+            z-index: 10000;
+            font-family: 'SF Mono', Monaco, Inconsolata, 'Roboto Mono', 'Source Code Pro', monospace;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.4);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            backdrop-filter: blur(8px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            transition: all 0.3s ease;
+        }
+
+        .connection-status.hidden {
+            display: none;
+        }
+
+        .connection-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #10AC84;
+            box-shadow: 0 0 8px #10AC84;
+            animation: pulse-green 2s ease-in-out infinite;
+        }
+
+        .connection-status.connecting .connection-dot {
+            background: #FFA500;
+            box-shadow: 0 0 8px #FFA500;
+            animation: pulse-orange 1s ease-in-out infinite;
+        }
+
+        .connection-status.disconnected .connection-dot {
+            background: #FF6B6B;
+            box-shadow: 0 0 8px #FF6B6B;
+            animation: pulse-red 1.5s ease-in-out infinite;
+        }
+
+        .connection-status.reconnecting .connection-dot {
+            background: #FFD93D;
+            box-shadow: 0 0 8px #FFD93D;
+            animation: pulse-yellow 0.8s ease-in-out infinite;
+        }
+
+        @keyframes pulse-green {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.6; transform: scale(0.9); }
+        }
+
+        @keyframes pulse-orange {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.5; transform: scale(0.85); }
+        }
+
+        @keyframes pulse-red {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.4; transform: scale(0.8); }
+        }
+
+        @keyframes pulse-yellow {
+            0%, 100% { opacity: 1; transform: scale(1.1); }
+            50% { opacity: 0.7; transform: scale(0.9); }
+        }
+
+        .connection-text {
+            font-size: 10px;
+            letter-spacing: 0.3px;
+            text-transform: uppercase;
+        }
+
+        /* Toast Notification System */
+        .toast-container {
+            position: fixed;
+            top: 60px;
+            right: 20px;
+            z-index: 10001;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            max-width: 400px;
+        }
+
+        .toast {
+            background: rgba(26, 26, 26, 0.98);
+            border-radius: 8px;
+            padding: 14px 18px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+            border-left: 4px solid;
+            backdrop-filter: blur(10px);
+            font-family: 'SF Mono', Monaco, Inconsolata, 'Roboto Mono', 'Source Code Pro', monospace;
+            font-size: 13px;
+            line-height: 1.5;
+            animation: toast-slide-in 0.3s ease-out;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+            max-width: 400px;
+        }
+
+        .toast.toast-hiding {
+            animation: toast-slide-out 0.3s ease-in;
+            opacity: 0;
+            transform: translateX(100%);
+        }
+
+        .toast.success {
+            border-left-color: #10AC84;
+        }
+
+        .toast.error {
+            border-left-color: #FF6B6B;
+        }
+
+        .toast.warning {
+            border-left-color: #FFA500;
+        }
+
+        .toast.info {
+            border-left-color: #4A9EFF;
+        }
+
+        .toast-icon {
+            font-size: 18px;
+            line-height: 1;
+            flex-shrink: 0;
+        }
+
+        .toast-content {
+            flex: 1;
+            color: #fff;
+        }
+
+        .toast-title {
+            font-weight: 600;
+            margin-bottom: 4px;
+            font-size: 13px;
+        }
+
+        .toast-message {
+            color: #ccc;
+            font-size: 12px;
+        }
+
+        @keyframes toast-slide-in {
+            from {
+                opacity: 0;
+                transform: translateX(100%);
+            }
+            to {
+                opacity: 1;
+                transform: translateX(0);
+            }
+        }
+
+        @keyframes toast-slide-out {
+            from {
+                opacity: 1;
+                transform: translateX(0);
+            }
+            to {
+                opacity: 0;
+                transform: translateX(100%);
+            }
+        }
+
         /* Clean transition overlay styling */
         .transition-overlay {
             position: fixed;
@@ -707,6 +882,11 @@
             font-size: 11px;
         }
 
+        /* Hidden Element Utility Class */
+        .hidden-element {
+            display: none !important;
+        }
+
         /* Ready Check Modal */
         .ready-check-modal {
             position: fixed;
@@ -715,7 +895,7 @@
             width: 100vw;
             height: 100vh;
             background: rgba(0, 0, 0, 0.9);
-            display: flex;
+            display: none;
             align-items: center;
             justify-content: center;
             z-index: 99999;
@@ -814,124 +994,6 @@
             font-style: italic;
         }
 
-        /* Game Intro Cinematic */
-        .game-intro-cinematic {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100vw;
-            height: 100vh;
-            background: linear-gradient(135deg, #0a0a0a, #1a1a2e);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            z-index: 99999;
-            animation: cinematicFadeIn 1s ease-out;
-        }
-
-        .cinematic-content {
-            text-align: center;
-            max-width: 600px;
-            padding: 40px;
-        }
-
-        .commons-logo h1 {
-            font-size: 48px;
-            color: #fff;
-            margin: 0 0 12px 0;
-            font-weight: 700;
-            background: linear-gradient(135deg, #ff6b6b, #4ECDC4);
-            background-clip: text;
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            animation: logoGlow 2s ease-in-out infinite alternate;
-        }
-
-        .tagline {
-            color: #888;
-            font-size: 16px;
-            margin-bottom: 40px;
-            font-style: italic;
-        }
-
-        .date-money {
-            display: flex;
-            justify-content: center;
-            gap: 40px;
-            margin-bottom: 32px;
-        }
-
-        .game-date, .starting-cash {
-            background: #2a2a2a;
-            padding: 12px 20px;
-            border-radius: 8px;
-            border: 1px solid #444;
-            color: #fff;
-            font-size: 14px;
-            font-weight: 600;
-        }
-
-        .players-display {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(80px, 1fr));
-            gap: 12px;
-            margin: 32px 0;
-            max-width: 480px;
-            margin-left: auto;
-            margin-right: auto;
-        }
-
-        .cinematic-player {
-            background: #2a2a2a;
-            border-radius: 8px;
-            padding: 12px 8px;
-            border: 2px solid #444;
-            animation: playerSlideIn 0.5s ease-out;
-            animation-fill-mode: both;
-        }
-
-        .cinematic-player-name {
-            color: #fff;
-            font-size: 11px;
-            font-weight: 600;
-            margin-bottom: 6px;
-        }
-
-        .cinematic-player-color {
-            width: 24px;
-            height: 24px;
-            border-radius: 50%;
-            margin: 0 auto;
-            border: 2px solid #666;
-        }
-
-        .game-begin-text {
-            color: #ccc;
-            font-size: 18px;
-            margin-top: 32px;
-        }
-
-        #countdown {
-            color: #ff6b6b;
-            font-weight: 700;
-            font-size: 24px;
-        }
-
-        /* Animations */
-        @keyframes cinematicFadeIn {
-            from { opacity: 0; transform: scale(0.95); }
-            to { opacity: 1; transform: scale(1); }
-        }
-
-        @keyframes logoGlow {
-            from { filter: drop-shadow(0 0 10px rgba(255, 107, 107, 0.3)); }
-            to { filter: drop-shadow(0 0 20px rgba(78, 205, 196, 0.4)); }
-        }
-
-        @keyframes playerSlideIn {
-            from { opacity: 0; transform: translateY(20px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
         /* Multiplayer Chat Overlay */
         #multiplayer-chat-overlay {
             position: fixed;
@@ -1202,6 +1264,288 @@
 
         .tab-content.active {
             display: block;
+        }
+
+        /* Auction Sidebar Styles */
+        .sidebar-container {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 1000;
+        }
+
+        .auction-sidebar {
+            width: 300px;
+            background: rgba(0, 0, 0, 0.9);
+            border: 2px solid #666;
+            border-radius: 8px;
+            padding: 15px;
+            color: white;
+        }
+
+        .auction-sidebar.hidden {
+            display: none;
+        }
+
+        .auction-item {
+            background: #1a1a1a;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+            padding: 8px 12px;
+            margin-bottom: 1px;
+            cursor: pointer;
+            transition: background 0.15s ease;
+            font-family: 'SF Mono', Monaco, Inconsolata, 'Roboto Mono', 'Source Code Pro', monospace;
+        }
+
+        .auction-item:hover {
+            background: #202020;
+        }
+
+        .auction-item:last-child {
+            border-bottom: none;
+        }
+
+        /* Removed urgent-auction class - we handle urgency at indicator level */
+
+        .auction-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 4px;
+        }
+
+        .auction-parcel {
+            font-weight: 600;
+            color: #74B9FF;
+            font-size: 11px;
+            letter-spacing: 0.5px;
+        }
+
+        .auction-time {
+            font-size: 10px;
+            color: #888;
+            font-weight: 500;
+        }
+
+        .auction-time.urgent {
+            color: #ffa500;
+            font-weight: 600;
+        }
+
+        .auction-time.critical {
+            color: #ff4444;
+            font-weight: 600;
+            animation: urgentText 0.5s infinite alternate;
+        }
+
+        @keyframes urgentText {
+            0% { color: #ff4444; }
+            100% { color: #ffffff; }
+        }
+
+        @keyframes pulse-red {
+            0% { opacity: 0.8; }
+            100% { opacity: 1; }
+        }
+
+        /* Progress bar styling */
+        .auction-progress-container {
+            padding: 2px 12px 8px;
+        }
+
+        .auction-progress-bar {
+            width: 100%;
+            height: 4px;
+            background-color: #333;
+            border-radius: 2px;
+            overflow: hidden;
+        }
+
+        .auction-progress {
+            height: 100%;
+            border-radius: 2px;
+            transition: width 0.3s ease, background-color 0.3s ease;
+        }
+
+
+        /* Owner Response Section */
+        .owner-response {
+            background: #2a2a2a;
+            border: 2px solid #ffa500;
+            border-radius: 4px;
+            padding: 15px;
+            margin-top: 15px;
+        }
+
+        .response-timer {
+            text-align: center;
+            font-size: 14px;
+            font-weight: bold;
+            margin-bottom: 10px;
+            color: #ffa500;
+            font-family: 'SF Mono', Monaco, Inconsolata, 'Roboto Mono', 'Source Code Pro', monospace;
+        }
+
+        .response-buttons {
+            display: flex;
+            gap: 10px;
+        }
+
+        .match-btn, .decline-btn {
+            flex: 1;
+            padding: 10px;
+            border: 2px solid;
+            border-radius: 4px;
+            font-size: 14px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            font-family: 'SF Mono', Monaco, Inconsolata, 'Roboto Mono', 'Source Code Pro', monospace;
+        }
+
+        .match-btn {
+            background: #2a2a2a;
+            color: #4CAF50;
+            border-color: #4CAF50;
+        }
+
+        .match-btn:hover {
+            background: #4CAF50;
+            color: white;
+        }
+
+        .decline-btn {
+            background: #2a2a2a;
+            color: #ff4444;
+            border-color: #ff4444;
+        }
+
+        .decline-btn:hover {
+            background: #ff4444;
+            color: white;
+        }
+
+        .auction-current-bid {
+            font-size: 12px;
+            font-weight: 600;
+            color: #00b894;
+            margin-bottom: 4px;
+        }
+
+        .auction-quick-bids {
+            display: flex;
+            gap: 4px;
+        }
+
+        .quick-bid-btn {
+            flex: 1;
+            padding: 9px 6px;
+            background: #2a2a2a;
+            color: #aaa;
+            border: 1px solid #444;
+            border-radius: 2px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.15s ease;
+            font-family: 'SF Mono', Monaco, Inconsolata, 'Roboto Mono', 'Source Code Pro', monospace;
+        }
+
+        .quick-bid-btn:hover {
+            background: #2a2a2a;
+            color: white;
+            border-color: white;
+        }
+
+        .no-auctions {
+            text-align: center;
+            color: #666;
+            font-size: 11px;
+            padding: 12px 8px;
+            font-family: 'SF Mono', Monaco, Inconsolata, 'Roboto Mono', 'Source Code Pro', monospace;
+            font-weight: 500;
+            letter-spacing: 0.3px;
+        }
+
+        /* Sidebar Header Colors - Medium Blue with Vibrant Hover Colors */
+        .sidebar-section .section-header {
+            color: #74B9FF !important; /* Medium blue for all headers */
+            transition: color 0.3s ease;
+        }
+
+        /* Unique vibrant hover colors for each section by content */
+        .sidebar-section .section-header:hover {
+            color: #ffffff !important;
+        }
+
+        /* VITALITY - Green hover */
+        .sidebar-section .section-header[data-target="vitality"]:hover {
+            color: #00b894 !important;
+        }
+
+        /* METRICS - Orange hover */
+        .sidebar-section .section-header[data-target="info"]:hover {
+            color: #fdcb6e !important;
+        }
+
+        /* ACTION MANAGER - Blue hover */
+        .sidebar-section .section-header[data-target="action-manager-content"]:hover {
+            color: #0984e3 !important;
+        }
+
+        /* AUCTIONS - Red hover */
+        .sidebar-section .section-header[data-target="auction-content"]:hover {
+            color: #e17055 !important;
+        }
+
+        .action-manager {
+            /* background: #0a0a0a; */
+            /* border-bottom: 2px solid #2a2a2a; */
+        }
+
+        /* CHAT - Purple hover */
+        .sidebar-section .section-header[data-target="chat-content"]:hover {
+            color: #a29bfe !important;
+        }
+
+        /* Auction indicator dot styling */
+        .auction-indicator {
+            font-size: 14px;
+            margin-left: 8px;
+            transition: color 0.3s ease;
+        }
+
+
+        .auction-status {
+            padding: 5px 12px;
+            margin-top: 5px;
+            font-size: 11px;
+            color: #888;
+            text-align: center;
+        }
+
+        .auction-quick-bids {
+            display: flex;
+            gap: 4px;
+            margin-top: 8px;
+            padding: 0 8px;
+        }
+
+        .quick-bid-btn {
+            flex: 1;
+            background: #444;
+            border: 1px solid #666;
+            border-radius: 3px;
+            padding: 4px;
+            color: white;
+            font-size: 9px;
+            cursor: pointer;
+            transition: background-color 0.2s ease;
+        }
+
+        .quick-bid-btn:hover {
+            background: #555;
+            border-color: #777;
         }
 
         .governance-panel {
@@ -1485,7 +1829,8 @@
 
         /* Game UI blur effect when chat is open */
         .game-blurred #main-area,
-        .game-blurred #sidebar {
+        .game-blurred #sidebar,
+        .game-blurred #top-bar {
             filter: blur(5px);
             pointer-events: none;
         }
@@ -1719,6 +2064,108 @@
             background: rgba(255, 255, 255, 0.3);
         }
 
+        /* Action Marketplace Bid Buttons */
+        .bid-buttons-container {
+            margin-top: 10px;
+            padding: 10px;
+            border-radius: 8px;
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            width: 125%;
+        }
+
+        .quick-bids {
+            display: flex;
+            gap: 8px;
+        }
+
+        .btn-quick-bid {
+            flex: 1;
+            padding: 9px 7px;
+            background: #2a2a2a;
+            color: #aaa;
+            border: 1px solid #888;
+            border-radius: 2px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.15s ease;
+            font-family: 'SF Mono', Monaco, Inconsolata, 'Roboto Mono', 'Source Code Pro', monospace;
+        }
+
+        .btn-quick-bid:hover {
+            background: #2a2a2a;
+            color: white;
+            border-color: white;
+        }
+
+        .btn-buynow {
+            padding: 9px 12px;
+            background: #2a2a2a;
+            color: #aaa;
+            border: 1px solid #888;
+            border-radius: 2px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.15s ease;
+            font-family: 'SF Mono', Monaco, Inconsolata, 'Roboto Mono', 'Source Code Pro', monospace;
+        }
+
+        .btn-buynow:hover {
+            background: #2a2a2a;
+            color: white;
+            border-color: white;
+        }
+
+        .custom-bid {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+
+        .custom-bid-input {
+            flex: 1;
+            padding: 6px 8px;
+            background: #3a3a3a;
+            border: 1px solid #555;
+            border-radius: 4px;
+            color: white;
+            font-size: 12px;
+        }
+
+        .custom-bid-input:focus {
+            outline: none;
+            border-color: #4CAF50;
+        }
+
+        .btn-custom-bid {
+            padding: 6px 12px;
+            background: #2196F3;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            font-size: 12px;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+
+        .btn-custom-bid:hover {
+            background: #1976D2;
+        }
+
+        /* Player Badge */
+        .player-badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: bold;
+            color: white;
+            margin-left: 8px;
+        }
+
     </style>
 </head>
 <body>
@@ -1727,6 +2174,15 @@
     <div id="dev-mode-indicator" class="dev-mode-indicator">
         <span id="dev-mode-badge">DEV</span>
     </div>
+
+    <!-- Connection Status Indicator -->
+    <div id="connection-status" class="connection-status hidden">
+        <span class="connection-dot"></span>
+        <span class="connection-text">Connected</span>
+    </div>
+
+    <!-- Toast Notification Container -->
+    <div id="toast-container" class="toast-container"></div>
 
     <!-- Main Game Interface (hidden until setup complete) -->
     <div id="game-interface" class="game-interface hidden">
@@ -1738,7 +2194,7 @@
                     PLAYER
                 </button>
                 <div class="dropdown-menu" id="player-menu">
-                    <button class="dropdown-item" id="quit-game-btn" style="color: #ff4444; border-top: 1px solid #333; margin-top: 5px;">
+                    <button class="dropdown-item quit-game-btn-danger" id="quit-game-btn">
                         🚪 Quit Game
                     </button>
                 </div>
@@ -1865,7 +2321,7 @@
         </div>
 
         <!-- Multiplayer Chat Overlay -->
-        <div id="multiplayer-chat-overlay" style="display: none;">
+        <div id="multiplayer-chat-overlay" class="hidden-element">
             <div class="chat-backdrop"></div>
             <div class="chat-container">
                 <div class="chat-header">
@@ -1877,7 +2333,7 @@
 
                 <div class="chat-content-tabs">
                     <div class="chat-tab active" data-tab="chat">Chat</div>
-                    <div class="chat-tab" data-tab="governance" style="display: none">Governance</div>
+                    <div class="chat-tab hidden-element" data-tab="governance">Governance</div>
                 </div>
 
                 <div class="chat-tab-content active" id="chat-content">
@@ -1889,7 +2345,7 @@
                     </div>
 
                     <!-- Governance overlay that appears over chat messages -->
-                    <div class="governance-overlay" id="governance-overlay" style="display: none;">
+                    <div class="governance-overlay hidden-element" id="governance-overlay">
                         <div class="governance-panel">
                             <div class="governance-header">
                                 <h3>Pre-Game LVT Setup</h3>
@@ -1915,7 +2371,7 @@
                     <button id="start-game-btn" class="start-game-btn" disabled>🚀 Start Game Now</button>
                 </div>
 
-                <div class="chat-actions" id="chat-actions" style="display: none;">
+                <div class="chat-actions hidden-element" id="chat-actions">
                     <button id="start-game-btn" class="start-game-btn">🚀 Start Game</button>
                     <div class="start-info">Anyone can start when ready!</div>
                 </div>
@@ -2563,8 +3019,8 @@
         <!-- 🍺 Beer Hall Lobby -->
         <div class="beer-hall-lobby" id="beer-hall-lobby">
             <div class="lobby-header">
-                <h1 style="font-size: 28px; color: #fff; margin: 0 0 8px 0; font-weight: 600;">The Commons</h1>
-                <p style="font-size: 14px; color: #888; margin: 0 0 24px 0; line-height: 1.4;">A game about property, taxes, community and winning.</p>
+                <h1 class="game-title-main">The Commons</h1>
+                <p class="game-subtitle">A game about property, taxes, community and winning.</p>
             </div>
 
             <!-- Player Setup -->
@@ -2589,8 +3045,8 @@
             <div class="table-preferences">
                 <label>Game Size Preference</label>
                 <div class="size-selector">
-                    <button class="size-btn active" data-size="1">SOLO<br>1 player</button>
-                    <button class="size-btn" data-size="2+">Small<br>2+ players</button>
+                    <button class="size-btn" data-size="1">SOLO<br>1 player</button>
+                    <button class="size-btn active" data-size="2+">Small<br>2+ players</button>
                     <button class="size-btn" data-size="6+">Medium<br>6+ players</button>
                     <button class="size-btn" data-size="12">Large<br>12 players</button>
                 </div>
@@ -2604,7 +3060,7 @@
         </div>
 
         <!-- Ready Check Modal -->
-        <div class="ready-check-modal" id="ready-check-modal" style="display: none;">
+        <div class="ready-check-modal hidden-element" id="ready-check-modal">
             <div class="ready-check-content">
                 <div class="ready-check-header">
                     <h2>🍻 Your Table is Ready!</h2>
@@ -2628,28 +3084,6 @@
             </div>
         </div>
 
-        <!-- Game Intro Cinematic -->
-        <div class="game-intro-cinematic" id="game-intro-cinematic" style="display: none;">
-            <div class="cinematic-content">
-                <div class="commons-logo">
-                    <h1>The Commons</h1>
-                    <div class="tagline">A game about property, taxes, community and winning</div>
-                </div>
-
-                <div class="game-start-info">
-                    <div class="date-money">
-                        <div class="game-date">📅 September 2nd</div>
-                        <div class="starting-cash">💰 $6,000 each</div>
-                    </div>
-                </div>
-
-                <div class="players-display" id="cinematic-players">
-                    <!-- Player blocks will be populated -->
-                </div>
-
-                <div class="game-begin-text">Game begins in <span id="countdown">3</span>...</div>
-            </div>
-        </div>
     </div>
 
 
@@ -2660,79 +3094,30 @@
         <div class="modal-content action-marketplace">
             <div class="modal-header">
                 <h2>Action Market</h2>
+                <span class="action-availability">Your Actions Available: <strong id="modal-action-balance">00</strong></span>
                 <button class="modal-close" onclick="window.game.closeActionMarketplace()">&times;</button>
             </div>
             <div class="modal-body">
                 <div class="marketplace-tabs">
-                    <button class="tab-btn active" data-tab="your-actions">Your Actions</button>
-                    <button class="tab-btn" data-tab="marketplace">Market</button>
+                    <button class="tab-btn active" data-tab="your-actions">Sell Actions</button>
+                    <button class="tab-btn" data-tab="marketplace" id="marketplace-tab-btn">Market</button>
                 </div>
-                
+
                 <div class="tab-content active" id="your-actions">
-                    <div class="action-balance" style="margin-bottom: 20px; padding: 16px; background: rgba(116, 185, 255, 0.1); border-radius: 8px;">
-                        <h3 style="margin: 0 0 12px 0;">Current Balance</h3>
-                        <div class="balance-display">
-                            <span class="balance-number" id="modal-action-balance">10</span>
-                            <span class="balance-label">actions available</span>
-                        </div>
-                        <div class="balance-info" style="margin-top: 12px;">
-                            <p style="margin: 4px 0;">Used this month: <span id="modal-actions-used">0</span></p>
-                            <p id="month-end-countdown" style="font-weight: bold; margin: 8px 0;">--</p>
-                            <p class="rollover-text" style="margin: 8px 0 0 0; font-size: 13px;">
-                                <strong>✓ Purchased actions never expire and rollover monthly until used</strong>
-                            </p>
-                        </div>
-                    </div>
-
-                    <div class="sell-actions" style="margin-bottom: 20px; padding: 16px; background: rgba(0, 184, 148, 0.1); border-radius: 8px;">
-                        <h3 style="margin: 0 0 12px 0;">Sell Actions</h3>
-                        <div class="sell-form" style="display: flex; flex-direction: column; gap: 8px;">
-                            <input type="number" id="sell-quantity" min="1" max="10" value="1" placeholder="Quantity" style="padding: 8px;">
-                            <input type="number" id="sell-reserve" min="1000" placeholder="Starting price per Action" style="padding: 8px;">
-                            <input type="number" id="sell-buynow" min="1000" placeholder="Buy now price (optional)" style="padding: 8px;">
-                            <button class="btn-primary" onclick="window.game.listActionsForSale()" style="margin-top: 4px; padding: 10px;">List for Sale</button>
-                        </div>
-                    </div>
-
-                    <div class="your-listings" style="padding: 16px; background: rgba(255, 255, 255, 0.05); border-radius: 8px;">
-                        <h3 style="margin: 0 0 12px 0;">Your Active Listings</h3>
-                        <div id="your-actions-content" class="listings-container">
-                            <p style="color: #888; text-align: center; padding: 16px;">No active listings</p>
-                        </div>
+                    <div class="sell-actions-row">
+                        <input type="number" id="sell-quantity" min="1" max="10" value="1" placeholder="Quantity">
+                        <input type="number" id="sell-reserve" min="1000" placeholder="Total Starting Price">
+                        <button class="btn-primary" onclick="window.game.listActionsForSale()">List for Sale</button>
                     </div>
                 </div>
                 
                 <div class="tab-content" id="marketplace">
-                    <div class="marketplace-header">
-                        <h3>🏪 Action Marketplace</h3>
-                        <div class="market-stats">
-                            <div class="stat-item">
-                                <span class="stat-label">Average Price:</span>
-                                <span class="stat-value" id="modal-avg-price">--</span>
-                            </div>
-                            <div class="stat-item">
-                                <span class="stat-label">Active Listings:</span>
-                                <span class="stat-value" id="modal-active-listings">0</span>
-                            </div>
-                        </div>
+                    <div class="marketplace-info" style="margin-bottom: 16px;">
+                        <p style="margin: 0; font-size: 14px; color: #666;"><strong>💡 Tip:</strong> Actions are permanent assets that rollover monthly until used. Buy actions to build your strategic reserve!</p>
                     </div>
-
-                    <div class="your-marketplace-listings" style="margin-bottom: 24px;">
-                        <h4 style="margin: 0 0 12px 0; color: #74B9FF;">Your Active Listings</h4>
-                        <div id="marketplace-your-listings" class="listings-container">
-                            <p style="color: #888; text-align: center; padding: 16px;">You have no active listings</p>
-                        </div>
-                    </div>
-
-                    <div class="other-marketplace-listings">
-                        <h4 style="margin: 0 0 12px 0; color: #00B894;">Other Players' Listings</h4>
-                        <div class="marketplace-info" style="margin-bottom: 16px;">
-                            <p style="margin: 0; font-size: 14px; color: #666;"><strong>💡 Tip:</strong> Actions are permanent assets that rollover monthly until used. Buy actions to build your strategic reserve!</p>
-                        </div>
-                        <div class="listings-container" id="action-listings">
-                            <div class="loading-placeholder">
-                                <p>Loading marketplace data...</p>
-                            </div>
+                    <div class="listings-container" id="action-listings">
+                        <div class="loading-placeholder">
+                            <p>Loading marketplace data...</p>
                         </div>
                     </div>
                 </div>

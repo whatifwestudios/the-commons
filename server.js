@@ -5,13 +5,13 @@
 
 // Add global error handlers to prevent crashes
 process.on('uncaughtException', (err) => {
-    console.error('❌ UNCAUGHT EXCEPTION:', err);
-    console.error('Stack:', err.stack);
+    logger.error('❌ UNCAUGHT EXCEPTION:', err);
+    logger.error('Stack:', err.stack);
     // Don't exit in production, just log the error
 });
 
 process.on('unhandledRejection', (reason, promise) => {
-    console.error('❌ UNHANDLED REJECTION at:', promise, 'reason:', reason);
+    logger.error('❌ UNHANDLED REJECTION at:', promise, 'reason:', reason);
     // Don't exit in production, just log the error
 });
 
@@ -24,13 +24,14 @@ const DEBUG = process.env.DEBUG === 'true' || NODE_ENV === 'development';
 const GAME_MODE = process.env.GAME_MODE || 'multiplayer'; // 'solo' or 'multiplayer'
 const PORT = process.env.PORT || 3000;
 
+const Logger = require('./logger');
+const logger = new Logger('server');
+
 // Development mode indicators
 if (NODE_ENV === 'development') {
-    console.log('🔧 DEVELOPMENT MODE ACTIVE');
-    console.log(`🎮 Game Mode: ${GAME_MODE.toUpperCase()}`);
-    console.log(`🐛 Debug Mode: ${DEBUG ? 'ON' : 'OFF'}`);
-    console.log(`🚪 Port: ${PORT}`);
-    console.log('────────────────────────────────');
+    logger.info('🔧 DEVELOPMENT MODE ACTIVE');
+    logger.info(`🎮 Game Mode: ${GAME_MODE.toUpperCase()}`);
+    logger.info(`🚪 Port: ${PORT}`);
 }
 
 const express = require('express');
@@ -65,50 +66,11 @@ app.use(express.static('.'));
 
 
 
-// Simple in-memory data store for solo game
-let soloGameData = {
-    leaderboard: [
-        { name: "Sample City 1", wealth: 1250000, population: 850 },
-        { name: "Sample City 2", wealth: 980000, population: 720 },
-        { name: "Sample City 3", wealth: 750000, population: 600 }
-    ]
-};
 
-// Per-player game state (server-authoritative for concurrent solo players)
-let playerGameStates = new Map(); // userId -> gameState
-let playerBalances = new Map(); // userId -> balance
 
-// Get or initialize player balance - FRESH START for board game experience
-const getPlayerBalance = (userId) => {
-    // Every session starts with $6,000 - no persistence needed
-    if (!playerBalances.has(userId)) {
-        playerBalances.set(userId, 6000); // Fresh start for new player
-    }
-    return playerBalances.get(userId);
-};
 
-// Get or initialize player game state (creates empty grid and default state)
-const getPlayerGameState = (userId) => {
-    if (!playerGameStates.has(userId)) {
-        // Initialize with empty game state
-        const defaultGameState = {
-            grid: {}, // Empty grid - will be populated as player builds
-            currentDay: 1,
-            currentMonth: 'SEPT',
-            playerCash: 6000,
-            playerActions: 20,
-            // Add other default state properties as needed
-        };
-        playerGameStates.set(userId, defaultGameState);
-        console.log(`🏠 Initialized game state for player: ${userId}`);
-    }
-    return playerGameStates.get(userId);
-};
 
-// Backward compatibility for solo play - REMOVED to prevent shared state
-// playerBalances.set('player', 6000); // DISABLED: Each session gets unique ID instead
-
-// Clean multiplayer server - all economic engines are room-specific
+// Multiplayer server - all economic engines are room-specific
 
 // Create HTTP server for WebSocket upgrade
 const server = http.createServer(app);
@@ -120,7 +82,6 @@ const wss = new WebSocket.Server({ server, path: '/ws' });
 const connectedClients = new Set();
 
 wss.on('connection', (ws, req) => {
-    console.log('🔌 Client connected to WebSocket');
     connectedClients.add(ws);
 
     // Generate unique player ID for this session
@@ -140,14 +101,10 @@ wss.on('connection', (ws, req) => {
         playerId: playerId
     }));
 
-    console.log(`🔌 Player ${playerId} connected, awaiting room assignment`);
 
     ws.on('pong', () => {
         ws.lastPong = Date.now();
         ws.isAlive = true; // Mark connection as alive when pong received
-        if (DEBUG) {
-            console.log(`💓 PONG received from ${ws.playerId}`);
-        }
     });
 
     ws.on('message', (message) => {
@@ -155,7 +112,7 @@ wss.on('connection', (ws, req) => {
             const data = JSON.parse(message);
             handleWebSocketMessage(ws, data);
         } catch (error) {
-            console.error('Invalid WebSocket message:', error);
+            logger.error('Invalid WebSocket message:', error);
         }
     });
 
@@ -165,11 +122,7 @@ wss.on('connection', (ws, req) => {
         const isGraceful = ws.gracefulDisconnect || code === 1000 || code === 1001;
 
         if (isGraceful) {
-            console.log(`🚪 Player ${playerId} disconnected gracefully - Code: ${code}, Duration: ${duration}ms`);
         } else {
-            console.log(`❌ Player ${playerId} UNEXPECTED disconnect - Code: ${code}, Reason: ${reasonText}`);
-            console.log(`🕐 Connection duration: ${duration}ms`);
-            console.log(`💓 Last ping: ${ws.lastPing ? Date.now() - ws.lastPing : 'N/A'}ms ago, Last pong: ${ws.lastPong ? Date.now() - ws.lastPong : 'N/A'}ms ago`);
 
             // Log common close codes for debugging
             const closeReasons = {
@@ -191,16 +144,10 @@ wss.on('connection', (ws, req) => {
             };
 
             if (closeReasons[code]) {
-                console.log(`🔍 Close code meaning: ${closeReasons[code]}`);
             }
 
             // For unexpected disconnections, log more details
             if (code === 1006) {
-                console.log(`🚨 Code 1006 detected - possible causes:`);
-                console.log(`   - Browser tab backgrounded/killed`);
-                console.log(`   - Network connection lost`);
-                console.log(`   - Server overload`);
-                console.log(`   - Client-side JavaScript error`);
             }
         }
 
@@ -209,12 +156,21 @@ wss.on('connection', (ws, req) => {
     });
 
     ws.on('error', (error) => {
-        console.error(`🔌 WebSocket error for ${playerId}:`, error);
-        console.error(`🔍 Error code: ${error.code}, Message: ${error.message}`);
-        console.error(`🔍 Error stack:`, error.stack);
+        logger.error(`🔌 WebSocket error for ${playerId}:`, error);
+        logger.error(`🔍 Error code: ${error.code}, Message: ${error.message}`);
+        logger.error(`🔍 Error stack:`, error.stack);
         connectedClients.delete(ws);
     });
 });
+
+// Send standardized error to WebSocket client
+function sendError(ws, message, type = 'ERROR') {
+    ws.send(JSON.stringify({
+        type: type,
+        error: message,
+        timestamp: Date.now()
+    }));
+}
 
 // Handle WebSocket messages
 async function handleWebSocketMessage(ws, data) {
@@ -225,11 +181,9 @@ async function handleWebSocketMessage(ws, data) {
         case 'IDENTIFY_PLAYER':
             // 🔧 FIX: Allow client to identify itself with existing player ID and metadata
             if (data.playerId) {
-                console.log(`🔄 Client requesting to use existing player ID: ${data.playerId} (was: ${ws.playerId})`);
-                console.log(`👤 Player metadata:`, {
-                    name: data.playerName,
-                    color: data.playerColor
-                });
+        //             name: data.playerName,
+        //             color: data.playerColor
+        //         });
 
                 ws.playerId = data.playerId;
 
@@ -248,13 +202,12 @@ async function handleWebSocketMessage(ws, data) {
                     message: `Successfully identified as ${data.playerId}`
                 }));
 
-                console.log(`✅ WebSocket connection reassigned to player: ${data.playerId} with metadata`);
             }
             break;
 
         case 'READY':
             if (!room) {
-                console.error('Player not in a room for READY:', playerId);
+                sendError(ws, 'Player not in a room');
                 return;
             }
             room.setPlayerReady(playerId, data.ready);
@@ -268,10 +221,9 @@ async function handleWebSocketMessage(ws, data) {
         case 'QUIT_GAME':
             // Permanent quit - player cannot rejoin this game
             if (!room) {
-                console.error('Player not in a room for QUIT_GAME:', playerId);
+                sendError(ws, 'Player not in a room');
                 return;
             }
-            console.log(`🚪 Player ${playerId} permanently quit the game`);
 
             // Remove player permanently from room
             roomManager.quitGame(playerId);
@@ -289,7 +241,7 @@ async function handleWebSocketMessage(ws, data) {
         case 'REQUEST_LEADERBOARD':
             // Send current Commonwealth scores to player
             if (!room) {
-                console.error('Player not in a room for REQUEST_LEADERBOARD:', playerId);
+                logger.error('Player not in a room for REQUEST_LEADERBOARD:', playerId);
                 return;
             }
 
@@ -313,10 +265,9 @@ async function handleWebSocketMessage(ws, data) {
         case 'CHAT':
         case 'CHAT_MESSAGE':
             if (!room) {
-                console.error('Player not in a room for CHAT:', playerId);
+                sendError(ws, 'Player not in a room');
                 return;
             }
-            console.log(`💬 Chat message from ${data.playerName || playerId}: ${data.message}`);
 
             const chatMessage = {
                 type: 'CHAT_MESSAGE',
@@ -336,10 +287,9 @@ async function handleWebSocketMessage(ws, data) {
 
         case 'START_GAME':
             if (!room) {
-                console.error('Player not in a room for START_GAME:', playerId);
+                sendError(ws, 'Player not in a room');
                 return;
             }
-            console.log(`🚀 Player ${playerId} requested to start game`);
 
             // Check if minimum players are met
             if (room.players.size >= room.minPlayers) {
@@ -364,11 +314,10 @@ async function handleWebSocketMessage(ws, data) {
 
         case 'REQUEST_ROOM_STATE':
             if (!room) {
-                console.error('Player not in a room for REQUEST_ROOM_STATE:', playerId);
+                sendError(ws, 'Player not in a room');
                 return;
             }
             // Send fresh room state to requesting client
-            console.log(`📡 Sending fresh room state to player ${playerId}`);
             const roomState = room.getFullState();
             ws.send(JSON.stringify({
                 type: 'ROOM_STATE_SYNC',
@@ -379,7 +328,6 @@ async function handleWebSocketMessage(ws, data) {
 
         case 'chat_message':
             // Handle chat messages and broadcast to other players in the room
-            console.log('💬 Chat message from', data.playerName + ':', data.message);
             if (room) {
                 // Broadcast to all players in the room except the sender
                 room.players.forEach(player => {
@@ -403,14 +351,12 @@ async function handleWebSocketMessage(ws, data) {
 
         case 'GOVERNANCE_VOTE':
             // Handle governance allocation changes
-            console.log('🏛️ Server received GOVERNANCE_VOTE:', data.voteType, 'from player:', data.playerId);
             if (room && room.economicEngine) {
                 const result = room.economicEngine.handleGovernanceVote(
                     data.playerId,
                     data.voteType,
                     data
                 );
-                console.log('🏛️ Governance vote result:', result);
 
                 // No global trigger needed - room handles its own updates
 
@@ -433,7 +379,8 @@ async function handleWebSocketMessage(ws, data) {
             }
 
             try {
-                console.log('📥 Room-aware transaction received via WebSocket:', data.transaction.type, 'for room:', room.id);
+                // Add playerId to transaction before processing
+                data.transaction.playerId = playerId;
                 const result = await room.economicEngine.processTransaction(data.transaction);
 
                 // No global trigger needed - room handles its own updates
@@ -446,7 +393,7 @@ async function handleWebSocketMessage(ws, data) {
                 }));
 
             } catch (error) {
-                console.error('❌ Transaction processing failed:', error);
+                logger.error('❌ Transaction processing failed:', error);
                 ws.send(JSON.stringify({
                     type: 'TRANSACTION_RESPONSE',
                     transactionId: data.transaction?.id,
@@ -461,8 +408,9 @@ async function handleWebSocketMessage(ws, data) {
 
         case 'PING':
             // Respond to client heartbeat ping
-            console.log(`💓 PING received from ${ws.playerId}`);
             ws.lastPing = Date.now();
+            ws.lastPong = Date.now(); // Client is alive if it's sending PINGs
+            ws.isAlive = true;
             ws.send(JSON.stringify({
                 type: 'PONG',
                 connectionId: data.connectionId,
@@ -479,7 +427,6 @@ async function handleWebSocketMessage(ws, data) {
 
         case 'REQUEST_GAME_STATE_SYNC':
             // Handle request for full game state synchronization
-            console.log(`🔄 Game state sync requested by ${data.playerId}`);
             if (room && room.economicEngine) {
                 // Force a complete state broadcast to this client
                 room.economicEngine.broadcastGameState('SYNC_REQUESTED', {
@@ -491,7 +438,6 @@ async function handleWebSocketMessage(ws, data) {
 
         case 'REQUEST_CHAT_HISTORY':
             // Send chat history to client when transitioning to in-game
-            console.log(`💬 Chat history requested by ${data.playerId}`);
             if (room) {
                 const chatHistory = room.getChatHistory();
                 ws.send(JSON.stringify({
@@ -504,13 +450,11 @@ async function handleWebSocketMessage(ws, data) {
 
         case 'GRACEFUL_DISCONNECT':
             // Handle graceful disconnection (page unload, etc.)
-            console.log(`🚪 Graceful disconnect from ${data.playerId}: ${data.reason}`);
             // Mark this as an expected disconnection - don't log as error
             ws.gracefulDisconnect = true;
             break;
 
         default:
-            console.log('Unknown WebSocket message type:', data.type);
     }
 }
 
@@ -529,7 +473,6 @@ function broadcastToAllClients(update) {
     });
 
     if (sentCount > 0) {
-        console.log(`📡 Broadcasted ${update.type} to ${sentCount} clients`);
     }
 }
 
@@ -537,7 +480,6 @@ function broadcastToAllClients(update) {
 
 // REMOVED: Global game loop replaced by per-room isolated clocks
 // Each room now manages its own timer independently
-console.log('🏭 Server-side Economic Engine initialized');
 
 // ====================================================================
 // 🍺 V2 MULTIPLAYER API - Clean room-based system
@@ -547,6 +489,8 @@ console.log('🏭 Server-side Economic Engine initialized');
 app.post('/api/beer-hall/find-table', (req, res) => {
     try {
         const { playerId, playerName, playerColor, preferences } = req.body;
+
+        logger.debug(`🔍 ROOM ASSIGNMENT DEBUG: Player ${playerId} requesting table with preferences:`, preferences);
 
         if (!playerId) {
             return res.status(400).json({ error: 'playerId required' });
@@ -572,7 +516,6 @@ app.post('/api/beer-hall/find-table', (req, res) => {
         if (!playerWs) {
             console.warn(`⚠️ No WebSocket found for player ${playerId}. Chat may not work.`);
         } else {
-            console.log(`✅ WebSocket linked for ${playerId} to room ${room.id}`);
         }
 
         res.json({
@@ -602,8 +545,6 @@ app.get('/api/beer-hall/lobby', (req, res) => {
     }
 });
 
-// ❌ REMOVED: V2 Transaction API - Now handled via WebSocket only
-// All economic transactions should use WebSocket 'ECONOMIC_TRANSACTION' message type
 
 // Health check endpoint
 app.get('/health', (req, res) => {
@@ -621,7 +562,6 @@ app.get('/health', (req, res) => {
 app.post('/api/buildings/save-json', (req, res) => {
     // Disable CSV uploads in production for security
     if (process.env.NODE_ENV === 'production') {
-        console.log('🚫 CSV upload disabled in production environment');
         return res.status(403).json({
             success: false,
             error: 'File uploads are disabled in production for security reasons',
@@ -630,7 +570,6 @@ app.post('/api/buildings/save-json', (req, res) => {
     }
 
     try {
-        console.log('💾 Saving building data JSON from CSV upload (development mode)');
         const { buildingData } = req.body;
 
         if (!buildingData) {
@@ -644,7 +583,6 @@ app.post('/api/buildings/save-json', (req, res) => {
         const filePath = path.join(__dirname, 'buildings-data.json');
         fs.writeFileSync(filePath, JSON.stringify(buildingData, null, 2));
 
-        console.log('✅ Building data saved to buildings-data.json');
         res.json({
             success: true,
             message: 'Building data saved successfully',
@@ -660,15 +598,7 @@ app.post('/api/buildings/save-json', (req, res) => {
     }
 });
 
-// Cash transaction endpoint
-// REMOVED: Legacy /api/cash/transaction endpoint - replaced by v2 economic system
 
-// ❌ REMOVED: Player state API endpoints - Now handled via WebSocket only
-// Player balance, color, and other state is provided in game state broadcasts
-// Player actions should use WebSocket message types
-
-// ❌ REMOVED: Get all players endpoint - Now handled via WebSocket only
-// Player data is provided in game state broadcasts to each room
 
 
 // =============================================================================
@@ -676,15 +606,115 @@ app.post('/api/buildings/save-json', (req, res) => {
 // Routes economic requests to the correct room's economic engine
 // =============================================================================
 
-// WebSocket-only economic system: Read operations removed
-// Economic data is now provided via WebSocket broadcasts only
-// Only transaction processing remains as HTTP POST for command execution
+// Building repair cost endpoint
+app.post('/api/building-repair-cost', (req, res) => {
+    try {
+        const { roomId, row, col } = req.body;
 
-// LEGACY ENDPOINT REMOVED: Cashflow data now provided via WebSocket-only communication
-// All economic data is now synchronized via server-authoritative WebSocket broadcasts
+        if (!roomId || row === undefined || col === undefined) {
+            return res.status(400).json({
+                success: false,
+                error: 'Missing required parameters: roomId, row, col'
+            });
+        }
 
-// ❌ REMOVED: Economics transaction API - Now handled via WebSocket only
-// All economic transactions should use WebSocket 'ECONOMIC_TRANSACTION' message type
+        const room = roomManager.getRoom(roomId);
+        if (!room || !room.economicEngine) {
+            return res.status(404).json({
+                success: false,
+                error: 'Room not found or not initialized'
+            });
+        }
+
+        const repairCost = room.economicEngine.getBuildingRepairCost(row, col);
+
+        res.json({
+            success: true,
+            repairCost: repairCost
+        });
+    } catch (error) {
+        logger.error('❌ Building repair cost API error:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Internal server error',
+            message: error.message
+        });
+    }
+});
+
+// Building value endpoint
+app.post('/api/building-value', (req, res) => {
+    try {
+        const { roomId, row, col } = req.body;
+
+        if (!roomId || row === undefined || col === undefined) {
+            return res.status(400).json({
+                success: false,
+                error: 'Missing required parameters: roomId, row, col'
+            });
+        }
+
+        const room = roomManager.getRoom(roomId);
+        if (!room || !room.economicEngine) {
+            return res.status(404).json({
+                success: false,
+                error: 'Room not found or not initialized'
+            });
+        }
+
+        const value = room.economicEngine.getBuildingValue(row, col);
+
+        res.json({
+            success: true,
+            value: value
+        });
+    } catch (error) {
+        logger.error('❌ Building value API error:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Internal server error',
+            message: error.message
+        });
+    }
+});
+
+// City population endpoint
+app.post('/api/city-population', (req, res) => {
+    try {
+        const { roomId } = req.body;
+
+        if (!roomId) {
+            return res.status(400).json({
+                success: false,
+                error: 'Missing required parameter: roomId'
+            });
+        }
+
+        const room = roomManager.getRoom(roomId);
+        if (!room || !room.economicEngine) {
+            return res.status(404).json({
+                success: false,
+                error: 'Room not found or not initialized'
+            });
+        }
+
+        const population = room.economicEngine.getCityPopulation();
+
+        res.json({
+            success: true,
+            population: population
+        });
+    } catch (error) {
+        logger.error('❌ City population API error:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Internal server error',
+            message: error.message
+        });
+    }
+});
+
+
 
 // =============================================================================
 
@@ -693,7 +723,6 @@ app.get('/api/leaderboard', (req, res) => {
     const limit = parseInt(req.query.limit) || 10;
     const leaderboard = soloGameData.leaderboard.slice(0, limit);
 
-    console.log(`📊 Leaderboard requested (limit: ${limit})`);
     res.json({
         success: true,
         leaderboard: leaderboard,
@@ -711,9 +740,6 @@ app.get('/api/dev-status', (req, res) => {
     });
 });
 
-// ❌ REMOVED: Governance API endpoints - Now handled via WebSocket only
-// Governance state is provided in the regular game state broadcasts
-// Governance votes should use WebSocket 'GOVERNANCE_VOTE' message type
 
 
 // Serve index.html for all non-API routes
@@ -723,10 +749,6 @@ app.get('*', (req, res) => {
 
 // Start server with WebSocket support
 server.listen(PORT, () => {
-    console.log(`🎮 Multiplayer Game Server running on port ${PORT}`);
-    console.log(`📍 Game available at: http://localhost:${PORT}`);
-    console.log(`🔌 WebSocket available at: ws://localhost:${PORT}/ws`);
-    console.log(`🏠 Mode: Real-time multiplayer`);
 
     // Start connection health monitoring
     startConnectionHealthMonitoring();
@@ -740,29 +762,33 @@ server.listen(PORT, () => {
  * Monitor WebSocket connections and clean up stale ones
  */
 function startConnectionHealthMonitoring() {
-    const HEALTH_CHECK_INTERVAL = 30000; // 30 seconds
-    const STALE_CONNECTION_TIMEOUT = 60000; // 60 seconds
+    const HEALTH_CHECK_INTERVAL = 60000; // 60 seconds (longer interval, let client handle heartbeat)
+    const STALE_CONNECTION_TIMEOUT = 120000; // 2 minutes
 
-    console.log('💓 Starting connection health monitoring');
 
     setInterval(() => {
         const now = Date.now();
         let healthyConnections = 0;
         let staleConnections = 0;
 
-        wss.clients.forEach(ws => {
-            if (ws.isAlive === false) {
-                staleConnections++;
-                return ws.terminate();
-            }
+        connectedClients.forEach(ws => {
+            // Check if connection is stale based on last activity
+            const timeSinceLastActivity = now - (ws.lastPong || ws.connectionTime);
 
-            ws.isAlive = false;
-            ws.ping(() => {});
-            healthyConnections++;
+            if (timeSinceLastActivity > STALE_CONNECTION_TIMEOUT) {
+                staleConnections++;
+                connectedClients.delete(ws);
+                if (ws.playerId) {
+                    roomManager.handleDisconnect(ws.playerId);
+                }
+                ws.terminate();
+            } else {
+                healthyConnections++;
+            }
         });
 
-        if (healthyConnections > 0 || staleConnections > 0) {
-            console.log(`💓 Connection health: ${healthyConnections} healthy, ${staleConnections} cleaned up`);
+        if (staleConnections > 0) {
+            logger.debug(`💓 Connection cleanup: ${staleConnections} stale connections removed, ${healthyConnections} active`);
         }
 
     }, HEALTH_CHECK_INTERVAL);
