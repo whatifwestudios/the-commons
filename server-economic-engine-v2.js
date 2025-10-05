@@ -220,7 +220,7 @@ class ServerEconomicEngine {
             }
         });
 
-        if (this.ensureDebug().CACHE) {
+        if (this.DEBUG.CACHE) {
             console.log(`[CACHE] Invalidated caches for buildings within ${maxRange} tiles of [${row},${col}]`);
         }
     }
@@ -1125,14 +1125,14 @@ class ServerEconomicEngine {
      * Calculate performance for a specific building
      */
     calculateBuildingPerformance(row, col) {
-        const startTime = this.ensureDebug().TIMING ? Date.now() : 0;
+        const startTime = this.DEBUG.TIMING ? Date.now() : 0;
         const locationKey = `${row},${col}`;
 
         // Check cache first
         const cached = this.cache.buildingPerformances.get(locationKey);
         if (cached && !cached.dirty) {
             this.cache.stats.hits++;
-            if (this.ensureDebug().CACHE) {
+            if (this.DEBUG.CACHE) {
                 console.log(`[CACHE] Hit for building performance at [${row},${col}]`);
             }
             return cached.data;
@@ -1141,7 +1141,7 @@ class ServerEconomicEngine {
 
         const building = this.gameState.buildings.get(locationKey);
 
-        if (this.ensureDebug().PERFORMANCE) {
+        if (this.DEBUG.PERFORMANCE) {
             console.log(`[PERF] calculateBuildingPerformance called for [${row},${col}]`);
         }
 
@@ -1235,7 +1235,7 @@ class ServerEconomicEngine {
             }
         };
 
-        if (this.ensureDebug().REVENUE) {
+        if (this.DEBUG.REVENUE) {
             console.log(`[REVENUE] [${row},${col}] ${building.id} - Revenue: ${actualRevenue.toFixed(2)}, Maint: ${actualMaintenance.toFixed(2)}, Net: ${(actualRevenue - actualMaintenance).toFixed(2)}`);
         }
 
@@ -1246,7 +1246,7 @@ class ServerEconomicEngine {
             dirty: false
         });
 
-        if (this.ensureDebug().TIMING) {
+        if (this.DEBUG.TIMING) {
             const elapsed = Date.now() - startTime;
             if (elapsed > 50) {
                 console.warn(`[TIMING] Performance calculation took ${elapsed}ms for [${row},${col}]`);
@@ -4794,7 +4794,7 @@ class ServerEconomicEngine {
         let netIncome = 0;
         let revenue = 0;
         let maintenance = 0;
-        let performanceMultiplier = 1.0;
+        let performanceMultiplier = building.underConstruction ? 0.0 : 1.0; // 0 during construction
 
         if (performanceDetails && performanceDetails.summary) {
             revenue = performanceDetails.summary.revenue || 0;
@@ -4939,7 +4939,7 @@ class ServerEconomicEngine {
             timestamp: Date.now()
         });
 
-        if (this.ensureDebug().BROADCASTS) {
+        if (this.DEBUG.BROADCASTS) {
             const sizeKB = (JSON.stringify({ type: 'BUILDING_STATES', buildings: buildingStates }).length / 1024).toFixed(2);
             console.log(`[BROADCAST] Sent BUILDING_STATES - ${buildingStates.length} buildings, ${sizeKB}KB`);
         }

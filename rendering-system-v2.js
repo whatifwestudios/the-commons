@@ -589,8 +589,11 @@ class RenderingSystemV2 {
         // Simple building representation
         this.ctx.save();
 
-        // Get building graphics from building manager
-        const buildingId = parcel.building;
+        // Handle both cases: parcel.building as string (legacy) or object (synced from server)
+        const buildingId = typeof parcel.building === 'string'
+            ? parcel.building
+            : (parcel.building.id || parcel.building.type);
+
         const building = this.game.buildingManager?.getBuildingById(buildingId);
 
         if (!building) {
@@ -598,7 +601,9 @@ class RenderingSystemV2 {
             return;
         }
 
-        let imagePath = building.graphicsFile || building.images?.built;
+        // For synced buildings, graphics may come from server data in parcel
+        const parcelBuilding = typeof parcel.building === 'object' ? parcel.building : null;
+        let imagePath = parcelBuilding?.graphicsFile || building.graphicsFile || building.images?.built;
 
         if (imagePath) {
             // Try to load and draw building image
