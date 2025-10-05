@@ -1589,15 +1589,57 @@ class BeerHallLobby {
     }
 
     /**
-     * Hide countdown overlay with fade out
+     * Hide countdown overlay with fade out and show welcome screen
      */
     hideCountdownOverlay() {
         const countdownOverlay = document.getElementById('countdown-overlay');
         if (countdownOverlay) {
+            // First, ensure the lobby/chat overlay fades out
+            this.fadeOutLobbyOverlays();
+
+            // Then fade out countdown and fade in welcome screen
             countdownOverlay.classList.add('fade-out');
             setTimeout(() => {
                 countdownOverlay.style.display = 'none';
+                // Fade in the welcome screen
+                this.fadeInWelcomeScreen();
             }, 500); // Match transition duration
+        }
+    }
+
+    /**
+     * Fade out lobby overlays (beer hall or multiplayer chat)
+     */
+    fadeOutLobbyOverlays() {
+        // Fade out beer hall lobby if visible
+        if (this.beerHallLobby && this.beerHallLobby.style.display !== 'none') {
+            this.beerHallLobby.style.transition = 'opacity 0.5s ease-out';
+            this.beerHallLobby.style.opacity = '0';
+        }
+
+        // Fade out multiplayer chat if visible
+        const chatOverlay = document.getElementById('multiplayer-chat-overlay');
+        if (chatOverlay && chatOverlay.style.display !== 'none') {
+            chatOverlay.style.transition = 'opacity 0.5s ease-out';
+            chatOverlay.style.opacity = '0';
+        }
+    }
+
+    /**
+     * Fade in the welcome screen (game canvas)
+     */
+    fadeInWelcomeScreen() {
+        const welcomeScreen = document.getElementById('welcome-screen');
+        if (welcomeScreen) {
+            // Set initial state
+            welcomeScreen.style.opacity = '0';
+            welcomeScreen.style.transition = 'opacity 0.5s ease-in';
+            welcomeScreen.style.display = 'flex';
+
+            // Trigger fade in after a brief delay
+            setTimeout(() => {
+                welcomeScreen.style.opacity = '1';
+            }, 50);
         }
     }
 

@@ -102,6 +102,18 @@ class ServerEconomicEngine {
         this.processedTransactions = new Set();
         this.governanceSystem = null; // Will be injected by game
 
+        // Debug flags (environment-based)
+        const isDevelopment = process.env.NODE_ENV !== 'production';
+        this.DEBUG = {
+            MASTER: isDevelopment,
+            PERFORMANCE: isDevelopment,
+            CARENS: isDevelopment,
+            REVENUE: isDevelopment,
+            BROADCASTS: isDevelopment,
+            CACHE: isDevelopment,
+            TIMING: true
+        };
+
         // Performance multiplier ranges
         this.JEEFHH_MULTIPLIER_RANGE = { min: 0.4, max: 1.6 };
         this.CARENS_MULTIPLIER_RANGE = { min: 0.6, max: 1.4 };
@@ -116,11 +128,16 @@ class ServerEconomicEngine {
         // Performance optimization: Caching system
         this.cache = {
             jeefhh: { lastUpdate: 0, data: null, dirty: true },
-            carens: { lastUpdate: 0, data: null, dirty: true },
+            carens: new Map(), // Per-building CARENS cache
             buildingPerformances: new Map(), // locationKey -> {lastUpdate, data, dirty}
             playerWealth: new Map(), // playerId -> {lastUpdate, data, dirty}
             lastFullState: null, // For delta comparisons
-            lastBroadcast: 0
+            lastBroadcast: 0,
+            stats: {
+                hits: 0,
+                misses: 0,
+                invalidations: 0
+            }
         };
 
         // Delta tracking for optimized updates
