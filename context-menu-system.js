@@ -114,14 +114,26 @@ class ContextMenuSystem {
             return;
         }
 
+        // Debug logging for ownership detection
+        console.log(`[CONTEXT MENU] Parcel at [${row},${col}]:`, {
+            owner: parcel.owner,
+            hasBuilding: !!parcel.building,
+            buildingId: parcel.building?.id,
+            isCurrentPlayer: this.game.isCurrentPlayer(parcel.owner),
+            currentPlayerId: this.game.economicClient?.playerId
+        });
+
         if (!parcel.owner || parcel.owner === 'City' || parcel.owner === 'unclaimed') {
             // Unowned parcel (includes City-owned)
+            console.log('[CONTEXT MENU] Creating unowned parcel menu');
             this.createUnownedParcelMenu(contentEl, row, col, price);
         } else if (this.game.isCurrentPlayer(parcel.owner)) {
             // Player-owned parcel
+            console.log('[CONTEXT MENU] Creating player-owned parcel menu');
             this.createPlayerOwnedParcelMenu(contentEl, row, col, parcel);
         } else {
             // Competitor-owned parcel
+            console.log('[CONTEXT MENU] Creating competitor-owned parcel menu');
             this.createCompetitorOwnedParcelMenu(contentEl, row, col, parcel);
         }
     }
@@ -201,10 +213,17 @@ class ContextMenuSystem {
      * Create menu for competitor-owned parcel
      */
     createCompetitorOwnedParcelMenu(contentEl, row, col, parcel) {
+        console.log('[CONTEXT MENU] createCompetitorOwnedParcelMenu called:', {
+            hasBuilding: !!parcel.building,
+            buildingId: parcel.building?.id,
+            contentEl: contentEl
+        });
+
         // All players can view Data Insights on any parcel
         // Only Auction is disabled for now pending auction system refinement
 
         if (parcel.building) {
+            console.log('[CONTEXT MENU] Adding Data Insights button for built competitor parcel');
             // Add Data Insights button for built parcels
             const dataInsightsBtn = document.createElement('button');
             dataInsightsBtn.className = 'context-btn secondary';
@@ -213,6 +232,9 @@ class ContextMenuSystem {
                 this.game.createDataInsightsOverlay(row, col, parcel);
             };
             contentEl.appendChild(dataInsightsBtn);
+            console.log('[CONTEXT MENU] Data Insights button added to DOM');
+        } else {
+            console.log('[CONTEXT MENU] No building on competitor parcel - no buttons added');
         }
 
         // TODO: Add Auction button when auction system is refined

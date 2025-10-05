@@ -1904,6 +1904,11 @@ class EconomicClient {
             // });
         });
 
+        // Sync buildings to game grid for context menu and tooltips
+        if (this.game?.grid) {
+            this.syncBuildingsToGameGrid();
+        }
+
         // Trigger rendering update if game exists
         if (this.game?.scheduleRender) {
             this.game.scheduleRender();
