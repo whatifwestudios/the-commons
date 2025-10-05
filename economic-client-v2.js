@@ -21,6 +21,7 @@ class EconomicClient {
         this.serverGameTime = 0;
         this.lastSyncTime = Date.now();
         this.displayTimer = null;
+        this.roomId = null; // Will be set from server via ROOM_STATE_SYNC
 
         // Connection manager reference
         this.connectionManager = null;
@@ -901,6 +902,7 @@ class EconomicClient {
         }
         if (gameState.carens) {
             this.carens = gameState.carens;
+            // console.log('🏛️ CLIENT RECEIVED CARENS:', this.carens);
         }
         if (gameState.attractiveness !== undefined) {
             this.attractiveness = gameState.attractiveness;
@@ -1352,6 +1354,11 @@ class EconomicClient {
                 // Room state sync response (from REQUEST_ROOM_STATE)
                 // Room state sync response received
                 if (update.roomState) {
+                    // Store roomId from server
+                    if (update.roomState.roomId) {
+                        this.roomId = update.roomState.roomId;
+                    }
+
                     // Syncing buildings from server
 
                     // V2: Extract and update city name for current player
@@ -1511,7 +1518,7 @@ class EconomicClient {
 
             case 'BUILDING_STATES':
                 // Building rendering states from server
-                console.log(`📡 Received ${update.buildings?.length || 0} building states from server`);
+                // console.log(`📡 Received ${update.buildings?.length || 0} building states from server`);
                 this.updateBuildingStates(update.buildings);
                 break;
 
@@ -1748,7 +1755,7 @@ class EconomicClient {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    roomId: this.game?.currentRoomId,
+                    roomId: this.roomId,
                     row,
                     col
                 })
@@ -1775,7 +1782,7 @@ class EconomicClient {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    roomId: this.game?.currentRoomId,
+                    roomId: this.roomId,
                     row,
                     col
                 })
@@ -1816,7 +1823,7 @@ class EconomicClient {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    roomId: this.game?.currentRoomId
+                    roomId: this.roomId
                 })
             });
 
@@ -1888,13 +1895,13 @@ class EconomicClient {
             this.buildings.set(key, buildingData);
 
             // DEBUG: Log received data for first few buildings
-            console.log(`📥 CLIENT received [${key}] ${state.buildingId}:`, {
-                efficiency: state.efficiency,
-                netIncome: state.netIncome,
-                revenue: state.revenue,
-                maintenance: state.maintenance,
-                hasPerformanceDetails: !!state.performanceDetails
-            });
+            // console.log(`📥 CLIENT received [${key}] ${state.buildingId}:`, {
+            //     efficiency: state.efficiency,
+            //     netIncome: state.netIncome,
+            //     revenue: state.revenue,
+            //     maintenance: state.maintenance,
+            //     hasPerformanceDetails: !!state.performanceDetails
+            // });
         });
 
         // Trigger rendering update if game exists

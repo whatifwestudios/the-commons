@@ -912,12 +912,10 @@ class BuildingSystem {
         
         // Process building locally - server-authoritative balance tracking
         const oldCash = this.game.economicClient?.getCurrentPlayerBalance() || 0;
-        
-        // Deduct public funds from governance budget
-        if (publicFunding > 0 && this.game.governanceSystem) {
-            this.game.governanceSystem.spendFromCategory(buildingCategory, publicFunding);
-        }
-        
+
+        // Public funds are tracked server-side in the economic engine
+        // No client-side deduction needed - server handles governance spending
+
         // Store original state for potential rollback - server-authoritative
         const originalCash = this.game.economicClient?.getCurrentPlayerBalance() || 0;
         const originalBuilding = this.game.grid[row][col].building;
@@ -1022,11 +1020,13 @@ class BuildingSystem {
         
         if (!buildingId) return false;
         
-        // Calculate demolition fee (10% of current building value)
+        // Calculate demolition fee (25% of current building value based on condition)
         const building = this.buildingManager.getBuildingById(buildingId);
-        const currentValue = this.game.calculateCurrentBuildingValue(parcel, building);
-        const demolitionFee = Math.round(currentValue * 0.1);
-        
+        const buildingCost = building.cost || 0;
+        const condition = parcel.condition || 100;
+        const currentValue = Math.round(buildingCost * (condition / 100));
+        const demolitionFee = Math.round(currentValue * 0.25);
+
         // Check if player can afford demolition fee - use server-authoritative balance
         const currentBalance = this.game.economicClient?.getCurrentPlayerBalance();
         if (currentBalance === null) return false; // Wait for server data
@@ -1036,8 +1036,9 @@ class BuildingSystem {
             this.game.hideContextMenu();
             return false;
         }
-        
+
         // ✅ CLEANED: Server-authoritative demolition transaction
+        // Demolition cost is removed from economy (not added to treasury)
         if (this.game.economicClient) {
             try {
                 await this.game.economicClient.spendCash(this.game.currentPlayerId, demolitionFee, 'Building demolition fee');
@@ -1046,11 +1047,6 @@ class BuildingSystem {
                 console.error('❌ Demolition payment failed:', error);
                 return false;
             }
-        }
-        
-        // Add demolition fee to city treasury
-        if (this.game.governanceSystem) {
-            this.game.governanceSystem.addFunds(demolitionFee, 'demolition fees');
         }
         
         
@@ -1165,9 +1161,9 @@ class BuildingSystem {
     async repairBuilding(row, col) {
         const parcel = this.game.grid[row][col];
         if (!parcel || !parcel.building) return false;
-        
+
         const building = this.buildingManager.getBuildingById(parcel.building);
-        const repairCost = this.game.calculateRepairCost(parcel, building);
+        const repairCost = this.calculateRepairCost(parcel, building, row, col);
 
         // Use server-authoritative balance for repair cost check
         const currentBalance = this.game.economicClient?.getCurrentPlayerBalance();
@@ -1254,21 +1250,26 @@ class BuildingSystem {
             }
         }
 
-        // Fallback to client calculation
-        if (!parcel || !building || !parcel.buildingAge || parcel.buildingAge <= 0) {
+        // Fallback to client calculation based on condition
+        if (!parcel || !building) {
             return 0;
         }
 
-        const baseMaintenance = building.economics.maintenanceCost || 0;
-        const decayRate = building.economics.decayRate ? building.economics.decayRate / 100 : 0.001;
-        const buildingAgeInDays = parcel.buildingAge || 0;
+        const condition = parcel.condition !== undefined ? parcel.condition : 100;
 
-        const maintenanceMultiplier = Math.pow(1 + decayRate, buildingAgeInDays);
-        const currentMaintenance = baseMaintenance * maintenanceMultiplier;
-        const maintenanceIncrease = currentMaintenance - baseMaintenance;
-        const repairCost = maintenanceIncrease * 200;
+        // If already at 100%, no repair needed
+        if (condition >= 100) {
+            return 0;
+        }
 
-        return Math.round(repairCost * 100) / 100;
+        // Calculate cost to restore to 100% based on building cost and condition loss
+        const buildingCost = building.cost || building.economics?.buildCost || 0;
+        const conditionLoss = 100 - condition;
+
+        // Cost is proportional to condition loss (50% condition = 50% of build cost to repair)
+        const repairCost = (buildingCost * conditionLoss) / 100;
+
+        return Math.round(repairCost);
     }
 
     /**

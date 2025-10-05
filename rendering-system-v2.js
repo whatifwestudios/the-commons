@@ -26,6 +26,8 @@ class RenderingSystemV2 {
 
         // Performance
         this.renderScheduled = false;
+        this.animationFrameId = null;
+        this.hasConstructionBuildings = false;
 
         // Event cleanup manager for memory leak prevention
         if (typeof window !== 'undefined' && window.EventCleanupManager) {
@@ -338,6 +340,29 @@ class RenderingSystemV2 {
         this.renderHoverEffects();
 
         this.ctx.restore();
+
+        // Check if we have construction buildings and need continuous animation
+        this.checkConstructionBuildings();
+        if (this.hasConstructionBuildings) {
+            // Schedule next frame for oscillating animation
+            this.scheduleRender();
+        }
+    }
+
+    /**
+     * Check if there are any buildings under construction
+     */
+    checkConstructionBuildings() {
+        this.hasConstructionBuildings = false;
+
+        if (!this.game.grid || !this.game.gridSize) return;
+
+        window.GridUtils.forEachPosition(this.game.gridSize, (row, col) => {
+            const parcel = this.game.grid[row][col];
+            if (parcel && parcel.building && parcel._isUnderConstruction) {
+                this.hasConstructionBuildings = true;
+            }
+        });
     }
 
     /**
@@ -860,17 +885,32 @@ class RenderingSystemV2 {
         const progress = this.calculateConstructionProgress(row, col);
         if (progress >= 1.0) return 0.0; // No dimming when complete
 
-        // Start at 60% dimming (0.6), decrease to 0% as progress reaches 1.0
-        // This will make brightness go from 40% to 100% (more visible)
-        return 0.6 * (1.0 - progress);
+        // Buildings under construction start fully dimmed and oscillate
+        // Use time-based oscillation for pulsing effect
+        const time = Date.now() / 1000; // Convert to seconds
+        const oscillation = (Math.sin(time * 2) + 1) / 2; // 0 to 1, oscillating
+
+        // Maximum dimming: 80% (brightness will be 20% at darkest)
+        // Minimum dimming: 60% (brightness will be 40% at lightest)
+        const minDim = 0.6;
+        const maxDim = 0.8;
+        return minDim + (oscillation * (maxDim - minDim));
     }
 
     /**
      * Calculate performance-based saturation (10% to 100% based on server data)
      * Low performance = more B&W (desaturated), High performance = full color
+     * Buildings under construction are also desaturated
      */
     calculatePerformanceSaturation(row, col) {
-        // Get building state from server
+        // Check if building is under construction
+        const progress = this.calculateConstructionProgress(row, col);
+        if (progress < 1.0) {
+            // Buildings under construction are heavily desaturated (20% saturation)
+            return 0.2;
+        }
+
+        // Get building state from server for completed buildings
         const serverState = this.game.economicClient?.getBuildingState?.(row, col);
         if (!serverState) return 1.0; // Default full saturation
 
@@ -927,13 +967,13 @@ class RenderingSystemV2 {
         const conditionSepia = this.calculateConditionSepia(row, col);
 
         // DEBUG: Log visual effects
-        if ((window.DEBUG_MODE || true) && (constructionDimming > 0 || performanceSaturation < 1.0 || conditionSepia > 0)) {
-            console.log(`🎨 Visual effects for [${row},${col}]:`, {
-                constructionDimming,
-                performanceSaturation,
-                conditionSepia
-            });
-        }
+        // if ((window.DEBUG_MODE || true) && (constructionDimming > 0 || performanceSaturation < 1.0 || conditionSepia > 0)) {
+        //     console.log(`🎨 Visual effects for [${row},${col}]:`, {
+        //         constructionDimming,
+        //         performanceSaturation,
+        //         conditionSepia
+        //     });
+        // }
 
         // Save canvas state for effects
         this.ctx.save();

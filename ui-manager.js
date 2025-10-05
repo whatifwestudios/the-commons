@@ -416,10 +416,10 @@ class UIManager {
         });
 
         // Update CARENS bars
-        // Processing CARENS metrics
+        // console.log('🏛️ UI MANAGER CARENS UPDATE:', carensMetrics);
         Object.entries(carensMetrics).forEach(([domain, data]) => {
             const barElement = document.getElementById(`${domain.toLowerCase()}-bar`);
-            // Updating CARENS bar for domain
+            // console.log(`🏛️ Updating ${domain} bar:`, { barElement: !!barElement, score: data.score });
             if (barElement) {
                 this.updateNetScoreBar(barElement, data.score, domain);
             }

@@ -234,13 +234,14 @@ body.beer-hall-active #top-bar {
 
 .leaderboard-rows {
     background: #0f0f0f;
-    border-radius: 8px;
     overflow: hidden;
 }
 
 .leaderboard-row {
     display: grid;
-    grid-template-columns: 80px 1fr 120px 120px 120px;
+    flex-direction: row;
+    justify-content: space-between;
+    grid-template-columns: 90px .9fr 90px 180px 90px;
     gap: 15px;
     padding: 20px;
     border-bottom: 1px solid rgba(255, 255, 255, 0.05);
@@ -256,8 +257,7 @@ body.beer-hall-active #top-bar {
 }
 
 .leaderboard-row.current-player {
-    background: rgba(255, 255, 255, 0.03);
-    border-left: 2px solid #666;
+    background: rgba(255, 255, 255, 0.1);
 }
 
 .lb-rank {
@@ -759,20 +759,7 @@ body.beer-hall-active #top-bar {
     letter-spacing: 1px;
 }
 
-.road-select {
-    background: #1a1a1a;
-    border: 1px solid #333333;
-    color: #ffffff;
-    padding: 4px 8px;
-    border-radius: 4px;
-    font-size: 11px;
-    min-width: 80px;
-}
 
-.road-select:focus {
-    outline: none;
-    border-color: #0066cc;
-}
 
 .modal-footer {
     display: flex;
@@ -937,26 +924,6 @@ body.beer-hall-active #top-bar {
 }
 
 
-
-/* Road Controls Styling */
-.road-controls {
-    background: #1a1a2e;
-    border: 1px solid #333;
-    margin-bottom: 10px;
-}
-
-.road-controls .section-header {
-    background: linear-gradient(135deg, #2d1b69 0%, #1a1a2e 100%);
-    color: #fff;
-    padding: 8px 12px;
-    font-weight: bold;
-    font-size: 11px;
-    border-bottom: 1px solid #333;
-}
-
-.road-controls-content {
-    padding: 10px;
-}
 
 .control-group {
     display: flex;
@@ -1511,8 +1478,6 @@ body.beer-hall-active #top-bar {
     font-size: 12px !important;
     margin-top: 10px !important;
     text-align: left;
-}
-    color: #ececec;
 }
 
 .sell-form {
@@ -2157,265 +2122,7 @@ body.beer-hall-active #top-bar {
     padding-bottom: 0;
 }
 
-/* Street Edge Context Menu */
-.street-edge-context-menu {
-    position: absolute;
-    background: #111111;
-    border: 1px solid #2a2a2a;
-    border-radius: 6px;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
-    z-index: 1000;
-    min-width: 280px;
-    max-width: 320px;
-    display: none;
-    font-family: 'SF Mono', Monaco, monospace;
-}
 
-.street-edge-context-menu .menu-header {
-    padding: 12px 16px;
-    border-bottom: 1px solid #2a2a2a;
-    background: #0a0a0a;
-    font-size: 14px;
-    font-weight: 600;
-    color: #ffffff;
-    text-align: center;
-    user-select: none;
-}
-
-.street-edge-context-menu .menu-header.draggable-handle {
-    cursor: move;
-}
-
-.street-edge-context-menu .menu-header.draggable-handle:active {
-    cursor: grabbing;
-}
-
-.road-design-section {
-    padding: 12px 16px;
-    border-bottom: 1px solid #1a1a1a;
-}
-
-.road-design-section:last-of-type {
-    border-bottom: none;
-}
-
-.road-design-section label {
-    display: block;
-    color: #cccccc;
-    font-size: 12px;
-    font-weight: 600;
-    margin-bottom: 6px;
-}
-
-.road-design-section select {
-    width: 100%;
-    padding: 8px;
-    background: #1a1a1a;
-    border: 1px solid #2a2a2a;
-    border-radius: 4px;
-    color: #ffffff;
-    font-size: 12px;
-    margin-bottom: 8px;
-}
-
-.road-design-section select:focus {
-    outline: none;
-    border-color: #42B96E;
-}
-
-.checkbox-label {
-    display: flex !important;
-    align-items: center;
-    margin-bottom: 8px !important;
-    cursor: pointer;
-}
-
-.checkbox-label input[type="checkbox"] {
-    margin-right: 8px;
-    accent-color: #42B96E;
-}
-
-
-.road-design-actions {
-    padding: 12px 16px;
-    background: #0a0a0a;
-    border-top: 1px solid #2a2a2a;
-}
-
-.cost-display {
-    background: #1a1a1a;
-    padding: 8px 12px;
-    border-radius: 4px;
-    color: #42B96E;
-    font-weight: 600;
-    font-size: 14px;
-    text-align: center;
-    margin-bottom: 12px;
-}
-
-.road-design-actions button {
-    width: 100%;
-    padding: 10px 16px;
-    border: none;
-    background: #2a2a2a;
-    color: #cccccc;
-    border-radius: 4px;
-    cursor: pointer;
-    font-size: 12px;
-    margin-bottom: 8px;
-    transition: background-color 0.2s;
-}
-
-.road-design-actions button:last-child {
-    margin-bottom: 0;
-}
-
-.road-design-actions button:hover {
-    background: #3a3a3a;
-    color: #ffffff;
-}
-
-.road-design-actions button:first-of-type {
-    background: #42B96E;
-    color: #ffffff;
-}
-
-.road-design-actions button:first-of-type:hover {
-    background: #369654;
-}
-
-/* Transit Context Menu */
-.transit-context-menu {
-    position: absolute;
-    background: #111111;
-    border: 1px solid #2a2a2a;
-    border-radius: 6px;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
-    z-index: 1000;
-    min-width: 300px;
-    max-width: 350px;
-    display: none;
-    font-family: 'SF Mono', Monaco, monospace;
-}
-
-.transit-section {
-    padding: 12px 16px;
-    border-bottom: 1px solid #1a1a1a;
-}
-
-.transit-section:last-of-type {
-    border-bottom: none;
-}
-
-.transit-section label {
-    display: block;
-    color: #cccccc;
-    font-size: 12px;
-    font-weight: 600;
-    margin-bottom: 6px;
-}
-
-.transit-section input[type="text"] {
-    width: 100%;
-    padding: 8px;
-    background: #1a1a1a;
-    border: 1px solid #2a2a2a;
-    border-radius: 4px;
-    color: #ffffff;
-    font-size: 12px;
-}
-
-.transit-section input[type="text"]:focus {
-    outline: none;
-    border-color: #42B96E;
-}
-
-.transit-section select {
-    width: 100%;
-    padding: 8px;
-    background: #1a1a1a;
-    border: 1px solid #2a2a2a;
-    border-radius: 4px;
-    color: #ffffff;
-    font-size: 12px;
-    margin-bottom: 8px;
-}
-
-.route-list {
-    margin-bottom: 12px;
-}
-
-.route-item {
-    padding: 6px 8px;
-    background: #1a1a1a;
-    border-radius: 4px;
-    margin-bottom: 4px;
-    font-size: 11px;
-    color: #cccccc;
-}
-
-.no-routes {
-    color: #666;
-    font-style: italic;
-    font-size: 11px;
-    padding: 8px;
-}
-
-.transit-section button {
-    width: 100%;
-    padding: 8px 12px;
-    background: #2a2a2a;
-    border: none;
-    border-radius: 4px;
-    color: #cccccc;
-    font-size: 11px;
-    cursor: pointer;
-    transition: background-color 0.2s;
-}
-
-.transit-section button:hover {
-    background: #3a3a3a;
-    color: #ffffff;
-}
-
-.transit-actions {
-    padding: 12px 16px;
-    background: #0a0a0a;
-    border-top: 1px solid #2a2a2a;
-}
-
-.revenue-display {
-    background: #1a1a1a;
-    padding: 8px 12px;
-    border-radius: 4px;
-    color: #42B96E;
-    font-weight: 600;
-    font-size: 12px;
-    text-align: center;
-    margin-bottom: 12px;
-}
-
-.transit-actions button {
-    width: 100%;
-    padding: 8px 12px;
-    border: none;
-    background: #2a2a2a;
-    color: #cccccc;
-    border-radius: 4px;
-    cursor: pointer;
-    font-size: 11px;
-    margin-bottom: 6px;
-    transition: background-color 0.2s;
-}
-
-.transit-actions button:last-child {
-    margin-bottom: 0;
-}
-
-.transit-actions button:hover {
-    background: #3a3a3a;
-    color: #ffffff;
-}
 
 #vitality {
     padding: 20px;
@@ -3897,7 +3604,6 @@ body.beer-hall-active #top-bar {
     color: #ccc;
 }
 
-/* Legacy custom-tooltip CSS removed - using unified TooltipManager system */
 
 /* Vitality bar grouping */
 .vitality-group {
@@ -3920,34 +3626,6 @@ body.beer-hall-active #top-bar {
     letter-spacing: 1px;
     margin-bottom: 6px;
     padding-left: 20px;
-}
-
-
-.transport-modes {
-    display: flex;
-    gap: 8px;
-}
-
-.transport-mode-btn {
-    background: #1a1a1a;
-    border: 1px solid #333333;
-    color: #888888;
-    padding: 6px 12px;
-    border-radius: 4px;
-    font-size: 12px;
-    cursor: pointer;
-    transition: all 0.2s;
-}
-
-.transport-mode-btn:hover {
-    border-color: #444444;
-    color: #cccccc;
-}
-
-.transport-mode-btn.active {
-    background: #0066cc;
-    border-color: #0066cc;
-    color: #ffffff;
 }
 
 .modal-body {
@@ -4013,229 +3691,6 @@ body.beer-hall-active #top-bar {
     text-align: center;
     text-transform: uppercase;
 }
-
-.road-config {
-    display: flex;
-    flex-direction: column;
-    align-items: stretch;
-    gap: 8px;
-    width: 100%;
-}
-
-.parcel-diagram-enhanced .road-select {
-    background: #2a2a2a;
-    border: 1px solid #444444;
-    color: #ffffff;
-    padding: 8px 12px;
-    border-radius: 4px;
-    font-size: 12px;
-    width: 100%;
-    max-width: 200px;
-    min-width: 0;
-}
-
-
-
-
-
-/* Network Design Panels */
-.network-design-panel {
-    text-align: center;
-    padding: 40px 20px;
-}
-
-.network-builder h4 {
-    color: #ffffff;
-    font-size: 18px;
-    margin-bottom: 16px;
-}
-
-.network-builder p {
-    color: #888888;
-    margin-bottom: 24px;
-}
-
-.network-controls {
-    display: flex;
-    gap: 12px;
-    justify-content: center;
-    margin-bottom: 24px;
-}
-
-.btn-secondary {
-    background: #1a1a1a;
-    border: 1px solid #333333;
-    color: #cccccc;
-    padding: 8px 16px;
-    border-radius: 4px;
-    font-size: 14px;
-    cursor: pointer;
-    transition: all 0.2s;
-}
-
-.btn-secondary:hover {
-    border-color: #444444;
-    background: #2a2a2a;
-}
-
-.btn-danger {
-    background: #dc3545;
-    border: 1px solid #dc3545;
-    color: white;
-    padding: 8px 16px;
-    border-radius: 4px;
-    font-size: 14px;
-    cursor: pointer;
-    transition: all 0.2s;
-}
-
-.btn-danger:hover {
-    background: #c82333;
-    border-color: #c82333;
-}
-
-.route-list {
-    max-height: 200px;
-    overflow-y: auto;
-    border: 1px solid #333333;
-    border-radius: 4px;
-    padding: 10px;
-    background: #0a0a0a;
-}
-
-/* Network Route Builder */
-#bus-route-canvas, #subway-route-canvas {
-    border: 2px solid #333333;
-    border-radius: 4px;
-    background: #0a0a0a;
-    margin: 20px auto;
-    display: block;
-    cursor: crosshair;
-}
-
-.route-config {
-    background: #1a1a1a;
-    border: 1px solid #333333;
-    border-radius: 8px;
-    padding: 20px;
-    margin: 20px 0;
-}
-
-.route-name-section, .service-level-section {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    margin-bottom: 16px;
-}
-
-.route-name-section label, .service-level-section label {
-    color: #cccccc;
-    font-size: 12px;
-    font-weight: 600;
-    width: 100px;
-}
-
-.route-name-section input {
-    flex: 1;
-    background: #2a2a2a;
-    border: 1px solid #444444;
-    color: #ffffff;
-    padding: 8px 12px;
-    border-radius: 4px;
-    font-size: 12px;
-}
-
-.service-level-section select {
-    flex: 1;
-    background: #2a2a2a;
-    border: 1px solid #444444;
-    color: #ffffff;
-    padding: 8px 12px;
-    border-radius: 4px;
-    font-size: 12px;
-}
-
-.route-info {
-    display: flex;
-    justify-content: space-between;
-    gap: 20px;
-    padding: 12px;
-    background: #0a0a0a;
-    border: 1px solid #333333;
-    border-radius: 4px;
-    margin-bottom: 16px;
-}
-
-.route-info span {
-    color: #888888;
-    font-size: 11px;
-}
-
-.route-info span span {
-    color: #ffffff;
-    font-weight: 600;
-}
-
-.route-actions {
-    display: flex;
-    gap: 12px;
-    justify-content: flex-end;
-}
-
-.existing-routes {
-    margin-top: 30px;
-    padding-top: 20px;
-    border-top: 1px solid #333333;
-}
-
-.existing-routes h5 {
-    color: #cccccc;
-    font-size: 14px;
-    margin-bottom: 12px;
-}
-
-.route-item {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 8px 12px;
-    background: #1a1a1a;
-    border: 1px solid #333333;
-    border-radius: 4px;
-    margin-bottom: 8px;
-}
-
-.route-item .route-name {
-    color: #ffffff;
-    font-size: 12px;
-    font-weight: 600;
-}
-
-.route-item .route-details {
-    color: #888888;
-    font-size: 10px;
-}
-
-.route-item .route-cost {
-    color: #ff6666;
-    font-size: 11px;
-    font-family: 'SF Mono', Monaco, monospace;
-}
-
-.route-item .delete-route {
-    background: #cc0000;
-    border: none;
-    color: #ffffff;
-    padding: 4px 8px;
-    border-radius: 3px;
-    font-size: 10px;
-    cursor: pointer;
-}
-
-.route-item .delete-route:hover {
-    background: #ff0000;
-}
-
 
 /* Governance Modal */
 .governance-modal {
@@ -4866,7 +4321,7 @@ body.beer-hall-active #top-bar {
     width: 0;
     height: 0;
 }
-}
+
 
 .vote-btn.decrease:hover {
     background: linear-gradient(135deg, rgba(204, 0, 0, 0.9), rgba(170, 0, 0, 0.95));
@@ -5797,7 +5252,6 @@ body.beer-hall-active #top-bar {
     padding: 8px 12px;
     margin-bottom: 4px;
     background: rgba(255, 255, 255, 0.03);
-    border-radius: 6px;
     border-left: 3px solid transparent;
     transition: all 0.2s ease;
 }
@@ -6099,9 +5553,6 @@ body.beer-hall-active #top-bar {
 }
 
 /* Responsive Design for Setup Screen */
-
-
-
 
 .form-field input::placeholder {
     color: #666666;
@@ -6633,167 +6084,4 @@ body.beer-hall-active #top-bar {
     }
 }
 
-/* Route Configuration Sidebar Panel */
-.route-config-panel {
-    border-top: 2px solid #444;
-}
 
-.route-config-panel .section-content {
-    padding: 12px;
-}
-
-.route-config-panel .route-info-section,
-.route-config-panel .pricing-section {
-    margin-bottom: 16px;
-    padding-bottom: 12px;
-    border-bottom: 1px solid #333;
-}
-
-.route-config-panel .route-info-section:last-child,
-.route-config-panel .pricing-section:last-child {
-    border-bottom: none;
-}
-
-.route-config-panel h4 {
-    color: #fff;
-    font-size: 11px;
-    font-weight: 600;
-    margin: 0 0 8px 0;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-}
-
-.route-config-panel .form-group {
-    margin-bottom: 8px;
-}
-
-.route-config-panel .form-group label {
-    display: block;
-    color: #ccc;
-    font-size: 10px;
-    font-weight: 500;
-    margin-bottom: 4px;
-}
-
-.route-config-panel .form-control {
-    width: 100%;
-    background: #2a2a2a;
-    border: 1px solid #444;
-    color: #fff;
-    padding: 6px 8px;
-    border-radius: 4px;
-    font-size: 11px;
-}
-
-.route-config-panel .form-control:focus {
-    outline: none;
-    border-color: #4CAF50;
-}
-
-.route-config-panel .route-stats {
-    display: flex;
-    gap: 12px;
-    margin-top: 8px;
-}
-
-.route-config-panel .stat-item {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-}
-
-.route-config-panel .stat-label {
-    font-size: 9px;
-    color: #aaa;
-    text-transform: uppercase;
-}
-
-.route-config-panel .stat-value {
-    font-size: 11px;
-    color: #fff;
-    font-weight: 600;
-}
-
-.route-config-panel .revenue-projections {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    margin-top: 8px;
-}
-
-.route-config-panel .projection-item {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-}
-
-.route-config-panel .proj-label {
-    font-size: 10px;
-    color: #ccc;
-}
-
-.route-config-panel .proj-value {
-    font-size: 10px;
-    color: #4CAF50;
-    font-weight: 600;
-}
-
-.route-config-panel .btn-secondary,
-.route-config-panel .btn-primary {
-    padding: 6px 12px;
-    font-size: 10px;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    margin-top: 6px;
-    width: 100%;
-}
-
-.route-config-panel .route-actions {
-    display: flex;
-    gap: 8px;
-    margin-top: 12px;
-}
-
-.route-config-panel .route-actions button {
-    flex: 1;
-}
-
-/* Additional Route Config Panel Styling */
-.route-config-panel select.form-control {
-    width: 100%;
-    background: #2a2a2a;
-    border: 1px solid #444;
-    color: #fff;
-    padding: 6px 8px;
-    border-radius: 4px;
-    font-size: 11px;
-}
-
-.route-config-panel select.form-control:focus {
-    outline: none;
-    border-color: #4CAF50;
-}
-
-.route-config-panel .loading-indicator {
-    display: inline-block;
-    animation: spin 1s linear infinite;
-    color: #4CAF50;
-    margin-right: 4px;
-}
-
-@keyframes spin {
-    0% { transform: rotate(0deg); }
-    100% { transform: rotate(360deg); }
-}
-
-.route-config-panel .net-value .proj-data {
-    font-weight: 700;
-}
-
-.route-config-panel .net-value.positive .proj-data {
-    color: #4CAF50;
-}
-
-.route-config-panel .net-value.negative .proj-data {
-    color: #f44336;
-}

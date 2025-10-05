@@ -1405,17 +1405,13 @@ class BeerHallLobby {
             countdownOverlay.id = 'countdown-overlay';
             countdownOverlay.className = 'countdown-overlay';
 
-            // Get all players for display
-            const players = this.getPlayersForCountdown();
-            const playerBadgesHTML = this.createPlayerBadgesHTML(players);
+            // Get current player's color for underline
+            const playerColor = this.selectedColor || '#ffffff';
 
             countdownOverlay.innerHTML = `
                 <div class="countdown-container">
                     <h1 class="countdown-welcome">Welcome to The Commons</h1>
-                    <div class="countdown-underline"></div>
-                    <div class="player-badges-grid" id="player-badges-container">
-                        ${playerBadgesHTML}
-                    </div>
+                    <div class="countdown-underline" style="background: ${playerColor};"></div>
                 </div>
             `;
             document.body.appendChild(countdownOverlay);
@@ -1460,36 +1456,8 @@ class BeerHallLobby {
                     .countdown-underline {
                         width: 50%;
                         height: 2px;
-                        background: #ffffff;
-                        margin: 0 auto 50px auto;
-                        animation: subtle-pulse 2s ease-in-out infinite;
-                    }
-                    .player-badges-grid {
-                        display: grid;
-                        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-                        gap: 16px;
-                        max-width: 760px;
                         margin: 0 auto;
-                        justify-items: center;
-                    }
-                    .player-badge {
-                        display: inline-flex;
-                        align-items: center;
-                        justify-content: center;
-                        padding: 8px 18px;
-                        border-radius: 6px;
-                        font-size: 11px;
-                        font-family: 'SF Mono', 'Monaco', 'Menlo', 'Courier New', monospace;
-                        font-weight: 300;
-                        color: #ffffff;
-                        min-width: 110px;
-                        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
-                        opacity: 0;
-                        animation: fadeInBadge 0.4s ease-out forwards;
-                    }
-                    @keyframes fadeInBadge {
-                        from { opacity: 0; transform: translateY(10px); }
-                        to { opacity: 1; transform: translateY(0); }
+                        animation: subtle-pulse 2s ease-in-out infinite;
                     }
                     @keyframes subtle-pulse {
                         0% { opacity: 0.9; }
