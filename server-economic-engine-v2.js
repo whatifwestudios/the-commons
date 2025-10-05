@@ -773,7 +773,7 @@ class ServerEconomicEngine {
         const buildingCategory = buildingDef.category || 'housing';
         const budgetCategory = this.mapBuildingToBudgetCategory(buildingCategory);
         const fullCost = buildingDef.economics?.buildCost || buildingDef.cost || cost;
-        const categoryBudget = this.governanceSystem ? this.governanceSystem.getBudgets()[budgetCategory] || 0 : 0;
+        const categoryBudget = this.gameState.budgets?.[budgetCategory] || 0;
         const publicFunding = Math.min(categoryBudget, fullCost);
         const playerCost = Math.max(0, fullCost - publicFunding);
 
@@ -3123,11 +3123,7 @@ class ServerEconomicEngine {
      * Calculate UBI per citizen for revenue boost calculations
      */
     calculateUBIPerCitizen() {
-        if (!this.governanceSystem) {
-            return 0;
-        }
-
-        const ubiBudget = this.governanceSystem.getBudgets()['ubi'] || 0;
+        const ubiBudget = this.gameState.budgets?.['ubi'] || 0;
         const totalPopulation = Math.max(1, this.gameState.totalResidents || 1); // Prevent division by zero
 
         const ubiPerCitizen = ubiBudget / totalPopulation;
