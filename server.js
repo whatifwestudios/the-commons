@@ -53,6 +53,7 @@ const noAuth = (req, res, next) => {
 
 // Initialize room manager with v2 economic engine
 const roomManager = new RoomManager();
+logger.info('✅ Room Manager initialized');
 
 // Multiplayer server with room-based game management
 
@@ -77,6 +78,7 @@ const server = http.createServer(app);
 
 // WebSocket server for real-time multiplayer communication
 const wss = new WebSocket.Server({ server, path: '/ws' });
+logger.info('✅ WebSocket server created');
 
 // WebSocket connection management
 const connectedClients = new Set();
@@ -748,8 +750,9 @@ app.get('*', (req, res) => {
 });
 
 // Start server with WebSocket support
+logger.info('🚀 Starting server on port ' + PORT);
 server.listen(PORT, () => {
-
+    logger.info('✅ Server listening on port ' + PORT);
     // Start connection health monitoring
     startConnectionHealthMonitoring();
 });

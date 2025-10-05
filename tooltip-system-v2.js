@@ -227,8 +227,11 @@ class TooltipSystemV2 {
                     data.constructionProgress = serverBuilding.constructionProgress || 1.0;
                     data.condition = (serverBuilding.condition || 1.0) * 100; // Convert 0-1 to 0-100%
                 } else {
-                    // Fallback to parcel data (for backward compatibility)
-                    data.isUnderConstruction = parcel._isUnderConstruction || false;
+                    // Fallback to parcel data - check both parcel and building states
+                    // Be conservative: if either indicates construction, treat as under construction
+                    const parcelUnderConstruction = parcel._isUnderConstruction || false;
+                    const buildingUnderConstruction = parcel.building?.underConstruction || false;
+                    data.isUnderConstruction = parcelUnderConstruction || buildingUnderConstruction;
                     data.constructionProgress = parcel._constructionProgress || 1.0;
                     data.condition = parcel.condition || 100;
                 }
@@ -359,18 +362,9 @@ class TooltipSystemV2 {
     renderConstructionStatus(data) {
         if (!data.isUnderConstruction) return '';
 
-        const progress = Math.round(data.constructionProgress * 100);
-        const timeRemaining = this.calculateTimeRemaining(data);
-
         return `
             <div class="construction-status">
-                <div class="construction-progress">
-                    <div class="progress-bar">
-                        <div class="progress-fill" style="width: ${progress}%"></div>
-                    </div>
-                    <span class="progress-text">${progress}% Complete</span>
-                </div>
-                ${timeRemaining ? `<div class="time-remaining">${timeRemaining} remaining</div>` : ''}
+                <div class="construction-message">🏗️ Under Construction</div>
             </div>
         `;
     }
@@ -407,18 +401,18 @@ class TooltipSystemV2 {
         return `
             <div class="compact-performance">
                 <div class="perf-line">
-                    <span style="color: #ccc; font-weight: 300;">Performance: </span>
-                    <span style="color: ${efficiencyColor}; font-weight: 400;">${efficiencyPercent}%</span>
+                    <span style="color: #ccc; font-weight: 300; font-size: 12px;">Performance: </span>
+                    <span style="color: ${efficiencyColor}; font-weight: 400; font-size: 12px;">${efficiencyPercent}%</span>
                 </div>
                 <div class="perf-line">
-                    <span style="color: #ccc; font-weight: 300;">Net Revenue: </span>
-                    <span style="color: ${revenueColor}; font-weight: 400;">
+                    <span style="color: #ccc; font-weight: 300; font-size: 12px;">Net Revenue: </span>
+                    <span style="color: ${revenueColor}; font-weight: 400; font-size: 12px;">
                         ${netRevenue >= 0 ? '+' : ''}$${netRevenue}/day
                     </span>
                 </div>
                 <div class="perf-line">
-                    <span style="color: #ccc; font-weight: 300;">Condition: </span>
-                    <span style="color: ${conditionColor}; font-weight: 400;">${Math.round(condition)}%</span>
+                    <span style="color: #ccc; font-weight: 300; font-size: 12px;">Condition: </span>
+                    <span style="color: ${conditionColor}; font-weight: 400; font-size: 12px;">${Math.round(condition)}%</span>
                 </div>
             </div>
         `;
@@ -447,39 +441,67 @@ class TooltipSystemV2 {
         if (production.length > 0) {
             html += `
                 <div class="tooltip-section production-section">
-                    <div class="section-header">🏭 Produces</div>
-                    <div class="production-list">
+                    <div class="section-label">Produces</div>
+                    <div class="resource-list">
                         ${production.map(item => `
-                            <div class="production-item">${item.amount} ${item.resource}</div>
+                            <div class="resource-item">${this.getResourceEmoji(item.resource)} ${item.amount} ${item.resource}</div>
                         `).join('')}
                     </div>
                 </div>
             `;
         }
 
-        // Show building needs based on enhanced calculation
-        if (data.needs && data.needs.length > 0) {
+        // Show building needs based on enhanced calculation (top 2 deficits only)
+        // OR show CARENS boost opportunities if all JEEFHH needs are satisfied
+        if (!allJeefhhSatisfied && data.needs && data.needs.length > 0) {
+            const top2Needs = data.needs.slice(0, 2);
             html += `
                 <div class="tooltip-section needs-section">
-                    <div class="section-header">⚡ Resources Needed</div>
-                    <div class="needs-list">
-                        ${data.needs.map(need => `
-                            <div class="need-item">
-                                <span class="need-resource">${need.resource}</span>
-                                <span class="need-amount">${need.amount}</span>
-                            </div>
+                    <div class="section-label">Needs</div>
+                    <div class="resource-list">
+                        ${top2Needs.map(need => `
+                            <div class="resource-item">${this.getResourceEmoji(need.resource)} ${Math.round(need.amount)} ${need.resource.toLowerCase()}</div>
                         `).join('')}
                     </div>
                 </div>
             `;
-        }
-
-        // Show CARENS impacts when JEEFHH needs are satisfied
-        if (allJeefhhSatisfied && buildingData.livability) {
-            html += this.renderCarensImpacts(buildingData.livability);
+        } else if (allJeefhhSatisfied && buildingData.livability) {
+            // Show CARENS boost opportunities when JEEFHH needs are satisfied
+            html += this.renderCarensBoostOpportunities(buildingData.livability);
         }
 
         return html;
+    }
+
+    /**
+     * Get emoji for resource type
+     */
+    getResourceEmoji(resource) {
+        const emojiMap = {
+            'energy': '⚡',
+            'jobs': '💼',
+            'education': '🎓',
+            'food': '🍎',
+            'housing': '🏠',
+            'healthcare': '❤️',
+            'workers': '💼'  // alias for jobs
+        };
+        return emojiMap[resource.toLowerCase()] || '';
+    }
+
+    /**
+     * Convert CARENS category to natural language boost suggestion
+     */
+    getCarensBoostSuggestion(category) {
+        const suggestions = {
+            'culture': 'More cultural spaces',
+            'affordability': 'More affordability nearby',
+            'resilience': 'Increased economic resilience',
+            'environment': 'Better environmental impacts',
+            'noise': 'Quiet spaces nearby',
+            'safety': 'Increased safety'
+        };
+        return suggestions[category.toLowerCase()] || category;
     }
 
     /**
@@ -612,46 +634,43 @@ class TooltipSystemV2 {
     }
 
     /**
-     * Render CARENS impacts when JEEFHH needs are satisfied
+     * Render CARENS boost opportunities (top 2 negative impacts only, shown when JEEFHH needs are satisfied)
      */
-    renderCarensImpacts(livability) {
-        const impacts = [];
+    renderCarensBoostOpportunities(livability) {
+        const negativeImpacts = [];
         const carensTypes = [
-            { key: 'culture', name: 'Culture', emoji: '🎭' },
-            { key: 'affordability', name: 'Affordability', emoji: '💰' },
-            { key: 'resilience', name: 'Resilience', emoji: '🛡️' },
-            { key: 'environment', name: 'Environment', emoji: '🌿' },
-            { key: 'noise', name: 'Noise', emoji: '🔊' },
-            { key: 'safety', name: 'Safety', emoji: '🚨' }
+            { key: 'culture', emoji: '🎭' },
+            { key: 'affordability', emoji: '💰' },
+            { key: 'resilience', emoji: '🛡️' },
+            { key: 'environment', emoji: '🌿' },
+            { key: 'noise', emoji: '🔊' },
+            { key: 'safety', emoji: '🚨' }
         ];
 
         carensTypes.forEach(type => {
             const rawValue = livability[type.key];
             const value = this.extractLivabilityValue(rawValue);
-            if (value && Math.abs(value) >= 2) { // Only show meaningful impacts
-                impacts.push({
-                    name: type.name,
+            if (value < 0) { // Only collect negative impacts
+                negativeImpacts.push({
+                    key: type.key,
                     emoji: type.emoji,
-                    value: value,
-                    isPositive: value > 0
+                    value: value
                 });
             }
         });
 
-        if (impacts.length === 0) return '';
+        if (negativeImpacts.length === 0) return '';
+
+        // Sort by most negative first and take top 2
+        negativeImpacts.sort((a, b) => a.value - b.value);
+        const top2Opportunities = negativeImpacts.slice(0, 2);
 
         return `
-            <div class="tooltip-section carens-section">
-                <div class="section-header">🏛️ CARENS Impact</div>
-                <div class="carens-list">
-                    ${impacts.map(impact => `
-                        <div class="carens-item">
-                            <span class="carens-emoji">${impact.emoji}</span>
-                            <span class="carens-name">${impact.name}</span>
-                            <span class="carens-value ${this.getCarensColorClass(impact.value)}">
-                                ${this.formatCarensValue(impact.value, false)}
-                            </span>
-                        </div>
+            <div class="tooltip-section boost-section">
+                <div class="section-header" style="text-align: left;">Boost with</div>
+                <div class="boost-list" style="text-align: left;">
+                    ${top2Opportunities.map(opp => `
+                        <div class="boost-item">${opp.emoji} ${this.getCarensBoostSuggestion(opp.key)}</div>
                     `).join('')}
                 </div>
             </div>
@@ -1206,8 +1225,47 @@ class TooltipSystemV2 {
 
     // 🚫 CLIENT CALCULATION - DISABLED! BUSTED!
     calculateTimeRemaining(data) {
-        // Use server data only
-        return 'Loading...';
+        // Get construction data from server
+        const serverBuilding = this.game.economicClient?.buildings?.get(`${data.row},${data.col}`);
+        if (!serverBuilding || !serverBuilding.isUnderConstruction) {
+            return null;
+        }
+
+        const constructionStartTime = serverBuilding.constructionStartTime;
+        const constructionDays = serverBuilding.constructionDays || data.constructionDays || 1;
+
+        if (!constructionStartTime) {
+            return null;
+        }
+
+        // Game day is ~9.86 seconds (3600000ms/year ÷ 365 days)
+        const GAME_DAY_MS = 3600000 / 365; // ~9863ms
+
+        // Calculate total construction time
+        const totalConstructionMs = constructionDays * GAME_DAY_MS;
+
+        // Calculate time elapsed since construction started
+        const now = Date.now();
+        const elapsed = now - constructionStartTime;
+
+        // Calculate time remaining
+        const remaining = Math.max(0, totalConstructionMs - elapsed);
+
+        // Convert to seconds and round up
+        const remainingSeconds = Math.ceil(remaining / 1000);
+
+        if (remainingSeconds === 0) {
+            return 'Completing...';
+        }
+
+        // Format as "Xs" or "Xm Ys" if over 60 seconds
+        if (remainingSeconds < 60) {
+            return `${remainingSeconds}s`;
+        } else {
+            const minutes = Math.floor(remainingSeconds / 60);
+            const seconds = remainingSeconds % 60;
+            return `${minutes}m ${seconds}s`;
+        }
     }
 
     getBuildingNeeds(row, col, buildingData = null) {
@@ -1627,36 +1685,22 @@ class TooltipSystemV2 {
     // ==================== PLAYER COLOR HELPERS ====================
 
     getPlayerName(playerId) {
-        // Check if it's the current player - use their actual name
-        if (this.game.isCurrentPlayer && this.game.isCurrentPlayer(playerId)) {
-            if (this.game.playerSettings && this.game.playerSettings.name) {
-                return this.game.playerSettings.name;
-            }
-        }
-
         // Delegate to rendering system for consistent player name handling
-        if (this.game?.renderer) {
-            return this.game.renderer.getPlayerName(playerId);
+        if (this.game?.renderingSystem) {
+            return this.game.renderingSystem.getPlayerName(playerId);
         }
 
-        // Fallback if no renderer available
+        // Fallback if no rendering system available
         return playerId || 'Unknown Player';
     }
 
     getPlayerColor(playerId) {
-        // Check if it's the current player - use their actual color
-        if (this.game.isCurrentPlayer && this.game.isCurrentPlayer(playerId)) {
-            if (this.game.playerSettings && this.game.playerSettings.color) {
-                return this.game.playerSettings.color;
-            }
-        }
-
         // Delegate to rendering system for consistent player color handling
-        if (this.game?.renderer) {
-            return this.game.renderer.getPlayerColor(playerId);
+        if (this.game?.renderingSystem) {
+            return this.game.renderingSystem.getPlayerColor(playerId);
         }
 
-        // Fallback color if no renderer available
+        // Fallback color if no rendering system available
         return '#4CAF50';
     }
 
@@ -1742,7 +1786,7 @@ class TooltipSystemV2 {
         const playerColor = this.getPlayerColor(playerId);
         const contrastColor = this.getContrastingColor(playerColor);
 
-        return `<span style="color: #aaa; font-weight: 300;">OWNED BY </span><span style="background: ${playerColor}; color: ${contrastColor}; padding: 2px 6px; border-radius: 3px; font-weight: 500;">${playerName}</span>`;
+        return `<span style="background: ${playerColor}; color: ${contrastColor}; padding: 2px 6px; border-radius: 3px; font-weight: 600;">${playerName}</span>`;
     }
 
     getContrastingColor(backgroundColor) {
@@ -1823,35 +1867,11 @@ if (typeof document !== 'undefined') {
             margin: 8px 0;
         }
 
-        .construction-progress {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            margin-bottom: 4px;
-        }
-
-        .progress-bar {
-            flex: 1;
-            height: 4px;
-            background: #333;
-            border-radius: 2px;
-            overflow: hidden;
-        }
-
-        .progress-fill {
-            height: 100%;
-            background: #4CAF50;
-            transition: width 0.3s ease;
-        }
-
-        .progress-text {
-            font-size: 13px;
-            color: #4CAF50;
-        }
-
-        .time-remaining {
+        .construction-message {
             font-size: 13px;
             color: #999;
+            text-align: center;
+            padding: 8px 0;
         }
 
         .performance-metrics {
@@ -2123,43 +2143,27 @@ if (typeof document !== 'undefined') {
             gap: 2px;
         }
 
-        .production-item {
-            background: rgba(76, 175, 80, 0.1);
-            color: #4CAF50;
-            padding: 2px 6px;
-            border-radius: 3px;
-            font-size: 14px;
-            font-weight: 500;
+        .section-label {
+            color: #fff;
+            font-size: 13px;
+            font-weight: 400;
+            margin-bottom: 4px;
             text-align: left;
         }
 
-        .needs-list {
+        .resource-list {
             display: flex;
             flex-direction: column;
-            gap: 4px;
+            gap: 2px;
+            text-align: left;
         }
 
-        .need-item {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            font-size: 14px;
-            padding: 6px 8px;
-            margin: 2px 0;
-            background: rgba(255, 152, 0, 0.1);
-            border-radius: 4px;
-            border-left: 3px solid #FF9800;
-        }
-
-        .need-resource {
+        .resource-item {
             color: #fff;
-            font-weight: 500;
-        }
-
-        .need-amount {
-            color: #FF9800;
-            font-weight: 700;
-            font-size: 15px;
+            font-size: 13px;
+            font-weight: 300;
+            padding: 2px 0;
+            text-align: left;
         }
 
         .need-satisfaction {
@@ -2336,17 +2340,18 @@ window.ParcelHeaderUtils = {
         const isCurrentPlayer = game.isCurrentPlayer(owner);
 
         if (isHovering) {
-            // When hovering/clicking, use player color with contrast
-            const playerColor = window.beerHallLobby?.selectedColor ||
-                               this.getPlayerColor(game, owner);
+            // When hovering/clicking, use owner's actual color with contrast
+            const playerColor = this.getPlayerColor(game, owner);
             const contrastColor = this.getContrastingColor(playerColor);
             const displayText = isCurrentPlayer ? 'Owned by you' : `Owned by ${this.getPlayerName(game, owner)}`;
 
             return `<span class="ownership-badge player" style="background: ${playerColor}; color: ${contrastColor};">${displayText}</span>`;
         } else {
-            // Default state: dark gray with white text for non-interactive display
+            // Default state: use owner's actual color for non-hovering state too
+            const playerColor = this.getPlayerColor(game, owner);
+            const contrastColor = this.getContrastingColor(playerColor);
             const playerName = isCurrentPlayer ? 'YOU' : this.getPlayerName(game, owner).toUpperCase();
-            return `<span class="ownership-badge city">${playerName}</span>`;
+            return `<span class="ownership-badge player" style="background: ${playerColor}; color: ${contrastColor};">${playerName}</span>`;
         }
     },
 

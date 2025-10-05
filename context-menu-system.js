@@ -179,17 +179,7 @@ class ContextMenuSystem {
         };
         contentEl.appendChild(buyBtn);
 
-        // Add auction button for unclaimed parcels (not City-owned)
-        if (parcel.owner !== 'City') {
-            const auctionBtn = document.createElement('button');
-            auctionBtn.className = 'context-btn auction';
-            auctionBtn.textContent = '🔨 AUCTION PARCEL';
-            auctionBtn.onclick = () => {
-                this.game.parcelAuctionSystem?.startAuction(row, col);
-                this.hide();
-            };
-            contentEl.appendChild(auctionBtn);
-        }
+        // Auction system disabled in solo mode
     }
 
     /**
@@ -211,27 +201,22 @@ class ContextMenuSystem {
      * Create menu for competitor-owned parcel
      */
     createCompetitorOwnedParcelMenu(contentEl, row, col, parcel) {
+        // All players can view Data Insights on any parcel
+        // Only Auction is disabled for now pending auction system refinement
 
-        // Show what building they have if any
         if (parcel.building) {
-            const buildingInfo = document.createElement('div');
-            buildingInfo.className = 'building-info';
-            buildingInfo.style.marginBottom = '10px';
-            buildingInfo.style.fontSize = '12px';
-            buildingInfo.style.color = '#ccc';
-            buildingInfo.textContent = `Building: ${parcel.building}`;
-            contentEl.appendChild(buildingInfo);
+            // Add Data Insights button for built parcels
+            const dataInsightsBtn = document.createElement('button');
+            dataInsightsBtn.className = 'context-btn secondary';
+            dataInsightsBtn.textContent = '📊 DATA INSIGHTS';
+            dataInsightsBtn.onclick = () => {
+                this.game.createDataInsightsOverlay(row, col, parcel);
+            };
+            contentEl.appendChild(dataInsightsBtn);
         }
 
-        // Add auction button for competitor-owned parcels
-        const auctionBtn = document.createElement('button');
-        auctionBtn.className = 'context-btn auction';
-        auctionBtn.textContent = '🔨 AUCTION PARCEL';
-        auctionBtn.onclick = () => {
-            this.game.parcelAuctionSystem?.startAuction(row, col);
-            this.hide();
-        };
-        contentEl.appendChild(auctionBtn);
+        // TODO: Add Auction button when auction system is refined
+        // For now, only Data Insights is available on competitor parcels
     }
 
     /**
@@ -293,9 +278,9 @@ class ContextMenuSystem {
                 indicatorColor = '#FFA726'; // Yellow/orange for partial funding
             }
 
-            // Only show funding amount if there are funds available
+            // Show gold "$" icon when funds are available
             const fundingDisplay = availableFunds > 0 ?
-                `<span class="funding-amount" style="color: ${indicatorColor};">$${availableFunds.toLocaleString()}</span>` :
+                `<span class="funding-icon" style="color: #FFD700; font-size: 18px; font-weight: bold;">$</span>` :
                 '';
 
             categoryBtn.innerHTML = `
@@ -360,28 +345,15 @@ class ContextMenuSystem {
                     }
                 }
 
-                if (publicFunding > 0) {
-                    const budgetStatus = budgetAvailable ? '✓' : '⚠️';
-                    const budgetColor = budgetAvailable ? '#4CAF50' : '#FF9800';
+                // Determine price color - use gold when public funding available
+                const displayColor = publicFunding > 0 ? '#FFD700' : '#ccc';
 
-                    buildingBtn.innerHTML = `
-                        <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
-                            <span>${building.name}</span>
-                            <div class="building-price-info" style="text-align: right;">
-                                <div style="color: ${budgetColor};">${budgetStatus} Budget: $${categoryFunding.toLocaleString()}</div>
-                                <div style="color: #4CAF50;">Public: $${publicFunding.toLocaleString()}</div>
-                                <div style="color: ${priceColor}; font-weight: 600;">You pay: $${playerCost.toLocaleString()}</div>
-                            </div>
-                        </div>
-                    `;
-                } else {
-                    buildingBtn.innerHTML = `
-                        <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
-                            <span>${building.name}</span>
-                            <span style="color: ${priceColor}; font-weight: 600;">$${playerCost.toLocaleString()}</span>
-                        </div>
-                    `;
-                }
+                buildingBtn.innerHTML = `
+                    <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
+                        <span>${building.name}</span>
+                        <span style="color: ${displayColor}; font-weight: 600;">$${playerCost.toLocaleString()}</span>
+                    </div>
+                `;
 
                 buildingBtn.onclick = async () => await this.game.buildingSystem.constructBuilding(row, col, building.id);
                 submenu.appendChild(buildingBtn);
@@ -413,10 +385,10 @@ class ContextMenuSystem {
         const destroyBtn = document.createElement('button');
         destroyBtn.className = 'context-btn';
 
-        // Calculate and show demolition fee
+        // Calculate and show demolition fee (25% of current building value)
         const building = this.game.buildingManager.getBuildingById(parcel.building);
-        const currentValue = this.calculateCurrentBuildingValue(parcel, building);
-        const demolitionFee = Math.round(currentValue * 0.1);
+        const currentValue = this.calculateCurrentBuildingValue(parcel, building, row, col);
+        const demolitionFee = Math.round(currentValue * 0.25);
 
         destroyBtn.textContent = `DESTROY BUILDING - $${demolitionFee}`;
         destroyBtn.onclick = () => this.game.buildingSystem.demolishBuilding(row, col);
@@ -442,81 +414,35 @@ class ContextMenuSystem {
         };
         actionsSection.appendChild(dataInsightsBtn);
 
-        // Add Auction button
-        const auctionBtn = document.createElement('button');
-        auctionBtn.className = 'context-btn auction';
-        auctionBtn.textContent = '🔨 AUCTION PARCEL';
-        auctionBtn.onclick = () => {
-            this.game.parcelAuctionSystem?.startAuction(row, col);
-        };
-        actionsSection.appendChild(auctionBtn);
-
         contentEl.appendChild(actionsSection);
 
-        // Upgrade section
-        const upgradeSection = document.createElement('div');
-        upgradeSection.className = 'context-section';
-
-        const upgradeTitle = document.createElement('div');
-        upgradeTitle.className = 'build-menu-title';
-        upgradeTitle.textContent = 'UPGRADES';
-        upgradeSection.appendChild(upgradeTitle);
-
-        // Get potential upgrades for current building
-        const upgrades = this.game.getPotentialUpgrades(parcel.building);
-        if (upgrades.length > 0) {
-            upgrades.forEach(upgrade => {
-                const upgradeBtn = document.createElement('button');
-                upgradeBtn.className = 'context-btn';
-                const upgradeCost = upgrade.economics?.buildCost || upgrade.cost || 0;
-
-                // Calculate public funding for upgrades
-                const upgradeCategory = upgrade.category;
-                const fundingInfo = this.game.calculateBuildingCostWithFunding({category: upgradeCategory}, upgradeCost);
-                const playerCost = fundingInfo.playerCost;
-                const publicFunding = fundingInfo.publicFunding;
-
-                upgradeBtn.textContent = `→ ${upgrade.name} - $${playerCost.toLocaleString()}`;
-                upgradeBtn.onclick = () => this.game.buildingSystem.upgradeBuilding(row, col, upgrade.id);
-                upgradeSection.appendChild(upgradeBtn);
-            });
-        } else {
-            const noUpgrades = document.createElement('div');
-            noUpgrades.textContent = 'No upgrades available';
-            noUpgrades.style.color = '#666666';
-            noUpgrades.style.fontSize = '9px';
-            noUpgrades.style.padding = '4px 8px';
-            upgradeSection.appendChild(noUpgrades);
-        }
-
-        contentEl.appendChild(upgradeSection);
-
-        // Repair Building section
+        // Repair Building section (always show cost to restore to 100%)
         const repairSection = document.createElement('div');
         repairSection.className = 'context-section';
 
         const repairBtn = document.createElement('button');
         repairBtn.className = 'context-btn';
 
-        // Calculate repair cost based on building age/decay
+        // Calculate repair cost based on condition to restore to 100%
         const buildingData = this.game.buildingManager.getBuildingById(parcel.building);
-        const repairCost = this.calculateRepairCost(parcel, buildingData);
+        const repairCost = this.calculateRepairCost(parcel, buildingData, row, col);
+
+        repairBtn.textContent = `Repair to 100% - $${repairCost.toLocaleString()}`;
 
         if (repairCost > 0) {
-            repairBtn.textContent = `Repair Building - $${repairCost}`;
             repairBtn.onclick = () => this.game.buildingSystem.repairBuilding(row, col);
 
             // V2 Server-authoritative ONLY - no fallbacks
             const currentBalance = this.game.economicClient?.getCurrentPlayerBalance();
             if (currentBalance === null) {
-                repairBtn.textContent = 'Loading...';
+                repairBtn.textContent = 'Repair to 100% - Loading...';
                 repairBtn.disabled = true;
             } else if (currentBalance < repairCost) {
                 repairBtn.disabled = true;
                 repairBtn.classList.add('disabled');
             }
         } else {
-            repairBtn.textContent = 'Building in Good Condition';
+            // Cost is $0, building at 100%
             repairBtn.disabled = true;
             repairBtn.classList.add('disabled');
         }
@@ -528,15 +454,15 @@ class ContextMenuSystem {
     /**
      * Calculate repair cost - delegates to building system
      */
-    calculateRepairCost(parcel, building) {
-        return this.game.buildingSystem.calculateRepairCost(parcel, building);
+    calculateRepairCost(parcel, building, row, col) {
+        return this.game.buildingSystem.calculateRepairCost(parcel, building, row, col);
     }
 
     /**
      * Calculate current building value - delegates to building system
      */
-    calculateCurrentBuildingValue(parcel, building) {
-        return this.game.buildingSystem.calculateCurrentBuildingValue(parcel, building);
+    calculateCurrentBuildingValue(parcel, building, row, col) {
+        return this.game.buildingSystem.calculateCurrentBuildingValue(parcel, building, row, col);
     }
 
     /**

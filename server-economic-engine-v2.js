@@ -54,6 +54,21 @@ class ServerEconomicEngine {
             playerBalances: new Map(), // key: playerId -> cash balance (server-authoritative)
             playerActions: new Map(), // key: playerId -> action inventory (server-authoritative)
 
+            // Governance budgets (allocated from monthly LVT revenue)
+            budgets: {
+                education: 0,
+                healthcare: 0,
+                infrastructure: 0,
+                housing: 0,
+                culture: 0,
+                recreation: 0,
+                commercial: 0,
+                civic: 0,
+                emergency: 0,
+                ubi: 0
+            },
+            treasury: 0, // Unallocated tax revenue
+
             // Action Marketplace
             actionMarketplace: {
                 nextListingId: 1,
@@ -771,14 +786,14 @@ class ServerEconomicEngine {
         }
 
         // Spend from budget category if public funding is used
-        if (publicFunding > 0 && this.governanceSystem) {
-            const budgetSpent = this.governanceSystem.spendFromBudget(budgetCategory, publicFunding, `Construction of ${buildingId} at [${row},${col}]`);
+        if (publicFunding > 0) {
+            const budgetSpent = this.spendFromBudget(budgetCategory, publicFunding, `Construction of ${buildingId} at [${row},${col}]`);
             if (!budgetSpent) {
                 throw new Error(`Insufficient ${budgetCategory} budget for public funding`);
             }
         }
 
-        // Deduct player cost from playerBalances
+        // Deduct player cost from playerBalances (reduced by public funding)
         const newBalance = currentBalance - playerCost;
         this.gameState.playerBalances.set(playerId, newBalance);
 
@@ -1037,6 +1052,7 @@ class ServerEconomicEngine {
      * Calculate room-wide CARENS scores and multiplier
      */
     calculateGlobalCARENS() {
+        console.log('🏛️ calculateGlobalCARENS() START - building count:', this.gameState.buildings.size);
         const carens = this.gameState.carens;
         const buildingCount = this.gameState.buildings.size;
 
@@ -1076,13 +1092,29 @@ class ServerEconomicEngine {
 
         }
 
-        // Points-only system: store raw points directly
+        console.log('🏛️ calculateGlobalCARENS() - Loop completed, totals:', {
+            culturePoints, affordabilityPoints, resiliencePoints,
+            environmentPoints, noisePoints, safetyPoints
+        });
+
+        // Store raw points in both top-level (for vitality bars) and nested structure (for tooltips)
         carens.culture = culturePoints;
         carens.affordability = affordabilityPoints;
         carens.resilience = resiliencePoints;
         carens.environment = environmentPoints;
         carens.noise = noisePoints;
         carens.safety = safetyPoints;
+
+        // Also update nested points structure for tooltip compatibility
+        if (!carens.points) {
+            carens.points = {};
+        }
+        carens.points.culture = culturePoints;
+        carens.points.affordability = affordabilityPoints;
+        carens.points.resilience = resiliencePoints;
+        carens.points.environment = environmentPoints;
+        carens.points.noise = noisePoints;
+        carens.points.safety = safetyPoints;
 
         // Calculate average for multiplier (convert raw points to 0-1 for multiplier calculation)
         const avgPoints = (carens.culture + carens.affordability + carens.resilience +
@@ -1094,8 +1126,15 @@ class ServerEconomicEngine {
         // Convert to multiplier (0.6x to 1.4x)
         carens.multiplier = 0.6 + (normalizedAvg * 0.8);
 
-        // Governance debug: CARENS calculation - avgPoints=${avgPoints.toFixed(1)}, multiplier=${carens.multiplier.toFixed(3)}`);
-        // console.log('🏛️ Room-wide CARENS updated:', carens);
+        console.log('🏛️ CARENS CALCULATED:', {
+            culture: carens.culture,
+            affordability: carens.affordability,
+            resilience: carens.resilience,
+            environment: carens.environment,
+            noise: carens.noise,
+            safety: carens.safety,
+            buildingCount: this.gameState.buildings.size
+        });
     }
 
     /**
@@ -1107,7 +1146,8 @@ class ServerEconomicEngine {
             // Decimal values are multiplied by 100 to get points
             return Math.round(livabilityData * 100);
         } else if (typeof livabilityData === 'object' && livabilityData !== null) {
-            return livabilityData.effect || 0;
+            // Extract impact value from {impact, attenuation} format
+            return livabilityData.impact || livabilityData.effect || 0;
         }
         return 0;
     }
@@ -1172,38 +1212,45 @@ class ServerEconomicEngine {
         const baseRevenue = econ.maxRevenue || 0;
         console.log(`[REVENUE] Base revenue for ${building.id}: $${baseRevenue}`);
 
-        // 1. Local needs satisfaction (from connected parcels)
+        // 1. Core needs satisfaction (local JEEFHH from adjacent 8 tiles)
         const localNeedsSatisfactionData = this.calculateLocalNeedsSatisfaction(row, col);
-        const localNeedsSatisfaction = localNeedsSatisfactionData.overallSatisfaction;
+        const coreNeedsSatisfaction = localNeedsSatisfactionData.overallSatisfaction;
 
-        // 2. Room-wide JEEFHH multiplier (affects ALL buildings based on room state)
-        const jeefhhMultiplier = this.calculateGlobalJEEFHHMultiplier();
+        // 2. CARENS multiplier (0.6x to 1.4x, only applies if population > 100)
+        const totalResidents = this.gameState.totalResidents || 0;
+        let carensMultiplier = 1.0;
+        if (totalResidents > 100) {
+            carensMultiplier = this.calculateLocalCARENSMultiplier(row, col);
+        }
 
-        // 3. Local CARENS multiplier (based on adjacent parcels)
-        const carensMultiplier = this.calculateLocalCARENSMultiplier(row, col);
+        // 3. Performance = Core needs × CARENS (0-140%)
+        const performance = coreNeedsSatisfaction * carensMultiplier;
 
-        // 4. Condition/decay factor
+        // 4. Global JEEFHH multiplier (city-wide economy state)
+        const globalJEEFHHMultiplier = this.calculateGlobalJEEFHHMultiplier();
+
+        // 5. Condition factor (decay affects value, not performance)
+        // building.condition is already stored as 0.0-1.0 decimal, not 0-100 percentage
         const conditionFactor = building.condition || 1.0;
 
-        // 5. UBI revenue boost (citizens have more spending power)
-        const ubiMultiplier = this.calculateUBIRevenueMultiplier();
-
         // Final revenue calculation
-        const actualRevenue = baseRevenue * localNeedsSatisfaction * jeefhhMultiplier * carensMultiplier * conditionFactor * ubiMultiplier;
+        // Revenue = Base × Performance × Condition × Global JEEFHH
+        const actualRevenue = baseRevenue * performance * conditionFactor * globalJEEFHHMultiplier;
 
-        // Maintenance calculation - cumulative decay over time
-        const baseMaintenance = econ.maintenance || 0;
-        const decayRate = econ.decayRate || 0.0012; // Default 0.12% per day
+        // Maintenance calculation - increases with age due to decay
+        const baseMaintenance = econ.maintenanceCost || 0;
+        const decayRate = (econ.decayRate || 0.05) / 100; // Convert % to decimal
         const buildingAge = building.age || 0;
         // Maintenance increases with cumulative decay: base * (1 + decayRate)^age
-        const actualMaintenance = baseMaintenance * Math.pow(1 + decayRate, buildingAge); // Higher maintenance for poor condition
+        const actualMaintenance = baseMaintenance * Math.pow(1 + decayRate, buildingAge);
 
-        const performance = {
+        const performanceData = {
             location: [row, col],
             buildingId: building.id,
 
             // Summary for client tooltips
             summary: {
+                performance: Math.round(performance * 100), // Performance % = core needs × CARENS
                 revenue: Math.round(actualRevenue * 100) / 100,
                 maintenance: Math.round(actualMaintenance * 100) / 100,
                 netIncome: Math.round((actualRevenue - actualMaintenance) * 100) / 100
@@ -1215,21 +1262,21 @@ class ServerEconomicEngine {
             // Detailed breakdown for data insights
             detailed: {
                 baseRevenue,
-                localNeedsSatisfaction,
-                jeefhhMultiplier,
+                coreNeedsSatisfaction,
                 carensMultiplier,
+                performance, // Core needs × CARENS
+                globalJEEFHHMultiplier,
                 conditionFactor,
-                ubiMultiplier,
                 actualRevenue,
                 baseMaintenance,
+                decayRate,
+                buildingAge,
                 actualMaintenance,
                 breakdown: {
                     base: baseRevenue,
-                    afterNeeds: baseRevenue * localNeedsSatisfaction,
-                    afterJEEFHH: baseRevenue * localNeedsSatisfaction * jeefhhMultiplier,
-                    afterCARENS: baseRevenue * localNeedsSatisfaction * jeefhhMultiplier * carensMultiplier,
-                    afterCondition: baseRevenue * localNeedsSatisfaction * jeefhhMultiplier * carensMultiplier * conditionFactor,
-                    afterUBI: actualRevenue,
+                    afterPerformance: baseRevenue * performance,
+                    afterCondition: baseRevenue * performance * conditionFactor,
+                    afterGlobalJEEFHH: actualRevenue,
                     final: actualRevenue
                 }
             }
@@ -1239,10 +1286,28 @@ class ServerEconomicEngine {
             console.log(`[REVENUE] [${row},${col}] ${building.id} - Revenue: ${actualRevenue.toFixed(2)}, Maint: ${actualMaintenance.toFixed(2)}, Net: ${(actualRevenue - actualMaintenance).toFixed(2)}`);
         }
 
+        // TEMP DEBUG: Detailed revenue breakdown for negative net income or taqueria
+        if ((actualRevenue - actualMaintenance) < 0 || building.id === 'taqueria') {
+            console.log(`💰 [${building.id}] Revenue calc:`, {
+                baseRevenue,
+                performance: Math.round(performance * 1000) / 10 + '%',
+                coreNeeds: Math.round(coreNeedsSatisfaction * 1000) / 10 + '%',
+                carensMultiplier: carensMultiplier.toFixed(3) + 'x',
+                conditionFactor: Math.round(conditionFactor * 1000) / 10 + '%',
+                globalJEEFHH: globalJEEFHHMultiplier.toFixed(3) + 'x',
+                revenue: actualRevenue.toFixed(2),
+                baseMaintenance,
+                decayRate: (decayRate * 100).toFixed(3) + '%',
+                buildingAge,
+                expenses: actualMaintenance.toFixed(2),
+                netIncome: (actualRevenue - actualMaintenance).toFixed(2)
+            });
+        }
+
         // Store in cache
         this.cache.buildingPerformances.set(locationKey, {
             lastUpdate: Date.now(),
-            data: performance,
+            data: performanceData,
             dirty: false
         });
 
@@ -1253,7 +1318,7 @@ class ServerEconomicEngine {
             }
         }
 
-        return performance;
+        return performanceData;
     }
 
     /**
@@ -1290,15 +1355,15 @@ class ServerEconomicEngine {
                     connectedSupply.healthcare += connectedDef.resources.healthcareProvided || 0;
 
                     // DEBUG: Log resource contributions
-                    if (connectedDef.resources.energyProvided > 0 || connectedDef.resources.jobsProvided > 0 || connectedDef.resources.foodProvided > 0) {
-                        console.log(`[ADJACENCY] [${row},${col}] ${building.id} sees adjacent ${connectedBuilding.id} at [${row+dr},${col+dc}] providing:`,
-                            `Energy: ${connectedDef.resources.energyProvided}, Jobs: ${connectedDef.resources.jobsProvided}, Food: ${connectedDef.resources.foodProvided}`);
-                    }
+                    // if (connectedDef.resources.energyProvided > 0 || connectedDef.resources.jobsProvided > 0 || connectedDef.resources.foodProvided > 0) {
+                    //     console.log(`[ADJACENCY] [${row},${col}] ${building.id} sees adjacent ${connectedBuilding.id} at [${row+dr},${col+dc}] providing:`,
+                    //         `Energy: ${connectedDef.resources.energyProvided}, Jobs: ${connectedDef.resources.jobsProvided}, Food: ${connectedDef.resources.foodProvided}`);
+                    // }
                 }
             }
         });
 
-        console.log(`[SUPPLY] [${row},${col}] ${building.id} - ${adjacentCount} adjacent buildings - Total supply:`, connectedSupply);
+        // console.log(`[SUPPLY] [${row},${col}] ${building.id} - ${adjacentCount} adjacent buildings - Total supply:`, connectedSupply);
 
         const satisfactionRatios = [];
         const detailedSatisfaction = {
@@ -1369,7 +1434,7 @@ class ServerEconomicEngine {
         const minOperation = 0.05;
         const finalSatisfaction = Math.max(minOperation, overallSatisfaction);
 
-        console.log(`[INFO] [${row},${col}] ${building.id} - Local Needs Satisfaction: ${(finalSatisfaction * 100).toFixed(1)}% (checked ${satisfactionRatios.length} requirements)`);
+        // console.log(`[INFO] [${row},${col}] ${building.id} - Local Needs Satisfaction: ${(finalSatisfaction * 100).toFixed(1)}% (checked ${satisfactionRatios.length} requirements)`);
 
         return {
             overallSatisfaction: finalSatisfaction,
@@ -1462,19 +1527,19 @@ class ServerEconomicEngine {
         const netCarensTotal = localCarens.culture + localCarens.affordability + localCarens.resilience +
                               localCarens.environment + localCarens.noise + localCarens.safety;
 
-        console.log(`[CARENS] CARENS for [${row},${col}]:`, localCarens, `Total: ${netCarensTotal}`);
+        // console.log(`[CARENS] CARENS for [${row},${col}]:`, localCarens, `Total: ${netCarensTotal}`);
 
         // Convert to multiplier: 0 = 1.0x (neutral), +100 = 1.4x (max), -100 = 0.6x (min)
         // Formula: 1.0 + (netCarensTotal / 100) * 0.4
         // Your example: +20 points = 1.0 + (20/100) * 0.4 = 1.08x
         const localMultiplier = 1.0 + (netCarensTotal / 100) * 0.4;
 
-        console.log(`[CARENS] CARENS multiplier for [${row},${col}]: ${localMultiplier.toFixed(3)}x (clamped from ${netCarensTotal})`);
+        // console.log(`[CARENS] CARENS multiplier for [${row},${col}]: ${localMultiplier.toFixed(3)}x (clamped from ${netCarensTotal})`);
 
         // Clamp to reasonable bounds (0.6x to 1.4x)
         const clampedMultiplier = Math.max(0.6, Math.min(1.4, localMultiplier));
 
-        console.log(`[INFO] Final CARENS for [${row},${col}]: ${clampedMultiplier.toFixed(3)}x`);
+        // console.log(`[INFO] Final CARENS for [${row},${col}]: ${clampedMultiplier.toFixed(3)}x`);
 
         return clampedMultiplier;
     }
@@ -2247,12 +2312,13 @@ class ServerEconomicEngine {
 
             // Use building-specific decay rate from building definition
             const buildingDef = this.buildingDefinitions.get(building.id);
-            const annualDecayRate = buildingDef?.economics?.decayRate || 0;
-            const decayRate = annualDecayRate / 365; // Convert annual rate to daily rate
+            const dailyDecayRate = buildingDef?.economics?.decayRate || 0; // Already in % per day format
             const maintenanceCost = buildingDef?.economics?.maintenanceCost || 0;
 
-            // Apply daily decay rate (not cumulative)
-            const newDecay = building.decay + decayRate;
+            // Apply daily decay rate
+            // decayRate is expressed as % per day (e.g., 0.12 = 0.12% per day)
+            const decayIncrease = dailyDecayRate / 100; // Convert % to decimal (0.12% -> 0.0012)
+            const newDecay = building.decay + decayIncrease;
             building.decay = Math.min(newDecay, 1.0); // Cap at 100% decay
             building.condition = Math.max(0.1, 1.0 - building.decay);
 
@@ -2426,7 +2492,7 @@ class ServerEconomicEngine {
                     treasury: this.governanceSystem ? this.governanceSystem.getTreasury() : 0,
                     taxRate: this.governanceSystem ? this.governanceSystem.governance.taxRate : 0.5,
                     monthlyBudget: this.gameState.monthlyBudget || null,
-                    budgets: this.governanceSystem ? this.governanceSystem.getBudgets() : {}
+                    budgets: this.gameState.budgets || {}  // Use gameState.budgets instead of governanceSystem
                 },
                 monthlyActionAllowance: this.calculateMonthlyActionAllowance(),
                 lvtRate: this.getCurrentLVTRate(),  // Include current LVT rate
@@ -2458,8 +2524,10 @@ class ServerEconomicEngine {
      * Calculate building performance data for inclusion in game state
      */
     /**
-     * Calculate building performance stats (legacy/simple version)
-     * NOTE: This is different from the detailed calculateBuildingPerformance(row, col)
+     * Calculate building performance stats for broadcasting to client
+     * Performance % = Core needs satisfaction × CARENS multiplier
+     * Revenue = Base revenue × Performance × Condition × Global JEEFHH
+     * Maintenance = Base × (1 + decayRate)^age (decay affects cost, not performance)
      */
     calculateBuildingPerformanceSimple(building) {
         const buildingDef = this.buildingDefinitions.get(building.id);
@@ -2474,24 +2542,69 @@ class ServerEconomicEngine {
             };
         }
 
-        const economics = buildingDef.economics || {};
-        const baseResidents = economics.residents || 0;
-        const baseWorkers = economics.jobs || 0;
-        const efficiency = building.condition || 1.0;
+        const locationKey = `${building.location[0]},${building.location[1]}`;
+        const [row, col] = building.location;
 
-        const residents = Math.floor(baseResidents * efficiency);
-        const workers = Math.floor(baseWorkers * efficiency);
-        const revenue = residents * 100; // Example calculation
-        const expenses = Math.floor(economics.maintenance || 50);
+        // Get core needs satisfaction (local JEEFHH from adjacent 8 tiles)
+        const localNeedsData = this.calculateLocalNeedsSatisfaction(row, col);
+        const coreNeedsSatisfaction = localNeedsData.overallSatisfaction; // 0.0 to 1.0
+
+        // Get CARENS multiplier (0.6x to 1.4x, only applies if population > 100)
+        const totalResidents = this.gameState.totalResidents || 0;
+        let carensMultiplier = 1.0;
+        if (totalResidents > 100) {
+            carensMultiplier = this.calculateLocalCARENSMultiplier(row, col);
+        }
+
+        // Performance = Core needs × CARENS (0-140%)
+        const performance = coreNeedsSatisfaction * carensMultiplier;
+
+        // Get global JEEFHH multiplier (city-wide economy state)
+        const globalJEEFHHMultiplier = this.calculateGlobalJEEFHHMultiplier();
+
+        // Revenue calculation
+        const baseRevenue = buildingDef.economics?.maxRevenue || 0;
+        // building.condition is already stored as 0.0-1.0 decimal, not 0-100 percentage
+        const conditionFactor = building.condition || 1.0;
+        const revenue = baseRevenue * performance * conditionFactor * globalJEEFHHMultiplier;
+
+        // Maintenance increases with age due to decay
+        const baseMaintenance = buildingDef.economics?.maintenanceCost || 0;
+        const decayRate = (buildingDef.economics?.decayRate || 0.05) / 100; // Convert % to decimal
+        const buildingAge = building.age || 0;
+        const expenses = baseMaintenance * Math.pow(1 + decayRate, buildingAge);
+
         const netIncome = revenue - expenses;
+
+        // TEMP DEBUG: Log revenue calculation for buildings with negative net income
+        if (netIncome < 0 || buildingDef.id === 'taqueria') {
+            console.log(`💰 [${buildingDef.id}] Revenue calc:`, {
+                baseRevenue,
+                performance: Math.round(performance * 100) + '%',
+                conditionFactor: Math.round(conditionFactor * 100) + '%',
+                globalJEEFHH: globalJEEFHHMultiplier,
+                revenue,
+                baseMaintenance,
+                decayRate: (decayRate * 100).toFixed(3) + '%',
+                buildingAge,
+                expenses,
+                netIncome
+            });
+        }
+
+        // Calculate residents/workers based on performance
+        const baseResidents = buildingDef.resources?.housingProvided ? (buildingDef.resources.housingProvided * 2) : 0;
+        const baseWorkers = buildingDef.resources?.jobsProvided || 0;
+        const residents = Math.floor(baseResidents * performance);
+        const workers = Math.floor(baseWorkers * performance);
 
         return {
             residents,
             workers,
-            efficiency,
-            revenue,
-            expenses,
-            netIncome
+            efficiency: Math.round(performance * 100), // Performance % for tooltip display
+            revenue: Math.round(revenue * 100) / 100,
+            expenses: Math.round(expenses * 100) / 100,
+            netIncome: Math.round(netIncome * 100) / 100
         };
     }
 
@@ -2552,14 +2665,14 @@ class ServerEconomicEngine {
             healthcare: { supply: 0, demand: 0, multiplier: 1.0 }
         };
 
-        // Reset CARENS to defaults (neutral baseline until buildings are built)
+        // Reset CARENS to defaults (0 points on -100 to +100 scale)
         this.gameState.carens = {
-            culture: 0.5,
-            affordability: 0.5,
-            resilience: 0.5,
-            environment: 0.5,
-            noise: 0.5,
-            safety: 0.5,
+            culture: 0,
+            affordability: 0,
+            resilience: 0,
+            environment: 0,
+            noise: 0,
+            safety: 0,
             multiplier: 1.0, // Neutral multiplier when no buildings exist
             points: { // Initialize points structure for client display
                 culture: 0,
@@ -2576,6 +2689,21 @@ class ServerEconomicEngine {
         this.gameState.residentsPerBuilding.clear();
         this.gameState.demographics = { children: 0, adults: 0, seniors: 0, total: 0 };
         this.gameState.demographicsPerBuilding.clear();
+
+        // Reset governance budgets and treasury
+        this.gameState.budgets = {
+            education: 0,
+            healthcare: 0,
+            infrastructure: 0,
+            housing: 0,
+            culture: 0,
+            recreation: 0,
+            commercial: 0,
+            civic: 0,
+            emergency: 0,
+            ubi: 0
+        };
+        this.gameState.treasury = 0;
 
         // Clear transaction history
         this.pendingTransactions = [];
@@ -2810,7 +2938,6 @@ class ServerEconomicEngine {
             return;
         }
 
-        const budgetProportions = this.gameState.monthlyBudget.proportions;
         const totalPoints = this.gameState.monthlyBudget.totalPoints;
 
         if (totalPoints === 0) {
@@ -2818,12 +2945,14 @@ class ServerEconomicEngine {
             return;
         }
 
-        if (this.governanceSystem) {
-            const treasuryBalance = this.governanceSystem.getTreasury();
-        // console.log(`[REVENUE] MONTHLY TRANSFER: Allocating $${treasuryBalance.toFixed(2)} from treasury to budgets`);
-            this.governanceSystem.allocateBudgets(budgetProportions, treasuryBalance);
-        } else {
-            console.warn('[WARN] No governance system - cannot transfer monthly funds');
+        // Get treasury balance from gameState
+        const treasuryBalance = this.gameState.treasury || 0;
+
+        if (treasuryBalance > 0) {
+            console.log(`[REVENUE] MONTHLY TRANSFER: Allocating $${treasuryBalance.toFixed(2)} from treasury to budgets`);
+            this.allocateBudgets(treasuryBalance);
+            // Clear treasury after allocation
+            this.gameState.treasury = 0;
         }
     }
 
@@ -3088,7 +3217,13 @@ class ServerEconomicEngine {
         }
 
         if (treasuryAmount > 0) {
-            this.governanceSystem.addFunds(treasuryAmount, description);
+            // Add to treasury
+            this.gameState.treasury += treasuryAmount;
+
+            // Also add to external governance system if it exists (for backwards compatibility)
+            if (this.governanceSystem) {
+                this.governanceSystem.addFunds(treasuryAmount, description);
+            }
         // console.log(`[REVENUE] Treasury: +$${treasuryAmount.toLocaleString()} from ${description}`);
         }
     }
@@ -3209,7 +3344,15 @@ class ServerEconomicEngine {
                         if (currentBalance >= dailyLVT) {
                             // Deduct LVT from player balance
                             this.gameState.playerBalances.set(playerId, currentBalance - dailyLVT);
-                            this.governanceSystem.addFunds(dailyLVT, `Daily LVT from parcel [${row},${col}]`);
+
+                            // Add to treasury (will be allocated to budgets monthly)
+                            this.gameState.treasury += dailyLVT;
+
+                            // Also add to external governance system if it exists (for backwards compatibility)
+                            if (this.governanceSystem) {
+                                this.governanceSystem.addFunds(dailyLVT, `Daily LVT from parcel [${row},${col}]`);
+                            }
+
                             totalLVT += dailyLVT;
 
                             // Track player's LVT contributions
@@ -3258,17 +3401,8 @@ class ServerEconomicEngine {
                     }
                 }
 
-                // Update CARENS based on building type
-                if (buildingDef.economics.carens) {
-                    for (const [category, impact] of Object.entries(buildingDef.economics.carens)) {
-                        if (this.gameState.carens[category] !== undefined) {
-                            const change = transaction.type === 'BUILD_COMPLETE' ? impact : -impact;
-                            this.gameState.carens[category] = Math.max(0, Math.min(1,
-                                this.gameState.carens[category] + change
-                            ));
-                        }
-                    }
-                }
+                // CARENS updates are now handled by calculateGlobalCARENS() in recalculateGlobalEconomics()
+                // Legacy incremental system removed
 
         // console.log(`[CARENS] Economic indicators updated for ${building.id}`);
             }
@@ -3778,6 +3912,9 @@ class ServerEconomicEngine {
             });
 
             // Add fee to treasury
+            this.gameState.treasury += fee;
+
+            // Also add to external governance system if it exists (for backwards compatibility)
             if (this.governanceSystem) {
                 this.governanceSystem.addFunds(fee, 'marketplace cancellation fees');
             }
@@ -3877,6 +4014,9 @@ class ServerEconomicEngine {
         this.addPurchasedActions(listing.highBidderId, listing.quantity, 'auction win');
 
         // Add fee to treasury
+        this.gameState.treasury += fee;
+
+        // Also add to external governance system if it exists (for backwards compatibility)
         if (this.governanceSystem) {
             this.governanceSystem.addFunds(fee, 'marketplace early end fees');
         }
@@ -4787,7 +4927,7 @@ class ServerEconomicEngine {
         // This calls the (row, col) version which returns the detailed object
         const performanceDetails = building.underConstruction ? null : this.calculateBuildingPerformance(row, col);
 
-        console.log(`[CARENS] Performance details for [${row},${col}]:`, performanceDetails ? 'HAS DATA' : 'NULL', performanceDetails?.summary);
+        // console.log(`[CARENS] Performance details for [${row},${col}]:`, performanceDetails ? 'HAS DATA' : 'NULL', performanceDetails?.summary);
 
         // Calculate efficiency percentage and financial data for tooltip display
         let efficiency = 0;
@@ -4801,19 +4941,11 @@ class ServerEconomicEngine {
             maintenance = performanceDetails.summary.maintenance || 0;
             netIncome = performanceDetails.summary.netIncome || 0;
 
-            console.log(`[REVENUE] Extracted from performance: revenue=$${revenue}, maintenance=$${maintenance}, netIncome=$${netIncome}`);
+            // Performance % = Core Needs Satisfaction × CARENS (does NOT include condition)
+            efficiency = performanceDetails.summary.performance || 0;
+            performanceMultiplier = efficiency / 100; // Convert % to multiplier
 
-            // Efficiency is the overall performance multiplier (combination of all factors)
-            if (performanceDetails.detailed) {
-                const jeefhh = performanceDetails.detailed.jeefhhMultiplier || 1.0;
-                const carens = performanceDetails.detailed.carensMultiplier || 1.0;
-                const conditionFactor = performanceDetails.detailed.conditionFactor || 1.0;
-
-                efficiency = jeefhh * carens * conditionFactor * 100;
-                performanceMultiplier = jeefhh * carens * conditionFactor;
-
-                console.log(`📈 Calculated efficiency: ${efficiency.toFixed(1)}% (JEEFHH: ${jeefhh.toFixed(2)}, CARENS: ${carens.toFixed(2)}, Condition: ${conditionFactor.toFixed(2)})`);
-            }
+            // console.log(`[REVENUE] Extracted from performance: revenue=$${revenue}, maintenance=$${maintenance}, netIncome=$${netIncome}, performance=${efficiency}%`);
         } else {
             console.log(`[WARN] No performance details for [${row},${col}] ${building.id} - performanceDetails is ${performanceDetails ? 'missing summary' : 'null'}`);
         }
@@ -4840,14 +4972,14 @@ class ServerEconomicEngine {
             performanceDetails: performanceDetails // Full breakdown
         };
 
-        console.log(`[INFO] Returning state for [${row},${col}]:`, {
-            buildingId: stateObject.buildingId,
-            efficiency: stateObject.efficiency,
-            netIncome: stateObject.netIncome,
-            revenue: stateObject.revenue,
-            maintenance: stateObject.maintenance,
-            hasPerformanceDetails: !!stateObject.performanceDetails
-        });
+        // console.log(`[INFO] Returning state for [${row},${col}]:`, {
+        //     buildingId: stateObject.buildingId,
+        //     efficiency: stateObject.efficiency,
+        //     netIncome: stateObject.netIncome,
+        //     revenue: stateObject.revenue,
+        //     maintenance: stateObject.maintenance,
+        //     hasPerformanceDetails: !!stateObject.performanceDetails
+        // });
 
         return stateObject;
     }
@@ -4905,10 +5037,10 @@ class ServerEconomicEngine {
         const buildingStates = [];
 
         // DEBUG: Check total buildings in system
-        console.log(`[INFO] Total buildings in gameState: ${this.gameState.buildings.size}`);
-        if (this.gameState.buildings.size > 0) {
-            console.log(`[INFO] Building keys:`, Array.from(this.gameState.buildings.keys()).slice(0, 5));
-        }
+        // console.log(`[INFO] Total buildings in gameState: ${this.gameState.buildings.size}`);
+        // if (this.gameState.buildings.size > 0) {
+        //     console.log(`[INFO] Building keys:`, Array.from(this.gameState.buildings.keys()).slice(0, 5));
+        // }
 
         // Collect all building states
         this.gameState.buildings.forEach((building, locationKey) => {
@@ -4916,7 +5048,7 @@ class ServerEconomicEngine {
             const state = this.getBuildingRenderingState(row, col);
             if (state) {
                 buildingStates.push(state);
-                console.log(`[INFO] Added building state for [${row},${col}]: ${building.id}`);
+                // console.log(`[INFO] Added building state for [${row},${col}]: ${building.id}`);
             } else {
                 console.log(`[ERROR] No state generated for [${row},${col}]: ${building.id}`);
             }
@@ -4942,6 +5074,75 @@ class ServerEconomicEngine {
         if (this.DEBUG.BROADCASTS) {
             const sizeKB = (JSON.stringify({ type: 'BUILDING_STATES', buildings: buildingStates }).length / 1024).toFixed(2);
             console.log(`[BROADCAST] Sent BUILDING_STATES - ${buildingStates.length} buildings, ${sizeKB}KB`);
+        }
+    }
+
+    // ========================================================================
+    // GOVERNANCE BUDGET METHODS
+    // ========================================================================
+
+    /**
+     * Get current budget balances for all categories
+     */
+    getBudgets() {
+        return { ...this.gameState.budgets };
+    }
+
+    /**
+     * Spend from a category budget
+     * @param {string} category - Budget category (e.g., 'housing', 'commercial')
+     * @param {number} amount - Amount to spend
+     * @param {string} description - Description of the spending
+     * @returns {boolean} - True if successful, false if insufficient funds
+     */
+    spendFromBudget(category, amount, description = '') {
+        if (!this.gameState.budgets.hasOwnProperty(category)) {
+            console.error(`[BUDGET] Invalid category: ${category}`);
+            return false;
+        }
+
+        const currentBalance = this.gameState.budgets[category];
+        if (currentBalance < amount) {
+            console.warn(`[BUDGET] Insufficient ${category} budget: has $${currentBalance}, needs $${amount}`);
+            return false;
+        }
+
+        this.gameState.budgets[category] -= amount;
+        console.log(`[BUDGET] Spent $${amount} from ${category} budget (${description}). New balance: $${this.gameState.budgets[category]}`);
+        return true;
+    }
+
+    /**
+     * Allocate LVT revenue to budgets based on player allocations
+     * Called monthly when LVT is collected
+     * @param {number} totalRevenue - Total LVT revenue collected
+     */
+    allocateBudgets(totalRevenue) {
+        if (!this.gameState.monthlyBudget?.proportions) {
+            // No allocations - all revenue goes to treasury
+            this.gameState.treasury += totalRevenue;
+            console.log(`[BUDGET] No allocations - $${totalRevenue} added to treasury. New balance: $${this.gameState.treasury}`);
+            return;
+        }
+
+        const proportions = this.gameState.monthlyBudget.proportions;
+
+        Object.keys(this.gameState.budgets).forEach(category => {
+            const proportion = proportions[category] || 0;
+            const allocation = totalRevenue * proportion;
+
+            if (allocation > 0) {
+                this.gameState.budgets[category] += allocation;
+                console.log(`[BUDGET] Allocated $${allocation.toFixed(2)} to ${category} budget. New balance: $${this.gameState.budgets[category].toFixed(2)}`);
+            }
+        });
+
+        // Any unallocated funds go to treasury
+        const totalAllocated = Object.values(proportions).reduce((sum, p) => sum + p, 0);
+        if (totalAllocated < 1.0) {
+            const unallocated = totalRevenue * (1.0 - totalAllocated);
+            this.gameState.treasury += unallocated;
+            console.log(`[BUDGET] $${unallocated.toFixed(2)} unallocated funds added to treasury. New balance: $${this.gameState.treasury.toFixed(2)}`);
         }
     }
 }

@@ -11,24 +11,13 @@ const CityNameGenerator = require('./city-name-generator');
 const Logger = require('./logger');
 const logger = new Logger('room-manager');
 
-// Simple server-side governance system for treasury operations
+// Simple server-side governance system for LVT collection (treasury only)
+// NOTE: Budget tracking has been moved to ServerEconomicEngine.gameState.budgets
 class ServerGovernanceSystem {
     constructor() {
         this.governance = {
             taxRate: 0.50, // Default 50% LVT rate (0-1 range)
-            treasury: 0,
-            budgets: {
-                education: 0,
-                healthcare: 0,
-                infrastructure: 0,
-                housing: 0,
-                culture: 0,
-                recreation: 0,
-                commercial: 0,
-                civic: 0,
-                emergency: 0,
-                ubi: 0
-            }
+            treasury: 0  // Accumulates LVT/fees, cleared monthly when allocated to budgets
         };
     }
 
@@ -44,111 +33,6 @@ class ServerGovernanceSystem {
     setTaxRate(rate) {
         this.governance.taxRate = Math.max(0, Math.min(1, rate)); // Clamp 0-1
         // console.log(`🏛️ Tax rate set to ${(this.governance.taxRate * 100).toFixed(1)}%`);
-    }
-
-    /**
-     * Transfer funds from treasury to allocated budget categories
-     * Budgets accumulate unspent funds month-to-month
-     * @param {Object} budgetProportions - Object with category proportions (0-1)
-     * @param {number} totalRevenue - Total revenue to allocate
-     */
-    allocateBudgets(budgetProportions, totalRevenue) {
-        if (totalRevenue <= 0 || !budgetProportions) {
-        // console.log(`📦 No budget allocation: totalRevenue=${totalRevenue}, proportions=${!!budgetProportions}`);
-            return;
-        }
-
-        const availableFunds = Math.min(totalRevenue, this.governance.treasury);
-        let totalAllocated = 0;
-
-        // console.log(`💰 BUDGET ALLOCATION: $${availableFunds.toFixed(2)} available from treasury`);
-
-        Object.entries(budgetProportions).forEach(([category, proportion]) => {
-            if (proportion > 0) {
-                const allocation = availableFunds * proportion;
-                const previousBalance = this.governance.budgets[category];
-                this.governance.budgets[category] += allocation;
-                totalAllocated += allocation;
-        // console.log(`   📊 ${category}: +$${allocation.toFixed(2)} (${(proportion * 100).toFixed(1)}%) → Total: $${this.governance.budgets[category].toFixed(2)} (was $${previousBalance.toFixed(2)})`);
-            }
-        });
-
-        // Deduct allocated funds from treasury
-        this.governance.treasury -= totalAllocated;
-
-        // console.log(`💰 ALLOCATION COMPLETE: $${totalAllocated.toFixed(2)} allocated, $${this.governance.treasury.toFixed(2)} remaining in treasury`);
-    }
-
-    /**
-     * Reset all budgets and reallocate total available funds based on current proportions
-     * This ensures fair distribution when voting patterns change
-     * @param {Object} budgetProportions - Object with category proportions (0-1)
-     */
-    reallocateAllBudgets(budgetProportions) {
-        if (!budgetProportions) {
-            logger.warn('⚠️ No budget proportions provided for reallocation');
-            return;
-        }
-
-        // Calculate total funds available for reallocation (current budgets + treasury)
-        const currentBudgetTotal = Object.values(this.governance.budgets).reduce((sum, amount) => sum + amount, 0);
-        const totalAvailableFunds = currentBudgetTotal + this.governance.treasury;
-
-        // console.log(`🔄 BUDGET REALLOCATION: $${totalAvailableFunds.toFixed(2)} total funds (budgets: $${currentBudgetTotal.toFixed(2)}, treasury: $${this.governance.treasury.toFixed(2)})`);
-
-        // Reset all budgets to 0
-        Object.keys(this.governance.budgets).forEach(category => {
-            this.governance.budgets[category] = 0;
-        });
-
-        // Reset treasury to total available funds
-        this.governance.treasury = totalAvailableFunds;
-
-        // Allocate based on current proportions
-        let totalAllocated = 0;
-        Object.entries(budgetProportions).forEach(([category, proportion]) => {
-            if (proportion > 0) {
-                const allocation = totalAvailableFunds * proportion;
-                this.governance.budgets[category] = allocation;
-                totalAllocated += allocation;
-        // console.log(`   🔄 ${category}: $${allocation.toFixed(2)} (${(proportion * 100).toFixed(1)}%)`);
-            }
-        });
-
-        // Deduct allocated funds from treasury
-        this.governance.treasury = totalAvailableFunds - totalAllocated;
-
-        // console.log(`🔄 REALLOCATION COMPLETE: $${totalAllocated.toFixed(2)} reallocated, $${this.governance.treasury.toFixed(2)} remaining in treasury`);
-    }
-
-    /**
-     * Get budget balances for all categories
-     */
-    getBudgets() {
-        return { ...this.governance.budgets };
-    }
-
-    /**
-     * Spend from a specific budget category
-     * @param {string} category - Budget category
-     * @param {number} amount - Amount to spend
-     * @param {string} description - Description of expense
-     * @returns {boolean} - Success/failure
-     */
-    spendFromBudget(category, amount, description) {
-        if (!this.governance.budgets[category]) {
-            logger.warn(`⚠️ Invalid budget category: ${category}`);
-            return false;
-        }
-
-        if (this.governance.budgets[category] < amount) {
-            logger.warn(`⚠️ Insufficient ${category} budget: $${this.governance.budgets[category].toFixed(2)} < $${amount.toFixed(2)}`);
-            return false;
-        }
-
-        this.governance.budgets[category] -= amount;
-        // console.log(`💸 ${category} budget: -$${amount.toFixed(2)} for ${description} (Remaining: $${this.governance.budgets[category].toFixed(2)})`);
-        return true;
     }
 
     startGameplay() {
@@ -941,70 +825,60 @@ class RoomManager {
      * Beer Hall Table Finder - Find or create table based on player preferences
      */
     findTableWithPreferences(playerId, playerData, ws, preferences = {}) {
-        console.log(`🚀 ROOM MATCHING DEBUG: findTableWithPreferences called - playerId: ${playerId}, preferences:`, preferences);
+        console.log(`🚀 ROOM MATCHING: Player ${playerId} looking for table, preferences:`, preferences);
 
-        const minPlayers = preferences.minPlayers || 3;
+        const minPlayers = preferences.minPlayers || 2;
         const maxPlayers = Math.min(preferences.maxPlayers || 12, 12); // Cap at 12
         const isSoloMode = minPlayers === 1 && maxPlayers === 1;
 
-        console.log(`🎯 ROOM MATCHING: Processed preferences - minPlayers: ${minPlayers}, maxPlayers: ${maxPlayers}, isSoloMode: ${isSoloMode}`);
-
-        if (isSoloMode) {
-        // console.log(`🎮 Player ${playerId} requesting solo table (1 player only)`);
-        } else {
-        // console.log(`🍺 Player ${playerId} looking for multiplayer table: ${minPlayers}-${maxPlayers} players`);
-        }
+        console.log(`🎯 Mode: ${isSoloMode ? 'SOLO (isolated sandbox)' : `MULTIPLAYER (${minPlayers}-${maxPlayers} players)`}`);
 
         // Leave current table if in one
         this.leaveCurrentRoom(playerId);
 
-        // Solo mode: Always create a new isolated table (no sharing)
+        // SOLO MODE: Always create isolated private table (no auctions, no action limits, learning mode)
         if (isSoloMode) {
-        // console.log(`🎮 Creating new solo table for ${playerId}`);
-        } else {
-            // Multiplayer: Try to find existing suitable table first
-            console.log(`🔍 ROOM SEARCH: Looking for existing tables. Total rooms: ${this.rooms.size}`);
-            for (const room of this.rooms.values()) {
-                console.log(`🏠 ROOM CHECK: ${room.id} - isPublic: ${room.isPublic}, state: ${room.state}, players: ${room.players.size}/${room.maxPlayers}`);
+            console.log(`🎮 Creating isolated solo sandbox for ${playerId}`);
+            const uniqueRoomId = this.generateUniqueRoomId('solo');
+            const newRoom = this.createRoom({
+                roomId: uniqueRoomId,
+                roomName: `Solo Sandbox ${this.nextRoomNumber}`,
+                minPlayers: 1,
+                maxPlayers: 1,
+                isPublic: false // Private - no joining
+            });
+            console.log(`✨ Created solo sandbox: ${newRoom.id}`);
+            return this.joinRoom(newRoom.id, playerId, playerData, ws);
+        }
 
-                if (room.isPublic &&
-                    room.state === 'WAITING' &&
-                    room.id.startsWith('table-') && // V2: Only beer hall tables
-                    room.maxPlayers >= minPlayers &&
-                    room.maxPlayers <= maxPlayers &&
-                    room.players.size < room.maxPlayers) {
+        // MULTIPLAYER MODE: Find compatible table
+        // Rule: Player can join room if player.minPlayers <= room.minPlayers
+        // (2+ player can join 2+, 6+, or 12 rooms; 6+ can only join 6+ or 12; 12 can only join 12)
+        console.log(`🔍 Searching ${this.rooms.size} rooms for compatible table`);
 
-                    console.log(`✅ ROOM MATCH: Found suitable table ${room.id} for player ${playerId}`);
-                    return this.joinRoom(room.id, playerId, playerData, ws);
-                } else {
-                    console.log(`❌ ROOM MISMATCH: ${room.id} failed checks - isPublic:${room.isPublic}, waiting:${room.state === 'WAITING'}, table:${room.id.startsWith('table-')}, maxValid:${room.maxPlayers >= minPlayers && room.maxPlayers <= maxPlayers}, hasSpace:${room.players.size < room.maxPlayers}`);
-                }
+        for (const room of this.rooms.values()) {
+            if (room.isPublic &&
+                room.state === 'WAITING' &&
+                room.players.size < room.maxPlayers &&
+                minPlayers <= room.minPlayers) { // Player's min must be <= room's min
+
+                console.log(`✅ MATCH: Joining table ${room.id} (${room.players.size + 1}/${room.maxPlayers} players, room wants ${room.minPlayers}+, player wants ${minPlayers}+)`);
+                return this.joinRoom(room.id, playerId, playerData, ws);
             }
-            console.log(`🆕 ROOM CREATE: No suitable room found, creating new table`);
         }
 
-        // Create new table optimized for preferences
-        let tableSize, roomName, uniqueRoomId;
-        if (isSoloMode) {
-            tableSize = 1;
-            roomName = `Solo Table ${this.nextRoomNumber}`;
-            uniqueRoomId = this.generateUniqueRoomId('solo');
-        // console.log(`🆕 Creating isolated solo table for ${playerId}: ${uniqueRoomId} (display: solo-${this.nextRoomNumber})`);
-        } else {
-            tableSize = Math.max(minPlayers, Math.min(maxPlayers, 6)); // Default to 6 if within range
-            roomName = `Table ${this.nextRoomNumber}`;
-            uniqueRoomId = this.generateUniqueRoomId('table');
-        // console.log(`🆕 Creating multiplayer table for ${playerId}: ${uniqueRoomId} (display: table-${this.nextRoomNumber}, ${minPlayers}-${tableSize} players)`);
-        }
-
+        // No compatible room - create new one
+        console.log(`🆕 No compatible room found. Creating new table (${minPlayers}-${maxPlayers} players)`);
+        const uniqueRoomId = this.generateUniqueRoomId('table');
         const newRoom = this.createRoom({
             roomId: uniqueRoomId,
-            roomName: roomName,
+            roomName: `Table ${this.nextRoomNumber}`,
             minPlayers: minPlayers,
-            maxPlayers: tableSize,
-            isPublic: !isSoloMode // Solo tables are private
+            maxPlayers: maxPlayers,
+            isPublic: true
         });
 
+        console.log(`✨ Created table ${newRoom.id}`);
         return this.joinRoom(newRoom.id, playerId, playerData, ws);
     }
 

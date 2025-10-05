@@ -45,6 +45,11 @@ class IsometricGrid {
                 if (this.renderingSystem) {
                     this.renderingSystem.handleServerUpdate(update);
                 }
+
+                // Handle VITALITY_UPDATE events to update CARENS/JEEFHH displays
+                if (update.type === 'VITALITY_UPDATE' && this.uiManager) {
+                    this.uiManager.updateEconomicDisplays(this.economicClient);
+                }
             });
         }
 
@@ -393,6 +398,36 @@ class IsometricGrid {
     isCurrentPlayer(owner) {
         // Use PlayerUtils to check if owner matches current player ID
         return PlayerUtils.isCurrentPlayer(owner);
+    }
+
+    /**
+     * Get player display name from economicClient game state
+     * Falls back to player ID if name not found
+     */
+    getPlayerName(playerId) {
+        // For current player, use beer hall lobby chosen name
+        if (this.isCurrentPlayer(playerId)) {
+            return window.beerHallLobby?.playerName || playerId;
+        }
+
+        // For other players, fetch from synchronized multiplayer game state
+        if (this.economicClient?.gameState?.players) {
+            let player = null;
+
+            // Handle both Map and Object structures for compatibility
+            if (this.economicClient.gameState.players instanceof Map) {
+                player = this.economicClient.gameState.players.get(playerId);
+            } else {
+                player = this.economicClient.gameState.players[playerId];
+            }
+
+            if (player && player.name) {
+                return player.name;
+            }
+        }
+
+        // Fallback to player ID
+        return playerId;
     }
 
     resetGameState() {
