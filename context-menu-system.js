@@ -237,19 +237,19 @@ class ContextMenuSystem {
         }
 
         // Add Auction button in multiplayer mode
-        if (this.game.isMultiplayer && this.game.auctionSystem) {
+        if (this.game.isMultiplayer && this.game.parcelAuctionSystem) {
             console.log('[CONTEXT MENU] Adding Auction button for multiplayer mode');
             const auctionBtn = document.createElement('button');
             auctionBtn.className = 'context-btn';
             auctionBtn.textContent = '🔨 AUCTION';
             auctionBtn.onclick = () => {
                 this.hide();
-                this.game.auctionSystem.startAuction(row, col);
+                this.game.parcelAuctionSystem.startAuction(row, col);
             };
             contentEl.appendChild(auctionBtn);
             console.log('[CONTEXT MENU] Auction button added to DOM');
         } else {
-            console.log('[CONTEXT MENU] Auction disabled - isMultiplayer:', this.game.isMultiplayer, 'hasAuctionSystem:', !!this.game.auctionSystem);
+            console.log('[CONTEXT MENU] Auction disabled - isMultiplayer:', this.game.isMultiplayer, 'hasAuctionSystem:', !!this.game.parcelAuctionSystem);
         }
     }
 

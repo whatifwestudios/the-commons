@@ -601,6 +601,9 @@ class IsometricGrid {
         // Store clean player config
         this.playerConfig = playerConfig;
 
+        // Set multiplayer flag for context menu and other systems
+        this.isMultiplayer = playerConfig.isMultiplayer || (playerConfig.mode !== 'solo');
+
         // All modes (solo and multiplayer) use server-based economic system
         // Solo mode gets its own isolated table with one player
         // Initializing server connection
