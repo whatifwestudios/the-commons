@@ -1413,7 +1413,7 @@ class BeerHallLobby {
                 <div class="countdown-container">
                     <h1 class="countdown-welcome">Welcome to The Commons</h1>
                     <div class="countdown-underline"></div>
-                    <div class="player-badges-grid">
+                    <div class="player-badges-grid" id="player-badges-container">
                         ${playerBadgesHTML}
                     </div>
                 </div>
@@ -1450,8 +1450,9 @@ class BeerHallLobby {
                         padding: 40px;
                     }
                     .countdown-welcome {
-                        font-size: 3rem;
-                        font-weight: 600;
+                        font-size: 2.1rem;
+                        font-family: 'SF Mono', 'Monaco', 'Menlo', 'Courier New', monospace;
+                        font-weight: 300;
                         margin: 0 0 30px 0;
                         color: #ffffff;
                         letter-spacing: 1px;
@@ -1475,13 +1476,20 @@ class BeerHallLobby {
                         display: inline-flex;
                         align-items: center;
                         justify-content: center;
-                        padding: 12px 24px;
-                        border-radius: 8px;
-                        font-size: 16px;
-                        font-weight: 500;
+                        padding: 8px 18px;
+                        border-radius: 6px;
+                        font-size: 11px;
+                        font-family: 'SF Mono', 'Monaco', 'Menlo', 'Courier New', monospace;
+                        font-weight: 300;
                         color: #ffffff;
-                        min-width: 160px;
+                        min-width: 110px;
                         box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+                        opacity: 0;
+                        animation: fadeInBadge 0.4s ease-out forwards;
+                    }
+                    @keyframes fadeInBadge {
+                        from { opacity: 0; transform: translateY(10px); }
+                        to { opacity: 1; transform: translateY(0); }
                     }
                     @keyframes subtle-pulse {
                         0% { opacity: 0.9; }
@@ -1493,8 +1501,21 @@ class BeerHallLobby {
             }
         }
 
-        countdownOverlay.style.display = 'flex';
-        countdownOverlay.classList.remove('fade-out');
+        // First, fade out the setup screens to black
+        this.fadeOutSetupScreens();
+
+        // Then fade in the countdown overlay
+        setTimeout(() => {
+            countdownOverlay.style.display = 'flex';
+            countdownOverlay.classList.remove('fade-out');
+            countdownOverlay.style.opacity = '0';
+            countdownOverlay.style.transition = 'opacity 0.5s ease-in';
+
+            // Trigger fade in
+            setTimeout(() => {
+                countdownOverlay.style.opacity = '1';
+            }, 50);
+        }, 500); // Wait for setup screens to fade to black
 
         // Track when overlay was shown
         this.countdownStartTime = Date.now();
@@ -1508,6 +1529,24 @@ class BeerHallLobby {
                 this.hideCountdownOverlay();
             }
         }, 100);
+    }
+
+    /**
+     * Fade out setup screens (beer hall lobby or multiplayer chat) to black
+     */
+    fadeOutSetupScreens() {
+        // Fade out beer hall lobby
+        if (this.beerHallLobby) {
+            this.beerHallLobby.style.transition = 'opacity 0.5s ease-out';
+            this.beerHallLobby.style.opacity = '0';
+        }
+
+        // Fade out multiplayer chat
+        const chatOverlay = document.getElementById('multiplayer-chat-overlay');
+        if (chatOverlay) {
+            chatOverlay.style.transition = 'opacity 0.5s ease-out';
+            chatOverlay.style.opacity = '0';
+        }
     }
 
     /**
@@ -1540,15 +1579,15 @@ class BeerHallLobby {
     }
 
     /**
-     * Create player badges HTML for countdown
+     * Create player badges HTML for countdown with staggered animation
      */
     createPlayerBadgesHTML(players) {
         if (!players || players.length === 0) {
             return '';
         }
 
-        return players.map(player => `
-            <div class="player-badge" style="background-color: ${player.color};">
+        return players.map((player, index) => `
+            <div class="player-badge" style="background-color: ${player.color}; animation-delay: ${index * 0.15}s;">
                 ${player.name}
             </div>
         `).join('');
@@ -1589,57 +1628,58 @@ class BeerHallLobby {
     }
 
     /**
-     * Hide countdown overlay with fade out and show welcome screen
+     * Complete intro sequence: fade out countdown, reveal game UI
      */
     hideCountdownOverlay() {
         const countdownOverlay = document.getElementById('countdown-overlay');
-        if (countdownOverlay) {
-            // First, ensure the lobby/chat overlay fades out
-            this.fadeOutLobbyOverlays();
+        if (!countdownOverlay) return;
 
-            // Then fade out countdown and fade in welcome screen
+        // Calculate total time for all player badge animations
+        const badges = countdownOverlay.querySelectorAll('.player-badge');
+        const totalBadgeTime = badges.length * 150; // 150ms per badge
+
+        // Wait for badges to finish animating, then hold for a beat
+        setTimeout(() => {
+            // Fade out the countdown overlay
             countdownOverlay.classList.add('fade-out');
+
+            // After fade out completes, show game UI
             setTimeout(() => {
                 countdownOverlay.style.display = 'none';
-                // Fade in the welcome screen
-                this.fadeInWelcomeScreen();
-            }, 500); // Match transition duration
-        }
+                this.revealGameUI();
+            }, 500); // Match fade-out transition
+        }, totalBadgeTime + 800); // Badge animations + hold time
     }
 
     /**
-     * Fade out lobby overlays (beer hall or multiplayer chat)
+     * Reveal the game UI (final step of intro sequence)
      */
-    fadeOutLobbyOverlays() {
-        // Fade out beer hall lobby if visible
-        if (this.beerHallLobby && this.beerHallLobby.style.display !== 'none') {
-            this.beerHallLobby.style.transition = 'opacity 0.5s ease-out';
-            this.beerHallLobby.style.opacity = '0';
+    revealGameUI() {
+        // Hide the beer hall lobby
+        if (this.beerHallLobby) {
+            this.beerHallLobby.style.display = 'none';
         }
 
-        // Fade out multiplayer chat if visible
+        // Hide multiplayer chat if visible
         const chatOverlay = document.getElementById('multiplayer-chat-overlay');
-        if (chatOverlay && chatOverlay.style.display !== 'none') {
-            chatOverlay.style.transition = 'opacity 0.5s ease-out';
-            chatOverlay.style.opacity = '0';
+        if (chatOverlay) {
+            chatOverlay.style.display = 'none';
         }
-    }
 
-    /**
-     * Fade in the welcome screen (game canvas)
-     */
-    fadeInWelcomeScreen() {
+        // The game interface is already visible (never hidden)
+        // Just ensure welcome-screen container is removed from view
         const welcomeScreen = document.getElementById('welcome-screen');
         if (welcomeScreen) {
-            // Set initial state
-            welcomeScreen.style.opacity = '0';
-            welcomeScreen.style.transition = 'opacity 0.5s ease-in';
-            welcomeScreen.style.display = 'flex';
+            // Hide the welcome screen container (which holds lobby/chat)
+            // But don't touch game-interface which is separate
+            welcomeScreen.style.display = 'none';
+        }
 
-            // Trigger fade in after a brief delay
-            setTimeout(() => {
-                welcomeScreen.style.opacity = '1';
-            }, 50);
+        // Ensure game interface is visible
+        const gameInterface = document.getElementById('game-interface');
+        if (gameInterface) {
+            gameInterface.style.opacity = '1';
+            gameInterface.classList.remove('game-blurred');
         }
     }
 
