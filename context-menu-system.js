@@ -216,11 +216,12 @@ class ContextMenuSystem {
         console.log('[CONTEXT MENU] createCompetitorOwnedParcelMenu called:', {
             hasBuilding: !!parcel.building,
             buildingId: parcel.building?.id,
+            isMultiplayer: this.game.isMultiplayer,
             contentEl: contentEl
         });
 
-        // All players can view Data Insights on any parcel
-        // Only Auction is disabled for now pending auction system refinement
+        // All players can view Data Insights and initiate Auctions on competitor parcels
+        // Auctions are only available in multiplayer mode
 
         if (parcel.building) {
             console.log('[CONTEXT MENU] Adding Data Insights button for built competitor parcel');
@@ -233,12 +234,23 @@ class ContextMenuSystem {
             };
             contentEl.appendChild(dataInsightsBtn);
             console.log('[CONTEXT MENU] Data Insights button added to DOM');
-        } else {
-            console.log('[CONTEXT MENU] No building on competitor parcel - no buttons added');
         }
 
-        // TODO: Add Auction button when auction system is refined
-        // For now, only Data Insights is available on competitor parcels
+        // Add Auction button in multiplayer mode
+        if (this.game.isMultiplayer && this.game.auctionSystem) {
+            console.log('[CONTEXT MENU] Adding Auction button for multiplayer mode');
+            const auctionBtn = document.createElement('button');
+            auctionBtn.className = 'context-btn';
+            auctionBtn.textContent = '🔨 AUCTION';
+            auctionBtn.onclick = () => {
+                this.hide();
+                this.game.auctionSystem.startAuction(row, col);
+            };
+            contentEl.appendChild(auctionBtn);
+            console.log('[CONTEXT MENU] Auction button added to DOM');
+        } else {
+            console.log('[CONTEXT MENU] Auction disabled - isMultiplayer:', this.game.isMultiplayer, 'hasAuctionSystem:', !!this.game.auctionSystem);
+        }
     }
 
     /**
