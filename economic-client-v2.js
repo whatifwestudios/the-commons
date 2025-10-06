@@ -1109,7 +1109,22 @@ class EconomicClient {
 
         // Add current buildings to grid
         this.buildings.forEach((building, locationKey) => {
-            const [row, col] = building.location;
+            if (!building) {
+                console.warn('⚠️ Building is null/undefined:', locationKey);
+                return;
+            }
+
+            // Handle both location array [row, col] and separate row/col properties
+            let row, col;
+            if (building.location && Array.isArray(building.location)) {
+                [row, col] = building.location;
+            } else if (building.row !== undefined && building.col !== undefined) {
+                row = building.row;
+                col = building.col;
+            } else {
+                console.warn('⚠️ Building missing location data:', locationKey, building);
+                return;
+            }
             if (this.game.grid[row] && this.game.grid[row][col]) {
                 // Adding building to grid
 
@@ -1900,13 +1915,15 @@ class EconomicClient {
             this.buildings.set(key, buildingData);
 
             // DEBUG: Log received data for first few buildings
-            // console.log(`📥 CLIENT received [${key}] ${state.buildingId}:`, {
-            //     efficiency: state.efficiency,
-            //     netIncome: state.netIncome,
-            //     revenue: state.revenue,
-            //     maintenance: state.maintenance,
-            //     hasPerformanceDetails: !!state.performanceDetails
-            // });
+            console.log(`📥 CLIENT received [${key}] ${state.buildingId}:`, {
+                efficiency: state.efficiency,
+                netIncome: state.netIncome,
+                revenue: state.revenue,
+                maintenance: state.maintenance,
+                hasPerformanceDetails: !!state.performanceDetails,
+                hasResourceSatisfaction: !!state.performanceDetails?.resourceSatisfaction,
+                resourceSatisfaction: state.performanceDetails?.resourceSatisfaction
+            });
         });
 
         // Sync buildings to game grid for context menu and tooltips

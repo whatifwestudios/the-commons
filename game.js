@@ -4014,73 +4014,42 @@ class IsometricGrid {
     setupEventListeners() {
         // setupEventListeners called
 
-        // Add mouse down handler for panning and 3D rotation
-        this.canvas.addEventListener('mousedown', (e) => {
-            const rect = this.canvas.getBoundingClientRect();
-            const screenX = e.clientX - rect.left;
-            const screenY = e.clientY - rect.top;
-        });
-
-        // Prevent context menu on canvas to avoid interference
+        // Prevent context menu on canvas
         this.canvas.addEventListener('contextmenu', (e) => {
             e.preventDefault();
         });
 
-
-        // SOLUTION: Use mouseenter/mouseleave with position tracking
-        let mouseOverCanvas = false;
-        let lastMouseX = 0;
-        let lastMouseY = 0;
-
-        // Legacy mouse enter handler removed
-
-        // Removed temporary debug click test
-
-        // Add mouse leave handler to stop panning when mouse leaves canvas
-        this.canvas.addEventListener('mouseleave', () => {
-
-
-            // Clear hover state when cursor leaves canvas
-            // ParcelHoverV2 handles mouseleave automatically
-        });
-
         this.canvas.addEventListener('click', (e) => {
+            // NOTE: TooltipSystemV2 handles most click interactions with capture:true
+            // This is a fallback for edge cases and toggle-off behavior
+
             const rect = this.canvas.getBoundingClientRect();
             const screenX = e.clientX - rect.left;
             const screenY = e.clientY - rect.top;
-
-            // Use screen coordinates directly (no zoom/pan)
             const worldCoords = { x: screenX, y: screenY };
             const tile = this.renderingSystem?.fromIsometric(worldCoords.x, worldCoords.y);
-
-            
-            // Handle mobility layer clicks first (including UI areas)
-
-            // ParcelHoverV2 doesn't handle clicks - preserve context menu functionality
 
             if (tile && tile.row >= 0 && tile.row < this.gridSize &&
                 tile.col >= 0 && tile.col < this.gridSize) {
 
-                // Set selectedTile for context menu logic
                 this.selectedTile = tile;
 
-                // Check if clicking the same selected tile - toggle it off
-                if (this.selectedTile && 
-                    this.selectedTile.row === tile.row && 
-                    this.selectedTile.col === tile.col &&
-                    this.contextMenu && this.contextMenu.classList && this.contextMenu.classList.contains('visible')) {
-                    this.hideContextMenu();
-                } else {
-                    // LEGACY REMOVAL: Let TooltipSystemV2 handle all click-to-context-menu transitions
-                    // The tooltip system will show context menu via transitionToContextMenu()
-
-                    // Only handle case where there's no tooltip (empty parcels)
-                    if (!this.tooltipSystemV2?.currentType) {
-                        this.showContextMenu(tile.row, tile.col, e.clientX, e.clientY);
+                // Toggle context menu off if clicking same tile
+                if (this.contextMenu?.classList?.contains('visible')) {
+                    const isSameTile = this.selectedTile.row === tile.row &&
+                                      this.selectedTile.col === tile.col;
+                    if (isSameTile) {
+                        this.hideContextMenu();
+                        return;
                     }
                 }
-                // REMOVED: Legacy crispTooltip - TooltipSystemV2 handles all tooltips
+
+                // Fallback: Show context menu if TooltipSystemV2 isn't handling it
+                if (!this.tooltipSystemV2?.currentType) {
+                    this.showContextMenu(tile.row, tile.col, e.clientX, e.clientY);
+                }
             } else {
+                // Clicked outside grid - hide context menu (except in transportation layer)
                 if (this.currentLayer !== 'transportation') {
                     this.hideContextMenu();
                 }

@@ -14,13 +14,7 @@ class RenderingSystemV2 {
         this.ctx = game.ctx;
         this.canvas = game.canvas;
 
-        // Simple state
-        this.currentHover = null; // { row, col }
-        this.adjacentParcels = new Set(); // "row,col" strings
-
-        // Visual config
-        this.hoverOpacity = 0.4;
-        this.adjacentOpacity = 0.2;
+        // Visual config (hover state managed by ParcelHoverV2)
         this.tileWidth = 100.0;
         this.tileHeight = 50.0;  // Standard 30° isometric (2:1 ratio)
 
@@ -92,34 +86,9 @@ class RenderingSystemV2 {
     }
 
     /**
-     * Single, clean mouse handling system with proper cleanup
+     * REMOVED: Mouse handling delegated to ParcelHoverV2 and game.js
+     * This avoids duplicate event listeners and consolidates interaction logic
      */
-    setupCleanMouseHandling() {
-        // Main mouse handler - routes all interactions
-        this.eventManager.addEventListener(this.canvas, 'mousemove', (e) => {
-            const coords = this.getCleanCoordinates(e);
-            this.handleHover(coords);
-            this.handlePanning(e, coords);
-        });
-
-        this.eventManager.addEventListener(this.canvas, 'mousedown', (e) => {
-            const coords = this.getCleanCoordinates(e);
-            this.handleMouseDown(e, coords);
-        });
-
-        this.eventManager.addEventListener(this.canvas, 'mouseup', (e) => {
-            this.handleMouseUp(e);
-        });
-
-        this.eventManager.addEventListener(this.canvas, 'mouseleave', () => {
-            this.clearHover();
-            this.endPanning();
-        });
-
-        this.eventManager.addEventListener(this.canvas, 'contextmenu', (e) => {
-            e.preventDefault(); // Clean context menu handling
-        });
-    }
 
     /**
      * Clean up all event listeners (for multiplayer room changes)
@@ -131,192 +100,9 @@ class RenderingSystemV2 {
     }
 
     /**
-     * Clean coordinate conversion - single source of truth
+     * REMOVED: All hover and tooltip logic delegated to ParcelHoverV2
+     * ParcelHoverV2 handles: coordinate conversion, hover detection, adjacent parcels, tooltips
      */
-    getCleanCoordinates(e) {
-        const rect = this.canvas.getBoundingClientRect();
-        const screenX = e.clientX - rect.left;
-        const screenY = e.clientY - rect.top;
-
-        // Convert to world coordinates
-        const worldCoords = {
-            x: screenX,
-            y: screenY
-        };
-
-        // Use V1's coordinate conversion for consistency
-        const tile = this.game.renderingSystem.fromIsometric(worldCoords.x, worldCoords.y);
-
-        return { screenX, screenY, worldCoords, tile };
-    }
-
-    /**
-     * Handle hover detection and visual effects
-     */
-    handleHover(coords) {
-        const { tile } = coords;
-        const newHover = tile ? { row: tile.row, col: tile.col } : null;
-
-        if (!this.isSameParcel(this.currentHover, newHover)) {
-            this.currentHover = newHover;
-            this.updateAdjacentParcels();
-            this.updateTooltip(coords);
-            this.scheduleRender();
-        }
-    }
-
-    /**
-     * Calculate 8 adjacent parcels
-     */
-    updateAdjacentParcels() {
-        this.adjacentParcels.clear();
-
-        if (!this.currentHover) return;
-
-        const { row, col } = this.currentHover;
-        for (let dr = -1; dr <= 1; dr++) {
-            for (let dc = -1; dc <= 1; dc++) {
-                if (dr === 0 && dc === 0) continue;
-
-                const adjRow = row + dr;
-                const adjCol = col + dc;
-
-                if (adjRow >= 0 && adjRow < this.game.gridSize &&
-                    adjCol >= 0 && adjCol < this.game.gridSize) {
-                    this.adjacentParcels.add(`${adjRow},${adjCol}`);
-                }
-            }
-        }
-    }
-
-    /**
-     * Integrate with V2 tooltip system
-     */
-    updateTooltip(coords) {
-        if (!this.currentHover) {
-            this.hideTooltip();
-            return;
-        }
-
-        const { row, col } = this.currentHover;
-
-        // Use game's V2 tooltip system with proper data format
-        if (this.game.tooltipSystemV2?.show) {
-            // Smart positioning to avoid screen edges
-            const offsetX = coords.screenX + 15;
-            const offsetY = coords.screenY - 10;
-
-            // Adjust if too close to right edge
-            const adjustedX = offsetX + 200 > window.innerWidth ? coords.screenX - 215 : offsetX;
-            // Adjust if too close to top edge
-            const adjustedY = offsetY < 50 ? coords.screenY + 20 : offsetY;
-
-            // Use V2 tooltip system's expected format
-            this.game.tooltipSystemV2.show('parcel', { row, col }, adjustedX, adjustedY);
-        }
-    }
-
-    /**
-     * Build informative tooltip content
-     */
-    buildTooltipContent(parcel, row, col) {
-        const lines = [];
-
-        // Location with grid coordinates
-        lines.push(`<strong>Parcel ${String.fromCharCode(65 + col)}${row + 1}</strong>`);
-        lines.push(`<small>Grid: ${row}, ${col}</small>`);
-
-        // Owner information
-        if (parcel?.owner) {
-            const ownerName = this.getPlayerName(parcel.owner);
-            lines.push(`🏠 Owner: ${ownerName}`);
-        } else {
-            lines.push(`🏠 <em>Available for purchase</em>`);
-        }
-
-        // Building information
-        if (parcel?.building) {
-            const buildingStatus = parcel._isUnderConstruction ?
-                ' <span style="color: orange">(Under Construction)</span>' : '';
-            lines.push(`🏗️ ${parcel.building}${buildingStatus}`);
-
-            // Building condition
-            if (parcel.condition !== undefined) {
-                const condition = Math.round(parcel.condition);
-                const conditionColor = condition > 80 ? 'green' : condition > 50 ? 'orange' : 'red';
-                lines.push(`🔧 Condition: <span style="color: ${conditionColor}">${condition}%</span>`);
-            }
-        } else {
-            lines.push(`🏗️ <em>Empty lot</em>`);
-        }
-
-        // Economic information
-        if (parcel?.rent) {
-            lines.push(`💰 Rent: $${parcel.rent}/month`);
-        }
-
-        // Population if available
-        if (parcel?.population) {
-            lines.push(`👥 Population: ${parcel.population}`);
-        }
-
-        // Land value if available
-        if (parcel?.landValue) {
-            lines.push(`💎 Land Value: $${parcel.landValue.toLocaleString()}`);
-        }
-
-        return lines.join('<br>');
-    }
-
-    /**
-     * Handle panning (disabled)
-     */
-    handlePanning(e, coords) {
-        // Panning functionality removed
-    }
-
-    /**
-     * Handle mouse down events
-     */
-    handleMouseDown(e, coords) {
-        // Panning functionality removed
-    }
-
-    /**
-     * Handle mouse up events
-     */
-    handleMouseUp(e) {
-        this.endPanning();
-    }
-
-    /**
-     * End panning state (disabled)
-     */
-    endPanning() {
-        // Panning functionality removed
-        this.canvas.style.cursor = 'default';
-    }
-
-    /**
-     * Clear hover state
-     */
-    clearHover() {
-        if (this.currentHover) {
-            this.currentHover = null;
-            this.adjacentParcels.clear();
-            this.hideTooltip();
-            this.scheduleRender();
-        }
-    }
-
-    /**
-     * Hide tooltip
-     */
-    hideTooltip() {
-        if (this.game.tooltipSystemV2?.hide) {
-            this.game.tooltipSystemV2.hide();
-        }
-    }
 
     /**
      * Complete V2 rendering pipeline - clean and efficient
@@ -667,12 +453,8 @@ class RenderingSystemV2 {
                 this.ctx.filter = filterParts.join(' ');
             }
 
-            const tint = this.getBuildingTint(row, col);
-            if (tint === 'yellow') {
-                this.ctx.fillStyle = this.hexToRgba(this.playerColor, 0.7);
-            } else {
-                this.ctx.fillStyle = '#666';
-            }
+            // Standard shadow color for all buildings
+            this.ctx.fillStyle = '#666';
 
             const buildingWidth = this.tileWidth * 0.8;
             const buildingHeight = this.tileHeight * 1.5;
@@ -879,22 +661,14 @@ class RenderingSystemV2 {
     }
 
     /**
-     * Calculate construction dimming (60% to 0% as progress goes from 0 to 1)
+     * Calculate construction dimming (static 70% dimming for buildings under construction)
      */
     calculateConstructionDimming(row, col) {
         const progress = this.calculateConstructionProgress(row, col);
         if (progress >= 1.0) return 0.0; // No dimming when complete
 
-        // Buildings under construction start fully dimmed and oscillate
-        // Use time-based oscillation for pulsing effect
-        const time = Date.now() / 1000; // Convert to seconds
-        const oscillation = (Math.sin(time * 2) + 1) / 2; // 0 to 1, oscillating
-
-        // Maximum dimming: 80% (brightness will be 20% at darkest)
-        // Minimum dimming: 60% (brightness will be 40% at lightest)
-        const minDim = 0.6;
-        const maxDim = 0.8;
-        return minDim + (oscillation * (maxDim - minDim));
+        // Buildings under construction are dimmed by 70% (30% brightness) - static, no pulsing
+        return 0.7;
     }
 
     /**
@@ -939,12 +713,24 @@ class RenderingSystemV2 {
      * Draw the loaded image at the building position
      */
     drawImageAtPosition(img, x, y, row, col) {
+        // Check for hover effects from ParcelHoverV2
+        let useImage = img;
+        let useOpacity = 1.0;
+        const bobOffset = this.game.parcelHover?.getBuildingBobOffset(row, col) || 0;
+        const tintedBuilding = this.game.parcelHover?.getTintedBuilding(row, col);
+
+        // Use tinted version for adjacent buildings
+        if (tintedBuilding) {
+            useImage = tintedBuilding.image;
+            useOpacity = tintedBuilding.opacity;
+        }
+
         // PRECISE ALIGNMENT: Building width slightly smaller than diamond parcel width
         // Left/right edges align with diamond left/right points, reduced by 4px
         const buildingWidth = this.tileWidth - 4; // 4px smaller than parcel width
 
         // Height maintains aspect ratio, unbounded vertically for tall cities
-        const aspectRatio = img.naturalWidth / img.naturalHeight;
+        const aspectRatio = useImage.naturalWidth / useImage.naturalHeight;
         const buildingHeight = buildingWidth / aspectRatio;
 
         // x,y from toIsometric is the center of the diamond
@@ -957,9 +743,9 @@ class RenderingSystemV2 {
         const buildingX = x;
         const buildingTopY = diamondBottomY - buildingHeight;
 
-        // Apply dynamic offsets from position adjuster (if active)
+        // Apply dynamic offsets from position adjuster (if active) and bob animation
         const finalX = buildingX - (buildingWidth / 2) + (this.buildingXOffset || 0);  // Center horizontally
-        const finalY = buildingTopY + (this.buildingYOffset || 0);
+        const finalY = buildingTopY + (this.buildingYOffset || 0) + bobOffset; // Add bob offset
 
         // Calculate visual effects
         const constructionDimming = this.calculateConstructionDimming(row, col);
@@ -977,6 +763,11 @@ class RenderingSystemV2 {
 
         // Save canvas state for effects
         this.ctx.save();
+
+        // Apply opacity for adjacent buildings (tinted versions)
+        if (useOpacity < 1.0) {
+            this.ctx.globalAlpha = useOpacity;
+        }
 
         // Build combined filter string to apply all effects at once
         let filterParts = [];
@@ -1002,9 +793,9 @@ class RenderingSystemV2 {
             this.ctx.filter = filterParts.join(' ');
         }
 
-        // Draw building with effects applied
+        // Draw building with effects applied (use tinted image if adjacent)
         this.ctx.drawImage(
-            img,
+            useImage,
             finalX,                      // Left edge (already centered in finalX calculation)
             finalY,                      // Top edge (building bottom sits on diamond bottom)
             buildingWidth,               // Exactly match parcel width
@@ -1014,20 +805,8 @@ class RenderingSystemV2 {
         // Restore canvas state (removes all effects)
         this.ctx.restore();
 
-        // Apply building tint if this parcel is connected (after main image)
-        const tint = this.getBuildingTint(row, col);
-        if (tint === 'yellow') {
-            this.ctx.save();
-            this.ctx.globalCompositeOperation = 'multiply';
-            this.ctx.fillStyle = this.hexToRgba(this.playerColor, 0.8);
-            this.ctx.fillRect(
-                finalX,
-                finalY,
-                buildingWidth,
-                buildingHeight
-            );
-            this.ctx.restore();
-        }
+        // REMOVED: Legacy building tint overlay effect
+        // Hover highlighting is now handled by ParcelHoverV2 on the parcel diamond, not on buildings
     }
 
     /**
@@ -1097,16 +876,9 @@ class RenderingSystemV2 {
     }
 
     /**
-     * Get building tint for connected parcels
+     * REMOVED: getBuildingTint - legacy building overlay effect
+     * Hover effects now handled cleanly by ParcelHoverV2 on parcel diamonds only
      */
-    getBuildingTint(row, col) {
-        const key = `${row},${col}`;
-        const isHovered = this.currentHover &&
-                         this.currentHover.row === row && this.currentHover.col === col;
-        const isAdjacent = this.adjacentParcels.has(key);
-
-        return (isHovered || isAdjacent) ? 'yellow' : null;
-    }
 
     /**
      * Schedule render for next frame

@@ -1222,8 +1222,10 @@ class ServerEconomicEngine {
         // 2. CARENS multiplier (0.6x to 1.4x, only applies if population > 100)
         const totalResidents = this.gameState.totalResidents || 0;
         let carensMultiplier = 1.0;
+        let carensData = null;
         if (totalResidents > 100) {
-            carensMultiplier = this.calculateLocalCARENSMultiplier(row, col);
+            carensData = this.calculateLocalCARENSMultiplier(row, col);
+            carensMultiplier = carensData.multiplier;
         }
 
         // 3. Performance = Core needs × CARENS (0-140%)
@@ -1261,6 +1263,9 @@ class ServerEconomicEngine {
 
             // Resource satisfaction data for tooltips
             resourceSatisfaction: localNeedsSatisfactionData.detailedSatisfaction,
+
+            // CARENS scores for boost opportunities
+            carensScores: carensData ? carensData.scores : null,
 
             // Detailed breakdown for data insights
             detailed: {
@@ -1395,9 +1400,11 @@ class ServerEconomicEngine {
         if (housingProvided > 0) {
             const potentialResidents = housingProvided * 2; // 2 people per bedroom
 
-            // Each resident needs nearby jobs and food access
+            // Each resident needs nearby jobs, food, education, and healthcare access
             const jobsNeeded = potentialResidents * 0.5; // 0.5 jobs per resident
             const foodNeeded = potentialResidents * 2; // 2 food units per resident
+            const educationNeeded = potentialResidents * 0.3; // 0.3 education per resident
+            const healthcareNeeded = potentialResidents * 0.2; // 0.2 healthcare per resident
 
             if (jobsNeeded > 0) {
                 const jobsSatisfaction = Math.min(1.0, connectedSupply.jobs / jobsNeeded);
@@ -1418,6 +1425,28 @@ class ServerEconomicEngine {
                     required: foodNeeded,
                     supplied: connectedSupply.food,
                     satisfaction: foodSatisfaction
+                };
+            }
+
+            if (educationNeeded > 0) {
+                const educationSatisfaction = Math.min(1.0, connectedSupply.education / educationNeeded);
+                satisfactionRatios.push(educationSatisfaction);
+
+                detailedSatisfaction.education = {
+                    required: educationNeeded,
+                    supplied: connectedSupply.education,
+                    satisfaction: educationSatisfaction
+                };
+            }
+
+            if (healthcareNeeded > 0) {
+                const healthcareSatisfaction = Math.min(1.0, connectedSupply.healthcare / healthcareNeeded);
+                satisfactionRatios.push(healthcareSatisfaction);
+
+                detailedSatisfaction.healthcare = {
+                    required: healthcareNeeded,
+                    supplied: connectedSupply.healthcare,
+                    satisfaction: healthcareSatisfaction
                 };
             }
         }
@@ -1544,7 +1573,11 @@ class ServerEconomicEngine {
 
         // console.log(`[INFO] Final CARENS for [${row},${col}]: ${clampedMultiplier.toFixed(3)}x`);
 
-        return clampedMultiplier;
+        return {
+            multiplier: clampedMultiplier,
+            scores: localCarens,
+            total: netCarensTotal
+        };
     }
 
     /**
@@ -4480,6 +4513,10 @@ class ServerEconomicEngine {
     /**
      * Process expired parcel auctions (called by timer)
      */
+    processExpiredParcelAuctions() {
+        return this.processAuctionTimers();
+    }
+
     processAuctionTimers() {
         const now = Date.now();
         let processed = 0;
@@ -4626,10 +4663,22 @@ class ServerEconomicEngine {
         const buildingsArray = [];
         if (this.gameState.buildings instanceof Map) {
             for (const [locationKey, building] of this.gameState.buildings) {
-                buildingsArray.push({
+                const serialized = {
                     ...building,
                     locationKey: locationKey
-                });
+                };
+
+                // DEBUG: Log first building to verify performance data
+                if (buildingsArray.length === 0 && building.performance) {
+                    console.log('📤 SERVER: Serializing building with performance:', {
+                        locationKey,
+                        hasPerformance: !!building.performance,
+                        hasResourceSatisfaction: !!building.performance?.resourceSatisfaction,
+                        resourceSatisfaction: building.performance?.resourceSatisfaction
+                    });
+                }
+
+                buildingsArray.push(serialized);
             }
         } else if (Array.isArray(this.gameState.buildings)) {
             buildingsArray.push(...this.gameState.buildings);
@@ -4972,6 +5021,14 @@ class ServerEconomicEngine {
             console.log(`[WARN] No performance details for [${row},${col}] ${building.id} - performanceDetails is ${performanceDetails ? 'missing summary' : 'null'}`);
         }
 
+        // Calculate construction progress if under construction
+        let constructionProgress = 1.0;
+        if (building.underConstruction) {
+            const constructionElapsed = Date.now() - building.constructionStartTime;
+            const constructionRequired = building.constructionDays * this.GAME_DAY_MS;
+            constructionProgress = Math.min(1.0, constructionElapsed / constructionRequired);
+        }
+
         const stateObject = {
             row,
             col,
@@ -4980,7 +5037,7 @@ class ServerEconomicEngine {
             condition: condition, // 0.1 to 1.0
             performance: performanceMultiplier, // 0.0 to 1.0 multiplier
             isUnderConstruction: building.underConstruction || false,
-            constructionProgress: building.constructionProgress || 1.0,
+            constructionProgress: constructionProgress,
             constructionDays: buildingDef.economics?.constructionDays || 1,
             constructionStartTime: building.constructionStartTime || Date.now(),
             repairCost: this.calculateRepairCost(building, 1.0),

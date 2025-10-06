@@ -451,23 +451,44 @@ class TooltipSystemV2 {
             `;
         }
 
-        // Show building needs based on enhanced calculation (top 2 deficits only)
-        // OR show CARENS boost opportunities if all JEEFHH needs are satisfied
-        if (!allJeefhhSatisfied && data.needs && data.needs.length > 0) {
-            const top2Needs = data.needs.slice(0, 2);
+        // Show building needs or status based on JEEFHH satisfaction
+        if (data.needs && data.needs.length > 0) {
+            // Show ALL unmet JEEFHH needs
             html += `
                 <div class="tooltip-section needs-section">
-                    <div class="section-label">Needs</div>
+                    <div class="section-label">Needed</div>
                     <div class="resource-list">
-                        ${top2Needs.map(need => `
-                            <div class="resource-item">${this.getResourceEmoji(need.resource)} ${Math.round(need.amount)} ${need.resource.toLowerCase()}</div>
+                        ${data.needs.map(need => `
+                            <div class="resource-item">${this.getResourceEmoji(need.resource)} ${need.amount} ${need.resource.toLowerCase()}</div>
                         `).join('')}
                     </div>
                 </div>
             `;
-        } else if (allJeefhhSatisfied && buildingData.livability) {
-            // Show CARENS boost opportunities when JEEFHH needs are satisfied
-            html += this.renderCarensBoostOpportunities(buildingData.livability);
+        } else {
+            // All JEEFHH needs are met - show confirmation
+            html += `
+                <div class="tooltip-section needs-section">
+                    <div class="section-label">✅ All core needs met</div>
+                </div>
+            `;
+
+            // Now show CARENS boost opportunities if available
+            const carensBoosts = this.getCarensBoostOpportunities(data.row, data.col);
+            if (carensBoosts !== null) {
+                html += this.renderCarensBoostOpportunities(carensBoosts);
+
+                // If peak performance achieved (no CARENS boosts needed), suggest repair
+                if (carensBoosts.length === 0) {
+                    const condition = performance.condition || 100;
+                    if (condition < 100) {
+                        html += `
+                            <div class="tooltip-section repair-section">
+                                <div class="section-label">🔧 Consider repairing to maintain peak performance</div>
+                            </div>
+                        `;
+                    }
+                }
+            }
         }
 
         return html;
@@ -636,41 +657,31 @@ class TooltipSystemV2 {
     /**
      * Render CARENS boost opportunities (top 2 negative impacts only, shown when JEEFHH needs are satisfied)
      */
-    renderCarensBoostOpportunities(livability) {
-        const negativeImpacts = [];
-        const carensTypes = [
-            { key: 'culture', emoji: '🎭' },
-            { key: 'affordability', emoji: '💰' },
-            { key: 'resilience', emoji: '🛡️' },
-            { key: 'environment', emoji: '🌿' },
-            { key: 'noise', emoji: '🔊' },
-            { key: 'safety', emoji: '🚨' }
-        ];
+    renderCarensBoostOpportunities(carensBoosts) {
+        if (!carensBoosts || carensBoosts.length === 0) {
+            // Peak performance achieved - all CARENS are neutral or positive
+            return `
+                <div class="tooltip-section boost-section">
+                    <div class="section-label">✅ Peak performance achieved</div>
+                </div>
+            `;
+        }
 
-        carensTypes.forEach(type => {
-            const rawValue = livability[type.key];
-            const value = this.extractLivabilityValue(rawValue);
-            if (value < 0) { // Only collect negative impacts
-                negativeImpacts.push({
-                    key: type.key,
-                    emoji: type.emoji,
-                    value: value
-                });
-            }
-        });
-
-        if (negativeImpacts.length === 0) return '';
-
-        // Sort by most negative first and take top 2
-        negativeImpacts.sort((a, b) => a.value - b.value);
-        const top2Opportunities = negativeImpacts.slice(0, 2);
+        const emojiMap = {
+            'culture': '🎭',
+            'affordability': '💰',
+            'resilience': '🛡️',
+            'environment': '🌿',
+            'noise': '🔊',
+            'safety': '🚨'
+        };
 
         return `
             <div class="tooltip-section boost-section">
-                <div class="section-header" style="text-align: left;">Boost with</div>
-                <div class="boost-list" style="text-align: left;">
-                    ${top2Opportunities.map(opp => `
-                        <div class="boost-item">${opp.emoji} ${this.getCarensBoostSuggestion(opp.key)}</div>
+                <div class="section-label">Boost with</div>
+                <div class="resource-list">
+                    ${carensBoosts.map(boost => `
+                        <div class="resource-item">${emojiMap[boost.key] || ''} ${boost.label}</div>
                     `).join('')}
                 </div>
             </div>
@@ -1288,68 +1299,90 @@ class TooltipSystemV2 {
         const performanceData = this.getBuildingPerformance(row, col);
         const resourceSatisfaction = performanceData?.resourceSatisfaction;
 
+        console.log(`🔍 Building needs for [${row},${col}]:`, {
+            performanceData,
+            resourceSatisfaction,
+            buildingResources: buildingDef.resources
+        });
+
         const needs = [];
         const resources = buildingDef.resources;
 
-        // Only show unmet needs (satisfaction < 80%)
-        const satisfactionThreshold = 0.8;
+        // Only show unmet needs (satisfaction < 100%)
+        const satisfactionThreshold = 1.0;
 
-        // Direct building requirements
-        if (resources.energyRequired > 0) {
-            const energySat = resourceSatisfaction?.energy?.satisfaction || 0;
-            if (energySat < satisfactionThreshold) {
-                const supplied = resourceSatisfaction?.energy?.supplied || 0;
-                const required = resources.energyRequired;
+        // Check all JEEFHH resources
+        const jeefhhResources = [
+            { key: 'energy', label: 'Energy', required: resources.energyRequired },
+            { key: 'jobs', label: 'Jobs', fromSatisfaction: true },
+            { key: 'food', label: 'Food', fromSatisfaction: true },
+            { key: 'education', label: 'Education', fromSatisfaction: true },
+            { key: 'healthcare', label: 'Healthcare', fromSatisfaction: true }
+        ];
+
+        for (const resource of jeefhhResources) {
+            const sat = resourceSatisfaction?.[resource.key]?.satisfaction;
+            if (sat === undefined || sat >= satisfactionThreshold) continue;
+
+            const supplied = resourceSatisfaction?.[resource.key]?.supplied || 0;
+            const required = resourceSatisfaction?.[resource.key]?.required ||
+                            (resource.fromSatisfaction ? 0 : resource.required);
+
+            if (required > 0) {
                 const unmet = Math.max(0, required - supplied);
-
                 needs.push({
-                    resource: 'Energy',
-                    amount: unmet,
-                    type: 'direct',
-                    description: `Need ${unmet} more energy (${supplied}/${required} supplied)`
+                    resource: resource.label,
+                    amount: Math.ceil(unmet), // Round up to nearest whole number
+                    supplied: Math.round(supplied * 10) / 10,
+                    required: Math.round(required * 10) / 10,
+                    satisfaction: sat
                 });
             }
         }
 
-        // For housing buildings, calculate resident needs
-        const housingProvided = resources.housingProvided || 0;
-        if (housingProvided > 0) {
-            const potentialResidents = housingProvided * 2; // 2 people per bedroom
+        return needs;
+    }
 
-            // Jobs needed
-            const jobsSat = resourceSatisfaction?.jobs?.satisfaction || 0;
-            if (jobsSat < satisfactionThreshold) {
-                const supplied = resourceSatisfaction?.jobs?.supplied || 0;
-                const required = resourceSatisfaction?.jobs?.required || 0;
-                if (required > 0) {
-                    const unmet = Math.max(0, required - supplied);
-                    needs.push({
-                        resource: 'Jobs',
-                        amount: Math.round(unmet),
-                        type: 'resident',
-                        description: `Need ${Math.round(unmet)} more jobs for ${potentialResidents} residents`
-                    });
-                }
-            }
+    getCarensBoostOpportunities(row, col) {
+        // Get CARENS scores from server performance data
+        const performanceData = this.getBuildingPerformance(row, col);
+        const carensScores = performanceData?.resourceSatisfaction?.carensScores ||
+                            performanceData?.carensScores;
 
-            // Food needed
-            const foodSat = resourceSatisfaction?.food?.satisfaction || 0;
-            if (foodSat < satisfactionThreshold) {
-                const supplied = resourceSatisfaction?.food?.supplied || 0;
-                const required = resourceSatisfaction?.food?.required || 0;
-                if (required > 0) {
-                    const unmet = Math.max(0, required - supplied);
-                    needs.push({
-                        resource: 'Food',
-                        amount: Math.round(unmet),
-                        type: 'resident',
-                        description: `Need ${Math.round(unmet)} more food for ${potentialResidents} residents`
-                    });
-                }
-            }
+        if (!carensScores) {
+            return null;
         }
 
-        return needs.length > 0 ? needs : null;
+        // Collect negative impacts only
+        const negativeImpacts = [];
+        const carensTypes = [
+            { key: 'culture', label: 'Nearby cultural experiences lacking' },
+            { key: 'affordability', label: 'Affordability pressures high' },
+            { key: 'resilience', label: 'Economic stability needed' },
+            { key: 'environment', label: 'Environmental quality poor' },
+            { key: 'noise', label: 'Noise pollution present' },
+            { key: 'safety', label: 'Safety concerns present' }
+        ];
+
+        carensTypes.forEach(type => {
+            const value = carensScores[type.key] || 0;
+            if (value < 0) {
+                negativeImpacts.push({
+                    key: type.key,
+                    label: type.label,
+                    value: value
+                });
+            }
+        });
+
+        if (negativeImpacts.length === 0) {
+            // All CARENS are neutral or positive - peak performance
+            return [];
+        }
+
+        // Sort by most negative first and take top 2
+        negativeImpacts.sort((a, b) => a.value - b.value);
+        return negativeImpacts.slice(0, 2);
     }
 
     // 🚫 CLIENT CALCULATION - DISABLED! BUSTED!
@@ -1379,6 +1412,12 @@ class TooltipSystemV2 {
 
                 // Include resource satisfaction data from server
                 const resourceSatisfaction = building.performance?.resourceSatisfaction;
+
+                console.log(`🔍 Building object for [${row},${col}]:`, {
+                    hasPerformance: !!building.performance,
+                    performance: building.performance,
+                    resourceSatisfaction
+                });
 
                 return {
                     efficiency: Math.max(0, Math.round(efficiency)),
