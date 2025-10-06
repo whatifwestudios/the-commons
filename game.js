@@ -1350,14 +1350,38 @@ class IsometricGrid {
             cashDisplay.classList.add('cash-blink');
             setTimeout(() => cashDisplay.classList.remove('cash-blink'), 1500);
         }
-        
+
         // Add red border blink to context menu or relevant UI element
         const contextMenu = document.getElementById('context-menu');
         if (contextMenu && contextMenu.style.display !== 'none') {
             contextMenu.classList.add('insufficient-funds-blink');
             setTimeout(() => contextMenu.classList.remove('insufficient-funds-blink'), 1500);
         }
-        
+
+        // If there's a modal open, apply to it
+        const openModal = document.querySelector('.modal[style*="block"]');
+        if (openModal) {
+            openModal.classList.add('insufficient-funds-blink');
+            setTimeout(() => openModal.classList.remove('insufficient-funds-blink'), 1500);
+        }
+    }
+
+    // Visual feedback for insufficient actions (same style as insufficient funds)
+    showInsufficientActionsFeedback() {
+        // Find the action display
+        const actionDisplay = document.querySelector('#current-actions');
+        if (actionDisplay) {
+            actionDisplay.classList.add('cash-blink');
+            setTimeout(() => actionDisplay.classList.remove('cash-blink'), 1500);
+        }
+
+        // Add red border blink to context menu or relevant UI element
+        const contextMenu = document.getElementById('context-menu');
+        if (contextMenu && contextMenu.style.display !== 'none') {
+            contextMenu.classList.add('insufficient-funds-blink');
+            setTimeout(() => contextMenu.classList.remove('insufficient-funds-blink'), 1500);
+        }
+
         // If there's a modal open, apply to it
         const openModal = document.querySelector('.modal[style*="block"]');
         if (openModal) {

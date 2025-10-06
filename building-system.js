@@ -768,7 +768,7 @@ class BuildingSystem {
         
         // Check if player has enough actions (don't spend yet - server will handle)
         if (!this.game.actionManager.canUseAction('purchaseParcel')) {
-            this.game.showNotification('Not enough actions! Visit the marketplace to buy more.', 'error');
+            this.game.showInsufficientActionsFeedback();
             this.game.hideContextMenu();
             return false;
         }
@@ -861,8 +861,9 @@ class BuildingSystem {
         const buildingCost = this.game.getBuildingCost(buildingId);
         console.log('🔧 Building cost result:', buildingCost);
         
-        // Check if player has enough actions
-        if (!this.game.useAction('constructBuilding', this.game.actionManager.actionCosts.constructBuilding)) {
+        // Check if player has enough actions (don't spend yet - server will handle)
+        if (!this.game.actionManager.canUseAction('constructBuilding')) {
+            this.game.showInsufficientActionsFeedback();
             this.game.hideContextMenu();
             return false;
         }

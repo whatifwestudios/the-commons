@@ -176,15 +176,21 @@ class LandExchangeSystem {
         // Populate parcel info
         const parcelCoord = this.game.getParcelCoordinate(row, col);
         document.getElementById('offer-parcel-coords').textContent = parcelCoord;
-        document.getElementById('offer-current-owner').textContent = parcel.owner || 'Unclaimed';
-        document.getElementById('offer-last-paid').textContent = `$${(parcel.lastPurchasePrice || 100).toLocaleString()}`;
+
+        // Use player name instead of player ID
+        const ownerName = parcel.owner ? this.game.getPlayerName(parcel.owner) : 'Unclaimed';
+        document.getElementById('offer-current-owner').textContent = ownerName;
+
+        // Use server-authoritative last paid price
+        const lastPaidPrice = this.game.economicClient?.getParcelPrice(row, col) || 100;
+        document.getElementById('offer-last-paid').textContent = `$${lastPaidPrice.toLocaleString()}`;
 
         // Show recent market activity if available (placeholder for now)
         const recentOffersSection = document.getElementById('recent-offers-section');
         recentOffersSection.style.display = 'none'; // Hide until we implement price history
 
         // Pre-fill with suggested offer (last paid + 20%)
-        const suggestedOffer = Math.ceil((parcel.lastPurchasePrice || 100) * 1.2);
+        const suggestedOffer = Math.ceil(lastPaidPrice * 1.2);
         document.getElementById('offer-amount').value = suggestedOffer;
 
         // Store current parcel for submission

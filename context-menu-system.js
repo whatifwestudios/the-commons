@@ -175,19 +175,44 @@ class ContextMenuSystem {
     createUnownedParcelMenu(contentEl, row, col, price) {
         const parcel = this.game.grid[row][col];
 
-        // Check for ANY pending offers blocking ALL transactions
+        // Check for ANY pending offers - show offer resolution UI and block buying
         if (this.game.landExchange && this.game.landExchange.hasPendingOffersAsOwner()) {
+            const offers = this.game.landExchange.getOffersAsOwner();
             const blockHeader = document.createElement('div');
-            blockHeader.style.cssText = 'padding: 12px; background: rgba(255, 165, 0, 0.1); border: 1px solid #ffa500; border-radius: 4px; text-align: center;';
+            blockHeader.style.cssText = 'padding: 12px; background: rgba(255, 165, 0, 0.1); border: 1px solid #ffa500; border-radius: 4px; margin-bottom: 12px;';
             blockHeader.innerHTML = `
                 <div style="font-size: 12px; font-weight: 600; color: #ffa500; margin-bottom: 4px;">🔒 BUYING BLOCKED</div>
-                <div style="font-size: 10px; color: #ccc;">Resolve pending offers first</div>
-                <div style="font-size: 10px; color: #888; margin-top: 4px;">Check LAND EXCHANGE sidebar</div>
+                <div style="font-size: 10px; color: #ccc;">Resolve ${offers.length} pending offer${offers.length > 1 ? 's' : ''} below to unblock</div>
             `;
             contentEl.appendChild(blockHeader);
+
+            // Show pending offers with Accept/Match buttons
+            offers.forEach(offer => {
+                const offerDiv = document.createElement('div');
+                offerDiv.style.cssText = 'background: #1a1a1a; border: 1px solid #2a2a2a; border-radius: 4px; padding: 10px; margin-bottom: 8px;';
+
+                const amountToPay = offer.offerAmount - (offer.parcelLastPaid || 0);
+
+                offerDiv.innerHTML = `
+                    <div style="font-size: 13px; font-weight: 600; color: #fff; margin-bottom: 8px;">$${offer.offerAmount.toLocaleString()}</div>
+                    <div style="display: flex; gap: 6px;">
+                        <button class="context-btn" style="flex: 1; font-size: 10px; padding: 6px; background: #4CAF50; color: #000;" onclick="game.landExchange.respondToOffer(${offer.id}, 'accept'); game.contextMenuSystem.hide();">
+                            ACCEPT
+                        </button>
+                        <button class="context-btn" style="flex: 1; font-size: 10px; padding: 6px; background: #ffa500; color: #000;" onclick="game.landExchange.respondToOffer(${offer.id}, 'match'); game.contextMenuSystem.hide();">
+                            MATCH (1⚡)
+                        </button>
+                    </div>
+                    <div style="font-size: 9px; color: #888; margin-top: 6px;">Match pays $${amountToPay.toLocaleString()} to treasury + 1 action</div>
+                `;
+                contentEl.appendChild(offerDiv);
+            });
+
+            // Early return - no buy button when offers pending (global block in effect)
             return;
         }
 
+        // No pending offers - show normal buy button
         const buyBtn = document.createElement('button');
         buyBtn.className = 'context-btn primary';
         buyBtn.textContent = `BUY PARCEL - $${price}`;

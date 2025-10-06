@@ -82,7 +82,8 @@
       "Bash(mv:*)",
       "Bash(npm uninstall:*)",
       "Bash(git mv:*)",
-      "Read(//WSL.LOCALHOST/UBUNTU-24.04/home/zjb/the-commons-clean/**)"
+      "Read(//WSL.LOCALHOST/UBUNTU-24.04/home/zjb/the-commons-clean/**)",
+      "Bash(git log:*)"
     ],
     "deny": [],
     "ask": []
