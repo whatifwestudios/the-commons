@@ -741,28 +741,17 @@ class EconomicClient {
         // Handle server-authoritative game state updates
         if (update.type === 'GAME_STATE' && update.gameState) {
             this.syncGameState(update.gameState, update.eventType);
-            return; // New architecture - ignore legacy update fields
+            return;
         }
 
-        // Legacy support for old message format (will be removed)
+        // Legacy message format support
         if (update.playerBalances) {
             this.playerBalances = update.playerBalances;
 
-            // If current player's balance changed, notify cash manager
             if (this.playerId && this.playerBalances[this.playerId] !== undefined) {
                 const newBalance = this.playerBalances[this.playerId];
-                // Balance updated via WebSocket
-
-                // Force cash manager sync if it exists
-                // ✅ CLEANED: Direct balance update - no CashManager needed
             }
         }
-
-        // REMOVED: Legacy gameTime sync to prevent conflicts with modern syncGameState
-        // Only use server-authoritative gameTime from GAME_STATE messages
-        // if (update.gameTime) {
-        //     this.syncWithServerTime(update.gameTime);
-        // }
 
         // Clear performance cache for affected buildings
         if (update.transaction && update.transaction.location) {
@@ -969,7 +958,7 @@ class EconomicClient {
             }
             this.gameState.players = gameState.players;
 
-            // Legacy support: extract specific data into separate properties
+            // Extract balance/action data for backward compatibility
             this.playerBalances = {};
             this.playerActions = {};
             Object.values(gameState.players).forEach(player => {

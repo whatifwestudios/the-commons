@@ -5,7 +5,7 @@
  * Each room is like a separate board game table with its own state.
  */
 
-const ServerEconomicEngine = require('./server-economic-engine-v2');
+const ServerEconomicEngine = require('./server-economic-engine');
 // GameState removed - using v2 server-authoritative economic engine
 const CityNameGenerator = require('./city-name-generator');
 const Logger = require('./logger');
@@ -551,7 +551,8 @@ class GameRoom {
             id: this.id,
             name: this.roomName,
             state: this.state,
-            players: this.players.size,
+            playerCount: this.players.size,
+            players: this.getCleanPlayerData(),
             maxPlayers: this.maxPlayers,
             host: this.host,
             isPublic: this.isPublic,
@@ -633,8 +634,7 @@ class GameRoom {
         // Process daily events, building completion, etc.
         this.economicEngine.updateGameTime();
 
-        // Process expired parcel auctions
-        this.economicEngine.processExpiredParcelAuctions();
+        // Land Exchange: No timer-based processing needed (async offer system)
 
         // Check victory conditions
         this.checkVictoryConditions();

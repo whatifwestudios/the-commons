@@ -85,10 +85,6 @@ class RenderingSystemV2 {
 
     }
 
-    /**
-     * REMOVED: Mouse handling delegated to ParcelHoverV2 and game.js
-     * This avoids duplicate event listeners and consolidates interaction logic
-     */
 
     /**
      * Clean up all event listeners (for multiplayer room changes)
@@ -99,10 +95,6 @@ class RenderingSystemV2 {
         }
     }
 
-    /**
-     * REMOVED: All hover and tooltip logic delegated to ParcelHoverV2
-     * ParcelHoverV2 handles: coordinate conversion, hover detection, adjacent parcels, tooltips
-     */
 
     /**
      * Complete V2 rendering pipeline - clean and efficient
@@ -116,13 +108,10 @@ class RenderingSystemV2 {
 
         // Apply transformations with defensive checks
         this.ctx.save();
-        // Pan and zoom functionality removed - use default scale/translation
-        // this.ctx.translate(0, 0);
-        // this.ctx.scale(1, 1);
 
         // Complete V2 rendering pipeline
         this.renderGrid();
-        this.renderBuildings(); // ✅ FIX: Add building rendering to V2 pipeline
+        this.renderBuildings();
         this.renderHoverEffects();
 
         this.ctx.restore();
@@ -804,9 +793,6 @@ class RenderingSystemV2 {
 
         // Restore canvas state (removes all effects)
         this.ctx.restore();
-
-        // REMOVED: Legacy building tint overlay effect
-        // Hover highlighting is now handled by ParcelHoverV2 on the parcel diamond, not on buildings
     }
 
     /**
@@ -874,11 +860,6 @@ class RenderingSystemV2 {
 
         this.ctx.restore();
     }
-
-    /**
-     * REMOVED: getBuildingTint - legacy building overlay effect
-     * Hover effects now handled cleanly by ParcelHoverV2 on parcel diamonds only
-     */
 
     /**
      * Schedule render for next frame

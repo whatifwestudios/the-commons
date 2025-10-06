@@ -219,23 +219,34 @@ class GovernanceV3 {
 
         // Sync treasury data from server via economic client
         if (this.economicClient && this.economicClient.governance) {
-            this.treasuryData.cityTreasury = this.economicClient.governance.treasury || 0;
+            // Get unallocated funds (treasury not yet distributed to budgets)
+            this.treasuryData.unallocatedFunds = this.economicClient.governance.treasury || 0;
+
+            // Get category budgets
             this.treasuryData.categoryBudgets = this.economicClient.governance.budgets || {};
+
+            // Calculate City Treasury = unallocated + sum of all budget balances
+            const budgetSum = Object.values(this.treasuryData.categoryBudgets).reduce((sum, val) => sum + val, 0);
+            this.treasuryData.cityTreasury = this.treasuryData.unallocatedFunds + budgetSum;
+
+            console.log('💰 GOVERNANCE: Treasury calculation:', {
+                unallocatedFunds: this.treasuryData.unallocatedFunds,
+                categoryBudgets: this.treasuryData.categoryBudgets,
+                budgetSum: budgetSum,
+                cityTreasury: this.treasuryData.cityTreasury
+            });
         }
 
-        // Get monthly budget data (unallocated funds) from economic client
+        // Get monthly budget data from economic client
         if (this.economicClient && this.economicClient.governance && this.economicClient.governance.monthlyBudget) {
-            // Calculate unallocated funds: total LVT collection minus allocated budget
             const monthlyBudget = this.economicClient.governance.monthlyBudget;
-            this.treasuryData.unallocatedFunds = monthlyBudget.totalRevenue || 0;
             this.treasuryData.budgetAllocations = monthlyBudget.totalAllocations || {};
             this.treasuryData.budgetProportions = monthlyBudget.proportions || {};
 
             console.log('💰 GOVERNANCE: Updated budget data:', {
                 totalAllocations: monthlyBudget.totalAllocations,
                 totalPoints: monthlyBudget.totalPoints,
-                proportions: monthlyBudget.proportions,
-                categoryBudgets: this.treasuryData.categoryBudgets
+                proportions: monthlyBudget.proportions
             });
         }
 
@@ -445,6 +456,15 @@ class GovernanceV3 {
             // Enable/disable increase button based on available points
             if (cache?.increaseBtn) {
                 cache.increaseBtn.disabled = pointsData.available <= 0;
+            }
+
+            // Update category budget balance display
+            if (cache?.container) {
+                const coffersSpan = cache.container.querySelector('.category-coffers span');
+                if (coffersSpan && this.treasuryData.categoryBudgets) {
+                    const balance = this.treasuryData.categoryBudgets[cat] || 0;
+                    coffersSpan.textContent = Math.floor(balance).toLocaleString();
+                }
             }
         });
 

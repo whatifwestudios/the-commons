@@ -115,9 +115,7 @@ class ActionMarketplaceV2 {
     }
 
     startRefreshTimer() {
-        // REMOVED: Client-side timer for server-authoritative timing
-        // Timer updates now handled only via server broadcasts
-        console.log('📅 Action Market now uses server-authoritative timing only');
+        // No-op: Server-authoritative timing only
     }
 
     stopRefreshTimer() {

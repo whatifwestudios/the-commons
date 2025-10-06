@@ -1872,7 +1872,7 @@ if (typeof document !== 'undefined') {
             text-transform: uppercase;
             padding: 2px 6px;
             border-radius: 3px;
-            background: #333;
+            
         }
 
         .tooltip-status.unowned { background: #666; color: #ccc; }
@@ -1893,9 +1893,9 @@ if (typeof document !== 'undefined') {
         }
 
         .player-badge {
-            padding: 2px 6px;
+            padding: 6px 10px;
             border-radius: 4px;
-            font-size: 14px;
+            font-size: 16px;
             font-weight: 600;
             text-transform: uppercase;
             letter-spacing: 0.5px;
@@ -2310,15 +2310,15 @@ if (typeof document !== 'undefined') {
 
         /* Standardized ownership badge for header alignment */
         .ownership-badge {
-            padding: 2px 6px;
+            padding: 6px 10px;
             border-radius: 3px;
-            font-size: 11px;
+            font-size: 13px;
             font-weight: 500;
             text-transform: uppercase;
         }
 
         .ownership-badge.city {
-            background: #333;
+            
             color: white;
         }
 
@@ -2355,7 +2355,7 @@ if (typeof document !== 'undefined') {
             text-transform: uppercase;
             padding: 2px 6px;
             border-radius: 3px;
-            background: #333;
+            
         }
     `;
 

@@ -54,6 +54,21 @@ class ServerEconomicEngine {
             playerBalances: new Map(), // key: playerId -> cash balance (server-authoritative)
             playerActions: new Map(), // key: playerId -> action inventory (server-authoritative)
 
+            // Governance budgets (allocated from monthly LVT revenue)
+            budgets: {
+                education: 0,
+                healthcare: 0,
+                infrastructure: 0,
+                housing: 0,
+                culture: 0,
+                recreation: 0,
+                commercial: 0,
+                civic: 0,
+                emergency: 0,
+                ubi: 0
+            },
+            treasury: 0, // Unallocated tax revenue
+
             // Action Marketplace
             actionMarketplace: {
                 nextListingId: 1,
@@ -62,12 +77,12 @@ class ServerEconomicEngine {
                 avgPrice: 0
             },
 
-            // Parcel Auction System (hostile takeovers)
-            parcelAuctions: {
-                nextAuctionId: 1,
-                activeAuctions: new Map(), // key: auctionId -> ParcelAuction
-                maxConcurrentAuctions: 2,
-                auctionHistory: []
+            // Land Exchange System (offer-based parcel trading)
+            landExchange: {
+                nextOfferId: 1,
+                activeOffers: new Map(), // key: offerId -> Offer
+                maxOffersPerPlayer: 3,
+                offerHistory: []
             },
 
             // Residents distribution with age demographics
@@ -102,6 +117,18 @@ class ServerEconomicEngine {
         this.processedTransactions = new Set();
         this.governanceSystem = null; // Will be injected by game
 
+        // Debug flags (environment-based)
+        const isDevelopment = process.env.NODE_ENV !== 'production';
+        this.DEBUG = {
+            MASTER: isDevelopment,
+            PERFORMANCE: isDevelopment,
+            CARENS: isDevelopment,
+            REVENUE: isDevelopment,
+            BROADCASTS: isDevelopment,
+            CACHE: isDevelopment,
+            TIMING: true
+        };
+
         // Performance multiplier ranges
         this.JEEFHH_MULTIPLIER_RANGE = { min: 0.4, max: 1.6 };
         this.CARENS_MULTIPLIER_RANGE = { min: 0.6, max: 1.4 };
@@ -116,11 +143,16 @@ class ServerEconomicEngine {
         // Performance optimization: Caching system
         this.cache = {
             jeefhh: { lastUpdate: 0, data: null, dirty: true },
-            carens: { lastUpdate: 0, data: null, dirty: true },
+            carens: new Map(), // Per-building CARENS cache
             buildingPerformances: new Map(), // locationKey -> {lastUpdate, data, dirty}
             playerWealth: new Map(), // playerId -> {lastUpdate, data, dirty}
             lastFullState: null, // For delta comparisons
-            lastBroadcast: 0
+            lastBroadcast: 0,
+            stats: {
+                hits: 0,
+                misses: 0,
+                invalidations: 0
+            }
         };
 
         // Delta tracking for optimized updates
@@ -164,6 +196,80 @@ class ServerEconomicEngine {
 
         // console.log('🏭 Server Economic Engine v2 initialized');
     }
+
+    // ========================================================================
+    // CACHE MANAGEMENT METHODS
+    // ========================================================================
+
+    /**
+     * Invalidate performance cache for a specific building
+     */
+    invalidateBuildingCache(row, col) {
+        const locationKey = `${row},${col}`;
+        const cached = this.cache.buildingPerformances.get(locationKey);
+        if (cached) {
+            cached.dirty = true;
+            this.cache.stats.invalidations++;
+        }
+
+        // Also invalidate CARENS cache for this building
+        const carensCached = this.cache.carens.get(locationKey);
+        if (carensCached) {
+            carensCached.dirty = true;
+        }
+    }
+
+    /**
+     * Invalidate caches for all buildings within range of a changed building
+     * Called when buildings are constructed/destroyed since CARENS depends on neighbors
+     */
+    invalidateAdjacentCaches(row, col, maxRange = 11) {
+        this.cache.stats.invalidations++;
+
+        // Invalidate all buildings within range
+        this.gameState.buildings.forEach((building, key) => {
+            const [r, c] = key.split(',').map(Number);
+            const distance = Math.max(Math.abs(r - row), Math.abs(c - col));
+            if (distance <= maxRange) {
+                this.invalidateBuildingCache(r, c);
+            }
+        });
+
+        if (this.DEBUG.CACHE) {
+            console.log(`[CACHE] Invalidated caches for buildings within ${maxRange} tiles of [${row},${col}]`);
+        }
+    }
+
+    /**
+     * Log cache statistics periodically
+     */
+    logCacheStats() {
+        const stats = this.cache.stats;
+        const total = stats.hits + stats.misses;
+        const hitRate = total > 0 ? ((stats.hits / total) * 100).toFixed(1) : 0;
+
+        console.log(`[CACHE] Stats - Hits: ${stats.hits}
+    /**
+     * Ensure DEBUG object exists (safety check)
+     */
+    ensureDebug() {
+        if (!this.DEBUG) {
+            const isDevelopment = process.env.NODE_ENV !== 'production';
+            this.DEBUG = {
+                MASTER: isDevelopment,
+                PERFORMANCE: isDevelopment,
+                CARENS: isDevelopment,
+                REVENUE: isDevelopment,
+                BROADCASTS: isDevelopment,
+                CACHE: isDevelopment,
+                TIMING: true
+            };
+        }
+        return this.DEBUG;
+    }
+, Misses: ${stats.misses}, Hit Rate: ${hitRate}%, Invalidations: ${stats.invalidations}`);
+    }
+
 
     /**
      * Initialize server-authoritative grid
@@ -258,7 +364,7 @@ class ServerEconomicEngine {
                 // Only increase price for unbought parcels (City-owned)
                 if (neighbor.owner === 'City') {
                     neighbor.price += priceIncrease;
-        // console.log(`💰 Neighbor price increased: [${newRow},${newCol}] now $${neighbor.price}`);
+        // console.log(`[REVENUE] Neighbor price increased: [${newRow},${newCol}] now $${neighbor.price}`);
                 }
             }
         });
@@ -269,7 +375,7 @@ class ServerEconomicEngine {
      */
     setBroadcastFunction(broadcastFn) {
         this.broadcastFunction = broadcastFn;
-        // console.log('📡 WebSocket broadcast function connected to economic engine');
+        // console.log('[BROADCAST] WebSocket broadcast function connected to economic engine');
     }
 
     /**
@@ -291,7 +397,7 @@ class ServerEconomicEngine {
 
         // console.log(`📋 Loaded ${this.buildingDefinitions.size} building definitions`);
         } catch (error) {
-            console.error('❌ Failed to load building definitions:', error);
+            console.error('[ERROR] Failed to load building definitions:', error);
         }
     }
 
@@ -306,6 +412,8 @@ class ServerEconomicEngine {
 
         // Check for building completion every update (not just daily)
         this.processAutomaticBuildingCompletion();
+
+        // Land Exchange: No timers needed (async offer system)
 
         // Trigger daily events on day transitions
         if (currentDay > previousDay) {
@@ -348,7 +456,7 @@ class ServerEconomicEngine {
 
                 if (constructionElapsed >= constructionRequired) {
                     // Building should be completed
-        // console.log(`🏗️ Auto-completing construction: ${building.id} at ${locationKey} after ${building.constructionDays} days`);
+        // console.log(`[INFO] Auto-completing construction: ${building.id} at ${locationKey} after ${building.constructionDays} days`);
 
                     // Mark as completed
                     building.underConstruction = false;
@@ -375,7 +483,7 @@ class ServerEconomicEngine {
 
         // If any buildings completed, trigger room-wide recalculation
         if (completedBuildings.length > 0) {
-        // console.log(`✅ ${completedBuildings.length} buildings completed construction automatically`);
+        // console.log(`[INFO] ${completedBuildings.length} buildings completed construction automatically`);
 
             // Recalculate room-wide economics with new completed buildings
             this.recalculateGlobalEconomics();
@@ -386,7 +494,7 @@ class ServerEconomicEngine {
                 if (!building.performance || !building.performance.summary) {
                     building.performance = this.calculateBuildingPerformance(row, col);
                     if (building.performance && building.performance.summary) {
-        // console.log(`📊 Performance calculated: ${building.id} at [${row},${col}] - Revenue: $${building.performance.summary.revenue}, Net: $${building.performance.summary.netIncome}`);
+        // console.log(`[CARENS] Performance calculated: ${building.id} at [${row},${col}] - Revenue: $${building.performance.summary.revenue}, Net: $${building.performance.summary.netIncome}`);
                     }
                 }
             });
@@ -405,7 +513,7 @@ class ServerEconomicEngine {
                     }
                 });
 
-        // console.log(`📡 Broadcasting BUILD_COMPLETE_AUTO for ${building.id} at ${locationKey}`);
+        // console.log(`[BROADCAST] Broadcasting BUILD_COMPLETE_AUTO for ${building.id} at ${locationKey}`);
             });
         }
     }
@@ -442,6 +550,9 @@ class ServerEconomicEngine {
         // Always broadcast gameTime updates to keep all clients synchronized
         // Even on quiet days, time must stay in sync across all players
         this.broadcastGameState({ type: 'DAILY_UPDATE', source: 'timer' });
+
+        // Broadcast Commonwealth scores update every day
+        this.broadcastCommonwealthScores();
     }
 
     /**
@@ -479,7 +590,7 @@ class ServerEconomicEngine {
         this.calculateMonthlyBudgets();
         this.transferMonthlyFunds();
 
-        // console.log(`📊 Monthly events completed for ${monthName}`);
+        // console.log(`[CARENS] Monthly events completed for ${monthName}`);
     }
 
     /**
@@ -533,8 +644,6 @@ class ServerEconomicEngine {
                     result = await this.processCashSpend(transaction);
                     break;
 
-                // Legacy GOVERNANCE_VOTE removed - use V2 processGovernanceTransaction instead
-
                 // Action Marketplace Transactions
                 case 'ACTION_CREATE_LISTING':
                     result = await this.processCreateActionListing(transaction);
@@ -556,17 +665,17 @@ class ServerEconomicEngine {
                     result = await this.processEndActionEarly(transaction);
                     break;
 
-                // Parcel Auction System
-                case 'START_PARCEL_AUCTION':
-                    result = await this.processStartParcelAuction(transaction);
+                // Land Exchange System
+                case 'LAND_EXCHANGE_MAKE_OFFER':
+                    result = await this.processMakeOffer(transaction);
                     break;
 
-                case 'PARCEL_AUCTION_BID':
-                    result = await this.processParcelAuctionBid(transaction);
+                case 'LAND_EXCHANGE_RESPOND':
+                    result = await this.processOfferResponse(transaction);
                     break;
 
-                case 'PARCEL_AUCTION_OWNER_RESPONSE':
-                    result = await this.processParcelAuctionOwnerResponse(transaction);
+                case 'LAND_EXCHANGE_WITHDRAW':
+                    result = await this.processWithdrawOffer(transaction);
                     break;
 
                 case 'ACTION_SPEND':
@@ -612,7 +721,7 @@ class ServerEconomicEngine {
             };
 
         } catch (error) {
-            console.error('❌ Transaction failed:', error);
+            console.error('[ERROR] Transaction failed:', error);
             return {
                 success: false,
                 error: error.message,
@@ -632,6 +741,12 @@ class ServerEconomicEngine {
         // Use playerBalances Map for balance tracking
         const currentBalance = this.getPlayerBalance(playerId);
 
+        // ✅ ENFORCE ACTION COST (critical bug fix)
+        const actionCost = this.ACTION_COSTS.constructBuilding || 1;
+        const player = this.getOrCreatePlayer(playerId);
+        if (!player.actions || player.actions.total < actionCost) {
+            throw new Error(`Insufficient actions: need ${actionCost}, have ${player.actions?.total || 0}`);
+        }
 
         // Validate player can afford
         if (currentBalance < cost) {
@@ -664,37 +779,34 @@ class ServerEconomicEngine {
         const buildingCategory = buildingDef.category || 'housing';
         const budgetCategory = this.mapBuildingToBudgetCategory(buildingCategory);
         const fullCost = buildingDef.economics?.buildCost || buildingDef.cost || cost;
-        const categoryBudget = this.governanceSystem ? this.governanceSystem.getBudgets()[budgetCategory] || 0 : 0;
+        const categoryBudget = this.gameState.budgets?.[budgetCategory] || 0;
         const publicFunding = Math.min(categoryBudget, fullCost);
         const playerCost = Math.max(0, fullCost - publicFunding);
 
-        // console.log(`🏗️ BUILD: ${buildingId} at [${row},${col}] - Full cost: $${fullCost}, Public funding: $${publicFunding}, Player cost: $${playerCost}`);
+        // console.log(`[INFO] BUILD: ${buildingId} at [${row},${col}] - Full cost: $${fullCost}, Public funding: $${publicFunding}, Player cost: $${playerCost}`);
 
         // Validate that the client sent the correct player cost
         if (Math.abs(cost - playerCost) > 0.01) {
-            console.warn(`⚠️ Cost mismatch - Client sent: $${cost}, Server calculated: $${playerCost}`);
+            console.warn(`[WARN] Cost mismatch - Client sent: $${cost}, Server calculated: $${playerCost}`);
             // For now, use server calculation but log the discrepancy
         }
 
         // Spend from budget category if public funding is used
-        if (publicFunding > 0 && this.governanceSystem) {
-            const budgetSpent = this.governanceSystem.spendFromBudget(budgetCategory, publicFunding, `Construction of ${buildingId} at [${row},${col}]`);
+        if (publicFunding > 0) {
+            const budgetSpent = this.spendFromBudget(budgetCategory, publicFunding, `Construction of ${buildingId} at [${row},${col}]`);
             if (!budgetSpent) {
                 throw new Error(`Insufficient ${budgetCategory} budget for public funding`);
             }
         }
 
-        // Deduct player cost from playerBalances
+        // Deduct player cost from playerBalances (reduced by public funding)
         const newBalance = currentBalance - playerCost;
         this.gameState.playerBalances.set(playerId, newBalance);
 
-        // console.log(`💰 BUILD_START: ${playerId} balance ${currentBalance} → ${newBalance} (built ${buildingDef.name})`);
-        // console.log('🔍 DEBUG: Server buildingDef graphics data:', {
-        //     graphicsFile: buildingDef.graphicsFile,
-        //     graphics: buildingDef.graphics,
-        //     images: buildingDef.images,
-        //     allKeys: Object.keys(buildingDef)
-        // });
+        // ✅ SPEND ACTION (critical bug fix)
+        this.spendActions(playerId, actionCost, `building ${buildingDef.name}`);
+
+        console.log(`[REVENUE] BUILD_START: ${playerId} balance ${currentBalance} → ${newBalance}, actions ${player.actions.total + actionCost} → ${player.actions.total} (built ${buildingDef.name})`);
 
         // Create building in construction state
         const building = {
@@ -721,7 +833,7 @@ class ServerEconomicEngine {
         this.invalidateCaches('building_added', [locationKey]);
         this.pendingChanges.buildings.add(locationKey);
 
-        // console.log(`🏗️ Construction started: ${buildingId} at ${locationKey} by ${playerId}`);
+        // console.log(`[INFO] Construction started: ${buildingId} at ${locationKey} by ${playerId}`);
 
         return {
             success: true,
@@ -758,6 +870,9 @@ class ServerEconomicEngine {
         building.underConstruction = false;
         building.constructionCompleteTime = Date.now();
 
+        // Invalidate caches for this building and all neighbors (CARENS depends on adjacency)
+        this.invalidateAdjacentCaches(row, col);
+
         // Update grid parcel to reference the completed building
         if (this.gameState.grid[row] && this.gameState.grid[row][col]) {
             this.gameState.grid[row][col].building = building.id;
@@ -768,7 +883,7 @@ class ServerEconomicEngine {
         const performance = this.calculateBuildingPerformance(row, col);
         building.performance = performance;
 
-        // console.log(`🏗️ Construction completed: ${building.id} at ${locationKey}`);
+        // console.log(`[INFO] Construction completed: ${building.id} at ${locationKey}`);
 
         // Broadcast building state update immediately
         this.broadcastBuildingStates();
@@ -856,7 +971,7 @@ class ServerEconomicEngine {
      * Recalculate room-wide JEEFHH and CARENS after building changes
      */
     recalculateGlobalEconomics() {
-        // console.log('🔧 DEBUG: recalculateGlobalEconomics() called - building count:', this.gameState.buildings.size);
+        // console.log('[PERF] DEBUG: recalculateGlobalEconomics() called - building count:', this.gameState.buildings.size);
         this.calculateGlobalJEEFHH();
         this.calculateGlobalCARENS();
         this.recalculateAllBuildingPerformances();
@@ -884,13 +999,13 @@ class ServerEconomicEngine {
         let buildingCount = 0;
         for (const [locationKey, building] of this.gameState.buildings) {
             if (building.underConstruction) {
-        // console.log(`🏗️ Skipping building under construction: ${building.id} at ${locationKey}`);
+        // console.log(`[INFO] Skipping building under construction: ${building.id} at ${locationKey}`);
                 continue;
             }
 
             const buildingDef = this.buildingDefinitions.get(building.id);
             if (!buildingDef || !buildingDef.resources) {
-        // console.log(`⚠️ No building definition or resources for: ${building.id}`);
+        // console.log(`[WARN] No building definition or resources for: ${building.id}`);
                 continue;
             }
 
@@ -908,8 +1023,8 @@ class ServerEconomicEngine {
         // console.log(`🏠 Adding supply from ${building.id}: housing+${econ.housingProvided || 0}, jobs+${econ.jobsProvided || 0}, food+${econ.foodProvided || 0}, energy+${econ.energyProvided || 0}`);
         }
 
-        // console.log(`📊 JEEFHH calculation: ${buildingCount} completed buildings`);
-        // console.log(`📊 Total supply: housing=${this.gameState.jeefhh.housing.supply}, jobs=${this.gameState.jeefhh.jobs.supply}, food=${this.gameState.jeefhh.food.supply}, energy=${this.gameState.jeefhh.energy.supply}`);
+        // console.log(`[CARENS] JEEFHH calculation: ${buildingCount} completed buildings`);
+        // console.log(`[CARENS] Total supply: housing=${this.gameState.jeefhh.housing.supply}, jobs=${this.gameState.jeefhh.jobs.supply}, food=${this.gameState.jeefhh.food.supply}, energy=${this.gameState.jeefhh.energy.supply}`);
 
         // Calculate multipliers (0.4x to 1.6x based on supply/demand ratio)
         Object.keys(this.gameState.jeefhh).forEach(resource => {
@@ -925,7 +1040,7 @@ class ServerEconomicEngine {
             }
         });
 
-        // console.log('📊 Room-wide JEEFHH updated:', this.gameState.jeefhh);
+        // console.log('[CARENS] Room-wide JEEFHH updated:', this.gameState.jeefhh);
 
         // Update cache
         this.cache.jeefhh = {
@@ -940,6 +1055,7 @@ class ServerEconomicEngine {
      * Calculate room-wide CARENS scores and multiplier
      */
     calculateGlobalCARENS() {
+        console.log('🏛️ calculateGlobalCARENS() START - building count:', this.gameState.buildings.size);
         const carens = this.gameState.carens;
         const buildingCount = this.gameState.buildings.size;
 
@@ -979,13 +1095,29 @@ class ServerEconomicEngine {
 
         }
 
-        // Points-only system: store raw points directly
+        console.log('🏛️ calculateGlobalCARENS() - Loop completed, totals:', {
+            culturePoints, affordabilityPoints, resiliencePoints,
+            environmentPoints, noisePoints, safetyPoints
+        });
+
+        // Store raw points in both top-level (for vitality bars) and nested structure (for tooltips)
         carens.culture = culturePoints;
         carens.affordability = affordabilityPoints;
         carens.resilience = resiliencePoints;
         carens.environment = environmentPoints;
         carens.noise = noisePoints;
         carens.safety = safetyPoints;
+
+        // Also update nested points structure for tooltip compatibility
+        if (!carens.points) {
+            carens.points = {};
+        }
+        carens.points.culture = culturePoints;
+        carens.points.affordability = affordabilityPoints;
+        carens.points.resilience = resiliencePoints;
+        carens.points.environment = environmentPoints;
+        carens.points.noise = noisePoints;
+        carens.points.safety = safetyPoints;
 
         // Calculate average for multiplier (convert raw points to 0-1 for multiplier calculation)
         const avgPoints = (carens.culture + carens.affordability + carens.resilience +
@@ -997,8 +1129,15 @@ class ServerEconomicEngine {
         // Convert to multiplier (0.6x to 1.4x)
         carens.multiplier = 0.6 + (normalizedAvg * 0.8);
 
-        // Governance debug: CARENS calculation - avgPoints=${avgPoints.toFixed(1)}, multiplier=${carens.multiplier.toFixed(3)}`);
-        // console.log('🏛️ Room-wide CARENS updated:', carens);
+        console.log('🏛️ CARENS CALCULATED:', {
+            culture: carens.culture,
+            affordability: carens.affordability,
+            resilience: carens.resilience,
+            environment: carens.environment,
+            noise: carens.noise,
+            safety: carens.safety,
+            buildingCount: this.gameState.buildings.size
+        });
     }
 
     /**
@@ -1010,7 +1149,8 @@ class ServerEconomicEngine {
             // Decimal values are multiplied by 100 to get points
             return Math.round(livabilityData * 100);
         } else if (typeof livabilityData === 'object' && livabilityData !== null) {
-            return livabilityData.effect || 0;
+            // Extract impact value from {impact, attenuation} format
+            return livabilityData.impact || livabilityData.effect || 0;
         }
         return 0;
     }
@@ -1028,67 +1168,94 @@ class ServerEconomicEngine {
      * Calculate performance for a specific building
      */
     calculateBuildingPerformance(row, col) {
+        const startTime = this.DEBUG.TIMING ? Date.now() : 0;
         const locationKey = `${row},${col}`;
+
+        // Check cache first
+        const cached = this.cache.buildingPerformances.get(locationKey);
+        if (cached && !cached.dirty) {
+            this.cache.stats.hits++;
+            if (this.DEBUG.CACHE) {
+                console.log(`[CACHE] Hit for building performance at [${row},${col}]`);
+            }
+            return cached.data;
+        }
+        this.cache.stats.misses++;
+
         const building = this.gameState.buildings.get(locationKey);
 
-        console.log(`🔧 calculateBuildingPerformance called for [${row},${col}]`);
+        if (this.DEBUG.PERFORMANCE) {
+            console.log(`[PERF] calculateBuildingPerformance called for [${row},${col}]`);
+        }
 
         if (!building) {
-            console.log(`❌ No building found at [${row},${col}]`);
+            console.log(`[ERROR] No building found at [${row},${col}]`);
             return null;
         }
 
         if (building.underConstruction) {
-            console.log(`🚧 Building at [${row},${col}] is under construction`);
+            console.log(`[INFO] Building at [${row},${col}] is under construction`);
             return null;
         }
 
         const buildingDef = this.buildingDefinitions.get(building.id);
-        console.log(`📚 Building def for ${building.id}:`, buildingDef ? 'FOUND' : 'NOT FOUND');
+        console.log(`[DATA] Building def for ${building.id}:`, buildingDef ? 'FOUND' : 'NOT FOUND');
 
         if (!buildingDef) {
-            console.log(`❌ No building definition found for ${building.id}`);
+            console.log(`[ERROR] No building definition found for ${building.id}`);
             return null;
         }
 
         if (!buildingDef.economics) {
-            console.log(`❌ Building ${building.id} has no economics property. Available keys:`, Object.keys(buildingDef));
+            console.log(`[ERROR] Building ${building.id} has no economics property. Available keys:`, Object.keys(buildingDef));
             return null;
         }
 
         const econ = buildingDef.economics;
         const baseRevenue = econ.maxRevenue || 0;
-        console.log(`💵 Base revenue for ${building.id}: $${baseRevenue}`);
+        console.log(`[REVENUE] Base revenue for ${building.id}: $${baseRevenue}`);
 
-        // 1. Local needs satisfaction (from connected parcels)
+        // 1. Core needs satisfaction (local JEEFHH from adjacent 8 tiles)
         const localNeedsSatisfactionData = this.calculateLocalNeedsSatisfaction(row, col);
-        const localNeedsSatisfaction = localNeedsSatisfactionData.overallSatisfaction;
+        const coreNeedsSatisfaction = localNeedsSatisfactionData.overallSatisfaction;
 
-        // 2. Room-wide JEEFHH multiplier (affects ALL buildings based on room state)
-        const jeefhhMultiplier = this.calculateGlobalJEEFHHMultiplier();
+        // 2. CARENS multiplier (0.6x to 1.4x, only applies if population > 100)
+        const totalResidents = this.gameState.totalResidents || 0;
+        let carensMultiplier = 1.0;
+        let carensData = null;
+        if (totalResidents > 100) {
+            carensData = this.calculateLocalCARENSMultiplier(row, col);
+            carensMultiplier = carensData.multiplier;
+        }
 
-        // 3. Local CARENS multiplier (based on adjacent parcels)
-        const carensMultiplier = this.calculateLocalCARENSMultiplier(row, col);
+        // 3. Performance = Core needs × CARENS (0-140%)
+        const performance = coreNeedsSatisfaction * carensMultiplier;
 
-        // 4. Condition/decay factor
+        // 4. Global JEEFHH multiplier (city-wide economy state)
+        const globalJEEFHHMultiplier = this.calculateGlobalJEEFHHMultiplier();
+
+        // 5. Condition factor (decay affects value, not performance)
+        // building.condition is already stored as 0.0-1.0 decimal, not 0-100 percentage
         const conditionFactor = building.condition || 1.0;
 
-        // 5. UBI revenue boost (citizens have more spending power)
-        const ubiMultiplier = this.calculateUBIRevenueMultiplier();
-
         // Final revenue calculation
-        const actualRevenue = baseRevenue * localNeedsSatisfaction * jeefhhMultiplier * carensMultiplier * conditionFactor * ubiMultiplier;
+        // Revenue = Base × Performance × Condition × Global JEEFHH
+        const actualRevenue = baseRevenue * performance * conditionFactor * globalJEEFHHMultiplier;
 
-        // Maintenance calculation
-        const baseMaintenance = econ.maintenance || 0;
-        const actualMaintenance = baseMaintenance * (2.0 - building.condition); // Higher maintenance for poor condition
+        // Maintenance calculation - increases with age due to decay
+        const baseMaintenance = econ.maintenanceCost || 0;
+        const decayRate = (econ.decayRate || 0.05) / 100; // Convert % to decimal
+        const buildingAge = building.age || 0;
+        // Maintenance increases with cumulative decay: base * (1 + decayRate)^age
+        const actualMaintenance = baseMaintenance * Math.pow(1 + decayRate, buildingAge);
 
-        const performance = {
+        const performanceData = {
             location: [row, col],
             buildingId: building.id,
 
             // Summary for client tooltips
             summary: {
+                performance: Math.round(performance * 100), // Performance % = core needs × CARENS
                 revenue: Math.round(actualRevenue * 100) / 100,
                 maintenance: Math.round(actualMaintenance * 100) / 100,
                 netIncome: Math.round((actualRevenue - actualMaintenance) * 100) / 100
@@ -1097,34 +1264,69 @@ class ServerEconomicEngine {
             // Resource satisfaction data for tooltips
             resourceSatisfaction: localNeedsSatisfactionData.detailedSatisfaction,
 
+            // CARENS scores for boost opportunities
+            carensScores: carensData ? carensData.scores : null,
+
             // Detailed breakdown for data insights
             detailed: {
                 baseRevenue,
-                localNeedsSatisfaction,
-                jeefhhMultiplier,
+                coreNeedsSatisfaction,
                 carensMultiplier,
+                performance, // Core needs × CARENS
+                globalJEEFHHMultiplier,
                 conditionFactor,
-                ubiMultiplier,
                 actualRevenue,
                 baseMaintenance,
+                decayRate,
+                buildingAge,
                 actualMaintenance,
                 breakdown: {
                     base: baseRevenue,
-                    afterNeeds: baseRevenue * localNeedsSatisfaction,
-                    afterJEEFHH: baseRevenue * localNeedsSatisfaction * jeefhhMultiplier,
-                    afterCARENS: baseRevenue * localNeedsSatisfaction * jeefhhMultiplier * carensMultiplier,
-                    afterCondition: baseRevenue * localNeedsSatisfaction * jeefhhMultiplier * carensMultiplier * conditionFactor,
-                    afterUBI: actualRevenue,
+                    afterPerformance: baseRevenue * performance,
+                    afterCondition: baseRevenue * performance * conditionFactor,
+                    afterGlobalJEEFHH: actualRevenue,
                     final: actualRevenue
                 }
             }
         };
 
-        console.log(`💰 [${row},${col}] ${building.id} Performance:`,
-            `Base: $${baseRevenue}, Needs: ${(localNeedsSatisfaction * 100).toFixed(0)}%, JEEFHH: ${jeefhhMultiplier.toFixed(2)}x, CARENS: ${carensMultiplier.toFixed(2)}x`,
-            `=> Revenue: $${actualRevenue.toFixed(2)}, Maint: $${actualMaintenance.toFixed(2)}, Net: $${(actualRevenue - actualMaintenance).toFixed(2)}`);
+        if (this.DEBUG.REVENUE) {
+            console.log(`[REVENUE] [${row},${col}] ${building.id} - Revenue: ${actualRevenue.toFixed(2)}, Maint: ${actualMaintenance.toFixed(2)}, Net: ${(actualRevenue - actualMaintenance).toFixed(2)}`);
+        }
 
-        return performance;
+        // TEMP DEBUG: Detailed revenue breakdown for negative net income or taqueria
+        if ((actualRevenue - actualMaintenance) < 0 || building.id === 'taqueria') {
+            console.log(`💰 [${building.id}] Revenue calc:`, {
+                baseRevenue,
+                performance: Math.round(performance * 1000) / 10 + '%',
+                coreNeeds: Math.round(coreNeedsSatisfaction * 1000) / 10 + '%',
+                carensMultiplier: carensMultiplier.toFixed(3) + 'x',
+                conditionFactor: Math.round(conditionFactor * 1000) / 10 + '%',
+                globalJEEFHH: globalJEEFHHMultiplier.toFixed(3) + 'x',
+                revenue: actualRevenue.toFixed(2),
+                baseMaintenance,
+                decayRate: (decayRate * 100).toFixed(3) + '%',
+                buildingAge,
+                expenses: actualMaintenance.toFixed(2),
+                netIncome: (actualRevenue - actualMaintenance).toFixed(2)
+            });
+        }
+
+        // Store in cache
+        this.cache.buildingPerformances.set(locationKey, {
+            lastUpdate: Date.now(),
+            data: performanceData,
+            dirty: false
+        });
+
+        if (this.DEBUG.TIMING) {
+            const elapsed = Date.now() - startTime;
+            if (elapsed > 50) {
+                console.warn(`[TIMING] Performance calculation took ${elapsed}ms for [${row},${col}]`);
+            }
+        }
+
+        return performanceData;
     }
 
     /**
@@ -1161,15 +1363,15 @@ class ServerEconomicEngine {
                     connectedSupply.healthcare += connectedDef.resources.healthcareProvided || 0;
 
                     // DEBUG: Log resource contributions
-                    if (connectedDef.resources.energyProvided > 0 || connectedDef.resources.jobsProvided > 0 || connectedDef.resources.foodProvided > 0) {
-                        console.log(`📍 [${row},${col}] ${building.id} sees adjacent ${connectedBuilding.id} at [${row+dr},${col+dc}] providing:`,
-                            `Energy: ${connectedDef.resources.energyProvided}, Jobs: ${connectedDef.resources.jobsProvided}, Food: ${connectedDef.resources.foodProvided}`);
-                    }
+                    // if (connectedDef.resources.energyProvided > 0 || connectedDef.resources.jobsProvided > 0 || connectedDef.resources.foodProvided > 0) {
+                    //     console.log(`[ADJACENCY] [${row},${col}] ${building.id} sees adjacent ${connectedBuilding.id} at [${row+dr},${col+dc}] providing:`,
+                    //         `Energy: ${connectedDef.resources.energyProvided}, Jobs: ${connectedDef.resources.jobsProvided}, Food: ${connectedDef.resources.foodProvided}`);
+                    // }
                 }
             }
         });
 
-        console.log(`🔍 [${row},${col}] ${building.id} - ${adjacentCount} adjacent buildings - Total supply:`, connectedSupply);
+        // console.log(`[SUPPLY] [${row},${col}] ${building.id} - ${adjacentCount} adjacent buildings - Total supply:`, connectedSupply);
 
         const satisfactionRatios = [];
         const detailedSatisfaction = {
@@ -1198,9 +1400,11 @@ class ServerEconomicEngine {
         if (housingProvided > 0) {
             const potentialResidents = housingProvided * 2; // 2 people per bedroom
 
-            // Each resident needs nearby jobs and food access
+            // Each resident needs nearby jobs, food, education, and healthcare access
             const jobsNeeded = potentialResidents * 0.5; // 0.5 jobs per resident
             const foodNeeded = potentialResidents * 2; // 2 food units per resident
+            const educationNeeded = potentialResidents * 0.3; // 0.3 education per resident
+            const healthcareNeeded = potentialResidents * 0.2; // 0.2 healthcare per resident
 
             if (jobsNeeded > 0) {
                 const jobsSatisfaction = Math.min(1.0, connectedSupply.jobs / jobsNeeded);
@@ -1223,6 +1427,28 @@ class ServerEconomicEngine {
                     satisfaction: foodSatisfaction
                 };
             }
+
+            if (educationNeeded > 0) {
+                const educationSatisfaction = Math.min(1.0, connectedSupply.education / educationNeeded);
+                satisfactionRatios.push(educationSatisfaction);
+
+                detailedSatisfaction.education = {
+                    required: educationNeeded,
+                    supplied: connectedSupply.education,
+                    satisfaction: educationSatisfaction
+                };
+            }
+
+            if (healthcareNeeded > 0) {
+                const healthcareSatisfaction = Math.min(1.0, connectedSupply.healthcare / healthcareNeeded);
+                satisfactionRatios.push(healthcareSatisfaction);
+
+                detailedSatisfaction.healthcare = {
+                    required: healthcareNeeded,
+                    supplied: connectedSupply.healthcare,
+                    satisfaction: healthcareSatisfaction
+                };
+            }
         }
 
         // If no specific requirements, building is self-sufficient
@@ -1240,7 +1466,7 @@ class ServerEconomicEngine {
         const minOperation = 0.05;
         const finalSatisfaction = Math.max(minOperation, overallSatisfaction);
 
-        console.log(`✅ [${row},${col}] ${building.id} - Local Needs Satisfaction: ${(finalSatisfaction * 100).toFixed(1)}% (checked ${satisfactionRatios.length} requirements)`);
+        // console.log(`[INFO] [${row},${col}] ${building.id} - Local Needs Satisfaction: ${(finalSatisfaction * 100).toFixed(1)}% (checked ${satisfactionRatios.length} requirements)`);
 
         return {
             overallSatisfaction: finalSatisfaction,
@@ -1333,21 +1559,25 @@ class ServerEconomicEngine {
         const netCarensTotal = localCarens.culture + localCarens.affordability + localCarens.resilience +
                               localCarens.environment + localCarens.noise + localCarens.safety;
 
-        console.log(`🎨 CARENS for [${row},${col}]:`, localCarens, `Total: ${netCarensTotal}`);
+        // console.log(`[CARENS] CARENS for [${row},${col}]:`, localCarens, `Total: ${netCarensTotal}`);
 
         // Convert to multiplier: 0 = 1.0x (neutral), +100 = 1.4x (max), -100 = 0.6x (min)
         // Formula: 1.0 + (netCarensTotal / 100) * 0.4
         // Your example: +20 points = 1.0 + (20/100) * 0.4 = 1.08x
         const localMultiplier = 1.0 + (netCarensTotal / 100) * 0.4;
 
-        console.log(`📊 CARENS multiplier for [${row},${col}]: ${localMultiplier.toFixed(3)}x (clamped from ${netCarensTotal})`);
+        // console.log(`[CARENS] CARENS multiplier for [${row},${col}]: ${localMultiplier.toFixed(3)}x (clamped from ${netCarensTotal})`);
 
         // Clamp to reasonable bounds (0.6x to 1.4x)
         const clampedMultiplier = Math.max(0.6, Math.min(1.4, localMultiplier));
 
-        console.log(`✅ Final CARENS for [${row},${col}]: ${clampedMultiplier.toFixed(3)}x`);
+        // console.log(`[INFO] Final CARENS for [${row},${col}]: ${clampedMultiplier.toFixed(3)}x`);
 
-        return clampedMultiplier;
+        return {
+            multiplier: clampedMultiplier,
+            scores: localCarens,
+            total: netCarensTotal
+        };
     }
 
     /**
@@ -1509,7 +1739,7 @@ class ServerEconomicEngine {
         // console.log(`🏠 Small emigration: ${emigrationLoss.toFixed(1)} residents leaving due to poor conditions (${days} days < 0.95)`);
                 } else if (days >= 3) {
                     // Warning at 3 days (no actual emigration yet)
-        // console.log(`🏠 ⚠️ EMIGRATION WARNING: Residents unhappy for ${days} days. Improve conditions soon to prevent departures!`);
+        // console.log(`🏠 [WARN] EMIGRATION WARNING: Residents unhappy for ${days} days. Improve conditions soon to prevent departures!`);
                 }
             } else {
                 // Reset counter when conditions improve
@@ -1792,7 +2022,7 @@ class ServerEconomicEngine {
 
         totalWealth += landValue + buildingValue;
 
-        // console.log(`💰 Player ${playerId} wealth: $${cash.toLocaleString()} cash + $${landValue.toLocaleString()} land + $${buildingValue.toLocaleString()} buildings = $${totalWealth.toLocaleString()}`);
+        // console.log(`[REVENUE] Player ${playerId} wealth: $${cash.toLocaleString()} cash + $${landValue.toLocaleString()} land + $${buildingValue.toLocaleString()} buildings = $${totalWealth.toLocaleString()}`);
 
         return totalWealth;
     }
@@ -1904,7 +2134,7 @@ class ServerEconomicEngine {
             description: `Repaired building at (${row}, ${col}) to ${Math.round(targetCondition * 100)}% condition`
         });
 
-        // console.log(`🔧 Player ${playerId} repaired building at (${row}, ${col}) for $${Math.round(repairCost)}`);
+        // console.log(`[PERF] Player ${playerId} repaired building at (${row}, ${col}) for $${Math.round(repairCost)}`);
 
         return {
             success: true,
@@ -1946,11 +2176,9 @@ class ServerEconomicEngine {
                 buildings: [],
                 lastCashflowUpdate: 0,
 
-                // Action inventory (server-authoritative)
+                // Action inventory (server-authoritative) - SIMPLIFIED: Single bucket, all actions rollover
                 actions: {
-                    monthly: this.calculateMonthlyActionAllowance(), // Expire at month end
-                    purchased: 0, // Never expire
-                    total: this.calculateMonthlyActionAllowance()
+                    total: this.calculateMonthlyActionAllowance() // All actions rollover monthly
                 },
                 governance: {
                     votingPoints: 2, // Players start with 2 points, earn 2 more each month
@@ -1972,7 +2200,7 @@ class ServerEconomicEngine {
 
             const initialPoints = this.gameState.gameStarted ? 2 : 4;
             newPlayer.governance.votingPoints = initialPoints;
-        // console.log(`💰 Player ${playerId} starts with $6,000, ${newPlayer.actions.total} actions, and ${initialPoints} governance points`);
+        // console.log(`[REVENUE] Player ${playerId} starts with $6,000, ${newPlayer.actions.total} actions, and ${initialPoints} governance points`);
         }
         return this.gameState.players.get(playerId);
     }
@@ -2013,10 +2241,10 @@ class ServerEconomicEngine {
             }
             if (playerColor) {
                 player.color = playerColor;
-        // console.log(`🎨 Updated player ${playerId} color to: ${playerColor}`);
+        // console.log(`[CARENS] Updated player ${playerId} color to: ${playerColor}`);
             }
         } else {
-        // console.log(`⚠️ Attempted to update metadata for non-existent player: ${playerId}`);
+        // console.log(`[WARN] Attempted to update metadata for non-existent player: ${playerId}`);
         }
     }
 
@@ -2092,7 +2320,7 @@ class ServerEconomicEngine {
 
         // Only log cashflow if there's actual activity (non-zero or significant change)
         if (netCashflow !== 0 || buildingBreakdown.length > 0 || totalLVT > 0) {
-        // console.log(`💰 Cashflow calculated for ${playerId}: $${netCashflow.toFixed(2)} (Revenue: $${totalRevenue.toFixed(2)}, Maintenance: $${totalMaintenance.toFixed(2)}, LVT: $${totalLVT.toFixed(2)})`);
+        // console.log(`[REVENUE] Cashflow calculated for ${playerId}: $${netCashflow.toFixed(2)} (Revenue: $${totalRevenue.toFixed(2)}, Maintenance: $${totalMaintenance.toFixed(2)}, LVT: $${totalLVT.toFixed(2)})`);
         }
 
         return {
@@ -2118,12 +2346,13 @@ class ServerEconomicEngine {
 
             // Use building-specific decay rate from building definition
             const buildingDef = this.buildingDefinitions.get(building.id);
-            const annualDecayRate = buildingDef?.economics?.decayRate || 0;
-            const decayRate = annualDecayRate / 365; // Convert annual rate to daily rate
+            const dailyDecayRate = buildingDef?.economics?.decayRate || 0; // Already in % per day format
             const maintenanceCost = buildingDef?.economics?.maintenanceCost || 0;
 
-            // Apply daily decay rate (not cumulative)
-            const newDecay = building.decay + decayRate;
+            // Apply daily decay rate
+            // decayRate is expressed as % per day (e.g., 0.12 = 0.12% per day)
+            const decayIncrease = dailyDecayRate / 100; // Convert % to decimal (0.12% -> 0.0012)
+            const newDecay = building.decay + decayIncrease;
             building.decay = Math.min(newDecay, 1.0); // Cap at 100% decay
             building.condition = Math.max(0.1, 1.0 - building.decay);
 
@@ -2140,7 +2369,7 @@ class ServerEconomicEngine {
         for (const [playerId, totalMaintenance] of maintenanceCosts) {
             // Safety check: skip if player doesn't exist in balance system
             if (!this.gameState.playerBalances.has(playerId)) {
-                console.warn(`⚠️ Skipping maintenance for missing player: ${playerId}`);
+                console.warn(`[WARN] Skipping maintenance for missing player: ${playerId}`);
                 continue;
             }
 
@@ -2262,8 +2491,6 @@ class ServerEconomicEngine {
                 cityName: playerState?.cityName,
                 // Include action data for client sync
                 actions: playerState?.actions || {
-                    monthly: this.calculateMonthlyActionAllowance(),
-                    purchased: 0,
                     total: this.calculateMonthlyActionAllowance()
                 }
             };
@@ -2297,7 +2524,7 @@ class ServerEconomicEngine {
                     treasury: this.governanceSystem ? this.governanceSystem.getTreasury() : 0,
                     taxRate: this.governanceSystem ? this.governanceSystem.governance.taxRate : 0.5,
                     monthlyBudget: this.gameState.monthlyBudget || null,
-                    budgets: this.governanceSystem ? this.governanceSystem.getBudgets() : {}
+                    budgets: this.gameState.budgets || {}  // Use gameState.budgets instead of governanceSystem
                 },
                 monthlyActionAllowance: this.calculateMonthlyActionAllowance(),
                 lvtRate: this.getCurrentLVTRate(),  // Include current LVT rate
@@ -2306,7 +2533,7 @@ class ServerEconomicEngine {
             }
         };
 
-        // console.log(`📡 Broadcasting complete game state: ${buildings.length} buildings, ${Object.keys(players).length} players, event: ${eventType}`);
+        // console.log(`[BROADCAST] Broadcasting complete game state: ${buildings.length} buildings, ${Object.keys(players).length} players, event: ${eventType}`);
         // Broadcasting complete game state to all clients
 
         // V2: Debug log eventData for GAME_STARTED to verify city names are included
@@ -2320,7 +2547,7 @@ class ServerEconomicEngine {
             try {
                 this.broadcastFunction(gameStateMessage);
             } catch (error) {
-                console.error('❌ Failed to broadcast game state:', error);
+                console.error('[ERROR] Failed to broadcast game state:', error);
             }
         }
     }
@@ -2329,8 +2556,10 @@ class ServerEconomicEngine {
      * Calculate building performance data for inclusion in game state
      */
     /**
-     * Calculate building performance stats (legacy/simple version)
-     * NOTE: This is different from the detailed calculateBuildingPerformance(row, col)
+     * Calculate building performance stats for broadcasting to client
+     * Performance % = Core needs satisfaction × CARENS multiplier
+     * Revenue = Base revenue × Performance × Condition × Global JEEFHH
+     * Maintenance = Base × (1 + decayRate)^age (decay affects cost, not performance)
      */
     calculateBuildingPerformanceSimple(building) {
         const buildingDef = this.buildingDefinitions.get(building.id);
@@ -2345,24 +2574,69 @@ class ServerEconomicEngine {
             };
         }
 
-        const economics = buildingDef.economics || {};
-        const baseResidents = economics.residents || 0;
-        const baseWorkers = economics.jobs || 0;
-        const efficiency = building.condition || 1.0;
+        const locationKey = `${building.location[0]},${building.location[1]}`;
+        const [row, col] = building.location;
 
-        const residents = Math.floor(baseResidents * efficiency);
-        const workers = Math.floor(baseWorkers * efficiency);
-        const revenue = residents * 100; // Example calculation
-        const expenses = Math.floor(economics.maintenance || 50);
+        // Get core needs satisfaction (local JEEFHH from adjacent 8 tiles)
+        const localNeedsData = this.calculateLocalNeedsSatisfaction(row, col);
+        const coreNeedsSatisfaction = localNeedsData.overallSatisfaction; // 0.0 to 1.0
+
+        // Get CARENS multiplier (0.6x to 1.4x, only applies if population > 100)
+        const totalResidents = this.gameState.totalResidents || 0;
+        let carensMultiplier = 1.0;
+        if (totalResidents > 100) {
+            carensMultiplier = this.calculateLocalCARENSMultiplier(row, col);
+        }
+
+        // Performance = Core needs × CARENS (0-140%)
+        const performance = coreNeedsSatisfaction * carensMultiplier;
+
+        // Get global JEEFHH multiplier (city-wide economy state)
+        const globalJEEFHHMultiplier = this.calculateGlobalJEEFHHMultiplier();
+
+        // Revenue calculation
+        const baseRevenue = buildingDef.economics?.maxRevenue || 0;
+        // building.condition is already stored as 0.0-1.0 decimal, not 0-100 percentage
+        const conditionFactor = building.condition || 1.0;
+        const revenue = baseRevenue * performance * conditionFactor * globalJEEFHHMultiplier;
+
+        // Maintenance increases with age due to decay
+        const baseMaintenance = buildingDef.economics?.maintenanceCost || 0;
+        const decayRate = (buildingDef.economics?.decayRate || 0.05) / 100; // Convert % to decimal
+        const buildingAge = building.age || 0;
+        const expenses = baseMaintenance * Math.pow(1 + decayRate, buildingAge);
+
         const netIncome = revenue - expenses;
+
+        // TEMP DEBUG: Log revenue calculation for buildings with negative net income
+        if (netIncome < 0 || buildingDef.id === 'taqueria') {
+            console.log(`💰 [${buildingDef.id}] Revenue calc:`, {
+                baseRevenue,
+                performance: Math.round(performance * 100) + '%',
+                conditionFactor: Math.round(conditionFactor * 100) + '%',
+                globalJEEFHH: globalJEEFHHMultiplier,
+                revenue,
+                baseMaintenance,
+                decayRate: (decayRate * 100).toFixed(3) + '%',
+                buildingAge,
+                expenses,
+                netIncome
+            });
+        }
+
+        // Calculate residents/workers based on performance
+        const baseResidents = buildingDef.resources?.housingProvided ? (buildingDef.resources.housingProvided * 2) : 0;
+        const baseWorkers = buildingDef.resources?.jobsProvided || 0;
+        const residents = Math.floor(baseResidents * performance);
+        const workers = Math.floor(baseWorkers * performance);
 
         return {
             residents,
             workers,
-            efficiency,
-            revenue,
-            expenses,
-            netIncome
+            efficiency: Math.round(performance * 100), // Performance % for tooltip display
+            revenue: Math.round(revenue * 100) / 100,
+            expenses: Math.round(expenses * 100) / 100,
+            netIncome: Math.round(netIncome * 100) / 100
         };
     }
 
@@ -2423,14 +2697,14 @@ class ServerEconomicEngine {
             healthcare: { supply: 0, demand: 0, multiplier: 1.0 }
         };
 
-        // Reset CARENS to defaults (neutral baseline until buildings are built)
+        // Reset CARENS to defaults (0 points on -100 to +100 scale)
         this.gameState.carens = {
-            culture: 0.5,
-            affordability: 0.5,
-            resilience: 0.5,
-            environment: 0.5,
-            noise: 0.5,
-            safety: 0.5,
+            culture: 0,
+            affordability: 0,
+            resilience: 0,
+            environment: 0,
+            noise: 0,
+            safety: 0,
             multiplier: 1.0, // Neutral multiplier when no buildings exist
             points: { // Initialize points structure for client display
                 culture: 0,
@@ -2448,6 +2722,21 @@ class ServerEconomicEngine {
         this.gameState.demographics = { children: 0, adults: 0, seniors: 0, total: 0 };
         this.gameState.demographicsPerBuilding.clear();
 
+        // Reset governance budgets and treasury
+        this.gameState.budgets = {
+            education: 0,
+            healthcare: 0,
+            infrastructure: 0,
+            housing: 0,
+            culture: 0,
+            recreation: 0,
+            commercial: 0,
+            civic: 0,
+            emergency: 0,
+            ubi: 0
+        };
+        this.gameState.treasury = 0;
+
         // Clear transaction history
         this.pendingTransactions = [];
         this.transactionHistory = [];
@@ -2458,7 +2747,7 @@ class ServerEconomicEngine {
         // Initialize LVT rate to default 50%
         this.currentLVTRate = 0.5;
 
-        // console.log('✅ Economic engine reset complete - fresh board game state');
+        // console.log('[INFO] Economic engine reset complete - fresh board game state');
     }
 
     /**
@@ -2499,7 +2788,7 @@ class ServerEconomicEngine {
             // Set player balance
             this.gameState.playerBalances.set(playerId, roomPlayerData.balance || 6000);
 
-        // console.log(`💰 Player ${playerId} initialized with $${roomPlayerData.balance || 6000} and ${initialPoints} governance points`);
+        // console.log(`[REVENUE] Player ${playerId} initialized with $${roomPlayerData.balance || 6000} and ${initialPoints} governance points`);
         // console.log(`🏙️ Player ${playerId} cityName: "${roomPlayerData.cityName || 'NO CITY NAME'}"`);
         // console.log(`👤 Player ${playerId} name: "${roomPlayerData.name || 'NO NAME'}", color: "${roomPlayerData.color || 'NO COLOR'}"`);;
         }
@@ -2517,7 +2806,7 @@ class ServerEconomicEngine {
         // Remove from players Map
         this.gameState.players.delete(playerId);
 
-        // console.log(`✅ Player ${playerId} removed from economic engine`);
+        // console.log(`[INFO] Player ${playerId} removed from economic engine`);
     }
 
     /**
@@ -2526,14 +2815,26 @@ class ServerEconomicEngine {
     async processParcelPurchase(transaction) {
         const { playerId, amount, location, description } = transaction;
 
-        // console.log(`💰 Processing parcel purchase: ${playerId} spending $${amount} for ${description || 'parcel'}`);
+        console.log(`[REVENUE] Processing parcel purchase: ${playerId} spending $${amount} for ${description || 'parcel'}`);
 
         // Use playerBalances Map for balance tracking
         const currentBalance = this.getPlayerBalance(playerId);
 
+        // ✅ ENFORCE ACTION COST (critical bug fix)
+        const actionCost = this.ACTION_COSTS.purchaseParcel || 1;
+        const player = this.getOrCreatePlayer(playerId);
+        if (!player.actions || player.actions.total < actionCost) {
+            return {
+                success: false,
+                error: `Insufficient actions: need ${actionCost}, have ${player.actions?.total || 0}`,
+                currentBalance: currentBalance,
+                requiredAmount: amount
+            };
+        }
+
         // Check if player has enough cash
         if (currentBalance < amount) {
-        // console.log(`❌ Insufficient funds: ${currentBalance} < ${amount}`);
+            console.log(`[ERROR] Insufficient funds: ${currentBalance} < ${amount}`);
             return {
                 success: false,
                 error: 'Insufficient funds',
@@ -2546,19 +2847,22 @@ class ServerEconomicEngine {
         const newBalance = currentBalance - amount;
         this.gameState.playerBalances.set(playerId, newBalance);
 
+        // ✅ SPEND ACTION (critical bug fix)
+        this.spendActions(playerId, actionCost, 'parcel purchase');
+
         // UPDATE SERVER-AUTHORITATIVE GRID OWNERSHIP
         const [row, col] = location;
         if (this.gameState.grid && this.gameState.grid[row] && this.gameState.grid[row][col]) {
             this.gameState.grid[row][col].owner = playerId;
-        // console.log(`🏞️ Server grid ownership updated: [${row},${col}] → ${playerId}`);
+            console.log(`🏞️ Server grid ownership updated: [${row},${col}] → ${playerId}`);
 
             // Update neighboring parcel prices (dynamic pricing system)
             this.updateNeighborPrices(row, col, this.gameState.gridSize);
         } else {
-            console.warn(`⚠️ Grid update failed: invalid location [${row},${col}]`);
+            console.warn(`[WARN] Grid update failed: invalid location [${row},${col}]`);
         }
 
-        // console.log(`✅ Parcel purchase successful: ${playerId} balance ${currentBalance} → ${newBalance}`);
+        console.log(`[INFO] Parcel purchase successful: ${playerId} balance ${currentBalance} → ${newBalance}, actions ${player.actions.total + actionCost} → ${player.actions.total}`);
 
         return {
             success: true,
@@ -2577,14 +2881,14 @@ class ServerEconomicEngine {
     async processCashSpend(transaction) {
         const { playerId, amount, description } = transaction;
 
-        // console.log(`💰 Processing cash spend: ${playerId} spending $${amount} for ${description || 'purchase'}`);
+        // console.log(`[REVENUE] Processing cash spend: ${playerId} spending $${amount} for ${description || 'purchase'}`);
 
         // Use playerBalances Map for balance tracking
         const currentBalance = this.getPlayerBalance(playerId);
 
         // Check if player has enough cash
         if (currentBalance < amount) {
-        // console.log(`❌ Insufficient funds: ${currentBalance} < ${amount}`);
+        // console.log(`[ERROR] Insufficient funds: ${currentBalance} < ${amount}`);
             return {
                 success: false,
                 error: 'Insufficient funds',
@@ -2597,7 +2901,7 @@ class ServerEconomicEngine {
         const newBalance = currentBalance - amount;
         this.gameState.playerBalances.set(playerId, newBalance);
 
-        // console.log(`✅ Cash spend successful: ${playerId} balance ${currentBalance} → ${newBalance}`);
+        // console.log(`[INFO] Cash spend successful: ${playerId} balance ${currentBalance} → ${newBalance}`);
 
         return {
             success: true,
@@ -2659,16 +2963,15 @@ class ServerEconomicEngine {
             timestamp: this.gameState.gameTime
         };
 
-        // console.log(`💰 Monthly budget calculated - totalPoints: ${totalPoints}`);
-        // console.log(`💰 Total allocations by category:`, totalAllocations);
-        // console.log(`💰 Proportions calculated:`, budgetProportions);
+        // console.log(`[REVENUE] Monthly budget calculated - totalPoints: ${totalPoints}`);
+        // console.log(`[REVENUE] Total allocations by category:`, totalAllocations);
+        // console.log(`[REVENUE] Proportions calculated:`, budgetProportions);
         // console.log(`   Total voting points allocated: ${totalPoints}`);
 
         if (totalPoints === 0) {
         // console.log(`   📦 No allocations - tax revenue remains in treasury`);
         }
 
-        // TODO: Apply budget effects (building subsidies, service bonuses, etc.)
     }
 
     /**
@@ -2677,11 +2980,10 @@ class ServerEconomicEngine {
      */
     transferMonthlyFunds() {
         if (!this.gameState.monthlyBudget || !this.gameState.monthlyBudget.proportions) {
-            console.warn('⚠️ No budget proportions available for monthly transfer');
+            console.warn('[WARN] No budget proportions available for monthly transfer');
             return;
         }
 
-        const budgetProportions = this.gameState.monthlyBudget.proportions;
         const totalPoints = this.gameState.monthlyBudget.totalPoints;
 
         if (totalPoints === 0) {
@@ -2689,12 +2991,14 @@ class ServerEconomicEngine {
             return;
         }
 
-        if (this.governanceSystem) {
-            const treasuryBalance = this.governanceSystem.getTreasury();
-        // console.log(`💰 MONTHLY TRANSFER: Allocating $${treasuryBalance.toFixed(2)} from treasury to budgets`);
-            this.governanceSystem.allocateBudgets(budgetProportions, treasuryBalance);
-        } else {
-            console.warn('⚠️ No governance system - cannot transfer monthly funds');
+        // Get treasury balance from gameState
+        const treasuryBalance = this.gameState.treasury || 0;
+
+        if (treasuryBalance > 0) {
+            console.log(`[REVENUE] MONTHLY TRANSFER: Allocating $${treasuryBalance.toFixed(2)} from treasury to budgets`);
+            this.allocateBudgets(treasuryBalance);
+            // Clear treasury after allocation
+            this.gameState.treasury = 0;
         }
     }
 
@@ -2801,11 +3105,10 @@ class ServerEconomicEngine {
         // Sum all player LVT votes (handle both old and new vote systems)
         this.gameState.players.forEach((playerState) => {
             if (playerState.governance) {
-                // New system: single lvtVote value
                 if (playerState.governance.lvtVote !== undefined) {
                     totalLVTVotes += playerState.governance.lvtVote;
                 }
-                // Legacy system compatibility - remove this block after migration
+                // Backward compatibility for old governance format
                 else if (playerState.governance.lvtVotesIncrease !== undefined || playerState.governance.lvtVotesDecrease !== undefined) {
                     const increaseVotes = playerState.governance.lvtVotesIncrease || 0;
                     const decreaseVotes = playerState.governance.lvtVotesDecrease || 0;
@@ -2825,8 +3128,8 @@ class ServerEconomicEngine {
             this.governanceSystem.governance.taxRate = newRate;
         }
 
-        // console.log(`📊 LVT rate calculated: ${(newRate * 100).toFixed(1)}% (${totalLVTVotes} net vote points)`);
-        // console.log(`📊 LVT rate synchronized: currentLVTRate=${this.currentLVTRate}, governanceSystem.taxRate=${this.governanceSystem?.governance?.taxRate}`);
+        // console.log(`[CARENS] LVT rate calculated: ${(newRate * 100).toFixed(1)}% (${totalLVTVotes} net vote points)`);
+        // console.log(`[CARENS] LVT rate synchronized: currentLVTRate=${this.currentLVTRate}, governanceSystem.taxRate=${this.governanceSystem?.governance?.taxRate}`);
 
         return newRate;
     }
@@ -2857,7 +3160,7 @@ class ServerEconomicEngine {
         };
 
         const budgetCategory = mapping[buildingCategory] || 'housing'; // Default fallback
-        // console.log(`🏗️ Building category '${buildingCategory}' → Budget category '${budgetCategory}'`);
+        // console.log(`[INFO] Building category '${buildingCategory}' → Budget category '${budgetCategory}'`);
         return budgetCategory;
     }
 
@@ -2865,17 +3168,13 @@ class ServerEconomicEngine {
      * Calculate UBI per citizen for revenue boost calculations
      */
     calculateUBIPerCitizen() {
-        if (!this.governanceSystem) {
-            return 0;
-        }
-
-        const ubiBudget = this.governanceSystem.getBudgets()['ubi'] || 0;
+        const ubiBudget = this.gameState.budgets?.['ubi'] || 0;
         const totalPopulation = Math.max(1, this.gameState.totalResidents || 1); // Prevent division by zero
 
         const ubiPerCitizen = ubiBudget / totalPopulation;
 
         if (ubiPerCitizen > 0) {
-        // console.log(`💰 UBI calculation: $${ubiBudget} budget ÷ ${totalPopulation} residents = $${ubiPerCitizen.toFixed(2)} per citizen`);
+        // console.log(`[REVENUE] UBI calculation: $${ubiBudget} budget ÷ ${totalPopulation} residents = $${ubiPerCitizen.toFixed(2)} per citizen`);
         }
 
         return ubiPerCitizen;
@@ -2934,7 +3233,7 @@ class ServerEconomicEngine {
      */
     async processTreasuryEffects(transaction, result) {
         if (!this.governanceSystem) {
-            console.warn('⚠️ No governance system connected - skipping treasury effects');
+            console.warn('[WARN] No governance system connected - skipping treasury effects');
             return;
         }
 
@@ -2959,8 +3258,14 @@ class ServerEconomicEngine {
         }
 
         if (treasuryAmount > 0) {
-            this.governanceSystem.addFunds(treasuryAmount, description);
-        // console.log(`💰 Treasury: +$${treasuryAmount.toLocaleString()} from ${description}`);
+            // Add to treasury
+            this.gameState.treasury += treasuryAmount;
+
+            // Also add to external governance system if it exists (for backwards compatibility)
+            if (this.governanceSystem) {
+                this.governanceSystem.addFunds(treasuryAmount, description);
+            }
+        // console.log(`[REVENUE] Treasury: +$${treasuryAmount.toLocaleString()} from ${description}`);
         }
     }
 
@@ -3008,12 +3313,39 @@ class ServerEconomicEngine {
     }
 
     /**
+     * Broadcast Commonwealth Scores to all players
+     */
+    broadcastCommonwealthScores() {
+        if (!this.broadcastFunction) return;
+
+        const scores = this.calculateCommonwealthScores();
+
+        // Format scores for broadcast
+        const formattedScores = scores.map(s => ({
+            playerId: s.playerId,
+            playerName: this.gameState.players.get(s.playerId)?.name || 'Player',
+            playerColor: this.gameState.players.get(s.playerId)?.color,
+            wealth: s.wealth,
+            lvtRatio: s.lvtRatio,
+            score: s.score,
+            rank: s.rank
+        }));
+
+        // Broadcast to all players
+        this.broadcastFunction({
+            type: 'COMMONWEALTH_UPDATE',
+            scores: formattedScores,
+            timestamp: Date.now()
+        });
+    }
+
+    /**
      * Process daily LVT collection for all player-owned parcels
      * Called automatically every game day (~9.86 seconds)
      */
     async processDailyLVT() {
         if (!this.governanceSystem) {
-            console.warn('⚠️ No governance system connected - skipping daily LVT');
+            console.warn('[WARN] No governance system connected - skipping daily LVT');
             return;
         }
 
@@ -3045,7 +3377,7 @@ class ServerEconomicEngine {
                         const playerId = parcel.owner;
                         // Skip LVT if player not found in balance system
                         if (!this.gameState.playerBalances.has(playerId)) {
-                            // console.warn(`⚠️ Player ${playerId} not found in balance system - skipping LVT`);
+                            // console.warn(`[WARN] Player ${playerId} not found in balance system - skipping LVT`);
                             continue;
                         }
                         const currentBalance = this.getPlayerBalance(playerId);
@@ -3053,7 +3385,15 @@ class ServerEconomicEngine {
                         if (currentBalance >= dailyLVT) {
                             // Deduct LVT from player balance
                             this.gameState.playerBalances.set(playerId, currentBalance - dailyLVT);
-                            this.governanceSystem.addFunds(dailyLVT, `Daily LVT from parcel [${row},${col}]`);
+
+                            // Add to treasury (will be allocated to budgets monthly)
+                            this.gameState.treasury += dailyLVT;
+
+                            // Also add to external governance system if it exists (for backwards compatibility)
+                            if (this.governanceSystem) {
+                                this.governanceSystem.addFunds(dailyLVT, `Daily LVT from parcel [${row},${col}]`);
+                            }
+
                             totalLVT += dailyLVT;
 
                             // Track player's LVT contributions
@@ -3064,7 +3404,7 @@ class ServerEconomicEngine {
 
         // console.log(`💸 LVT: Player ${playerId} paid $${dailyLVT.toFixed(2)} for parcel [${row},${col}]`);
                         } else {
-                            console.warn(`⚠️ ${playerId} cannot pay LVT of $${dailyLVT.toFixed(2)} for parcel [${row},${col}] (balance: $${currentBalance.toFixed(2)})`);
+                            console.warn(`[WARN] ${playerId} cannot pay LVT of $${dailyLVT.toFixed(2)} for parcel [${row},${col}] (balance: $${currentBalance.toFixed(2)})`);
                         }
                     }
                 }
@@ -3074,7 +3414,7 @@ class ServerEconomicEngine {
         // System debug: Assessed LVT on ${parcelCount} player-owned parcels`);
 
         if (totalLVT > 0) {
-        // console.log(`💰 Daily LVT collected: $${totalLVT.toFixed(2)} from ${parcelCount} parcels`);
+        // console.log(`[REVENUE] Daily LVT collected: $${totalLVT.toFixed(2)} from ${parcelCount} parcels`);
         }
     }
 
@@ -3102,19 +3442,7 @@ class ServerEconomicEngine {
                     }
                 }
 
-                // Update CARENS based on building type
-                if (buildingDef.economics.carens) {
-                    for (const [category, impact] of Object.entries(buildingDef.economics.carens)) {
-                        if (this.gameState.carens[category] !== undefined) {
-                            const change = transaction.type === 'BUILD_COMPLETE' ? impact : -impact;
-                            this.gameState.carens[category] = Math.max(0, Math.min(1,
-                                this.gameState.carens[category] + change
-                            ));
-                        }
-                    }
-                }
-
-        // console.log(`📊 Economic indicators updated for ${building.id}`);
+                // CARENS updates handled by calculateGlobalCARENS()
             }
         }
     }
@@ -3134,14 +3462,12 @@ class ServerEconomicEngine {
         }
     }
 
-    // Legacy governance system removed - using clean HTTP API instead
-
     /**
      * ACTION MANAGEMENT METHODS
      */
 
     /**
-     * Calculate monthly action allowance (20 actions in Sept, declining by 2 each month to min 10)
+     * Calculate monthly action allowance (18 actions in Sept, declining by 1 each month to min 7)
      * Solo Mode gets unlimited (9999) actions
      */
     calculateMonthlyActionAllowance() {
@@ -3153,9 +3479,9 @@ class ServerEconomicEngine {
         const monthOrder = ['SEPT', 'OCT', 'NOV', 'DEC', 'JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG'];
         const currentMonth = this.getCurrentGameMonth();
         const currentMonthIndex = monthOrder.indexOf(currentMonth);
-        const baseActions = 20;
-        const reduction = currentMonthIndex * 2;
-        const minimumActions = 10;
+        const baseActions = 18;
+        const reduction = currentMonthIndex * 1;
+        const minimumActions = 7;
 
         return Math.max(minimumActions, baseActions - reduction);
     }
@@ -3244,26 +3570,25 @@ class ServerEconomicEngine {
 
     /**
      * Refresh monthly actions for all players (called at month transition)
+     * SIMPLIFIED: Add new monthly allowance to existing total (all actions rollover)
      */
     refreshMonthlyActions() {
         const newAllowance = this.calculateMonthlyActionAllowance();
 
         for (const [playerId, player] of this.gameState.players) {
-            // Reset monthly actions to new allowance, keep purchased actions
-            player.actions.monthly = newAllowance;
-            player.actions.total = player.actions.monthly + player.actions.purchased;
+            // Add new monthly allowance to existing total (all actions rollover)
+            player.actions.total += newAllowance;
 
-        // console.log(`🎯 Player ${playerId} actions refreshed: ${player.actions.total} total (${player.actions.monthly} monthly + ${player.actions.purchased} purchased)`);
-        }
-
-        // Update playerActions map for sync
-        for (const [playerId, player] of this.gameState.players) {
+            // Update playerActions map for sync
             this.gameState.playerActions.set(playerId, player.actions.total);
+
+            console.log(`🎯 Player ${playerId} actions refreshed: ${player.actions.total} total (+${newAllowance} monthly grant)`);
         }
     }
 
     /**
      * Spend actions for a player
+     * SIMPLIFIED: Single bucket - just deduct from total
      */
     spendActions(playerId, count, reason = 'action') {
         const player = this.getOrCreatePlayer(playerId);
@@ -3271,30 +3596,17 @@ class ServerEconomicEngine {
         // Ensure actions object exists (safety check for existing players)
         if (!player.actions) {
             player.actions = {
-                monthly: this.calculateMonthlyActionAllowance(),
-                purchased: 0,
                 total: this.calculateMonthlyActionAllowance()
             };
-        // console.log(`🔧 Initialized missing actions object for player ${playerId}`);
+            console.log(`[PERF] Initialized missing actions object for player ${playerId}`);
         }
 
         if (player.actions.total < count) {
             throw new Error(`Insufficient actions: need ${count}, have ${player.actions.total}`);
         }
 
-        // Spend monthly actions first, then purchased
-        let remainingToSpend = count;
-
-        if (player.actions.monthly >= remainingToSpend) {
-            player.actions.monthly -= remainingToSpend;
-        } else {
-            remainingToSpend -= player.actions.monthly;
-            player.actions.monthly = 0;
-            player.actions.purchased -= remainingToSpend;
-        }
-
-        // Update total
-        player.actions.total = player.actions.monthly + player.actions.purchased;
+        // Deduct from total (simple single bucket)
+        player.actions.total -= count;
 
         // Update playerActions map for sync
         this.gameState.playerActions.set(playerId, player.actions.total);
@@ -3307,18 +3619,19 @@ class ServerEconomicEngine {
             description: `Spent ${count} action${count !== 1 ? 's' : ''} on ${reason}`
         });
 
-        // console.log(`🎯 Player ${playerId} spent ${count} actions on ${reason}. Remaining: ${player.actions.total}`);
+        console.log(`🎯 Player ${playerId} spent ${count} actions on ${reason}. Remaining: ${player.actions.total}`);
         return true;
     }
 
     /**
-     * Add purchased actions to a player (from marketplace)
+     * Add actions to a player (from marketplace purchase or other sources)
+     * SIMPLIFIED: Single bucket - just add to total
      */
     addPurchasedActions(playerId, count, reason = 'marketplace') {
         const player = this.getOrCreatePlayer(playerId);
 
-        player.actions.purchased += count;
-        player.actions.total = player.actions.monthly + player.actions.purchased;
+        // Add to total (simple single bucket)
+        player.actions.total += count;
 
         // Update playerActions map for sync
         this.gameState.playerActions.set(playerId, player.actions.total);
@@ -3328,10 +3641,10 @@ class ServerEconomicEngine {
             type: 'ACTION_PURCHASE',
             amount: count,
             timestamp: Date.now(),
-            description: `Purchased ${count} action${count !== 1 ? 's' : ''} from ${reason}`
+            description: `Acquired ${count} action${count !== 1 ? 's' : ''} from ${reason}`
         });
 
-        // console.log(`🎯 Player ${playerId} purchased ${count} actions from ${reason}. Total: ${player.actions.total}`);
+        console.log(`🎯 Player ${playerId} acquired ${count} actions from ${reason}. Total: ${player.actions.total}`);
         return true;
     }
 
@@ -3351,12 +3664,10 @@ class ServerEconomicEngine {
         // Ensure actions object exists (for players created before actions system)
         if (!player.actions) {
             player.actions = {
-                monthly: this.calculateMonthlyActionAllowance(),
-                purchased: 0,
                 total: this.calculateMonthlyActionAllowance()
             };
             this.gameState.playerActions.set(playerId, player.actions.total);
-        // console.log(`🔧 Initialized missing actions for player ${playerId}`);
+            console.log(`[PERF] Initialized missing actions for player ${playerId}`);
         }
 
         // Validate player has enough actions
@@ -3622,6 +3933,9 @@ class ServerEconomicEngine {
             });
 
             // Add fee to treasury
+            this.gameState.treasury += fee;
+
+            // Also add to external governance system if it exists (for backwards compatibility)
             if (this.governanceSystem) {
                 this.governanceSystem.addFunds(fee, 'marketplace cancellation fees');
             }
@@ -3721,6 +4035,9 @@ class ServerEconomicEngine {
         this.addPurchasedActions(listing.highBidderId, listing.quantity, 'auction win');
 
         // Add fee to treasury
+        this.gameState.treasury += fee;
+
+        // Also add to external governance system if it exists (for backwards compatibility)
         if (this.governanceSystem) {
             this.governanceSystem.addFunds(fee, 'marketplace early end fees');
         }
@@ -3852,9 +4169,14 @@ class ServerEconomicEngine {
     // =====================================================================
 
     /**
-     * Start a parcel auction (hostile takeover)
+     * LAND EXCHANGE SYSTEM - Offer-based parcel trading
+     * Replaces hostile auction system with strategic negotiation
      */
-    async processStartParcelAuction(transaction) {
+
+    /**
+     * Make an offer on a competitor's parcel
+     */
+    async processMakeOffer(transaction) {
         const { playerId, row, col, openingBid } = transaction;
 
         // Validate max concurrent auctions
@@ -3951,15 +4273,8 @@ class ServerEconomicEngine {
             throw new Error('Auction not available for bidding');
         }
 
-        // Cannot bid on your own auction
-        if (playerId === auction.startedBy) {
-            throw new Error('Cannot bid on auction you started');
-        }
-
-        // Cannot bid on your own parcel
-        if (playerId === auction.currentOwner) {
-            throw new Error('Current owner cannot bid - use match option when auction ends');
-        }
+        // Anyone can bid, including challenger and current owner
+        // This creates competitive dynamics and allows self-competition
 
         // Validate bid is higher than current
         if (bidAmount <= auction.currentBid) {
@@ -3974,9 +4289,9 @@ class ServerEconomicEngine {
             throw new Error(`Insufficient funds: need $${totalCost.toLocaleString()}, have $${player.cash.toLocaleString()}`);
         }
 
-        // Check time remaining for snipe protection
+        // Check time remaining for snipe protection (last 5 seconds)
         const timeRemaining = auction.endTime - Date.now();
-        if (timeRemaining <= 10000 && timeRemaining > 0) {
+        if (timeRemaining <= 5000 && timeRemaining > 0) {
             // Snipe protection: add 3 seconds
             auction.endTime += 3000;
             auction.snipeExtensions++;
@@ -4010,6 +4325,13 @@ class ServerEconomicEngine {
         auction.currentBid = bidAmount;
         auction.highBidderId = playerId;
         auction.totalCost = totalCost;
+
+        // Snipe protection: bids in last 5 seconds add 3 seconds
+        const timeLeft = auction.endTime - Date.now();
+        if (timeLeft <= 5000) {
+            auction.endTime += 3000;
+            // console.log(`🔨 Snipe protection: Added 3 seconds to auction ${auctionId}`);
+        }
 
         // console.log(`🏛️ Parcel bid: $${bidAmount.toLocaleString()} by ${playerId} on [${auction.row},${auction.col}] (total cost: $${totalCost.toLocaleString()})`);
 
@@ -4186,6 +4508,10 @@ class ServerEconomicEngine {
      * Process expired parcel auctions (called by timer)
      */
     processExpiredParcelAuctions() {
+        return this.processAuctionTimers();
+    }
+
+    processAuctionTimers() {
         const now = Date.now();
         let processed = 0;
 
@@ -4197,14 +4523,37 @@ class ServerEconomicEngine {
                         auction.phase = 'owner_response';
                         auction.ownerResponseEnd = now + (30 * 1000); // 30 seconds for owner
 
+                        // Calculate financial details for owner decision
+                        const parcel = this.gameState.grid[auction.row][auction.col];
+                        const building = this.gameState.buildings.get(`${auction.row},${auction.col}`);
+
+                        // Calculate net revenue from current setup
+                        let currentNetRevenue = 0;
+                        if (building) {
+                            const buildingRevenue = building.lastRevenue || 0;
+                            const actionCosts = building.lastActionCost || 0;
+                            currentNetRevenue = buildingRevenue - actionCosts;
+                        }
+
+                        // Calculate cash gain by declining (selling)
+                        const winningBid = auction.currentBid;
+                        const buildingValue = auction.buildingValue || 0;
+                        const cashGainByDeclining = winningBid; // Owner gets the bid amount
+
         // console.log(`🏛️ Auction [${auction.row},${auction.col}] moved to owner response phase`);
 
-                        // Broadcast phase change
+                        // Broadcast phase change with financial data
                         this.room.broadcast({
                             type: 'PARCEL_AUCTION_UPDATE',
                             subtype: 'OWNER_RESPONSE_PHASE',
                             auctionId: auctionId,
-                            responseTimeEnd: auction.ownerResponseEnd
+                            responseTimeEnd: auction.ownerResponseEnd,
+                            financialData: {
+                                winningBid: winningBid,
+                                buildingValue: buildingValue,
+                                currentNetRevenue: currentNetRevenue,
+                                cashGainByDeclining: cashGainByDeclining
+                            }
                         });
                     } else {
                         // No bids - cancel auction
@@ -4308,10 +4657,22 @@ class ServerEconomicEngine {
         const buildingsArray = [];
         if (this.gameState.buildings instanceof Map) {
             for (const [locationKey, building] of this.gameState.buildings) {
-                buildingsArray.push({
+                const serialized = {
                     ...building,
                     locationKey: locationKey
-                });
+                };
+
+                // DEBUG: Log first building to verify performance data
+                if (buildingsArray.length === 0 && building.performance) {
+                    console.log('📤 SERVER: Serializing building with performance:', {
+                        locationKey,
+                        hasPerformance: !!building.performance,
+                        hasResourceSatisfaction: !!building.performance?.resourceSatisfaction,
+                        resourceSatisfaction: building.performance?.resourceSatisfaction
+                    });
+                }
+
+                buildingsArray.push(serialized);
             }
         } else if (Array.isArray(this.gameState.buildings)) {
             buildingsArray.push(...this.gameState.buildings);
@@ -4625,41 +4986,41 @@ class ServerEconomicEngine {
 
         const condition = this.calculateBuildingCondition(building);
 
-        console.log(`🏢 getBuildingRenderingState called for [${row},${col}] ${building.id}, underConstruction: ${building.underConstruction}`);
+        console.log(`[BROADCAST] getBuildingRenderingState called for [${row},${col}] ${building.id}, underConstruction: ${building.underConstruction}`);
 
         // Get full performance details (revenue, maintenance, etc.) for tooltips
         // This calls the (row, col) version which returns the detailed object
         const performanceDetails = building.underConstruction ? null : this.calculateBuildingPerformance(row, col);
 
-        console.log(`📊 Performance details for [${row},${col}]:`, performanceDetails ? 'HAS DATA' : 'NULL', performanceDetails?.summary);
+        // console.log(`[CARENS] Performance details for [${row},${col}]:`, performanceDetails ? 'HAS DATA' : 'NULL', performanceDetails?.summary);
 
         // Calculate efficiency percentage and financial data for tooltip display
         let efficiency = 0;
         let netIncome = 0;
         let revenue = 0;
         let maintenance = 0;
-        let performanceMultiplier = 1.0;
+        let performanceMultiplier = building.underConstruction ? 0.0 : 1.0; // 0 during construction
 
         if (performanceDetails && performanceDetails.summary) {
             revenue = performanceDetails.summary.revenue || 0;
             maintenance = performanceDetails.summary.maintenance || 0;
             netIncome = performanceDetails.summary.netIncome || 0;
 
-            console.log(`💵 Extracted from performance: revenue=$${revenue}, maintenance=$${maintenance}, netIncome=$${netIncome}`);
+            // Performance % = Core Needs Satisfaction × CARENS (does NOT include condition)
+            efficiency = performanceDetails.summary.performance || 0;
+            performanceMultiplier = efficiency / 100; // Convert % to multiplier
 
-            // Efficiency is the overall performance multiplier (combination of all factors)
-            if (performanceDetails.detailed) {
-                const jeefhh = performanceDetails.detailed.jeefhhMultiplier || 1.0;
-                const carens = performanceDetails.detailed.carensMultiplier || 1.0;
-                const conditionFactor = performanceDetails.detailed.conditionFactor || 1.0;
-
-                efficiency = jeefhh * carens * conditionFactor * 100;
-                performanceMultiplier = jeefhh * carens * conditionFactor;
-
-                console.log(`📈 Calculated efficiency: ${efficiency.toFixed(1)}% (JEEFHH: ${jeefhh.toFixed(2)}, CARENS: ${carens.toFixed(2)}, Condition: ${conditionFactor.toFixed(2)})`);
-            }
+            // console.log(`[REVENUE] Extracted from performance: revenue=$${revenue}, maintenance=$${maintenance}, netIncome=$${netIncome}, performance=${efficiency}%`);
         } else {
-            console.log(`⚠️ No performance details for [${row},${col}] ${building.id} - performanceDetails is ${performanceDetails ? 'missing summary' : 'null'}`);
+            console.log(`[WARN] No performance details for [${row},${col}] ${building.id} - performanceDetails is ${performanceDetails ? 'missing summary' : 'null'}`);
+        }
+
+        // Calculate construction progress if under construction
+        let constructionProgress = 1.0;
+        if (building.underConstruction) {
+            const constructionElapsed = Date.now() - building.constructionStartTime;
+            const constructionRequired = building.constructionDays * this.GAME_DAY_MS;
+            constructionProgress = Math.min(1.0, constructionElapsed / constructionRequired);
         }
 
         const stateObject = {
@@ -4670,7 +5031,7 @@ class ServerEconomicEngine {
             condition: condition, // 0.1 to 1.0
             performance: performanceMultiplier, // 0.0 to 1.0 multiplier
             isUnderConstruction: building.underConstruction || false,
-            constructionProgress: building.constructionProgress || 1.0,
+            constructionProgress: constructionProgress,
             constructionDays: buildingDef.economics?.constructionDays || 1,
             constructionStartTime: building.constructionStartTime || Date.now(),
             repairCost: this.calculateRepairCost(building, 1.0),
@@ -4684,14 +5045,14 @@ class ServerEconomicEngine {
             performanceDetails: performanceDetails // Full breakdown
         };
 
-        console.log(`🎁 Returning state for [${row},${col}]:`, {
-            buildingId: stateObject.buildingId,
-            efficiency: stateObject.efficiency,
-            netIncome: stateObject.netIncome,
-            revenue: stateObject.revenue,
-            maintenance: stateObject.maintenance,
-            hasPerformanceDetails: !!stateObject.performanceDetails
-        });
+        // console.log(`[INFO] Returning state for [${row},${col}]:`, {
+        //     buildingId: stateObject.buildingId,
+        //     efficiency: stateObject.efficiency,
+        //     netIncome: stateObject.netIncome,
+        //     revenue: stateObject.revenue,
+        //     maintenance: stateObject.maintenance,
+        //     hasPerformanceDetails: !!stateObject.performanceDetails
+        // });
 
         return stateObject;
     }
@@ -4749,10 +5110,10 @@ class ServerEconomicEngine {
         const buildingStates = [];
 
         // DEBUG: Check total buildings in system
-        console.log(`🏗️ Total buildings in gameState: ${this.gameState.buildings.size}`);
-        if (this.gameState.buildings.size > 0) {
-            console.log(`🏗️ Building keys:`, Array.from(this.gameState.buildings.keys()).slice(0, 5));
-        }
+        // console.log(`[INFO] Total buildings in gameState: ${this.gameState.buildings.size}`);
+        // if (this.gameState.buildings.size > 0) {
+        //     console.log(`[INFO] Building keys:`, Array.from(this.gameState.buildings.keys()).slice(0, 5));
+        // }
 
         // Collect all building states
         this.gameState.buildings.forEach((building, locationKey) => {
@@ -4760,14 +5121,14 @@ class ServerEconomicEngine {
             const state = this.getBuildingRenderingState(row, col);
             if (state) {
                 buildingStates.push(state);
-                console.log(`✅ Added building state for [${row},${col}]: ${building.id}`);
+                // console.log(`[INFO] Added building state for [${row},${col}]: ${building.id}`);
             } else {
-                console.log(`❌ No state generated for [${row},${col}]: ${building.id}`);
+                console.log(`[ERROR] No state generated for [${row},${col}]: ${building.id}`);
             }
         });
 
         // DEBUG: Log building states being broadcast
-        console.log(`📡 Broadcasting ${buildingStates.length} building states:`,
+        console.log(`[BROADCAST] Broadcasting ${buildingStates.length} building states:`,
             buildingStates.slice(0, 3).map(s => ({
                 location: `[${s.row},${s.col}]`,
                 isUnderConstruction: s.isUnderConstruction,
@@ -4782,6 +5143,80 @@ class ServerEconomicEngine {
             buildings: buildingStates,
             timestamp: Date.now()
         });
+
+        if (this.DEBUG.BROADCASTS) {
+            const sizeKB = (JSON.stringify({ type: 'BUILDING_STATES', buildings: buildingStates }).length / 1024).toFixed(2);
+            console.log(`[BROADCAST] Sent BUILDING_STATES - ${buildingStates.length} buildings, ${sizeKB}KB`);
+        }
+    }
+
+    // ========================================================================
+    // GOVERNANCE BUDGET METHODS
+    // ========================================================================
+
+    /**
+     * Get current budget balances for all categories
+     */
+    getBudgets() {
+        return { ...this.gameState.budgets };
+    }
+
+    /**
+     * Spend from a category budget
+     * @param {string} category - Budget category (e.g., 'housing', 'commercial')
+     * @param {number} amount - Amount to spend
+     * @param {string} description - Description of the spending
+     * @returns {boolean} - True if successful, false if insufficient funds
+     */
+    spendFromBudget(category, amount, description = '') {
+        if (!this.gameState.budgets.hasOwnProperty(category)) {
+            console.error(`[BUDGET] Invalid category: ${category}`);
+            return false;
+        }
+
+        const currentBalance = this.gameState.budgets[category];
+        if (currentBalance < amount) {
+            console.warn(`[BUDGET] Insufficient ${category} budget: has $${currentBalance}, needs $${amount}`);
+            return false;
+        }
+
+        this.gameState.budgets[category] -= amount;
+        console.log(`[BUDGET] Spent $${amount} from ${category} budget (${description}). New balance: $${this.gameState.budgets[category]}`);
+        return true;
+    }
+
+    /**
+     * Allocate LVT revenue to budgets based on player allocations
+     * Called monthly when LVT is collected
+     * @param {number} totalRevenue - Total LVT revenue collected
+     */
+    allocateBudgets(totalRevenue) {
+        if (!this.gameState.monthlyBudget?.proportions) {
+            // No allocations - all revenue goes to treasury
+            this.gameState.treasury += totalRevenue;
+            console.log(`[BUDGET] No allocations - $${totalRevenue} added to treasury. New balance: $${this.gameState.treasury}`);
+            return;
+        }
+
+        const proportions = this.gameState.monthlyBudget.proportions;
+
+        Object.keys(this.gameState.budgets).forEach(category => {
+            const proportion = proportions[category] || 0;
+            const allocation = totalRevenue * proportion;
+
+            if (allocation > 0) {
+                this.gameState.budgets[category] += allocation;
+                console.log(`[BUDGET] Allocated $${allocation.toFixed(2)} to ${category} budget. New balance: $${this.gameState.budgets[category].toFixed(2)}`);
+            }
+        });
+
+        // Any unallocated funds go to treasury
+        const totalAllocated = Object.values(proportions).reduce((sum, p) => sum + p, 0);
+        if (totalAllocated < 1.0) {
+            const unallocated = totalRevenue * (1.0 - totalAllocated);
+            this.gameState.treasury += unallocated;
+            console.log(`[BUDGET] $${unallocated.toFixed(2)} unallocated funds added to treasury. New balance: $${this.gameState.treasury.toFixed(2)}`);
+        }
     }
 }
 

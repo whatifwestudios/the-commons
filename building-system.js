@@ -579,7 +579,7 @@ class BuildingSystem {
 
     /**
      * Map building categories to budget categories for subsidy funding
-     * Must match server-side logic in server-economic-engine-v2.js
+     * Must match server-side logic in server-economic-engine.js
      */
     mapBuildingToBudgetCategory(buildingCategory) {
         const mapping = {
@@ -1239,7 +1239,6 @@ class BuildingSystem {
 
     /**
      * Calculate repair cost - SERVER PREFERRED, CLIENT FALLBACK
-     * TODO: Replace with server-authoritative calculation
      */
     calculateRepairCost(parcel, building, row = null, col = null) {
         // Try server data first if coordinates provided
@@ -1274,7 +1273,6 @@ class BuildingSystem {
 
     /**
      * Calculate current building value - SERVER PREFERRED, CLIENT FALLBACK
-     * TODO: Replace with server-authoritative calculation
      */
     calculateCurrentBuildingValue(parcel, building, row = null, col = null) {
         // Try server data first if coordinates provided

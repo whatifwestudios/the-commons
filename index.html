@@ -1275,306 +1275,259 @@
         }
 
         /* ========================================
-           PARCEL AUCTION SYSTEM
+           LAND EXCHANGE SYSTEM
            ======================================== */
 
-        /* Sidebar Auction Items */
-        .auction-sidebar-item {
+        /* Sidebar Offer Items */
+        .land-exchange-item {
             background: #0a0a0a;
             border: 1px solid #1a1a1a;
-            border-left: 2px solid #2a2a2a;
+            border-radius: 4px;
+            padding: 10px 12px;
             margin-bottom: 8px;
             cursor: pointer;
-            transition: all 0.12s ease;
+            transition: all 0.2s ease;
         }
 
-        .auction-sidebar-item:hover {
+        .land-exchange-item:hover {
             background: #111111;
-            border-left-color: #66BB6A;
+            border-color: #2a2a2a;
         }
 
-        .auction-sidebar-header {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            padding: 10px 12px 6px 12px;
-            border-bottom: 1px solid #1a1a1a;
+        .land-exchange-item.as-owner {
+            border-color: #ffa500;
+            background: rgba(255, 165, 0, 0.05);
         }
 
-        .auction-sidebar-parcel {
-            font-size: 11px;
-            font-weight: 700;
-            color: #66BB6A;
-            letter-spacing: 0.8px;
-            flex-shrink: 0;
+        .land-exchange-item.as-offerer {
+            border-color: #4CAF50;
+            background: rgba(76, 175, 80, 0.05);
         }
 
-        .auction-role-tag {
-            font-size: 8px;
-            font-weight: 700;
-            letter-spacing: 0.6px;
-            padding: 2px 6px;
-            border-radius: 2px;
-            flex-shrink: 0;
-        }
-
-        .auction-role-tag.auction-role-challenger {
-            background: rgba(102, 187, 106, 0.15);
-            color: #66BB6A;
-            border: 1px solid rgba(102, 187, 106, 0.3);
-        }
-
-        .auction-role-tag.auction-role-owner {
-            background: rgba(255, 165, 0, 0.15);
-            color: #ffa500;
-            border: 1px solid rgba(255, 165, 0, 0.3);
-        }
-
-        .auction-sidebar-time {
-            font-size: 10px;
-            color: #666;
-            margin-left: auto;
-            font-weight: 500;
-        }
-
-        .auction-sidebar-time.urgent {
-            color: #ff6b35;
-            font-weight: 700;
-        }
-
-        .auction-sidebar-bid {
-            font-size: 13px;
-            font-weight: 600;
-            color: #ececec;
-            padding: 6px 12px;
-        }
-
-        .auction-sidebar-actions {
-            display: flex;
-            gap: 6px;
-            padding: 0 12px 10px 12px;
-        }
-
-        .auction-sidebar-btn {
-            flex: 1;
-            background: #1a1a1a;
-            color: #888;
-            border: 1px solid #2a2a2a;
-            padding: 8px;
-            font-size: 10px;
-            font-weight: 700;
-            letter-spacing: 0.5px;
-            cursor: pointer;
-            transition: all 0.12s ease;
-        }
-
-        .auction-sidebar-btn:hover {
-            background: #2a2a2a;
-            color: #66BB6A;
-            border-color: #66BB6A;
-        }
-
-        .no-auctions {
-            text-align: center;
-            color: #444;
-            font-size: 10px;
-            padding: 20px;
-            font-weight: 500;
-            letter-spacing: 0.5px;
-        }
-
-        /* Modal Styles */
-        .auction-modal .modal-content {
-            width: 520px;
-            max-width: 90vw;
-        }
-
-        .auction-modal-section {
-            background: #111111;
-            border: 1px solid #1a1a1a;
-            margin-bottom: 12px;
-            padding: 12px 0;
-        }
-
-        .auction-modal-row {
+        .land-exchange-header {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            padding: 6px 16px;
+            margin-bottom: 6px;
         }
 
-        .auction-modal-row.highlight {
-            background: rgba(102, 187, 106, 0.08);
-            border-top: 1px solid rgba(102, 187, 106, 0.2);
-            border-bottom: 1px solid rgba(102, 187, 106, 0.2);
-            padding: 10px 16px;
-            margin: 8px 0;
-        }
-
-        .auction-modal-row.total {
-            background: #0a0a0a;
-            border-top: 1px solid #2a2a2a;
-            margin-top: 8px;
-            padding: 10px 16px;
-        }
-
-        .auction-modal-label {
-            font-size: 10px;
-            color: #666;
-            font-weight: 600;
-            letter-spacing: 0.8px;
-        }
-
-        .auction-modal-row.highlight .auction-modal-label,
-        .auction-modal-row.total .auction-modal-label {
+        .land-exchange-parcel {
             font-size: 11px;
-            font-weight: 700;
+            font-weight: 600;
+            color: #fff;
+            letter-spacing: 0.5px;
         }
 
-        .auction-modal-value {
+        .land-exchange-role {
+            font-size: 8px;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+
+        .land-exchange-role.owner {
+            background: #ffa500;
+            color: #000;
+        }
+
+        .land-exchange-role.offerer {
+            background: #4CAF50;
+            color: #000;
+        }
+
+        .land-exchange-price {
             font-size: 13px;
-            color: #ececec;
             font-weight: 600;
-        }
-
-        .auction-modal-row.highlight .auction-modal-value {
-            color: #66BB6A;
-            font-size: 16px;
-            font-weight: 700;
-        }
-
-        .auction-modal-row.total .auction-modal-value {
-            font-size: 15px;
-            font-weight: 700;
-        }
-
-        .bid-controls-section {
-            border-left: 3px solid #66BB6A;
-        }
-
-        .auction-modal-subsection-title {
-            font-size: 10px;
-            font-weight: 700;
-            letter-spacing: 0.8px;
-            color: #888;
-            padding: 0 16px 12px 16px;
-            border-bottom: 1px solid #1a1a1a;
-            margin-bottom: 12px;
-        }
-
-        .response-timer-value {
-            color: #ffa500;
-            margin-left: 8px;
-            font-size: 11px;
-        }
-
-        .auction-bid-actions {
-            display: flex;
-            gap: 8px;
-            padding: 0 16px 8px 16px;
-        }
-
-        .auction-custom-bid-row {
-            display: flex;
-            gap: 8px;
-            padding: 4px 16px 8px 16px;
-        }
-
-        .auction-btn {
-            background: #1a1a1a;
             color: #ececec;
-            border: 1px solid #2a2a2a;
-            padding: 10px 16px;
-            font-size: 11px;
-            font-weight: 700;
-            letter-spacing: 0.6px;
-            cursor: pointer;
-            transition: all 0.12s ease;
+            padding: 4px 0;
         }
 
-        .auction-btn:hover {
+        .land-exchange-actions {
+            display: flex;
+            gap: 6px;
+            margin-top: 8px;
+        }
+
+        .land-exchange-btn {
+            flex: 1;
+            padding: 6px 8px;
+            border: 1px solid #2a2a2a;
+            background: #1a1a1a;
+            color: #fff;
+            font-size: 10px;
+            font-weight: 600;
+            cursor: pointer;
+            border-radius: 3px;
+            transition: all 0.2s ease;
+        }
+
+        .land-exchange-btn:hover {
             background: #2a2a2a;
             border-color: #3a3a3a;
         }
 
-        .auction-btn-quick {
-            flex: 1;
-            color: #888;
+        .land-exchange-btn.accept {
+            border-color: #4CAF50;
+            color: #4CAF50;
         }
 
-        .auction-btn-quick:hover {
-            color: #66BB6A;
-            border-color: #66BB6A;
+        .land-exchange-btn.accept:hover {
+            background: rgba(76, 175, 80, 0.1);
         }
 
-        .auction-btn-primary {
-            background: #66BB6A;
-            color: #0a0a0a;
-            border-color: #66BB6A;
-            flex: 1;
+        .land-exchange-btn.match {
+            border-color: #ffa500;
+            color: #ffa500;
         }
 
-        .auction-btn-primary:hover {
-            background: #7ACC7F;
-            border-color: #7ACC7F;
+        .land-exchange-btn.match:hover {
+            background: rgba(255, 165, 0, 0.1);
         }
 
-        .auction-btn-success {
-            flex: 1;
-            background: rgba(102, 187, 106, 0.15);
-            color: #66BB6A;
-            border-color: #66BB6A;
-        }
-
-        .auction-btn-success:hover {
-            background: #66BB6A;
-            color: #0a0a0a;
-        }
-
-        .auction-btn-danger {
-            flex: 1;
-            background: rgba(255, 68, 68, 0.15);
-            color: #ff4444;
+        .land-exchange-btn.withdraw {
             border-color: #ff4444;
+            color: #ff4444;
         }
 
-        .auction-btn-danger:hover {
-            background: #ff4444;
-            color: #ffffff;
+        .land-exchange-btn.withdraw:hover {
+            background: rgba(255, 68, 68, 0.1);
         }
 
-        .auction-bid-input {
-            flex: 2;
+        .land-exchange-indicator {
+            font-size: 14px;
+            margin-left: 8px;
+            color: #4CAF50;
+        }
+
+        .land-exchange-indicator.has-offers {
+            color: #ffa500;
+            animation: pulse-orange 2s infinite;
+        }
+
+        @keyframes pulse-orange {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        /* Land Exchange Modal */
+        .land-exchange-modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.85);
+            z-index: 10000;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .land-exchange-modal.visible {
+            display: flex;
+        }
+
+        .land-exchange-modal-content {
+            background: #1a1a1a;
+            border: 2px solid #2a2a2a;
+            border-radius: 8px;
+            padding: 0;
+            min-width: 400px;
+            max-width: 500px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+        }
+
+        .land-exchange-modal-header {
             background: #0a0a0a;
-            color: #ececec;
-            border: 1px solid #2a2a2a;
-            padding: 10px 12px;
+            padding: 16px 20px;
+            border-bottom: 1px solid #2a2a2a;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .land-exchange-modal-header h2 {
+            margin: 0;
+            font-size: 16px;
+            font-weight: 600;
+            color: #fff;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .land-exchange-modal-body {
+            padding: 20px;
+        }
+
+        .land-exchange-section {
+            margin-bottom: 16px;
+        }
+
+        .land-exchange-section-title {
+            font-size: 11px;
+            font-weight: 600;
+            color: #888;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 8px;
+        }
+
+        .land-exchange-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid #2a2a2a;
+        }
+
+        .land-exchange-row:last-child {
+            border-bottom: none;
+        }
+
+        .land-exchange-label {
             font-size: 13px;
+            color: #aaa;
+        }
+
+        .land-exchange-value {
+            font-size: 13px;
+            color: #fff;
             font-weight: 600;
         }
 
-        .auction-bid-input:focus {
-            outline: none;
-            border-color: #66BB6A;
-            background: #111111;
-        }
-
-        .auction-bid-input::placeholder {
-            color: #444;
-        }
-
-        .owner-response-section {
-            border-left: 3px solid #ffa500;
-        }
-
-        #auction-status-message {
-            padding: 0 16px;
-        }
-
-        .auction-indicator {
+        .land-exchange-input {
+            width: 100%;
+            padding: 10px;
+            background: #0a0a0a;
+            border: 1px solid #2a2a2a;
+            border-radius: 4px;
+            color: #fff;
             font-size: 14px;
-            margin-left: 8px;
-            transition: color 0.3s ease;
+            font-family: 'Courier New', monospace;
+        }
+
+        .land-exchange-input:focus {
+            outline: none;
+            border-color: #4CAF50;
+        }
+
+        .land-exchange-submit {
+            width: 100%;
+            padding: 12px;
+            background: #4CAF50;
+            border: none;
+            border-radius: 4px;
+            color: #000;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .land-exchange-submit:hover {
+            background: #45a049;
         }
 
         .governance-panel {
@@ -3142,7 +3095,7 @@
                 
                 <div class="tab-content" id="marketplace">
                     <div class="marketplace-info" style="margin-bottom: 16px;">
-                        <p style="margin: 0; font-size: 14px; color: #666;"><strong>💡 Tip:</strong> Actions are permanent assets that rollover monthly until used. Buy actions to build your strategic reserve!</p>
+                        <p style="margin: 0; font-size: 14px; color: #666;"><strong>💡 Tip:</strong> All actions rollover monthly. Buy actions to expand your strategic reserve!</p>
                     </div>
                     <div class="listings-container" id="action-listings">
                         <div class="loading-placeholder">
@@ -3415,20 +3368,20 @@
     <script src="building-system.js"></script>
     <!-- Legacy smart-tooltip-system.js archived -->
     <!-- V2 Economic System - Clean Client-Server Communication -->
-    <script src="economic-client-v2.js?v=7"></script>
+    <script src="economic-client.js?v=7"></script>
 
     <!-- Legacy economic files removed - replaced by v2 economic system -->
-    <script src="parcel-hover-v2.js"></script>
-    <script src="governance-v3.js?v=1"></script>
+    <script src="parcel-hover.js"></script>
+    <script src="governance.js?v=1"></script>
     <!-- game-state.js archived - legacy v1 state management conflicted with v2 server authority -->
     <script src="ui-manager.js"></script>
-    <script src="tooltip-system-v2.js"></script>
-    <script src="rendering-system-v2.js"></script>
+    <script src="tooltip-system.js"></script>
+    <script src="rendering-system.js"></script>
     <!-- Legacy tooltip systems archived -->
     <script src="context-menu-system.js?v=3"></script>
     <script src="action-manager.js"></script>
-    <script src="action-marketplace-v2.js"></script>
-    <script src="parcel-auction-system.js?v=10"></script>
+    <script src="action-marketplace.js"></script>
+    <script src="land-exchange-system.js"></script>
     <script src="game.js?v=15"></script>
 
     <script>

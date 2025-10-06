@@ -902,11 +902,7 @@ class UIManager {
      * Setup zoom control event listeners
      */
     setupZoomControls(game) {
-        const zoomInBtn = document.getElementById('zoom-in');
-        const zoomOutBtn = document.getElementById('zoom-out');
-        const zoomResetBtn = document.getElementById('zoom-reset');
-        
-        // Zoom controls removed - buttons are no longer functional
+        // Zoom controls not implemented in this version
     }
     
     /**
@@ -1028,7 +1024,7 @@ class UIManager {
         const governanceBtn = document.getElementById('governance-btn');
         if (governanceBtn) {
             governanceBtn.addEventListener('click', () => {
-                // Use global openGovernanceModal function from governance-v3.js
+                // Use global openGovernanceModal function from governance.js
                 if (typeof openGovernanceModal === 'function') {
                     openGovernanceModal();
                 } else {
@@ -1198,10 +1194,9 @@ class UIManager {
     }
     
     /**
-     * Show notification
+     * Show notification (deprecated - use showToast instead)
      */
     showNotification(message, type = 'info', duration = 3000) {
-        // Disabled - no toast notifications
         return;
     }
     

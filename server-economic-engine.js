@@ -77,12 +77,12 @@ class ServerEconomicEngine {
                 avgPrice: 0
             },
 
-            // Parcel Auction System (hostile takeovers)
-            parcelAuctions: {
-                nextAuctionId: 1,
-                activeAuctions: new Map(), // key: auctionId -> ParcelAuction
-                maxConcurrentAuctions: 2,
-                auctionHistory: []
+            // Land Exchange System (offer-based parcel trading)
+            landExchange: {
+                nextOfferId: 1,
+                activeOffers: new Map(), // key: offerId -> Offer
+                maxOffersPerPlayer: 3,
+                offerHistory: []
             },
 
             // Residents distribution with age demographics
@@ -413,8 +413,7 @@ class ServerEconomicEngine {
         // Check for building completion every update (not just daily)
         this.processAutomaticBuildingCompletion();
 
-        // Process auction timers (phase transitions, completions)
-        this.processAuctionTimers();
+        // Land Exchange: No timers needed (async offer system)
 
         // Trigger daily events on day transitions
         if (currentDay > previousDay) {
@@ -645,8 +644,6 @@ class ServerEconomicEngine {
                     result = await this.processCashSpend(transaction);
                     break;
 
-                // Legacy GOVERNANCE_VOTE removed - use V2 processGovernanceTransaction instead
-
                 // Action Marketplace Transactions
                 case 'ACTION_CREATE_LISTING':
                     result = await this.processCreateActionListing(transaction);
@@ -668,17 +665,17 @@ class ServerEconomicEngine {
                     result = await this.processEndActionEarly(transaction);
                     break;
 
-                // Parcel Auction System
-                case 'START_PARCEL_AUCTION':
-                    result = await this.processStartParcelAuction(transaction);
+                // Land Exchange System
+                case 'LAND_EXCHANGE_MAKE_OFFER':
+                    result = await this.processMakeOffer(transaction);
                     break;
 
-                case 'PARCEL_AUCTION_BID':
-                    result = await this.processParcelAuctionBid(transaction);
+                case 'LAND_EXCHANGE_RESPOND':
+                    result = await this.processOfferResponse(transaction);
                     break;
 
-                case 'PARCEL_AUCTION_OWNER_RESPONSE':
-                    result = await this.processParcelAuctionOwnerResponse(transaction);
+                case 'LAND_EXCHANGE_WITHDRAW':
+                    result = await this.processWithdrawOffer(transaction);
                     break;
 
                 case 'ACTION_SPEND':
@@ -744,6 +741,12 @@ class ServerEconomicEngine {
         // Use playerBalances Map for balance tracking
         const currentBalance = this.getPlayerBalance(playerId);
 
+        // ✅ ENFORCE ACTION COST (critical bug fix)
+        const actionCost = this.ACTION_COSTS.constructBuilding || 1;
+        const player = this.getOrCreatePlayer(playerId);
+        if (!player.actions || player.actions.total < actionCost) {
+            throw new Error(`Insufficient actions: need ${actionCost}, have ${player.actions?.total || 0}`);
+        }
 
         // Validate player can afford
         if (currentBalance < cost) {
@@ -800,13 +803,10 @@ class ServerEconomicEngine {
         const newBalance = currentBalance - playerCost;
         this.gameState.playerBalances.set(playerId, newBalance);
 
-        // console.log(`[REVENUE] BUILD_START: ${playerId} balance ${currentBalance} → ${newBalance} (built ${buildingDef.name})`);
-        // console.log('[SUPPLY] DEBUG: Server buildingDef graphics data:', {
-        //     graphicsFile: buildingDef.graphicsFile,
-        //     graphics: buildingDef.graphics,
-        //     images: buildingDef.images,
-        //     allKeys: Object.keys(buildingDef)
-        // });
+        // ✅ SPEND ACTION (critical bug fix)
+        this.spendActions(playerId, actionCost, `building ${buildingDef.name}`);
+
+        console.log(`[REVENUE] BUILD_START: ${playerId} balance ${currentBalance} → ${newBalance}, actions ${player.actions.total + actionCost} → ${player.actions.total} (built ${buildingDef.name})`);
 
         // Create building in construction state
         const building = {
@@ -2176,11 +2176,9 @@ class ServerEconomicEngine {
                 buildings: [],
                 lastCashflowUpdate: 0,
 
-                // Action inventory (server-authoritative)
+                // Action inventory (server-authoritative) - SIMPLIFIED: Single bucket, all actions rollover
                 actions: {
-                    monthly: this.calculateMonthlyActionAllowance(), // Expire at month end
-                    purchased: 0, // Never expire
-                    total: this.calculateMonthlyActionAllowance()
+                    total: this.calculateMonthlyActionAllowance() // All actions rollover monthly
                 },
                 governance: {
                     votingPoints: 2, // Players start with 2 points, earn 2 more each month
@@ -2493,8 +2491,6 @@ class ServerEconomicEngine {
                 cityName: playerState?.cityName,
                 // Include action data for client sync
                 actions: playerState?.actions || {
-                    monthly: this.calculateMonthlyActionAllowance(),
-                    purchased: 0,
                     total: this.calculateMonthlyActionAllowance()
                 }
             };
@@ -2819,14 +2815,26 @@ class ServerEconomicEngine {
     async processParcelPurchase(transaction) {
         const { playerId, amount, location, description } = transaction;
 
-        // console.log(`[REVENUE] Processing parcel purchase: ${playerId} spending $${amount} for ${description || 'parcel'}`);
+        console.log(`[REVENUE] Processing parcel purchase: ${playerId} spending $${amount} for ${description || 'parcel'}`);
 
         // Use playerBalances Map for balance tracking
         const currentBalance = this.getPlayerBalance(playerId);
 
+        // ✅ ENFORCE ACTION COST (critical bug fix)
+        const actionCost = this.ACTION_COSTS.purchaseParcel || 1;
+        const player = this.getOrCreatePlayer(playerId);
+        if (!player.actions || player.actions.total < actionCost) {
+            return {
+                success: false,
+                error: `Insufficient actions: need ${actionCost}, have ${player.actions?.total || 0}`,
+                currentBalance: currentBalance,
+                requiredAmount: amount
+            };
+        }
+
         // Check if player has enough cash
         if (currentBalance < amount) {
-        // console.log(`[ERROR] Insufficient funds: ${currentBalance} < ${amount}`);
+            console.log(`[ERROR] Insufficient funds: ${currentBalance} < ${amount}`);
             return {
                 success: false,
                 error: 'Insufficient funds',
@@ -2839,11 +2847,14 @@ class ServerEconomicEngine {
         const newBalance = currentBalance - amount;
         this.gameState.playerBalances.set(playerId, newBalance);
 
+        // ✅ SPEND ACTION (critical bug fix)
+        this.spendActions(playerId, actionCost, 'parcel purchase');
+
         // UPDATE SERVER-AUTHORITATIVE GRID OWNERSHIP
         const [row, col] = location;
         if (this.gameState.grid && this.gameState.grid[row] && this.gameState.grid[row][col]) {
             this.gameState.grid[row][col].owner = playerId;
-        // console.log(`🏞️ Server grid ownership updated: [${row},${col}] → ${playerId}`);
+            console.log(`🏞️ Server grid ownership updated: [${row},${col}] → ${playerId}`);
 
             // Update neighboring parcel prices (dynamic pricing system)
             this.updateNeighborPrices(row, col, this.gameState.gridSize);
@@ -2851,7 +2862,7 @@ class ServerEconomicEngine {
             console.warn(`[WARN] Grid update failed: invalid location [${row},${col}]`);
         }
 
-        // console.log(`[INFO] Parcel purchase successful: ${playerId} balance ${currentBalance} → ${newBalance}`);
+        console.log(`[INFO] Parcel purchase successful: ${playerId} balance ${currentBalance} → ${newBalance}, actions ${player.actions.total + actionCost} → ${player.actions.total}`);
 
         return {
             success: true,
@@ -2961,7 +2972,6 @@ class ServerEconomicEngine {
         // console.log(`   📦 No allocations - tax revenue remains in treasury`);
         }
 
-        // TODO: Apply budget effects (building subsidies, service bonuses, etc.)
     }
 
     /**
@@ -3095,11 +3105,10 @@ class ServerEconomicEngine {
         // Sum all player LVT votes (handle both old and new vote systems)
         this.gameState.players.forEach((playerState) => {
             if (playerState.governance) {
-                // New system: single lvtVote value
                 if (playerState.governance.lvtVote !== undefined) {
                     totalLVTVotes += playerState.governance.lvtVote;
                 }
-                // Legacy system compatibility - remove this block after migration
+                // Backward compatibility for old governance format
                 else if (playerState.governance.lvtVotesIncrease !== undefined || playerState.governance.lvtVotesDecrease !== undefined) {
                     const increaseVotes = playerState.governance.lvtVotesIncrease || 0;
                     const decreaseVotes = playerState.governance.lvtVotesDecrease || 0;
@@ -3433,10 +3442,7 @@ class ServerEconomicEngine {
                     }
                 }
 
-                // CARENS updates are now handled by calculateGlobalCARENS() in recalculateGlobalEconomics()
-                // Legacy incremental system removed
-
-        // console.log(`[CARENS] Economic indicators updated for ${building.id}`);
+                // CARENS updates handled by calculateGlobalCARENS()
             }
         }
     }
@@ -3456,14 +3462,12 @@ class ServerEconomicEngine {
         }
     }
 
-    // Legacy governance system removed - using clean HTTP API instead
-
     /**
      * ACTION MANAGEMENT METHODS
      */
 
     /**
-     * Calculate monthly action allowance (20 actions in Sept, declining by 2 each month to min 10)
+     * Calculate monthly action allowance (18 actions in Sept, declining by 1 each month to min 7)
      * Solo Mode gets unlimited (9999) actions
      */
     calculateMonthlyActionAllowance() {
@@ -3475,9 +3479,9 @@ class ServerEconomicEngine {
         const monthOrder = ['SEPT', 'OCT', 'NOV', 'DEC', 'JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG'];
         const currentMonth = this.getCurrentGameMonth();
         const currentMonthIndex = monthOrder.indexOf(currentMonth);
-        const baseActions = 20;
-        const reduction = currentMonthIndex * 2;
-        const minimumActions = 10;
+        const baseActions = 18;
+        const reduction = currentMonthIndex * 1;
+        const minimumActions = 7;
 
         return Math.max(minimumActions, baseActions - reduction);
     }
@@ -3566,26 +3570,25 @@ class ServerEconomicEngine {
 
     /**
      * Refresh monthly actions for all players (called at month transition)
+     * SIMPLIFIED: Add new monthly allowance to existing total (all actions rollover)
      */
     refreshMonthlyActions() {
         const newAllowance = this.calculateMonthlyActionAllowance();
 
         for (const [playerId, player] of this.gameState.players) {
-            // Reset monthly actions to new allowance, keep purchased actions
-            player.actions.monthly = newAllowance;
-            player.actions.total = player.actions.monthly + player.actions.purchased;
+            // Add new monthly allowance to existing total (all actions rollover)
+            player.actions.total += newAllowance;
 
-        // console.log(`🎯 Player ${playerId} actions refreshed: ${player.actions.total} total (${player.actions.monthly} monthly + ${player.actions.purchased} purchased)`);
-        }
-
-        // Update playerActions map for sync
-        for (const [playerId, player] of this.gameState.players) {
+            // Update playerActions map for sync
             this.gameState.playerActions.set(playerId, player.actions.total);
+
+            console.log(`🎯 Player ${playerId} actions refreshed: ${player.actions.total} total (+${newAllowance} monthly grant)`);
         }
     }
 
     /**
      * Spend actions for a player
+     * SIMPLIFIED: Single bucket - just deduct from total
      */
     spendActions(playerId, count, reason = 'action') {
         const player = this.getOrCreatePlayer(playerId);
@@ -3593,30 +3596,17 @@ class ServerEconomicEngine {
         // Ensure actions object exists (safety check for existing players)
         if (!player.actions) {
             player.actions = {
-                monthly: this.calculateMonthlyActionAllowance(),
-                purchased: 0,
                 total: this.calculateMonthlyActionAllowance()
             };
-        // console.log(`[PERF] Initialized missing actions object for player ${playerId}`);
+            console.log(`[PERF] Initialized missing actions object for player ${playerId}`);
         }
 
         if (player.actions.total < count) {
             throw new Error(`Insufficient actions: need ${count}, have ${player.actions.total}`);
         }
 
-        // Spend monthly actions first, then purchased
-        let remainingToSpend = count;
-
-        if (player.actions.monthly >= remainingToSpend) {
-            player.actions.monthly -= remainingToSpend;
-        } else {
-            remainingToSpend -= player.actions.monthly;
-            player.actions.monthly = 0;
-            player.actions.purchased -= remainingToSpend;
-        }
-
-        // Update total
-        player.actions.total = player.actions.monthly + player.actions.purchased;
+        // Deduct from total (simple single bucket)
+        player.actions.total -= count;
 
         // Update playerActions map for sync
         this.gameState.playerActions.set(playerId, player.actions.total);
@@ -3629,18 +3619,19 @@ class ServerEconomicEngine {
             description: `Spent ${count} action${count !== 1 ? 's' : ''} on ${reason}`
         });
 
-        // console.log(`🎯 Player ${playerId} spent ${count} actions on ${reason}. Remaining: ${player.actions.total}`);
+        console.log(`🎯 Player ${playerId} spent ${count} actions on ${reason}. Remaining: ${player.actions.total}`);
         return true;
     }
 
     /**
-     * Add purchased actions to a player (from marketplace)
+     * Add actions to a player (from marketplace purchase or other sources)
+     * SIMPLIFIED: Single bucket - just add to total
      */
     addPurchasedActions(playerId, count, reason = 'marketplace') {
         const player = this.getOrCreatePlayer(playerId);
 
-        player.actions.purchased += count;
-        player.actions.total = player.actions.monthly + player.actions.purchased;
+        // Add to total (simple single bucket)
+        player.actions.total += count;
 
         // Update playerActions map for sync
         this.gameState.playerActions.set(playerId, player.actions.total);
@@ -3650,10 +3641,10 @@ class ServerEconomicEngine {
             type: 'ACTION_PURCHASE',
             amount: count,
             timestamp: Date.now(),
-            description: `Purchased ${count} action${count !== 1 ? 's' : ''} from ${reason}`
+            description: `Acquired ${count} action${count !== 1 ? 's' : ''} from ${reason}`
         });
 
-        // console.log(`🎯 Player ${playerId} purchased ${count} actions from ${reason}. Total: ${player.actions.total}`);
+        console.log(`🎯 Player ${playerId} acquired ${count} actions from ${reason}. Total: ${player.actions.total}`);
         return true;
     }
 
@@ -3673,12 +3664,10 @@ class ServerEconomicEngine {
         // Ensure actions object exists (for players created before actions system)
         if (!player.actions) {
             player.actions = {
-                monthly: this.calculateMonthlyActionAllowance(),
-                purchased: 0,
                 total: this.calculateMonthlyActionAllowance()
             };
             this.gameState.playerActions.set(playerId, player.actions.total);
-        // console.log(`[PERF] Initialized missing actions for player ${playerId}`);
+            console.log(`[PERF] Initialized missing actions for player ${playerId}`);
         }
 
         // Validate player has enough actions
@@ -4176,449 +4165,311 @@ class ServerEconomicEngine {
     }
 
     // =====================================================================
-    // PARCEL AUCTION SYSTEM - Hostile Takeover Auctions
+    // LAND EXCHANGE SYSTEM - Strategic Offer-Based Trading
     // =====================================================================
 
     /**
-     * Start a parcel auction (hostile takeover)
+     * LAND EXCHANGE SYSTEM - Offer-based parcel trading
+     * Replaces hostile auction system with strategic negotiation
      */
-    async processStartParcelAuction(transaction) {
-        const { playerId, row, col, openingBid } = transaction;
 
-        // Validate max concurrent auctions
-        if (this.gameState.parcelAuctions.activeAuctions.size >= this.gameState.parcelAuctions.maxConcurrentAuctions) {
-            throw new Error(`Maximum ${this.gameState.parcelAuctions.maxConcurrentAuctions} auctions allowed`);
+    /**
+     * Make an offer on a competitor's parcel
+     */
+    async processMakeOffer(transaction) {
+        const { playerId, row, col, offerAmount } = transaction;
+
+        // Validate player doesn't exceed max offers
+        const playerOffers = Array.from(this.gameState.landExchange.activeOffers.values())
+            .filter(offer => offer.offererId === playerId && offer.status === 'pending');
+
+        if (playerOffers.length >= this.gameState.landExchange.maxOffersPerPlayer) {
+            throw new Error(`Maximum ${this.gameState.landExchange.maxOffersPerPlayer} active offers allowed per player`);
         }
 
-        // Validate parcel exists and is owned
+        // Validate parcel exists and is owned by someone else
         if (!this.gameState.grid[row] || !this.gameState.grid[row][col]) {
             throw new Error('Invalid parcel location');
         }
 
         const parcel = this.gameState.grid[row][col];
-        // Only prevent auctions on City-owned parcels
+
+        if (!parcel.owner) {
+            throw new Error('Cannot make offer on unclaimed parcel');
+        }
+
         if (parcel.owner === 'City') {
-            throw new Error('Cannot auction City-owned parcels');
+            throw new Error('Cannot make offer on City-owned parcel');
         }
 
-        // Check if parcel already being auctioned
-        for (const auction of this.gameState.parcelAuctions.activeAuctions.values()) {
-            if (auction.row === row && auction.col === col) {
-                throw new Error('Parcel already being auctioned');
-            }
+        if (parcel.owner === playerId) {
+            throw new Error('Cannot make offer on your own parcel');
         }
 
-        // Check 30-day protection period
-        if (parcel.lastAuctionWin && this.isInProtectionPeriod(parcel.lastAuctionWin)) {
-            const daysLeft = this.getProtectionDaysLeft(parcel.lastAuctionWin);
-            throw new Error(`Parcel protected for ${daysLeft} more days`);
+        // Validate offer amount
+        if (offerAmount <= 0) {
+            throw new Error('Offer amount must be positive');
         }
 
-        // Get server-authoritative parcel data
-        const lastPaidPrice = parcel.purchasePrice || 100; // Server determines opening bid
-        const buildingValue = this.calculateBuildingValue(row, col);
+        // Check if player has enough cash
+        const playerBalance = this.getPlayerBalance(playerId);
+        if (playerBalance < offerAmount) {
+            throw new Error(`Insufficient funds: need $${offerAmount}, have $${playerBalance}`);
+        }
 
-        // Create auction with 1-minute duration
-        const auctionId = this.gameState.parcelAuctions.nextAuctionId++;
-        const auction = {
-            id: auctionId,
+        // Create offer
+        const offerId = this.gameState.landExchange.nextOfferId++;
+        const offer = {
+            id: offerId,
             row: row,
             col: col,
-            startedBy: playerId,
-            currentOwner: parcel.owner || 'unclaimed',
-            openingBid: lastPaidPrice,
-            currentBid: lastPaidPrice,
-            highBidderId: null,
-            buildingValue: buildingValue,
-            totalCost: lastPaidPrice + buildingValue,
-            startTime: Date.now(),
-            endTime: Date.now() + (60 * 1000), // 1 minute
-            snipeExtensions: 0,
-            status: 'active',
-            phase: 'bidding' // 'bidding', 'owner_response', 'completed'
+            offererId: playerId,
+            ownerId: parcel.owner,
+            offerAmount: offerAmount,
+            status: 'pending', // pending, accepted, matched, withdrawn
+            createdAt: Date.now(),
+            parcelLastPaid: parcel.lastPurchasePrice || 100
         };
 
-        this.gameState.parcelAuctions.activeAuctions.set(auctionId, auction);
+        this.gameState.landExchange.activeOffers.set(offerId, offer);
 
-        // console.log(`🏛️ Parcel auction started: [${row},${col}] by ${playerId}, opening bid: $${lastPaidPrice}`);
-
-        // Broadcast auction start
+        // Broadcast to all players (serialize offer to avoid circular refs)
         this.room.broadcast({
-            type: 'PARCEL_AUCTION_UPDATE',
-            subtype: 'AUCTION_STARTED',
-            auctionId: auctionId,
-            auction: auction
+            type: 'LAND_EXCHANGE_UPDATE',
+            subtype: 'OFFER_MADE',
+            offerId: offerId,
+            offer: {
+                id: offer.id,
+                row: offer.row,
+                col: offer.col,
+                offererId: offer.offererId,
+                ownerId: offer.ownerId,
+                offerAmount: offer.offerAmount,
+                status: offer.status,
+                createdAt: offer.createdAt,
+                parcelLastPaid: offer.parcelLastPaid
+            }
         });
+
+        console.log(`💰 Player ${playerId} offered $${offerAmount} for parcel [${row},${col}] owned by ${parcel.owner}`);
 
         return {
             success: true,
-            auctionId: auctionId,
-            auction: auction
+            offerId: offerId,
+            offer: offer
         };
     }
 
     /**
-     * Process bid on parcel auction
+     * Respond to an offer (accept or match)
      */
-    async processParcelAuctionBid(transaction) {
-        const { playerId, auctionId, bidAmount } = transaction;
+    async processOfferResponse(transaction) {
+        const { playerId, offerId, action } = transaction; // action: 'accept' or 'match'
 
-        // console.log(`🔨 Looking for auction ID: ${auctionId} (type: ${typeof auctionId})`);
-        // console.log(`🔨 Available auctions:`, Array.from(this.gameState.parcelAuctions.activeAuctions.keys()));
-
-        // Convert auctionId to number to match server storage
-        const numericAuctionId = parseInt(auctionId);
-        const auction = this.gameState.parcelAuctions.activeAuctions.get(numericAuctionId);
-        if (!auction) {
-        // console.log(`🔨 No auction found with ID: ${auctionId}`);
-            throw new Error('Auction not found');
+        const offer = this.gameState.landExchange.activeOffers.get(offerId);
+        if (!offer) {
+            throw new Error('Offer not found');
         }
 
-        // console.log(`🔨 Auction found - status: ${auction.status}, phase: ${auction.phase}`);
-        if (auction.status !== 'active' || auction.phase !== 'bidding') {
-            throw new Error('Auction not available for bidding');
+        if (offer.status !== 'pending') {
+            throw new Error(`Offer already ${offer.status}`);
         }
 
-        // Anyone can bid, including challenger and current owner
-        // This creates competitive dynamics and allows self-competition
-
-        // Validate bid is higher than current
-        if (bidAmount <= auction.currentBid) {
-            throw new Error(`Bid must be higher than current bid of $${auction.currentBid}`);
+        if (offer.ownerId !== playerId) {
+            throw new Error('Only the parcel owner can respond to this offer');
         }
 
-        const player = this.getOrCreatePlayer(playerId);
-        const totalCost = bidAmount + auction.buildingValue;
+        const parcel = this.gameState.grid[offer.row][offer.col];
 
-        // Check player has enough funds for total cost
-        if (player.cash < totalCost) {
-            throw new Error(`Insufficient funds: need $${totalCost.toLocaleString()}, have $${player.cash.toLocaleString()}`);
-        }
+        if (action === 'accept') {
+            // ACCEPT: Transfer ownership, pay seller
 
-        // Check time remaining for snipe protection (last 5 seconds)
-        const timeRemaining = auction.endTime - Date.now();
-        if (timeRemaining <= 5000 && timeRemaining > 0) {
-            // Snipe protection: add 3 seconds
-            auction.endTime += 3000;
-            auction.snipeExtensions++;
-        // console.log(`🏛️ Snipe protection: +3s (extension ${auction.snipeExtensions})`);
-        }
+            // Transfer parcel to offerer
+            parcel.owner = offer.offererId;
+            parcel.lastPurchasePrice = offer.offerAmount;
+            parcel.lastAuctionWin = null; // Clear any auction protection
 
-        // Refund previous high bidder if any
-        if (auction.highBidderId && auction.currentBid > 0) {
-            const previousBidder = this.getOrCreatePlayer(auction.highBidderId);
-            const previousTotalCost = auction.currentBid + auction.buildingValue;
-            previousBidder.cash += previousTotalCost;
+            // Deduct cash from offerer
+            const offererBalance = this.getPlayerBalance(offer.offererId);
+            this.gameState.playerBalances.set(offer.offererId, offererBalance - offer.offerAmount);
 
-            previousBidder.transactions.push({
-                type: 'PARCEL_BID_REFUND',
-                amount: previousTotalCost,
-                timestamp: Date.now(),
-                description: `Bid refund for parcel [${auction.row},${auction.col}]`
-            });
-        }
+            // Pay owner
+            const ownerBalance = this.getPlayerBalance(playerId);
+            this.gameState.playerBalances.set(playerId, ownerBalance + offer.offerAmount);
 
-        // Charge new bidder for total cost (land + building)
-        player.cash -= totalCost;
-        player.transactions.push({
-            type: 'PARCEL_BID',
-            amount: -totalCost,
-            timestamp: Date.now(),
-            description: `Bid $${bidAmount.toLocaleString()} on parcel [${auction.row},${auction.col}] (total: $${totalCost.toLocaleString()})`
-        });
-
-        // Update auction
-        auction.currentBid = bidAmount;
-        auction.highBidderId = playerId;
-        auction.totalCost = totalCost;
-
-        // Snipe protection: bids in last 5 seconds add 3 seconds
-        const timeLeft = auction.endTime - Date.now();
-        if (timeLeft <= 5000) {
-            auction.endTime += 3000;
-            // console.log(`🔨 Snipe protection: Added 3 seconds to auction ${auctionId}`);
-        }
-
-        // console.log(`🏛️ Parcel bid: $${bidAmount.toLocaleString()} by ${playerId} on [${auction.row},${auction.col}] (total cost: $${totalCost.toLocaleString()})`);
-
-        // Broadcast bid update
-        this.room.broadcast({
-            type: 'PARCEL_AUCTION_UPDATE',
-            subtype: 'NEW_BID',
-            auctionId: auctionId,
-            bidAmount: bidAmount,
-            bidderId: playerId,
-            totalCost: totalCost,
-            timeRemaining: auction.endTime - Date.now()
-        });
-
-        return {
-            success: true,
-            currentBid: auction.currentBid,
-            totalCost: auction.totalCost,
-            timeRemaining: auction.endTime - Date.now()
-        };
-    }
-
-    /**
-     * Process owner response to auction (match or decline)
-     */
-    async processParcelAuctionOwnerResponse(transaction) {
-        const { playerId, auctionId, action } = transaction;
-
-        const auction = this.gameState.parcelAuctions.activeAuctions.get(auctionId);
-        if (!auction || auction.status !== 'active' || auction.phase !== 'owner_response') {
-            throw new Error('No pending owner response required');
-        }
-
-        if (playerId !== auction.currentOwner) {
-            throw new Error('Only current owner can respond');
-        }
-
-        if (action === 'match') {
-            // Owner matches the bid - keeps property but pays winning bid amount
-            const player = this.getOrCreatePlayer(playerId);
-            const matchAmount = auction.currentBid;
-
-            // Check owner has enough funds
-            if (player.cash < matchAmount) {
-                throw new Error(`Insufficient funds to match bid: need $${matchAmount.toLocaleString()}`);
-            }
-
-            // Charge owner the winning bid amount
-            player.cash -= matchAmount;
-            player.transactions.push({
-                type: 'PARCEL_MATCH_BID',
-                amount: -matchAmount,
-                timestamp: Date.now(),
-                description: `Matched auction bid for parcel [${auction.row},${auction.col}]`
+            // Record price in history
+            this.gameState.landExchange.offerHistory.push({
+                offerId: offerId,
+                row: offer.row,
+                col: offer.col,
+                price: offer.offerAmount,
+                type: 'accepted',
+                timestamp: Date.now()
             });
 
-            // Refund high bidder
-            if (auction.highBidderId) {
-                const bidder = this.getOrCreatePlayer(auction.highBidderId);
-                bidder.cash += auction.totalCost; // Refund full amount (land + building)
-                bidder.transactions.push({
-                    type: 'PARCEL_BID_REFUND',
-                    amount: auction.totalCost,
-                    timestamp: Date.now(),
-                    description: `Bid refund - owner matched for parcel [${auction.row},${auction.col}]`
-                });
-            }
+            offer.status = 'accepted';
+            offer.resolvedAt = Date.now();
 
-            // Update parcel's taxable value to new bid amount
-            const parcel = this.gameState.grid[auction.row][auction.col];
-            parcel.purchasePrice = auction.currentBid;
-            parcel.lastAuctionWin = null; // Owner keeps, no protection period
-
-        // console.log(`🏛️ Owner matched bid: ${playerId} paid $${matchAmount.toLocaleString()} to keep [${auction.row},${auction.col}]`);
-
-        } else if (action === 'decline') {
-            // Transfer ownership to winning bidder
-            if (!auction.highBidderId) {
-                throw new Error('No winning bidder to transfer to');
-            }
-
-            const parcel = this.gameState.grid[auction.row][auction.col];
-            const building = this.gameState.buildings.get(`${auction.row},${auction.col}`);
-
-            // Transfer ownership
-            parcel.owner = auction.highBidderId;
-            parcel.purchasePrice = auction.currentBid;
-            parcel.lastAuctionWin = Date.now(); // Start 30-day protection
-
-            if (building) {
-                building.ownerId = auction.highBidderId;
-            }
-
-            // Pay current owner the total amount (winning bid + building value)
-            const currentOwner = this.getOrCreatePlayer(auction.currentOwner);
-            currentOwner.cash += auction.totalCost;
-            currentOwner.transactions.push({
-                type: 'PARCEL_SALE',
-                amount: auction.totalCost,
-                timestamp: Date.now(),
-                description: `Sold parcel [${auction.row},${auction.col}] for $${auction.totalCost.toLocaleString()}`
+            // Broadcast ownership transfer
+            this.room.broadcast({
+                type: 'LAND_EXCHANGE_UPDATE',
+                subtype: 'OFFER_ACCEPTED',
+                offerId: offerId,
+                newOwner: offer.offererId
             });
 
-            // Winning bidder already paid - they get the property
-            // (No additional transaction needed)
+            console.log(`💰 Offer ${offerId} accepted: Parcel [${offer.row},${offer.col}] transferred to ${offer.offererId} for $${offer.offerAmount}`);
 
-        // console.log(`🏛️ Ownership transferred: [${auction.row},${auction.col}] from ${auction.currentOwner} to ${auction.highBidderId} for $${auction.totalCost.toLocaleString()}`);
-        }
+            return {
+                success: true,
+                action: 'accepted',
+                newOwner: offer.offererId,
+                price: offer.offerAmount
+            };
 
-        // Complete auction
-        auction.status = 'completed';
-        auction.phase = 'completed';
-        auction.ownerResponse = action;
-        auction.completedAt = Date.now();
+        } else if (action === 'match') {
+            // MATCH: Owner pays offer amount to treasury, keeps parcel, costs 1 action
 
-        // Move to history and remove from active
-        this.gameState.parcelAuctions.auctionHistory.push(auction);
-        this.gameState.parcelAuctions.activeAuctions.delete(auctionId);
+            // Check owner has 1 action
+            const owner = this.getOrCreatePlayer(playerId);
+            if (!owner.actions || owner.actions.total < 1) {
+                throw new Error('Insufficient actions to match (need 1 action)');
+            }
 
-        // Broadcast completion
-        this.room.broadcast({
-            type: 'PARCEL_AUCTION_UPDATE',
-            subtype: 'AUCTION_COMPLETED',
-            auctionId: auctionId,
-            action: action,
-            finalResult: action === 'match' ? 'owner_kept' : 'ownership_transferred'
-        });
+            // Calculate amount to pay treasury (offer minus what they originally paid)
+            const amountToPay = offer.offerAmount - (parcel.lastPurchasePrice || 0);
 
-        return {
-            success: true,
-            action: action,
-            completed: true
-        };
-    }
-
-    /**
-     * Calculate building value for auction
-     */
-    calculateBuildingValue(row, col) {
-        const building = this.gameState.buildings.get(`${row},${col}`);
-        if (!building) return 0;
-
-        const buildingDef = this.buildingDefinitions.get(building.id);
-        if (!buildingDef) return 0;
-
-        // Use building cost with condition adjustment
-        const baseCost = buildingDef.cost || 0;
-        const condition = building.condition || 1.0;
-
-        // Building value = base cost × condition (degraded buildings worth less)
-        return Math.round(baseCost * condition);
-    }
-
-    /**
-     * Check if parcel is in 30-day protection period
-     */
-    isInProtectionPeriod(lastAuctionWin) {
-        const now = Date.now();
-        const protectionEnd = lastAuctionWin + (30 * 24 * 60 * 60 * 1000); // 30 days in ms
-        return now < protectionEnd;
-    }
-
-    /**
-     * Get remaining protection days
-     */
-    getProtectionDaysLeft(lastAuctionWin) {
-        const now = Date.now();
-        const protectionEnd = lastAuctionWin + (30 * 24 * 60 * 60 * 1000);
-        const msLeft = protectionEnd - now;
-        return Math.ceil(msLeft / (24 * 60 * 60 * 1000));
-    }
-
-    /**
-     * Process expired parcel auctions (called by timer)
-     */
-    processExpiredParcelAuctions() {
-        return this.processAuctionTimers();
-    }
-
-    processAuctionTimers() {
-        const now = Date.now();
-        let processed = 0;
-
-        for (const [auctionId, auction] of this.gameState.parcelAuctions.activeAuctions) {
-            if (auction.status === 'active' && now >= auction.endTime) {
-                if (auction.phase === 'bidding') {
-                    // Move to owner response phase
-                    if (auction.highBidderId && auction.currentBid > auction.openingBid) {
-                        auction.phase = 'owner_response';
-                        auction.ownerResponseEnd = now + (30 * 1000); // 30 seconds for owner
-
-                        // Calculate financial details for owner decision
-                        const parcel = this.gameState.grid[auction.row][auction.col];
-                        const building = this.gameState.buildings.get(`${auction.row},${auction.col}`);
-
-                        // Calculate net revenue from current setup
-                        let currentNetRevenue = 0;
-                        if (building) {
-                            const buildingRevenue = building.lastRevenue || 0;
-                            const actionCosts = building.lastActionCost || 0;
-                            currentNetRevenue = buildingRevenue - actionCosts;
-                        }
-
-                        // Calculate cash gain by declining (selling)
-                        const winningBid = auction.currentBid;
-                        const buildingValue = auction.buildingValue || 0;
-                        const cashGainByDeclining = winningBid; // Owner gets the bid amount
-
-        // console.log(`🏛️ Auction [${auction.row},${auction.col}] moved to owner response phase`);
-
-                        // Broadcast phase change with financial data
-                        this.room.broadcast({
-                            type: 'PARCEL_AUCTION_UPDATE',
-                            subtype: 'OWNER_RESPONSE_PHASE',
-                            auctionId: auctionId,
-                            responseTimeEnd: auction.ownerResponseEnd,
-                            financialData: {
-                                winningBid: winningBid,
-                                buildingValue: buildingValue,
-                                currentNetRevenue: currentNetRevenue,
-                                cashGainByDeclining: cashGainByDeclining
-                            }
-                        });
-                    } else {
-                        // No bids - cancel auction
-                        auction.status = 'cancelled';
-                        auction.phase = 'completed';
-
-                        this.gameState.parcelAuctions.activeAuctions.delete(auctionId);
-        // console.log(`🏛️ Auction [${auction.row},${auction.col}] cancelled - no bids`);
-                    }
-                } else if (auction.phase === 'owner_response' && now >= auction.ownerResponseEnd) {
-                    // Owner didn't respond - default to decline (transfer ownership)
-        // console.log(`🏛️ Owner response timeout - defaulting to decline for [${auction.row},${auction.col}]`);
-
-                    // Force decline (same logic as processParcelAuctionOwnerResponse)
-                    const parcel = this.gameState.grid[auction.row][auction.col];
-                    const building = this.gameState.buildings.get(`${auction.row},${auction.col}`);
-
-                    if (auction.highBidderId) {
-                        // Transfer ownership
-                        parcel.owner = auction.highBidderId;
-                        parcel.purchasePrice = auction.currentBid;
-                        parcel.lastAuctionWin = Date.now();
-
-                        if (building) {
-                            building.ownerId = auction.highBidderId;
-                        }
-
-                        // Pay current owner
-                        const currentOwner = this.getOrCreatePlayer(auction.currentOwner);
-                        currentOwner.cash += auction.totalCost;
-                        currentOwner.transactions.push({
-                            type: 'PARCEL_SALE',
-                            amount: auction.totalCost,
-                            timestamp: Date.now(),
-                            description: `Auto-sold parcel [${auction.row},${auction.col}] (no response) for $${auction.totalCost.toLocaleString()}`
-                        });
-                    }
-
-                    auction.status = 'completed';
-                    auction.phase = 'completed';
-                    auction.ownerResponse = 'timeout_decline';
-
-                    this.gameState.parcelAuctions.auctionHistory.push(auction);
-                    this.gameState.parcelAuctions.activeAuctions.delete(auctionId);
-
-                    // Broadcast completion
-                    this.room.broadcast({
-                        type: 'PARCEL_AUCTION_UPDATE',
-                        subtype: 'AUCTION_COMPLETED',
-                        auctionId: auctionId,
-                        action: 'timeout_decline',
-                        finalResult: 'ownership_transferred'
-                    });
+            if (amountToPay > 0) {
+                // Check owner has enough cash
+                const ownerBalance = this.getPlayerBalance(playerId);
+                if (ownerBalance < amountToPay) {
+                    throw new Error(`Insufficient funds to match: need $${amountToPay}, have $${ownerBalance}`);
                 }
-                processed++;
+
+                // Deduct cash from owner
+                this.gameState.playerBalances.set(playerId, ownerBalance - amountToPay);
+
+                // Add to treasury
+                this.gameState.treasury += amountToPay;
+            }
+
+            // Spend 1 action
+            this.spendActions(playerId, 1, `matching offer on parcel [${offer.row},${offer.col}]`);
+
+            // Update parcel price to reflect new market value
+            parcel.lastPurchasePrice = offer.offerAmount;
+
+            // Record price in history
+            this.gameState.landExchange.offerHistory.push({
+                offerId: offerId,
+                row: offer.row,
+                col: offer.col,
+                price: offer.offerAmount,
+                type: 'matched',
+                timestamp: Date.now()
+            });
+
+            offer.status = 'matched';
+            offer.resolvedAt = Date.now();
+
+            // Broadcast match
+            this.room.broadcast({
+                type: 'LAND_EXCHANGE_UPDATE',
+                subtype: 'OFFER_MATCHED',
+                offerId: offerId,
+                treasuryPayment: amountToPay
+            });
+
+            console.log(`💰 Offer ${offerId} matched: Owner ${playerId} paid $${amountToPay} to treasury, keeps parcel [${offer.row},${offer.col}]`);
+
+            return {
+                success: true,
+                action: 'matched',
+                treasuryPayment: amountToPay,
+                newParcelValue: offer.offerAmount
+            };
+        } else {
+            throw new Error(`Invalid action: ${action}`);
+        }
+    }
+
+    /**
+     * Withdraw an offer (costs 1 action to prevent spam)
+     */
+    async processWithdrawOffer(transaction) {
+        const { playerId, offerId } = transaction;
+
+        const offer = this.gameState.landExchange.activeOffers.get(offerId);
+        if (!offer) {
+            throw new Error('Offer not found');
+        }
+
+        if (offer.offererId !== playerId) {
+            throw new Error('Only the offerer can withdraw this offer');
+        }
+
+        if (offer.status !== 'pending') {
+            throw new Error(`Cannot withdraw ${offer.status} offer`);
+        }
+
+        // Check player has 1 action
+        const player = this.getOrCreatePlayer(playerId);
+        if (!player.actions || player.actions.total < 1) {
+            throw new Error('Insufficient actions to withdraw (need 1 action)');
+        }
+
+        // Spend 1 action
+        this.spendActions(playerId, 1, `withdrawing offer on parcel [${offer.row},${offer.col}]`);
+
+        offer.status = 'withdrawn';
+        offer.resolvedAt = Date.now();
+
+        // Broadcast withdrawal
+        this.room.broadcast({
+            type: 'LAND_EXCHANGE_UPDATE',
+            subtype: 'OFFER_WITHDRAWN',
+            offerId: offerId
+        });
+
+        console.log(`💰 Offer ${offerId} withdrawn by ${playerId}`);
+
+        return {
+            success: true,
+            action: 'withdrawn'
+        };
+    }
+
+    /**
+     * Get all active offers for a player (either as offerer or owner)
+     */
+    getPlayerOffers(playerId) {
+        const offers = {
+            asOfferer: [],
+            asOwner: []
+        };
+
+        for (const offer of this.gameState.landExchange.activeOffers.values()) {
+            if (offer.status === 'pending') {
+                if (offer.offererId === playerId) {
+                    offers.asOfferer.push(offer);
+                }
+                if (offer.ownerId === playerId) {
+                    offers.asOwner.push(offer);
+                }
             }
         }
 
-        return processed;
+        return offers;
+    }
+
+    /**
+     * Get recent offer history for a parcel (for price discovery)
+     */
+    getParcelOfferHistory(row, col, limit = 5) {
+        return this.gameState.landExchange.offerHistory
+            .filter(h => h.row === row && h.col === col)
+            .slice(-limit)
+            .reverse();
     }
 
     /**

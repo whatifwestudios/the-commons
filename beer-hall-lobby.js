@@ -643,6 +643,19 @@ class BeerHallLobby {
                 this.currentTable = result.table;
                 // Joined table in background
 
+                // Clear existing player list
+                const playerList = document.getElementById('chat-player-list');
+                if (playerList) {
+                    playerList.innerHTML = '';
+                }
+
+                // Add all players from the room (including self)
+                if (result.table.players && Array.isArray(result.table.players)) {
+                    result.table.players.forEach(player => {
+                        this.addPlayerToChat(player.name, player.color, player.id);
+                    });
+                }
+
                 // Notify game about multiplayer connection
                 if (window.game && window.game.handleMultiplayerJoined) {
                     window.game.handleMultiplayerJoined(this.currentTable);
@@ -967,7 +980,7 @@ class BeerHallLobby {
             this.setupChatHandlers();
 
             // Add initial player to chat
-            this.addPlayerToChat(this.playerName, this.selectedColor);
+            this.addPlayerToChat(this.playerName, this.selectedColor, this.playerId);
 
             // Multiplayer chat overlay shown
         }
@@ -1132,13 +1145,13 @@ class BeerHallLobby {
     /**
      * Add player to chat player list
      */
-    addPlayerToChat(playerName, color) {
+    addPlayerToChat(playerName, color, playerId = null) {
         const playerList = document.getElementById('chat-player-list');
         if (!playerList) return;
 
         const playerDiv = document.createElement('div');
         playerDiv.className = 'chat-player';
-        playerDiv.dataset.playerId = this.playerId;
+        playerDiv.dataset.playerId = playerId || this.playerId;
 
         playerDiv.innerHTML = `
             <div class="chat-player-color" style="background-color: ${color}"></div>
@@ -1270,7 +1283,7 @@ class BeerHallLobby {
             this.updatePlayerCount(update.players.length, this.currentTable?.maxPlayers || 6);
 
             // Add player to chat list
-            this.addPlayerToChat(update.player.name, update.player.color);
+            this.addPlayerToChat(update.player.name, update.player.color, update.player.id);
         }
     }
 

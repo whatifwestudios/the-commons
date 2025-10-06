@@ -40,7 +40,7 @@ const cors = require('cors');
 const fs = require('fs');
 const http = require('http');
 const WebSocket = require('ws');
-const ServerEconomicEngine = require('./server-economic-engine-v2');
+const ServerEconomicEngine = require('./server-economic-engine');
 // GameState removed - using v2 server-authoritative economic engine
 const RoomManager = require('./server-room-manager');
 
@@ -480,9 +480,6 @@ function broadcastToAllClients(update) {
 
 // Clean multiplayer - room broadcast functions are set per room in RoomManager
 
-// REMOVED: Global game loop replaced by per-room isolated clocks
-// Each room now manages its own timer independently
-
 // ====================================================================
 // 🍺 V2 MULTIPLAYER API - Clean room-based system
 // ====================================================================
@@ -719,18 +716,6 @@ app.post('/api/city-population', (req, res) => {
 
 
 // =============================================================================
-
-// Leaderboard endpoint
-app.get('/api/leaderboard', (req, res) => {
-    const limit = parseInt(req.query.limit) || 10;
-    const leaderboard = soloGameData.leaderboard.slice(0, limit);
-
-    res.json({
-        success: true,
-        leaderboard: leaderboard,
-        timestamp: new Date().toISOString()
-    });
-});
 
 // Development status endpoint
 app.get('/api/dev-status', (req, res) => {

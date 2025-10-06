@@ -175,6 +175,19 @@ class ContextMenuSystem {
     createUnownedParcelMenu(contentEl, row, col, price) {
         const parcel = this.game.grid[row][col];
 
+        // Check for ANY pending offers blocking ALL transactions
+        if (this.game.landExchange && this.game.landExchange.hasPendingOffersAsOwner()) {
+            const blockHeader = document.createElement('div');
+            blockHeader.style.cssText = 'padding: 12px; background: rgba(255, 165, 0, 0.1); border: 1px solid #ffa500; border-radius: 4px; text-align: center;';
+            blockHeader.innerHTML = `
+                <div style="font-size: 12px; font-weight: 600; color: #ffa500; margin-bottom: 4px;">🔒 BUYING BLOCKED</div>
+                <div style="font-size: 10px; color: #ccc;">Resolve pending offers first</div>
+                <div style="font-size: 10px; color: #888; margin-top: 4px;">Check LAND EXCHANGE sidebar</div>
+            `;
+            contentEl.appendChild(blockHeader);
+            return;
+        }
+
         const buyBtn = document.createElement('button');
         buyBtn.className = 'context-btn primary';
         buyBtn.textContent = `BUY PARCEL - $${price}`;
@@ -190,15 +203,35 @@ class ContextMenuSystem {
             });
         };
         contentEl.appendChild(buyBtn);
-
-        // Auction system disabled in solo mode
     }
 
     /**
      * Create menu for player-owned parcel
      */
     createPlayerOwnedParcelMenu(contentEl, row, col, parcel) {
+        // Check for pending offers on THIS parcel specifically
+        if (this.game.landExchange) {
+            const offers = this.game.landExchange.getOffersForParcel(row, col);
 
+            if (offers.length > 0) {
+                // Show pending offers on THIS parcel - player MUST respond
+                this.createPendingOffersMenu(contentEl, row, col, offers);
+                return;
+            }
+
+            // Check for ANY pending offers ANYWHERE (global block)
+            if (this.game.landExchange.hasPendingOffersAsOwner()) {
+                const blockHeader = document.createElement('div');
+                blockHeader.style.cssText = 'padding: 12px; background: rgba(255, 165, 0, 0.1); border: 1px solid #ffa500; border-radius: 4px; text-align: center;';
+                blockHeader.innerHTML = `
+                    <div style="font-size: 12px; font-weight: 600; color: #ffa500; margin-bottom: 4px;">🔒 BUILDING BLOCKED</div>
+                    <div style="font-size: 10px; color: #ccc;">You have pending offers on other parcels</div>
+                    <div style="font-size: 10px; color: #888; margin-top: 4px;">Check LAND EXCHANGE sidebar</div>
+                `;
+                contentEl.appendChild(blockHeader);
+                return;
+            }
+        }
 
         if (!parcel.building) {
             // Empty parcel - show building categories
@@ -207,6 +240,42 @@ class ContextMenuSystem {
             // Built parcel - show destroy, upgrade, and amenity options
             this.createBuiltParcelMenu(contentEl, row, col, parcel);
         }
+    }
+
+    /**
+     * Create menu showing pending offers (blocks all other actions)
+     */
+    createPendingOffersMenu(contentEl, row, col, offers) {
+        // Header showing blockage
+        const header = document.createElement('div');
+        header.style.cssText = 'padding: 12px; background: rgba(255, 165, 0, 0.1); border: 1px solid #ffa500; border-radius: 4px; margin-bottom: 12px;';
+        header.innerHTML = `
+            <div style="font-size: 12px; font-weight: 600; color: #ffa500; margin-bottom: 4px;">🔒 PENDING OFFERS</div>
+            <div style="font-size: 10px; color: #ccc;">Respond to offers before building/buying</div>
+        `;
+        contentEl.appendChild(header);
+
+        // Show each offer with respond buttons
+        offers.forEach(offer => {
+            const offerDiv = document.createElement('div');
+            offerDiv.style.cssText = 'background: #1a1a1a; border: 1px solid #2a2a2a; border-radius: 4px; padding: 10px; margin-bottom: 8px;';
+
+            const amountToPay = offer.offerAmount - (offer.parcelLastPaid || 0);
+
+            offerDiv.innerHTML = `
+                <div style="font-size: 13px; font-weight: 600; color: #fff; margin-bottom: 8px;">$${offer.offerAmount.toLocaleString()}</div>
+                <div style="display: flex; gap: 6px;">
+                    <button class="context-btn" style="flex: 1; font-size: 10px; padding: 6px; background: #4CAF50; color: #000;" onclick="game.landExchange.respondToOffer(${offer.id}, 'accept'); game.contextMenuSystem.hide();">
+                        ACCEPT
+                    </button>
+                    <button class="context-btn" style="flex: 1; font-size: 10px; padding: 6px; background: #ffa500; color: #000;" onclick="game.landExchange.respondToOffer(${offer.id}, 'match'); game.contextMenuSystem.hide();">
+                        MATCH (1⚡)
+                    </button>
+                </div>
+                <div style="font-size: 9px; color: #888; margin-top: 6px;">Match pays $${amountToPay.toLocaleString()} to treasury + 1 action</div>
+            `;
+            contentEl.appendChild(offerDiv);
+        });
     }
 
     /**
@@ -236,20 +305,16 @@ class ContextMenuSystem {
             console.log('[CONTEXT MENU] Data Insights button added to DOM');
         }
 
-        // Add Auction button in multiplayer mode
-        if (this.game.isMultiplayer && this.game.parcelAuctionSystem) {
-            console.log('[CONTEXT MENU] Adding Auction button for multiplayer mode');
-            const auctionBtn = document.createElement('button');
-            auctionBtn.className = 'context-btn';
-            auctionBtn.textContent = '🔨 AUCTION';
-            auctionBtn.onclick = () => {
+        // Land Exchange: Make Offer button (multiplayer only)
+        if (this.game.isMultiplayer && this.game.landExchange) {
+            const offerBtn = document.createElement('button');
+            offerBtn.className = 'context-btn';
+            offerBtn.textContent = '💰 MAKE OFFER';
+            offerBtn.onclick = () => {
                 this.hide();
-                this.game.parcelAuctionSystem.startAuction(row, col);
+                this.game.landExchange.showMakeOfferModal(row, col);
             };
-            contentEl.appendChild(auctionBtn);
-            console.log('[CONTEXT MENU] Auction button added to DOM');
-        } else {
-            console.log('[CONTEXT MENU] Auction disabled - isMultiplayer:', this.game.isMultiplayer, 'hasAuctionSystem:', !!this.game.parcelAuctionSystem);
+            contentEl.appendChild(offerBtn);
         }
     }
 

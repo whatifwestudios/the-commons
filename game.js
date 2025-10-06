@@ -524,9 +524,9 @@ class IsometricGrid {
             this.actionMarketplace = new ActionMarketplaceV2(this);
         }
 
-        // Initialize Parcel Auction System (multiplayer only)
-        if (!this.parcelAuctionSystem) {
-            this.parcelAuctionSystem = new ParcelAuctionSystem(this);
+        // Initialize Land Exchange System (multiplayer only)
+        if (!this.landExchange) {
+            this.landExchange = new LandExchangeSystem(this);
         }
 
         // Initialize real-time synchronization for multiplayer reliability
@@ -921,35 +921,20 @@ class IsometricGrid {
     updateActionDisplay() {
         // V2: Use server-authoritative data from action manager
         const currentActions = this.actionManager.getCurrentActions();
-        const monthlyAllowance = this.actionManager.calculateMonthlyActionAllowance();
 
         // Show loading state if server data not available
-        if (currentActions === null || monthlyAllowance === null || monthlyAllowance === 0) {
-            const currentActionsEl = document.getElementById('currentActions');
-            const rollingOverActionsEl = document.getElementById('rollingOverActions');
-            const expiringActionsEl = document.getElementById('expiringActions');
-
-            if (currentActionsEl) currentActionsEl.textContent = 'Loading...';
-            if (rollingOverActionsEl) rollingOverActionsEl.textContent = 'Loading...';
-            if (expiringActionsEl) expiringActionsEl.textContent = 'Loading...';
+        if (currentActions === null) {
+            const actionsEl = document.getElementById('current-actions');
+            if (actionsEl) actionsEl.textContent = 'Loading...';
             return;
         }
 
-        // Calculate expiring vs rolling over actions
-        const expiringActions = Math.min(currentActions, monthlyAllowance);
-        const rollingOverActions = Math.max(0, currentActions - monthlyAllowance);
-        
-        // Build display text
-        let displayText = '';
-        if (rollingOverActions > 0) {
-            displayText = `${expiringActions} expiring | ${rollingOverActions} rolling over`;
-        } else {
-            displayText = `${expiringActions} expiring`;
-        }
-        
+        // SIMPLIFIED: Just show total actions (all rollover monthly)
+        const displayText = `${currentActions}`;
+
         // Use UI Manager for efficient update
-        this.uiManager.updateText('currentActions', displayText);
-        
+        this.uiManager.updateText('current-actions', displayText);
+
         // Color code based on remaining actions
         let color = '#42B96E'; // Default green
         if (currentActions === 0) {
@@ -1914,18 +1899,7 @@ class IsometricGrid {
             const roadCoords = this.getParcelSideCoordinates(row, col, side);
             if (!roadCoords) continue;
             
-            // TODO: Check if there's a road with the appropriate amenity
-            // Temporarily disabled - old road system removed
-            const road = null; // Legacy road finding code removed
-            
-            if (road && road.amenities) {
-                if (type === 'bus' && road.amenities.includes('bus_stop')) {
-                    return true;
-                }
-                if (type === 'subway' && road.amenities.includes('subway_entrance')) {
-                    return true;
-                }
-            }
+            // Amenity checking disabled - road amenity system not implemented
         }
         
         return false;

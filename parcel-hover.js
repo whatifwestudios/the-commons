@@ -3,7 +3,7 @@
  *
  * Replaces complex parcel-selector-manager with:
  * - Direct coordinate conversion using CoordinateUtils
- * - Integration with tooltip-system-v2.js
+ * - Integration with tooltip-system.js
  * - Simple visual effects for hover + adjacent parcels
  * - Building color tints for connected parcels
  */
