@@ -1281,6 +1281,11 @@ class EconomicClient {
                 } else {
                     console.warn('⚠️ City name not found in GAME_STARTED message');
                 }
+
+                // Reset auction system for fresh game (board game pulled from shelf)
+                if (this.game && this.game.parcelAuctionSystem) {
+                    this.game.parcelAuctionSystem.resetForNewGame();
+                }
             }
         });
 

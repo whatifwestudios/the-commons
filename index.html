@@ -1274,278 +1274,307 @@
             z-index: 1000;
         }
 
-        .auction-sidebar {
-            width: 300px;
-            background: rgba(0, 0, 0, 0.9);
-            border: 2px solid #666;
-            border-radius: 8px;
-            padding: 15px;
-            color: white;
-        }
+        /* ========================================
+           PARCEL AUCTION SYSTEM
+           ======================================== */
 
-        .auction-sidebar.hidden {
-            display: none;
-        }
-
-        .auction-item {
-            background: #1a1a1a;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-            padding: 8px 12px;
-            margin-bottom: 1px;
+        /* Sidebar Auction Items */
+        .auction-sidebar-item {
+            background: #0a0a0a;
+            border: 1px solid #1a1a1a;
+            border-left: 2px solid #2a2a2a;
+            margin-bottom: 8px;
             cursor: pointer;
-            transition: background 0.15s ease;
-            font-family: 'SF Mono', Monaco, Inconsolata, 'Roboto Mono', 'Source Code Pro', monospace;
+            transition: all 0.12s ease;
         }
 
-        .auction-item:hover {
-            background: #202020;
+        .auction-sidebar-item:hover {
+            background: #111111;
+            border-left-color: #66BB6A;
         }
 
-        .auction-item:last-child {
-            border-bottom: none;
-        }
-
-        /* Removed urgent-auction class - we handle urgency at indicator level */
-
-        .auction-header {
+        .auction-sidebar-header {
             display: flex;
-            justify-content: space-between;
             align-items: center;
-            margin-bottom: 4px;
+            gap: 8px;
+            padding: 10px 12px 6px 12px;
+            border-bottom: 1px solid #1a1a1a;
         }
 
-        .auction-parcel {
-            font-weight: 600;
-            color: #74B9FF;
+        .auction-sidebar-parcel {
             font-size: 11px;
-            letter-spacing: 0.5px;
+            font-weight: 700;
+            color: #66BB6A;
+            letter-spacing: 0.8px;
+            flex-shrink: 0;
         }
 
-        .auction-time {
+        .auction-role-tag {
+            font-size: 8px;
+            font-weight: 700;
+            letter-spacing: 0.6px;
+            padding: 2px 6px;
+            border-radius: 2px;
+            flex-shrink: 0;
+        }
+
+        .auction-role-tag.auction-role-challenger {
+            background: rgba(102, 187, 106, 0.15);
+            color: #66BB6A;
+            border: 1px solid rgba(102, 187, 106, 0.3);
+        }
+
+        .auction-role-tag.auction-role-owner {
+            background: rgba(255, 165, 0, 0.15);
+            color: #ffa500;
+            border: 1px solid rgba(255, 165, 0, 0.3);
+        }
+
+        .auction-sidebar-time {
             font-size: 10px;
+            color: #666;
+            margin-left: auto;
+            font-weight: 500;
+        }
+
+        .auction-sidebar-time.urgent {
+            color: #ff6b35;
+            font-weight: 700;
+        }
+
+        .auction-sidebar-bid {
+            font-size: 13px;
+            font-weight: 600;
+            color: #ececec;
+            padding: 6px 12px;
+        }
+
+        .auction-sidebar-actions {
+            display: flex;
+            gap: 6px;
+            padding: 0 12px 10px 12px;
+        }
+
+        .auction-sidebar-btn {
+            flex: 1;
+            background: #1a1a1a;
             color: #888;
-            font-weight: 500;
-        }
-
-        .auction-time.urgent {
-            color: #ffa500;
-            font-weight: 600;
-        }
-
-        .auction-time.critical {
-            color: #ff4444;
-            font-weight: 600;
-            animation: urgentText 0.5s infinite alternate;
-        }
-
-        @keyframes urgentText {
-            0% { color: #ff4444; }
-            100% { color: #ffffff; }
-        }
-
-        @keyframes pulse-red {
-            0% { opacity: 0.8; }
-            100% { opacity: 1; }
-        }
-
-        /* Progress bar styling */
-        .auction-progress-container {
-            padding: 2px 12px 8px;
-        }
-
-        .auction-progress-bar {
-            width: 100%;
-            height: 4px;
-            background-color: #333;
-            border-radius: 2px;
-            overflow: hidden;
-        }
-
-        .auction-progress {
-            height: 100%;
-            border-radius: 2px;
-            transition: width 0.3s ease, background-color 0.3s ease;
-        }
-
-
-        /* Owner Response Section */
-        .owner-response {
-            background: #2a2a2a;
-            border: 2px solid #ffa500;
-            border-radius: 4px;
-            padding: 15px;
-            margin-top: 15px;
-        }
-
-        .response-timer {
-            text-align: center;
-            font-size: 14px;
-            font-weight: bold;
-            margin-bottom: 10px;
-            color: #ffa500;
-            font-family: 'SF Mono', Monaco, Inconsolata, 'Roboto Mono', 'Source Code Pro', monospace;
-        }
-
-        .response-buttons {
-            display: flex;
-            gap: 10px;
-        }
-
-        .match-btn, .decline-btn {
-            flex: 1;
-            padding: 10px;
-            border: 2px solid;
-            border-radius: 4px;
-            font-size: 14px;
-            font-weight: bold;
+            border: 1px solid #2a2a2a;
+            padding: 8px;
+            font-size: 10px;
+            font-weight: 700;
+            letter-spacing: 0.5px;
             cursor: pointer;
-            transition: all 0.2s ease;
-            font-family: 'SF Mono', Monaco, Inconsolata, 'Roboto Mono', 'Source Code Pro', monospace;
+            transition: all 0.12s ease;
         }
 
-        .match-btn {
+        .auction-sidebar-btn:hover {
             background: #2a2a2a;
-            color: #4CAF50;
-            border-color: #4CAF50;
-        }
-
-        .match-btn:hover {
-            background: #4CAF50;
-            color: white;
-        }
-
-        .decline-btn {
-            background: #2a2a2a;
-            color: #ff4444;
-            border-color: #ff4444;
-        }
-
-        .decline-btn:hover {
-            background: #ff4444;
-            color: white;
-        }
-
-        .auction-current-bid {
-            font-size: 12px;
-            font-weight: 600;
-            color: #00b894;
-            margin-bottom: 4px;
-        }
-
-        .auction-quick-bids {
-            display: flex;
-            gap: 4px;
-        }
-
-        .quick-bid-btn {
-            flex: 1;
-            padding: 9px 6px;
-            background: #2a2a2a;
-            color: #aaa;
-            border: 1px solid #444;
-            border-radius: 2px;
-            font-size: 14px;
-            font-weight: 500;
-            cursor: pointer;
-            transition: all 0.15s ease;
-            font-family: 'SF Mono', Monaco, Inconsolata, 'Roboto Mono', 'Source Code Pro', monospace;
-        }
-
-        .quick-bid-btn:hover {
-            background: #2a2a2a;
-            color: white;
-            border-color: white;
+            color: #66BB6A;
+            border-color: #66BB6A;
         }
 
         .no-auctions {
             text-align: center;
-            color: #666;
-            font-size: 11px;
-            padding: 12px 8px;
-            font-family: 'SF Mono', Monaco, Inconsolata, 'Roboto Mono', 'Source Code Pro', monospace;
+            color: #444;
+            font-size: 10px;
+            padding: 20px;
             font-weight: 500;
-            letter-spacing: 0.3px;
+            letter-spacing: 0.5px;
         }
 
-        /* Sidebar Header Colors - Medium Blue with Vibrant Hover Colors */
-        .sidebar-section .section-header {
-            color: #74B9FF !important; /* Medium blue for all headers */
-            transition: color 0.3s ease;
+        /* Modal Styles */
+        .auction-modal .modal-content {
+            width: 520px;
+            max-width: 90vw;
         }
 
-        /* Unique vibrant hover colors for each section by content */
-        .sidebar-section .section-header:hover {
-            color: #ffffff !important;
+        .auction-modal-section {
+            background: #111111;
+            border: 1px solid #1a1a1a;
+            margin-bottom: 12px;
+            padding: 12px 0;
         }
 
-        /* VITALITY - Green hover */
-        .sidebar-section .section-header[data-target="vitality"]:hover {
-            color: #00b894 !important;
+        .auction-modal-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 6px 16px;
         }
 
-        /* METRICS - Orange hover */
-        .sidebar-section .section-header[data-target="info"]:hover {
-            color: #fdcb6e !important;
+        .auction-modal-row.highlight {
+            background: rgba(102, 187, 106, 0.08);
+            border-top: 1px solid rgba(102, 187, 106, 0.2);
+            border-bottom: 1px solid rgba(102, 187, 106, 0.2);
+            padding: 10px 16px;
+            margin: 8px 0;
         }
 
-        /* ACTION MANAGER - Blue hover */
-        .sidebar-section .section-header[data-target="action-manager-content"]:hover {
-            color: #0984e3 !important;
+        .auction-modal-row.total {
+            background: #0a0a0a;
+            border-top: 1px solid #2a2a2a;
+            margin-top: 8px;
+            padding: 10px 16px;
         }
 
-        /* AUCTIONS - Red hover */
-        .sidebar-section .section-header[data-target="auction-content"]:hover {
-            color: #e17055 !important;
+        .auction-modal-label {
+            font-size: 10px;
+            color: #666;
+            font-weight: 600;
+            letter-spacing: 0.8px;
         }
 
-        .action-manager {
-            /* background: #0a0a0a; */
-            /* border-bottom: 2px solid #2a2a2a; */
+        .auction-modal-row.highlight .auction-modal-label,
+        .auction-modal-row.total .auction-modal-label {
+            font-size: 11px;
+            font-weight: 700;
         }
 
-        /* CHAT - Purple hover */
-        .sidebar-section .section-header[data-target="chat-content"]:hover {
-            color: #a29bfe !important;
+        .auction-modal-value {
+            font-size: 13px;
+            color: #ececec;
+            font-weight: 600;
         }
 
-        /* Auction indicator dot styling */
+        .auction-modal-row.highlight .auction-modal-value {
+            color: #66BB6A;
+            font-size: 16px;
+            font-weight: 700;
+        }
+
+        .auction-modal-row.total .auction-modal-value {
+            font-size: 15px;
+            font-weight: 700;
+        }
+
+        .bid-controls-section {
+            border-left: 3px solid #66BB6A;
+        }
+
+        .auction-modal-subsection-title {
+            font-size: 10px;
+            font-weight: 700;
+            letter-spacing: 0.8px;
+            color: #888;
+            padding: 0 16px 12px 16px;
+            border-bottom: 1px solid #1a1a1a;
+            margin-bottom: 12px;
+        }
+
+        .response-timer-value {
+            color: #ffa500;
+            margin-left: 8px;
+            font-size: 11px;
+        }
+
+        .auction-bid-actions {
+            display: flex;
+            gap: 8px;
+            padding: 0 16px 8px 16px;
+        }
+
+        .auction-custom-bid-row {
+            display: flex;
+            gap: 8px;
+            padding: 4px 16px 8px 16px;
+        }
+
+        .auction-btn {
+            background: #1a1a1a;
+            color: #ececec;
+            border: 1px solid #2a2a2a;
+            padding: 10px 16px;
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: 0.6px;
+            cursor: pointer;
+            transition: all 0.12s ease;
+        }
+
+        .auction-btn:hover {
+            background: #2a2a2a;
+            border-color: #3a3a3a;
+        }
+
+        .auction-btn-quick {
+            flex: 1;
+            color: #888;
+        }
+
+        .auction-btn-quick:hover {
+            color: #66BB6A;
+            border-color: #66BB6A;
+        }
+
+        .auction-btn-primary {
+            background: #66BB6A;
+            color: #0a0a0a;
+            border-color: #66BB6A;
+            flex: 1;
+        }
+
+        .auction-btn-primary:hover {
+            background: #7ACC7F;
+            border-color: #7ACC7F;
+        }
+
+        .auction-btn-success {
+            flex: 1;
+            background: rgba(102, 187, 106, 0.15);
+            color: #66BB6A;
+            border-color: #66BB6A;
+        }
+
+        .auction-btn-success:hover {
+            background: #66BB6A;
+            color: #0a0a0a;
+        }
+
+        .auction-btn-danger {
+            flex: 1;
+            background: rgba(255, 68, 68, 0.15);
+            color: #ff4444;
+            border-color: #ff4444;
+        }
+
+        .auction-btn-danger:hover {
+            background: #ff4444;
+            color: #ffffff;
+        }
+
+        .auction-bid-input {
+            flex: 2;
+            background: #0a0a0a;
+            color: #ececec;
+            border: 1px solid #2a2a2a;
+            padding: 10px 12px;
+            font-size: 13px;
+            font-weight: 600;
+        }
+
+        .auction-bid-input:focus {
+            outline: none;
+            border-color: #66BB6A;
+            background: #111111;
+        }
+
+        .auction-bid-input::placeholder {
+            color: #444;
+        }
+
+        .owner-response-section {
+            border-left: 3px solid #ffa500;
+        }
+
+        #auction-status-message {
+            padding: 0 16px;
+        }
+
         .auction-indicator {
             font-size: 14px;
             margin-left: 8px;
             transition: color 0.3s ease;
-        }
-
-
-        .auction-status {
-            padding: 5px 12px;
-            margin-top: 5px;
-            font-size: 11px;
-            color: #888;
-            text-align: center;
-        }
-
-        .auction-quick-bids {
-            display: flex;
-            gap: 4px;
-            margin-top: 8px;
-            padding: 0 8px;
-        }
-
-        .quick-bid-btn {
-            flex: 1;
-            background: #444;
-            border: 1px solid #666;
-            border-radius: 3px;
-            padding: 4px;
-            color: white;
-            font-size: 9px;
-            cursor: pointer;
-            transition: background-color 0.2s ease;
-        }
-
-        .quick-bid-btn:hover {
-            background: #555;
-            border-color: #777;
         }
 
         .governance-panel {
@@ -3386,7 +3415,7 @@
     <script src="building-system.js"></script>
     <!-- Legacy smart-tooltip-system.js archived -->
     <!-- V2 Economic System - Clean Client-Server Communication -->
-    <script src="economic-client-v2.js?v=6"></script>
+    <script src="economic-client-v2.js?v=7"></script>
 
     <!-- Legacy economic files removed - replaced by v2 economic system -->
     <script src="parcel-hover-v2.js"></script>
@@ -3399,7 +3428,7 @@
     <script src="context-menu-system.js?v=3"></script>
     <script src="action-manager.js"></script>
     <script src="action-marketplace-v2.js"></script>
-    <script src="parcel-auction-system.js"></script>
+    <script src="parcel-auction-system.js?v=10"></script>
     <script src="game.js?v=15"></script>
 
     <script>

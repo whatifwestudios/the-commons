@@ -413,6 +413,9 @@ class ServerEconomicEngine {
         // Check for building completion every update (not just daily)
         this.processAutomaticBuildingCompletion();
 
+        // Process auction timers (phase transitions, completions)
+        this.processAuctionTimers();
+
         // Trigger daily events on day transitions
         if (currentDay > previousDay) {
         // console.log(`🕒 DAY TRANSITION: ${previousDay} → ${currentDay} (time: ${this.gameState.gameTime.toFixed(3)})`);
@@ -4243,15 +4246,8 @@ class ServerEconomicEngine {
             throw new Error('Auction not available for bidding');
         }
 
-        // Cannot bid on your own auction
-        if (playerId === auction.startedBy) {
-            throw new Error('Cannot bid on auction you started');
-        }
-
-        // Cannot bid on your own parcel
-        if (playerId === auction.currentOwner) {
-            throw new Error('Current owner cannot bid - use match option when auction ends');
-        }
+        // Anyone can bid, including challenger and current owner
+        // This creates competitive dynamics and allows self-competition
 
         // Validate bid is higher than current
         if (bidAmount <= auction.currentBid) {
@@ -4266,9 +4262,9 @@ class ServerEconomicEngine {
             throw new Error(`Insufficient funds: need $${totalCost.toLocaleString()}, have $${player.cash.toLocaleString()}`);
         }
 
-        // Check time remaining for snipe protection
+        // Check time remaining for snipe protection (last 5 seconds)
         const timeRemaining = auction.endTime - Date.now();
-        if (timeRemaining <= 10000 && timeRemaining > 0) {
+        if (timeRemaining <= 5000 && timeRemaining > 0) {
             // Snipe protection: add 3 seconds
             auction.endTime += 3000;
             auction.snipeExtensions++;
@@ -4302,6 +4298,13 @@ class ServerEconomicEngine {
         auction.currentBid = bidAmount;
         auction.highBidderId = playerId;
         auction.totalCost = totalCost;
+
+        // Snipe protection: bids in last 5 seconds add 3 seconds
+        const timeLeft = auction.endTime - Date.now();
+        if (timeLeft <= 5000) {
+            auction.endTime += 3000;
+            // console.log(`🔨 Snipe protection: Added 3 seconds to auction ${auctionId}`);
+        }
 
         // console.log(`🏛️ Parcel bid: $${bidAmount.toLocaleString()} by ${playerId} on [${auction.row},${auction.col}] (total cost: $${totalCost.toLocaleString()})`);
 
@@ -4477,7 +4480,7 @@ class ServerEconomicEngine {
     /**
      * Process expired parcel auctions (called by timer)
      */
-    processExpiredParcelAuctions() {
+    processAuctionTimers() {
         const now = Date.now();
         let processed = 0;
 
@@ -4489,14 +4492,37 @@ class ServerEconomicEngine {
                         auction.phase = 'owner_response';
                         auction.ownerResponseEnd = now + (30 * 1000); // 30 seconds for owner
 
+                        // Calculate financial details for owner decision
+                        const parcel = this.gameState.grid[auction.row][auction.col];
+                        const building = this.gameState.buildings.get(`${auction.row},${auction.col}`);
+
+                        // Calculate net revenue from current setup
+                        let currentNetRevenue = 0;
+                        if (building) {
+                            const buildingRevenue = building.lastRevenue || 0;
+                            const actionCosts = building.lastActionCost || 0;
+                            currentNetRevenue = buildingRevenue - actionCosts;
+                        }
+
+                        // Calculate cash gain by declining (selling)
+                        const winningBid = auction.currentBid;
+                        const buildingValue = auction.buildingValue || 0;
+                        const cashGainByDeclining = winningBid; // Owner gets the bid amount
+
         // console.log(`🏛️ Auction [${auction.row},${auction.col}] moved to owner response phase`);
 
-                        // Broadcast phase change
+                        // Broadcast phase change with financial data
                         this.room.broadcast({
                             type: 'PARCEL_AUCTION_UPDATE',
                             subtype: 'OWNER_RESPONSE_PHASE',
                             auctionId: auctionId,
-                            responseTimeEnd: auction.ownerResponseEnd
+                            responseTimeEnd: auction.ownerResponseEnd,
+                            financialData: {
+                                winningBid: winningBid,
+                                buildingValue: buildingValue,
+                                currentNetRevenue: currentNetRevenue,
+                                cashGainByDeclining: cashGainByDeclining
+                            }
                         });
                     } else {
                         // No bids - cancel auction
