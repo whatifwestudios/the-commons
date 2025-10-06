@@ -922,25 +922,18 @@ class IsometricGrid {
         // V2: Use server-authoritative data from action manager
         const currentActions = this.actionManager.getCurrentActions();
 
-        // Show loading state if server data not available
-        if (currentActions === null) {
-            const actionsEl = document.getElementById('current-actions');
-            if (actionsEl) actionsEl.textContent = 'Loading...';
-            return;
-        }
-
-        // SIMPLIFIED: Just show total actions (all rollover monthly)
-        const displayText = `${currentActions}`;
+        // Show default until server data arrives (avoid "Loading..." anxiety)
+        const displayText = currentActions !== null ? `${currentActions}` : '--';
 
         // Use UI Manager for efficient update
         this.uiManager.updateText('current-actions', displayText);
 
         // Color code based on remaining actions
-        let color = '#42B96E'; // Default green
-        if (currentActions === 0) {
-            color = '#FF4444'; // Red
-        } else if (currentActions <= 3) {
-            color = '#FFD700'; // Gold
+        let color = 'white'; // Default white
+        if (currentActions !== null && currentActions <= 2) {
+            color = '#FF4444'; // Red at 2 or less
+        } else if (currentActions !== null && currentActions <= 5) {
+            color = '#FFD700'; // Yellow at 5 or less
         }
         this.uiManager.updateStyle('currentActions', 'color', color);
         
@@ -952,28 +945,17 @@ class IsometricGrid {
     
     updateMarketplaceDisplay() {
         const listingsElement = document.getElementById('market-listings');
-        const avgPriceElement = document.getElementById('action-avg-price');
-        
+
         if (listingsElement) {
             const activeListings = this.actionManager.marketplace.listings.filter(l => l.status === 'active').length;
-            listingsElement.textContent = `${activeListings} listing${activeListings !== 1 ? 's' : ''}`;
-        }
-        
-        if (avgPriceElement) {
-            if (this.actionManager.marketplace.avgPrice > 0) {
-                avgPriceElement.textContent = `$${Math.round(this.actionManager.marketplace.avgPrice).toLocaleString()}`;
-            } else {
-                avgPriceElement.textContent = '--';
-            }
+            listingsElement.textContent = activeListings;
         }
     }
     
     updateMonthCountdown() {
-        const progressBar = document.getElementById('month-progress-bar');
         const progressText = document.getElementById('month-progress-text');
-        const progressContainer = document.getElementById('month-progress-container');
 
-        if (!progressBar || !progressText || !progressContainer) return;
+        if (!progressText) return;
 
         // Start optimistic countdown if not already running
         this.startOptimisticCountdown();
@@ -1017,58 +999,22 @@ class IsometricGrid {
 
         // Total seconds remaining in month
         const totalSecondsRemaining = (daysRemaining * secondsPerDay) + secondsRemainingInDay;
-        const totalSecondsInMonth = daysInMonth * secondsPerDay;
-        
-        // Calculate progress percentage (100% to 0%)
-        const progressPercent = Math.max(0, Math.min(100, (totalSecondsRemaining / totalSecondsInMonth) * 100));
-        
-        // Show urgent timer only in final 30 seconds
-        const isUrgent = totalSecondsRemaining <= 30;
-        
-        // Format time as MM:SS (needed for both display and tooltip)
+
+        // Format time estimate (anxiety-free version)
+        let timeEstimate;
         const minutes = Math.floor(totalSecondsRemaining / 60);
-        const seconds = Math.floor(totalSecondsRemaining % 60);
-        const timeText = `${minutes}:${seconds.toString().padStart(2, '0')}`;
-        
-        // Always show the container
-        progressContainer.style.display = 'block';
-        progressContainer.style.opacity = '1';
-        progressBar.style.width = `${progressPercent}%`;
-        
-        if (isUrgent) {
-            // Final 30 seconds - add urgent styling and show timer
-            progressContainer.classList.add('urgent');
-            progressText.textContent = timeText;
-            progressText.style.display = 'block';
+
+        if (totalSecondsRemaining < 10) {
+            timeEstimate = 'Less than 10 seconds';
+        } else if (minutes < 1) {
+            timeEstimate = 'Less than 1 minute';
         } else {
-            // Normal state - remove urgent styling and show days
-            progressContainer.classList.remove('urgent');
-            
-            if (daysRemaining === 1) {
-                progressText.textContent = 'Final Day';
-            } else {
-                progressText.textContent = `${daysRemaining} days left`;
-            }
-            progressText.style.display = 'block';
+            timeEstimate = `~${minutes}m`;
         }
+
+        // Update text display
+        progressText.textContent = timeEstimate;
         
-        // Calculate game progress (12 months ending Sept 1)
-        const monthOrder = ['SEPT', 'OCT', 'NOV', 'DEC', 'JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG'];
-        const currentMonthIndex = monthOrder.indexOf(this.gameDate.month);
-        const gameMonthsElapsed = currentMonthIndex + 1;
-        const gameMonthsRemaining = 12 - gameMonthsElapsed;
-        
-        // Update tooltip with detailed information
-        const daysText = daysRemaining === 1 ? 'day' : 'days';
-        const monthsRemainingText = gameMonthsRemaining === 1 ? 'month' : 'months';
-        
-        progressContainer.setAttribute('data-tooltip', 
-            `<strong>Time Left in Month</strong><br><br>` +
-            `⏱️ ${timeText} remaining in month<br>` +
-            `📆 ${daysRemaining} ${daysText} left in month<br><br>` +
-            `<strong>🎮 Game Progress</strong><br>` +
-            `⏳ ${gameMonthsRemaining} ${monthsRemainingText} until Sept 1<br><br>` +
-            `💼 Actions refresh when month ends`);
     }
 
     /**

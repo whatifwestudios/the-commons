@@ -2200,7 +2200,7 @@ class ServerEconomicEngine {
 
             const initialPoints = this.gameState.gameStarted ? 2 : 4;
             newPlayer.governance.votingPoints = initialPoints;
-        // console.log(`[REVENUE] Player ${playerId} starts with $6,000, ${newPlayer.actions.total} actions, and ${initialPoints} governance points`);
+            console.log(`[ACTIONS] Player ${playerId} created with ${newPlayer.actions.total} actions and ${initialPoints} governance points`);
         }
         return this.gameState.players.get(playerId);
     }
@@ -2772,6 +2772,10 @@ class ServerEconomicEngine {
                 transactions: [],
                 buildings: [],
                 lastCashflowUpdate: 0,
+                // Action inventory (server-authoritative) - SIMPLIFIED: Single bucket, all actions rollover
+                actions: {
+                    total: this.calculateMonthlyActionAllowance() // All actions rollover monthly
+                },
                 governance: {
                     votingPoints: initialPoints, // Set correct initial points
                     allocations: {
@@ -2785,12 +2789,11 @@ class ServerEconomicEngine {
 
             this.gameState.players.set(playerId, playerState);
 
-            // Set player balance
+            // Set player balance and actions
             this.gameState.playerBalances.set(playerId, roomPlayerData.balance || 6000);
+            this.gameState.playerActions.set(playerId, playerState.actions.total);
 
-        // console.log(`[REVENUE] Player ${playerId} initialized with $${roomPlayerData.balance || 6000} and ${initialPoints} governance points`);
-        // console.log(`🏙️ Player ${playerId} cityName: "${roomPlayerData.cityName || 'NO CITY NAME'}"`);
-        // console.log(`👤 Player ${playerId} name: "${roomPlayerData.name || 'NO NAME'}", color: "${roomPlayerData.color || 'NO COLOR'}"`);;
+            console.log(`[ACTIONS] Player ${playerId} initialized with ${playerState.actions.total} actions, $${roomPlayerData.balance || 6000}, and ${initialPoints} governance points`);
         }
     }
 
@@ -2824,23 +2827,13 @@ class ServerEconomicEngine {
         const actionCost = this.ACTION_COSTS.purchaseParcel || 1;
         const player = this.getOrCreatePlayer(playerId);
         if (!player.actions || player.actions.total < actionCost) {
-            return {
-                success: false,
-                error: `Insufficient actions: need ${actionCost}, have ${player.actions?.total || 0}`,
-                currentBalance: currentBalance,
-                requiredAmount: amount
-            };
+            throw new Error(`Insufficient actions: need ${actionCost}, have ${player.actions?.total || 0}`);
         }
 
         // Check if player has enough cash
         if (currentBalance < amount) {
             console.log(`[ERROR] Insufficient funds: ${currentBalance} < ${amount}`);
-            return {
-                success: false,
-                error: 'Insufficient funds',
-                currentBalance: currentBalance,
-                requiredAmount: amount
-            };
+            throw new Error('Insufficient funds');
         }
 
         // Deduct cash from playerBalances
@@ -3483,7 +3476,10 @@ class ServerEconomicEngine {
         const reduction = currentMonthIndex * 1;
         const minimumActions = 7;
 
-        return Math.max(minimumActions, baseActions - reduction);
+        const allowance = Math.max(minimumActions, baseActions - reduction);
+        console.log(`[ACTIONS] calculateMonthlyActionAllowance: gameTime=${this.gameState.gameTime}, month=${currentMonth}, index=${currentMonthIndex}, allowance=${allowance}`);
+
+        return allowance;
     }
 
     /**

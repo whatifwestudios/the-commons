@@ -766,8 +766,9 @@ class BuildingSystem {
         // const price = this.game.getParcelPrice(row, col); // GHOST!
         const price = this.game.economicClient?.getParcelPrice(row, col) || 150; // Server-authoritative pricing
         
-        // Check if player has enough actions
-        if (!this.game.useAction('purchaseParcel', this.game.actionManager.actionCosts.purchaseParcel)) {
+        // Check if player has enough actions (don't spend yet - server will handle)
+        if (!this.game.actionManager.canUseAction('purchaseParcel')) {
+            this.game.showNotification('Not enough actions! Visit the marketplace to buy more.', 'error');
             this.game.hideContextMenu();
             return false;
         }

@@ -2503,25 +2503,15 @@
                 <div id="action-manager-content" class="section-content action-manager-content">
                     <div class="action-stats">
                         <div class="action-stat-row">
-                            <span class="action-label">Your Actions:</span>
-                            <span class="action-value" id="current-actions">10/10</span>
+                            <span class="action-label">Actions remaining</span>
+                            <span class="action-value" id="current-actions">--</span>
                         </div>
                         <div class="action-stat-row">
-                            <div class="month-progress-container metric-tooltip" id="month-progress-container">
-                                <div class="month-progress-bar" id="month-progress-bar"></div>
-                                <span class="month-progress-text" id="month-progress-text">--:--</span>
-                            </div>
-                        </div>
-                        <div class="action-stat-row">
-                            <span class="action-label">Market:</span>
-                            <span class="action-value" id="market-listings">0 listings</span>
-                        </div>
-                        <div class="action-stat-row">
-                            <span class="action-label">Avg Price:</span>
-                            <span class="action-value" id="action-avg-price">--</span>
+                            <span class="action-label">Time until refresh</span>
+                            <span class="action-value" id="month-progress-text">--</span>
                         </div>
                     </div>
-                    <button class="action-btn" id="open-action-marketplace">ACTION MARKET</button>
+                    <button class="action-btn" id="open-action-marketplace">⚡ Market (<span id="market-listings">0</span>)</button>
                 </div>
             </div>
 

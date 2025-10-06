@@ -989,12 +989,12 @@ body.beer-hall-active #top-bar {
 
 .action-btn {
     width: 100%;
-    padding: 13px;
+    padding: 10px 0px;
     background: #161616;
     color: white;
     border: 1px solid #ffffff9e;
     border-radius: 4px;
-    font-size: 13px;
+    font-size: 12px;
     font-weight: 500;
     letter-spacing: 1px;
     cursor: pointer;

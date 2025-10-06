@@ -899,7 +899,7 @@ class ActionMarketplaceV2 {
     updateSidebarMarketCount(count) {
         const sidebarElement = document.getElementById('market-listings');
         if (sidebarElement) {
-            sidebarElement.textContent = count === 1 ? '1 listing' : `${count} listings`;
+            sidebarElement.textContent = count;
         }
     }
 
