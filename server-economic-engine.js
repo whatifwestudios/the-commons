@@ -4207,11 +4207,23 @@ class ServerEconomicEngine {
             throw new Error('Offer amount must be positive');
         }
 
-        // Check if player has enough cash
-        const playerBalance = this.getPlayerBalance(playerId);
-        if (playerBalance < offerAmount) {
-            throw new Error(`Insufficient funds: need $${offerAmount}, have $${playerBalance}`);
+        // Calculate building value if parcel has a building
+        let buildingValue = 0;
+        if (parcel.building) {
+            buildingValue = this.calculateBuildingValue(parcel.building);
         }
+
+        // Total escrow = land offer + building value
+        const totalEscrowAmount = offerAmount + buildingValue;
+
+        // Check if player has enough cash for total escrow
+        const playerBalance = this.getPlayerBalance(playerId);
+        if (playerBalance < totalEscrowAmount) {
+            throw new Error(`Insufficient funds: need $${totalEscrowAmount.toLocaleString()} ($${offerAmount.toLocaleString()} land + $${buildingValue.toLocaleString()} building), have $${playerBalance.toLocaleString()}`);
+        }
+
+        // ✅ ESCROW FUNDS (lock total amount for land + building)
+        this.gameState.playerBalances.set(playerId, playerBalance - totalEscrowAmount);
 
         // Create offer
         const offerId = this.gameState.landExchange.nextOfferId++;
@@ -4222,6 +4234,8 @@ class ServerEconomicEngine {
             offererId: playerId,
             ownerId: parcel.owner,
             offerAmount: offerAmount,
+            buildingValue: buildingValue, // Store building value at time of offer
+            escrowAmount: totalEscrowAmount, // Total escrowed (land + building)
             status: 'pending', // pending, accepted, matched, withdrawn
             createdAt: Date.now(),
             parcelLastPaid: parcel.lastPurchasePrice || 100
@@ -4285,13 +4299,10 @@ class ServerEconomicEngine {
             parcel.lastPurchasePrice = offer.offerAmount;
             parcel.lastAuctionWin = null; // Clear any auction protection
 
-            // Deduct cash from offerer
-            const offererBalance = this.getPlayerBalance(offer.offererId);
-            this.gameState.playerBalances.set(offer.offererId, offererBalance - offer.offerAmount);
-
-            // Pay owner
+            // Funds already escrowed during offer creation - no need to deduct from offerer again
+            // Pay owner the TOTAL escrowed amount (land + building)
             const ownerBalance = this.getPlayerBalance(playerId);
-            this.gameState.playerBalances.set(playerId, ownerBalance + offer.offerAmount);
+            this.gameState.playerBalances.set(playerId, ownerBalance + offer.escrowAmount);
 
             // Record price in history
             this.gameState.landExchange.offerHistory.push({
@@ -4332,8 +4343,8 @@ class ServerEconomicEngine {
                 throw new Error('Insufficient actions to match (need 1 action)');
             }
 
-            // Calculate amount to pay treasury (offer minus what they originally paid)
-            const amountToPay = offer.offerAmount - (parcel.lastPurchasePrice || 0);
+            // Calculate amount to pay treasury using CACHED price from offer (not current parcel price)
+            const amountToPay = offer.offerAmount - (offer.parcelLastPaid || 0);
 
             if (amountToPay > 0) {
                 // Check owner has enough cash
@@ -4348,6 +4359,10 @@ class ServerEconomicEngine {
                 // Add to treasury
                 this.gameState.treasury += amountToPay;
             }
+
+            // ✅ REFUND ESCROW TO OFFERER (offer rejected, return their money)
+            const offererBalance = this.getPlayerBalance(offer.offererId);
+            this.gameState.playerBalances.set(offer.offererId, offererBalance + offer.escrowAmount);
 
             // Spend 1 action
             this.spendActions(playerId, 1, `matching offer on parcel [${offer.row},${offer.col}]`);
@@ -4413,6 +4428,10 @@ class ServerEconomicEngine {
         if (!player.actions || player.actions.total < 1) {
             throw new Error('Insufficient actions to withdraw (need 1 action)');
         }
+
+        // ✅ REFUND ESCROW TO OFFERER
+        const offererBalance = this.getPlayerBalance(playerId);
+        this.gameState.playerBalances.set(playerId, offererBalance + offer.escrowAmount);
 
         // Spend 1 action
         this.spendActions(playerId, 1, `withdrawing offer on parcel [${offer.row},${offer.col}]`);
