@@ -1008,7 +1008,7 @@ class TooltipSystemV2 {
         this.element.style.opacity = '0';
         this.element.style.visibility = 'visible';
         const rect = this.element.getBoundingClientRect();
-        this.element.style.visibility = '';
+        this.element.style.visibility = 'hidden';
 
         const viewportWidth = window.innerWidth;
         const viewportHeight = window.innerHeight;
@@ -1299,11 +1299,6 @@ class TooltipSystemV2 {
         const performanceData = this.getBuildingPerformance(row, col);
         const resourceSatisfaction = performanceData?.resourceSatisfaction;
 
-        console.log(`🔍 Building needs for [${row},${col}]:`, {
-            performanceData,
-            resourceSatisfaction,
-            buildingResources: buildingDef.resources
-        });
 
         const needs = [];
         const resources = buildingDef.resources;
@@ -1413,11 +1408,6 @@ class TooltipSystemV2 {
                 // Include resource satisfaction data from server
                 const resourceSatisfaction = building.performance?.resourceSatisfaction;
 
-                console.log(`🔍 Building object for [${row},${col}]:`, {
-                    hasPerformance: !!building.performance,
-                    performance: building.performance,
-                    resourceSatisfaction
-                });
 
                 return {
                     efficiency: Math.max(0, Math.round(efficiency)),

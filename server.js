@@ -258,6 +258,8 @@ async function handleWebSocketMessage(ws, data) {
                     wealth: s.wealth,
                     lvtRatio: s.lvtRatio,
                     score: s.score,
+                    wealthScore: s.wealthScore,
+                    civicScore: s.civicScore,
                     rank: s.rank
                 })),
                 currentPlayer: currentPlayerScore

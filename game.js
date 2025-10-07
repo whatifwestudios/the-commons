@@ -191,7 +191,7 @@ class IsometricGrid {
 
                 // Find which month we're in (same logic as server getCurrentGameMonth)
                 for (let i = 0; i < monthBoundaries.length; i++) {
-                    if (gameDay <= monthBoundaries[i]) {
+                    if (gameDay < monthBoundaries[i]) {
                         monthIndex = i;
                         break;
                     }
