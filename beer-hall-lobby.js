@@ -100,10 +100,10 @@ class BeerHallLobby {
         if (!hasSession) {
             // No active session - show normal beer hall lobby
             this.showBeerHallLobby();
-        }
 
-        // Check if SOLO mode is already selected and handle it
-        this.checkInitialSizeSelection();
+            // Check if SOLO mode is already selected and handle it (only for normal lobby)
+            this.checkInitialSizeSelection();
+        }
 
         this.isInitialized = true;
     }
