@@ -1204,6 +1204,8 @@ class TooltipSystemV2 {
         if (this.currentType === 'parcel' && this.currentData) {
             const { row, col } = this.currentData;
             this.transitionToContextMenu(row, col, e.clientX, e.clientY);
+            e.stopPropagation();
+            e.preventDefault();
         }
     }
 

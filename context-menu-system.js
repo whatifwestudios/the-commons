@@ -549,7 +549,7 @@ class ContextMenuSystem {
         repairBtn.className = 'context-btn';
 
         // Calculate repair cost based on condition to restore to 100%
-        const buildingId = parcel.building?.type || parcel.building?.id || parcel.building;
+        // Reuse buildingId from line 513
         const buildingData = this.game.buildingManager?.getBuildingById(buildingId);
 
         // Show loading state while fetching repair cost
