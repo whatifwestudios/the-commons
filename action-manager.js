@@ -182,17 +182,29 @@ class ActionManager {
      * Update action display in UI (V2: Server-authoritative)
      */
     updateActionDisplay() {
+        // Get server-authoritative action count
         const currentActions = this.getCurrentActions();
-        const monthlyAllowance = this.calculateMonthlyActionAllowance();
 
-        const actionsElement = document.getElementById('current-actions');
-        if (actionsElement) {
-            actionsElement.textContent = currentActions !== null ? currentActions : 'Loading...';
+        // Format display text
+        const displayText = currentActions !== null ? `${currentActions}` : '--';
+
+        // Update via UIManager for consistency (use camelCase key, not element ID)
+        if (this.game.uiManager) {
+            this.game.uiManager.updateText('currentActions', displayText);
+
+            // Color code based on remaining actions
+            let color = 'white'; // Default white
+            if (currentActions !== null && currentActions <= 2) {
+                color = '#FF4444'; // Red at 2 or less
+            } else if (currentActions !== null && currentActions <= 5) {
+                color = '#FFD700'; // Yellow at 5 or less
+            }
+            this.game.uiManager.updateStyle('currentActions', 'color', color);
         }
 
-        const monthlyElement = document.getElementById('monthly-actions');
-        if (monthlyElement) {
-            monthlyElement.textContent = monthlyAllowance !== null ? monthlyAllowance : 'Loading...';
+        // Update marketplace display if available
+        if (this.game.actionMarketplace && this.game.actionMarketplace.updateMarketplaceDisplay) {
+            this.game.actionMarketplace.updateMarketplaceDisplay();
         }
     }
 
@@ -203,19 +215,30 @@ class ActionManager {
         const actionsElement = document.getElementById('current-actions');
         if (!actionsElement) return;
 
-        // Remove any existing animation class
-        actionsElement.classList.remove('actions-refreshed');
+        // Get the parent row for full effect
+        const parentRow = actionsElement.closest('.action-stat-row');
+        if (!parentRow) return;
 
-        // Trigger reflow to ensure class removal takes effect
-        actionsElement.offsetHeight;
+        // Apply glow effect
+        parentRow.style.transition = 'all 0.3s ease';
+        parentRow.style.backgroundColor = 'rgba(34, 197, 94, 0.15)'; // Green glow
+        parentRow.style.border = '1px solid rgba(34, 197, 94, 0.4)';
+        parentRow.style.borderRadius = '6px';
+        parentRow.style.boxShadow = '0 0 15px rgba(34, 197, 94, 0.3)';
 
-        // Add animation class
-        actionsElement.classList.add('actions-refreshed');
+        // Pulse the text color
+        actionsElement.style.color = '#22c55e';
+        actionsElement.style.fontWeight = '700';
 
-        // Remove animation class after animation completes
+        // Remove the effect after 3 seconds
         setTimeout(() => {
-            actionsElement.classList.remove('actions-refreshed');
-        }, 1500);
+            parentRow.style.backgroundColor = '';
+            parentRow.style.border = '';
+            parentRow.style.borderRadius = '';
+            parentRow.style.boxShadow = '';
+            actionsElement.style.color = '';
+            actionsElement.style.fontWeight = '';
+        }, 3000);
     }
 
     /**

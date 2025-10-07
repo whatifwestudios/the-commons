@@ -204,7 +204,6 @@ class LandExchangeSystem {
                 buildingValue = 0;
             } else {
                 buildingValue = await this.game.economicClient.getBuildingValue(row, col);
-                console.log(`[LandExchange] Building value for [${row},${col}]: $${buildingValue}`);
             }
 
             document.getElementById('offer-building-value').textContent = `$${buildingValue.toLocaleString()}`;

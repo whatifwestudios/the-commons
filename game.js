@@ -888,58 +888,10 @@ class IsometricGrid {
         return this.actionManager.useAction(actionType, cost);
     }
     
-    addActionsRefreshAnimation() {
-        const actionsElement = document.getElementById('current-actions');
-        if (!actionsElement) return;
-        
-        // Get the parent row for full effect
-        const parentRow = actionsElement.closest('.action-stat-row');
-        if (!parentRow) return;
-        
-        // Apply glow effect
-        parentRow.style.transition = 'all 0.3s ease';
-        parentRow.style.backgroundColor = 'rgba(34, 197, 94, 0.15)'; // Green glow
-        parentRow.style.border = '1px solid rgba(34, 197, 94, 0.4)';
-        parentRow.style.borderRadius = '6px';
-        parentRow.style.boxShadow = '0 0 15px rgba(34, 197, 94, 0.3)';
-        
-        // Pulse the text color
-        actionsElement.style.color = '#22c55e';
-        actionsElement.style.fontWeight = '700';
-        
-        // Remove the effect after 3 seconds
-        setTimeout(() => {
-            parentRow.style.backgroundColor = '';
-            parentRow.style.border = '';
-            parentRow.style.borderRadius = '';
-            parentRow.style.boxShadow = '';
-            actionsElement.style.color = '';
-            actionsElement.style.fontWeight = '';
-        }, 3000);
-    }
-    
     updateActionDisplay() {
-        // V2: Use server-authoritative data from action manager
-        const currentActions = this.actionManager.getCurrentActions();
-
-        // Show default until server data arrives (avoid "Loading..." anxiety)
-        const displayText = currentActions !== null ? `${currentActions}` : '--';
-
-        // Use UI Manager for efficient update
-        this.uiManager.updateText('current-actions', displayText);
-
-        // Color code based on remaining actions
-        let color = 'white'; // Default white
-        if (currentActions !== null && currentActions <= 2) {
-            color = '#FF4444'; // Red at 2 or less
-        } else if (currentActions !== null && currentActions <= 5) {
-            color = '#FFD700'; // Yellow at 5 or less
-        }
-        this.uiManager.updateStyle('currentActions', 'color', color);
-        
-        // Update marketplace stats (with safety check for initialization order)
-        if (this.actionMarketplace && this.actionMarketplace.updateMarketplaceDisplay) {
-            this.actionMarketplace.updateMarketplaceDisplay();
+        // Delegate to action manager (owns action state and display logic)
+        if (this.actionManager) {
+            this.actionManager.updateActionDisplay();
         }
     }
     

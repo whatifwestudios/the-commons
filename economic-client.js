@@ -1274,9 +1274,9 @@ class EconomicClient {
         // Handle special GAME_STARTED event for city names and roomId
         this.connectionManager.subscribe('GAME_STATE', (message) => {
             if (message.eventType === 'GAME_STARTED' && message.eventData?.players) {
-                // Extract roomId from message if available
-                if (message.roomId) {
-                    this.roomId = message.roomId;
+                // Extract roomId from eventData (server sends it there)
+                if (message.eventData.roomId) {
+                    this.roomId = message.eventData.roomId;
                     console.log(`[EconomicClient] RoomId set from GAME_STARTED: ${this.roomId}`);
                 }
 
@@ -1372,6 +1372,7 @@ class EconomicClient {
                     // Store roomId from server
                     if (update.roomState.roomId) {
                         this.roomId = update.roomState.roomId;
+                        console.log(`[EconomicClient] RoomId set from ROOM_STATE_SYNC: ${this.roomId}`);
                     }
 
                     // Syncing buildings from server

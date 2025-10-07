@@ -5062,21 +5062,15 @@ class ServerEconomicEngine {
      * Get current building value at specific location
      */
     getBuildingValue(row, col) {
-        const parcel = this.gameState.grid[row]?.[col];
-        if (!parcel || !parcel.building) {
-            console.log(`[getBuildingValue] No building at [${row},${col}]`);
-            return 0;
-        }
-        // Get the actual building object from gameState.buildings
-        const building = this.gameState.buildings.get(`${row},${col}`);
+        // Check buildings Map directly (handles both construction and completed buildings)
+        const locationKey = `${row},${col}`;
+        const building = this.gameState.buildings.get(locationKey);
+
         if (!building) {
-            console.log(`[getBuildingValue] Building ID exists (${parcel.building}) but no building object found at [${row},${col}]`);
             return 0;
         }
 
-        const value = this.calculateBuildingValue(building);
-        console.log(`[getBuildingValue] Building at [${row},${col}]: id=${building.id}, underConstruction=${building.underConstruction}, value=$${value}`);
-        return value;
+        return this.calculateBuildingValue(building);
     }
 
     /**

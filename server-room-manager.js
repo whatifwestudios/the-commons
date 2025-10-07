@@ -725,6 +725,13 @@ class RoomManager {
     }
 
     /**
+     * Get a room by ID
+     */
+    getRoom(roomId) {
+        return this.rooms.get(roomId);
+    }
+
+    /**
      * Create a new room
      */
     createRoom(options = {}) {
