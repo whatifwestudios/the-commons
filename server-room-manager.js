@@ -920,48 +920,26 @@ class RoomManager {
         if (room) {
             const player = room.players.get(playerId);
             if (player) {
-                player.connected = false;
-                player.disconnectedAt = Date.now();
+                // Since we removed session persistence, immediately remove disconnected players
+                // Browser refresh creates new playerId, so keeping old one serves no purpose
+                logger.info(`🚪 Player ${playerId} disconnected - removing immediately (no session persistence)`);
 
-                // Broadcast disconnect
+                // Remove player permanently
+                room.removePlayer(playerId);
+                this.playerRooms.delete(playerId);
+
+                // Broadcast player left
                 room.broadcast({
-                    type: 'PLAYER_DISCONNECTED',
-                    playerId: playerId
+                    type: 'PLAYER_LEFT',
+                    playerId: playerId,
+                    players: room.getCleanPlayerData()
                 });
 
-                // Set up 5-minute timeout for auto-removal
-                // Clear any existing timeout first
-                if (player.reconnectTimeout) {
-                    clearTimeout(player.reconnectTimeout);
+                // Check if room should be deleted
+                if (room.players.size === 0) {
+                    // Room will handle its own cleanup via startEmptyRoomMonitoring
+                    logger.info(`📭 Room ${room.id} is now empty`);
                 }
-
-                player.reconnectTimeout = setTimeout(() => {
-                    // Check if still disconnected after 5 minutes
-                    const currentRoom = this.getPlayerRoom(playerId);
-                    const currentPlayer = currentRoom?.players.get(playerId);
-
-                    if (currentPlayer && !currentPlayer.connected) {
-        // console.log(`⏰ Auto-removing player ${playerId} after 5 minutes of disconnection`);
-
-                        // Remove player permanently
-                        currentRoom.removePlayer(playerId);
-                        this.playerRooms.delete(playerId);
-
-                        // Broadcast auto-removal
-                        currentRoom.broadcast({
-                            type: 'PLAYER_AUTO_REMOVED',
-                            playerId: playerId,
-                            message: `Player ${playerId} was removed after 5 minutes of inactivity`,
-                            players: currentRoom.getCleanPlayerData()
-                        });
-
-                        // Check if room should be deleted
-                        if (currentRoom.players.size === 0) {
-                            this.rooms.delete(this.playerRooms.get(playerId));
-        // console.log(`🗑️ Deleted empty room after auto-removal`);
-                        }
-                    }
-                }, 5 * 60 * 1000); // 5 minutes
             }
         }
     }
