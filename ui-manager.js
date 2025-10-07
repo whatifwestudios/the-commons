@@ -1322,10 +1322,16 @@ class UIManager {
             existingOverlay.remove();
         }
 
-        const building = game.buildingManager.getBuildingById(parcel.building);
-        // 🚫 CLIENT CALCULATION - MARKED FOR REMOVAL
-        const stats = game.calculateBuildingEconomics(parcel, row, col);
+        const buildingId = parcel.building?.type || parcel.building?.id || parcel.building;
+        const building = game.buildingManager?.getBuildingById(buildingId);
         const coord = game.getParcelCoordinate(row, col);
+
+        // Get server-authoritative data
+        const serverBuilding = game.economicClient?.buildings?.get(`${row},${col}`);
+        const performance = serverBuilding?.performance || {};
+        const efficiency = serverBuilding?.efficiency || 0;
+        const netIncome = serverBuilding?.netIncome || 0;
+        const condition = (serverBuilding?.condition || 1.0) * 100;
 
         // Create overlay
         const overlay = document.createElement('div');
@@ -1334,7 +1340,7 @@ class UIManager {
 
         let content = `
             <div class="insights-header">
-                <h3>${building.name} - ${coord}</h3>
+                <h3>${building?.name || 'Building'} - ${coord}</h3>
                 <button class="close-btn" onclick="document.getElementById('data-insights-overlay').remove()">×</button>
             </div>
 
@@ -1343,38 +1349,56 @@ class UIManager {
                     <h4>💰 Economic Performance</h4>
                     <div class="data-grid">
                         <div class="data-item">
-                            <span class="label">Base Revenue:</span>
-                            <span class="value">$${building.economics?.maxRevenue || 0}/day</span>
+                            <span class="label">Efficiency:</span>
+                            <span class="value ${efficiency >= 80 ? 'good' : efficiency >= 50 ? 'ok' : 'poor'}">${Math.round(efficiency)}%</span>
                         </div>
                         <div class="data-item">
-                            <span class="label">Actual Revenue:</span>
-                            <span class="value ${stats.revenue >= (building.economics?.maxRevenue || 0) * 0.8 ? 'good' : 'poor'}">$${stats.revenue.toFixed(2)}/day</span>
+                            <span class="label">Net Income:</span>
+                            <span class="value ${netIncome >= 0 ? 'good' : 'poor'}">$${Math.round(netIncome)}/day</span>
                         </div>
                         <div class="data-item">
-                            <span class="label">Revenue Efficiency:</span>
-                            <span class="value">${building.economics?.maxRevenue ? Math.round((stats.revenue / building.economics.maxRevenue) * 100) : 0}%</span>
-                        </div>
-                        <div class="data-item">
-                            <span class="label">Base Maintenance:</span>
-                            <span class="value">$${building.economics?.maintenanceCost || 0}/day</span>
-                        </div>
-                        <div class="data-item">
-                            <span class="label">Actual Maintenance:</span>
-                            <span class="value">$${stats.maintenance.toFixed(2)}/day</span>
-                        </div>
-                        <div class="data-item">
-                            <span class="label">Land Value Tax:</span>
-                            <span class="value">$${stats.lvt.toFixed(2)}/day</span>
-                        </div>
-                        <div class="data-item total">
-                            <span class="label">Net Daily Profit:</span>
-                            <span class="value ${stats.revenue - stats.maintenance - stats.lvt >= 0 ? 'good' : 'poor'}">$${(stats.revenue - stats.maintenance - stats.lvt).toFixed(2)}/day</span>
+                            <span class="label">Condition:</span>
+                            <span class="value ${condition >= 80 ? 'good' : condition >= 50 ? 'ok' : 'poor'}">${Math.round(condition)}%</span>
                         </div>
                     </div>
                 </div>
+
+                <div class="insights-section">
+                    <h4>📊 Resource Satisfaction</h4>
+                    <div class="data-grid">
         `;
 
-        // Performance multipliers section
+        // Add resource satisfaction if available
+        const resourceSat = performance?.resourceSatisfaction;
+        if (resourceSat) {
+            const resources = ['energy', 'jobs', 'food', 'education', 'healthcare'];
+            resources.forEach(resource => {
+                const sat = resourceSat[resource]?.satisfaction;
+                if (sat !== undefined) {
+                    content += `
+                        <div class="data-item">
+                            <span class="label">${resource.charAt(0).toUpperCase() + resource.slice(1)}:</span>
+                            <span class="value ${sat >= 0.8 ? 'good' : sat >= 0.5 ? 'ok' : 'poor'}">${Math.round(sat * 100)}%</span>
+                        </div>
+                    `;
+                }
+            });
+        }
+
+        content += `
+                    </div>
+                </div>
+            </div>
+        `;
+
+        // Close overlay properly
+        overlay.innerHTML = content;
+        document.body.appendChild(overlay);
+    }
+}
+
+// REMOVED: Old performance multipliers section
+if (false) {
         if (building.economics?.maxRevenue > 0) {
             const decay = parcel.decay || 0;
             const decayMultiplier = Math.max(0, 1 - decay);

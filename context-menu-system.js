@@ -96,8 +96,8 @@ class ContextMenuSystem {
         // Use server-authoritative price
         const price = this.game.economicClient?.getParcelPrice(row, col) || 150;
 
-        // Use tooltip system's standardized header creation
-        const headerHtml = this.game.tooltipSystemV2.createStandardHeader(coord, parcel, false, true);
+        // Use unified header utilities for consistent header
+        const headerHtml = window.ParcelHeaderUtils.createStandardHeader(this.game, coord, { parcel });
 
         // Update the entire context menu to match tooltip structure
         this.contextMenu.innerHTML = `
@@ -510,8 +510,9 @@ class ContextMenuSystem {
         destroyBtn.className = 'context-btn';
 
         // Calculate and show demolition fee (25% of current building value)
-        const building = this.game.buildingManager.getBuildingById(parcel.building);
-        const currentValue = this.calculateCurrentBuildingValue(parcel, building, row, col);
+        const buildingId = parcel.building?.type || parcel.building?.id || parcel.building;
+        const building = this.game.buildingManager?.getBuildingById(buildingId);
+        const currentValue = building ? this.calculateCurrentBuildingValue(parcel, building, row, col) : 0;
         const demolitionFee = Math.round(currentValue * 0.25);
 
         destroyBtn.textContent = `DESTROY BUILDING - $${demolitionFee}`;
@@ -548,35 +549,63 @@ class ContextMenuSystem {
         repairBtn.className = 'context-btn';
 
         // Calculate repair cost based on condition to restore to 100%
-        const buildingData = this.game.buildingManager.getBuildingById(parcel.building);
-        const repairCost = this.calculateRepairCost(parcel, buildingData, row, col);
+        const buildingId = parcel.building?.type || parcel.building?.id || parcel.building;
+        const buildingData = this.game.buildingManager?.getBuildingById(buildingId);
 
-        repairBtn.textContent = `Repair to 100% - $${repairCost.toLocaleString()}`;
+        // Show loading state while fetching repair cost
+        repairBtn.textContent = 'Repair to 100% - Loading...';
+        repairBtn.disabled = true;
 
-        if (repairCost > 0) {
-            repairBtn.onclick = () => this.game.buildingSystem.repairBuilding(row, col);
+        // Fetch repair cost asynchronously
+        this.calculateRepairCostAsync(parcel, buildingData, row, col).then(repairCost => {
+            repairBtn.textContent = `Repair to 100% - $${repairCost.toLocaleString()}`;
 
-            // V2 Server-authoritative ONLY - no fallbacks
-            const currentBalance = this.game.economicClient?.getCurrentPlayerBalance();
-            if (currentBalance === null) {
-                repairBtn.textContent = 'Repair to 100% - Loading...';
-                repairBtn.disabled = true;
-            } else if (currentBalance < repairCost) {
+            if (repairCost > 0) {
+                repairBtn.onclick = () => this.game.buildingSystem.repairBuilding(row, col);
+                repairBtn.disabled = false;
+
+                // V2 Server-authoritative ONLY - no fallbacks
+                const currentBalance = this.game.economicClient?.getCurrentPlayerBalance();
+                if (currentBalance === null) {
+                    repairBtn.textContent = 'Repair to 100% - Loading...';
+                    repairBtn.disabled = true;
+                } else if (currentBalance < repairCost) {
+                    repairBtn.disabled = true;
+                    repairBtn.classList.add('disabled');
+                }
+            } else {
+                // Cost is $0, building at 100%
                 repairBtn.disabled = true;
                 repairBtn.classList.add('disabled');
             }
-        } else {
-            // Cost is $0, building at 100%
-            repairBtn.disabled = true;
-            repairBtn.classList.add('disabled');
-        }
+        });
 
         repairSection.appendChild(repairBtn);
         contentEl.appendChild(repairSection);
     }
 
     /**
-     * Calculate repair cost - delegates to building system
+     * Calculate repair cost asynchronously - handles server fetch
+     */
+    async calculateRepairCostAsync(parcel, building, row, col) {
+        // Try server data first
+        if (this.game.economicClient && row !== null && col !== null) {
+            try {
+                const serverRepairCost = await this.game.economicClient.getBuildingRepairCost(row, col);
+                if (serverRepairCost !== undefined && serverRepairCost !== null) {
+                    return serverRepairCost;
+                }
+            } catch (error) {
+                console.warn('Failed to fetch repair cost from server:', error);
+            }
+        }
+
+        // Fallback to client calculation
+        return this.calculateRepairCost(parcel, building, row, col);
+    }
+
+    /**
+     * Calculate repair cost - delegates to building system (sync fallback)
      */
     calculateRepairCost(parcel, building, row, col) {
         return this.game.buildingSystem.calculateRepairCost(parcel, building, row, col);

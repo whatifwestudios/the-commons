@@ -1018,12 +1018,16 @@ class BuildingSystem {
     async demolishBuilding(row, col) {
         const coord = this.game.getParcelCoordinate(row, col);
         const parcel = this.game.grid[row][col];
-        const buildingId = parcel.building;
-        
+        const buildingId = parcel.building?.type || parcel.building?.id || parcel.building;
+
         if (!buildingId) return false;
-        
+
         // Calculate demolition fee (25% of current building value based on condition)
-        const building = this.buildingManager.getBuildingById(buildingId);
+        const building = this.buildingManager?.getBuildingById(buildingId);
+        if (!building) {
+            console.error('Building definition not found for:', buildingId);
+            return false;
+        }
         const buildingCost = building.cost || 0;
         const condition = parcel.condition || 100;
         const currentValue = Math.round(buildingCost * (condition / 100));
