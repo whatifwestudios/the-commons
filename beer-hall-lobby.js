@@ -603,6 +603,11 @@ class BeerHallLobby {
             // Set the correct player preferences and count for the active button
             const sizeData = activeButton.dataset.size;
 
+            // Safety check - if no size data, skip
+            if (!sizeData) {
+                return;
+            }
+
             // Parse the size data and set preferences (same logic as handleSizeSelection)
             let minPlayers, maxPlayers;
             if (sizeData === '1') {
