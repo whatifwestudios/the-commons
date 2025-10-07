@@ -7,54 +7,38 @@
 class ParcelHeaderUtils {
     /**
      * Create ownership badge for parcel header
+     * UNIFIED: Identical presentation for tooltip and context menu
      */
-    static createOwnershipBadge(game, parcel, isHovering = false) {
+    static createOwnershipBadge(game, parcel) {
         const owner = parcel?.owner;
 
-        // City/unclaimed parcels show dark gray badge when not hovering/clicking
+        // City/unclaimed parcels - medium gray badge
         if (!owner || owner === 'City' || owner === 'unclaimed') {
-            if (!isHovering) {
-                return `<span class="ownership-badge city">CITY</span>`;
-            }
-            // When hovering/clicking, show as available for purchase
-            return null;
+            return `<span class="ownership-badge city">CITY</span>`;
         }
 
+        // Player-owned parcels - show just player name in player color
         const isCurrentPlayer = game.isCurrentPlayer(owner);
+        const playerColor = this.getPlayerColor(game, owner);
+        const contrastColor = this.getContrastingColor(playerColor);
+        const playerName = isCurrentPlayer ? 'YOU' : this.getPlayerName(game, owner).toUpperCase();
 
-        if (isHovering) {
-            // When hovering/clicking, use owner's actual color with contrast
-            const playerColor = this.getPlayerColor(game, owner);
-            const contrastColor = this.getContrastingColor(playerColor);
-            const displayText = isCurrentPlayer ? 'Owned by you' : `Owned by ${this.getPlayerName(game, owner)}`;
-
-            return `<span class="ownership-badge player" style="background: ${playerColor}; color: ${contrastColor};">${displayText}</span>`;
-        } else {
-            // Default state: use owner's actual color for non-hovering state too
-            const playerColor = this.getPlayerColor(game, owner);
-            const contrastColor = this.getContrastingColor(playerColor);
-            const playerName = isCurrentPlayer ? 'YOU' : this.getPlayerName(game, owner).toUpperCase();
-            return `<span class="ownership-badge player" style="background: ${playerColor}; color: ${contrastColor};">${playerName}</span>`;
-        }
+        return `<span class="ownership-badge player" style="background: ${playerColor}; color: ${contrastColor};">${playerName}</span>`;
     }
 
     /**
      * Create standardized parcel header with coordinate and ownership
+     * UNIFIED: Identical for both tooltip and context menu
+     * Format: [Parcel ID]........................[Owner Badge]
      */
-    static createStandardHeader(game, coord, data, isHovering = false, includeOwnership = true) {
-        let ownershipHtml = '';
-
-        if (includeOwnership && data.parcel) {
-            const ownershipBadge = this.createOwnershipBadge(game, data.parcel, isHovering);
-            if (ownershipBadge) {
-                ownershipHtml = ownershipBadge;
-            }
-        }
+    static createStandardHeader(game, coord, data) {
+        const parcel = data.parcel || data;
+        const ownershipBadge = this.createOwnershipBadge(game, parcel);
 
         return `
-            <div class="tooltip-header">
-                <span class="tooltip-coord">${coord}</span>
-                ${ownershipHtml}
+            <div class="unified-header">
+                <span class="header-coord">${coord}</span>
+                ${ownershipBadge}
             </div>
         `;
     }

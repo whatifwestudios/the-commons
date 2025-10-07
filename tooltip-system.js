@@ -270,10 +270,11 @@ class TooltipSystemV2 {
     }
 
     renderParcelTooltip(data) {
-        const header = window.ParcelHeaderUtils.createStandardHeader(this.game, data.coord, data, true, false);
+        const header = window.ParcelHeaderUtils.createStandardHeader(this.game, data.coord, data);
 
         return `
             ${header}
+            ${this.renderPriceSection(data)}
             <div class="tooltip-content">
                 ${data.hasBuilding ?
                     this.renderBuildingTooltipContent(data) :
@@ -281,6 +282,28 @@ class TooltipSystemV2 {
                 }
             </div>
         `;
+    }
+
+    renderPriceSection(data) {
+        if (data.hasBuilding) {
+            // Show price paid for owned parcels with buildings
+            const pricePaid = data.parcel.pricePaid || this.game.economicClient?.getParcelPrice(data.row, data.col) || 'N/A';
+            return `
+                <div class="price-section">
+                    <div class="price-label">Price Paid</div>
+                    <div class="price-value">$${typeof pricePaid === 'number' ? pricePaid.toLocaleString() : pricePaid}</div>
+                </div>
+            `;
+        } else {
+            // Show current price for unowned parcels
+            const currentPrice = this.game.economicClient?.getParcelPrice(data.row, data.col) || 'Loading...';
+            return `
+                <div class="price-section">
+                    <div class="price-label">Current Price</div>
+                    <div class="price-value">$${typeof currentPrice === 'number' ? currentPrice.toLocaleString() : currentPrice}</div>
+                </div>
+            `;
+        }
     }
 
     renderBuildingTooltipContent(data) {
@@ -452,12 +475,10 @@ class TooltipSystemV2 {
         // Show production
         if (production.length > 0) {
             html += `
-                <div class="tooltip-section production-section">
-                    <div class="section-label">Produces</div>
+                <div class="compact-section production-section">
+                    <div class="compact-label">Produces</div>
                     <div class="resource-list">
-                        ${production.map(item => `
-                            <div class="resource-item">${this.getResourceEmoji(item.resource)} ${item.amount} ${item.resource}</div>
-                        `).join('')}
+                        ${production.map(item => `<div class="resource-item">${this.getResourceEmoji(item.resource)} ${item.amount} ${item.resource}</div>`).join('')}
                     </div>
                 </div>
             `;
@@ -467,12 +488,10 @@ class TooltipSystemV2 {
         if (data.needs && data.needs.length > 0) {
             // Show ALL unmet JEEFHH needs
             html += `
-                <div class="tooltip-section needs-section">
-                    <div class="section-label">Needed</div>
+                <div class="compact-section needs-section">
+                    <div class="compact-label">Needs</div>
                     <div class="resource-list">
-                        ${data.needs.map(need => `
-                            <div class="resource-item">${this.getResourceEmoji(need.resource)} ${need.amount} ${need.resource.toLowerCase()}</div>
-                        `).join('')}
+                        ${data.needs.map(need => `<div class="resource-item">${this.getResourceEmoji(need.resource)} ${need.amount} ${need.resource.toLowerCase()}</div>`).join('')}
                     </div>
                 </div>
             `;
@@ -1031,27 +1050,69 @@ class TooltipSystemV2 {
         const viewportHeight = window.innerHeight;
         const margin = 15;
 
+        // SMART POSITIONING: Reserve space for context menu expansion
+        // Maximum context menu dimensions when fully expanded:
+        // - Base menu: ~200px wide
+        // - Action panel: ~250px wide
+        // - Building submenu: ~200px wide
+        // Total max width: ~650px, max height: ~500px
+        const contextMenuMaxWidth = 650;
+        const contextMenuMaxHeight = 500;
+
+        // Calculate optimal position that allows context menu to expand
         let left = x + margin;
         let top = y - rect.height - margin;
 
-        // Avoid right edge
-        if (left + rect.width > viewportWidth - margin) {
+        // Check if there's enough space to the right for full context menu expansion
+        const spaceRight = viewportWidth - (x + margin);
+        const spaceLeft = x - margin;
+
+        if (spaceRight >= contextMenuMaxWidth) {
+            // Plenty of space on right - position tooltip to right of cursor
+            left = x + margin;
+        } else if (spaceLeft >= contextMenuMaxWidth) {
+            // Not enough space on right, but enough on left
             left = x - rect.width - margin;
+        } else {
+            // Limited space on both sides - position to maximize available space
+            if (spaceRight > spaceLeft) {
+                left = x + margin;
+            } else {
+                left = x - rect.width - margin;
+            }
         }
 
-        // Avoid top edge
-        if (top < margin) {
+        // Check vertical space for context menu
+        const spaceBelow = viewportHeight - (y + margin);
+        const spaceAbove = y - margin;
+
+        if (spaceBelow >= contextMenuMaxHeight) {
+            // Enough space below
             top = y + margin;
+        } else if (spaceAbove >= contextMenuMaxHeight) {
+            // Not enough below, but enough above
+            top = y - rect.height - margin;
+        } else {
+            // Limited vertical space - position to maximize available space
+            if (spaceBelow > spaceAbove) {
+                top = y + margin;
+            } else {
+                top = y - rect.height - margin;
+            }
         }
 
-        // Avoid bottom edge
+        // Final edge checks to keep tooltip visible
+        if (left + rect.width > viewportWidth - margin) {
+            left = viewportWidth - rect.width - margin;
+        }
+        if (left < margin) {
+            left = margin;
+        }
         if (top + rect.height > viewportHeight - margin) {
             top = viewportHeight - rect.height - margin;
         }
-
-        // Avoid left edge
-        if (left < margin) {
-            left = margin;
+        if (top < margin) {
+            top = margin;
         }
 
         // Temporarily disable transitions to prevent flash during repositioning
@@ -1088,33 +1149,30 @@ class TooltipSystemV2 {
 
         this.isTransitioning = true;
 
-        // Ensure tooltip transform is reset for accurate bounds measurement
-        this.element.style.transform = 'scale(1) perspective(1000px)';
-
-        // Force a reflow to ensure transform is applied before measuring bounds
-        this.element.offsetHeight;
+        // Apply transition flourish class
+        this.element.classList.add('transitioning');
 
         // Get the tooltip's exact position for seamless transition
         const tooltipBounds = this.element.getBoundingClientRect();
         const menuX = tooltipBounds.left;
         const menuY = tooltipBounds.top;
 
-        // Create a more elegant transition effect
-        // Keep the header in place while the content slides
-        const tooltipContent = this.element.querySelector('.tooltip-content');
-        if (tooltipContent) {
-            // Slide out tooltip content
-            tooltipContent.style.transition = 'opacity 100ms ease-out, transform 100ms ease-out';
-            tooltipContent.style.opacity = '0';
-            tooltipContent.style.transform = 'translateY(-10px)';
-        }
-
-        // Small delay for visual continuity
+        // Wait for flourish animation (200ms)
         setTimeout(() => {
+            this.element.classList.remove('transitioning');
             this.hide();
 
             // Show context menu with transition from tooltip position
             if (this.game.contextMenuSystem) {
+                // Add appearing class to context menu for flourish
+                const contextMenu = document.getElementById('context-menu');
+                if (contextMenu) {
+                    contextMenu.classList.add('appearing');
+                    setTimeout(() => {
+                        contextMenu.classList.remove('appearing');
+                    }, 200);
+                }
+
                 // Use showWithTransition for smooth alignment
                 if (this.game.contextMenuSystem.showWithTransition) {
                     this.game.contextMenuSystem.showWithTransition(row, col, menuX, menuY, tooltipBounds);
