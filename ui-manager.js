@@ -1251,12 +1251,17 @@ class UIManager {
 
             const rankSuffix = ['st', 'nd', 'rd'][index] || 'th';
 
+            // Handle NaN/undefined values gracefully
+            const wealthScore = (playerScore.wealthScore !== undefined && !isNaN(playerScore.wealthScore)) ? playerScore.wealthScore.toFixed(1) : '0.0';
+            const civicScore = (playerScore.civicScore !== undefined && !isNaN(playerScore.civicScore)) ? playerScore.civicScore.toFixed(1) : '0.0';
+            const totalScore = (playerScore.score !== undefined && !isNaN(playerScore.score)) ? playerScore.score.toFixed(1) : '0.0';
+
             row.innerHTML = `
                 <div class="lb-rank">${index + 1}${rankSuffix}</div>
                 <div class="lb-player">${playerScore.playerName || 'Player'}</div>
-                <div class="lb-wealth">$${playerScore.wealth.toLocaleString()}</div>
-                <div class="lb-lvt">${(playerScore.lvtRatio * 100).toFixed(1)}%</div>
-                <div class="lb-score">${playerScore.score.toFixed(1)}</div>
+                <div class="lb-wealth">${wealthScore}</div>
+                <div class="lb-civic">${civicScore}</div>
+                <div class="lb-score">${totalScore}</div>
             `;
 
             rowsContainer.appendChild(row);
