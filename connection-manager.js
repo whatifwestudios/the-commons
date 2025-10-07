@@ -209,66 +209,6 @@ class ConnectionManager {
         this.emitConnectionEvent('disconnected');
     }
 
-    /**
-     * Attempt to rejoin existing session
-     * Returns promise that resolves if successful
-     */
-    async attemptSessionRejoin() {
-        if (!window.sessionManager) {
-            console.warn('SessionManager not available');
-            return false;
-        }
-
-        const session = window.sessionManager.getSession();
-        if (!session || !session.sessionToken) {
-            console.log('No valid session to rejoin');
-            return false;
-        }
-
-        return new Promise((resolve, reject) => {
-            // Subscribe to session restoration responses
-            const unsubscribeRestored = this.subscribe('SESSION_RESTORED', (message) => {
-                console.log('✅ Session restored successfully');
-                unsubscribeRestored();
-                unsubscribeExpired();
-                unsubscribeGone();
-                resolve(message);
-            });
-
-            const unsubscribeExpired = this.subscribe('SESSION_EXPIRED', () => {
-                console.log('❌ Session expired');
-                window.sessionManager.clearSession();
-                unsubscribeRestored();
-                unsubscribeExpired();
-                unsubscribeGone();
-                resolve(false);
-            });
-
-            const unsubscribeGone = this.subscribe('ROOM_GONE', () => {
-                console.log('❌ Room no longer exists');
-                window.sessionManager.clearSession();
-                unsubscribeRestored();
-                unsubscribeExpired();
-                unsubscribeGone();
-                resolve(false);
-            });
-
-            // Send rejoin request
-            this.send({
-                type: 'REJOIN_SESSION',
-                sessionToken: session.sessionToken
-            });
-
-            // Timeout after 5 seconds
-            setTimeout(() => {
-                console.log('⏰ Session rejoin timeout');
-                unsubscribeRestored();
-                unsubscribeExpired();
-                unsubscribeGone();
-                resolve(false);
-            }, 5000);
-        });
-    }
 
     /**
      * Get connection status
@@ -310,40 +250,6 @@ class ConnectionManager {
                 return;
             }
 
-            // Handle CONNECTED message - check for existing session to rejoin
-            if (message.type === 'CONNECTED') {
-                // Check if we have an existing session to rejoin
-                const existingSession = window.sessionManager?.getSession();
-
-                if (existingSession && existingSession.sessionToken && existingSession.roomId) {
-                    // We have an active session - attempt to rejoin instead of creating new session
-                    console.log('🔄 Existing session detected, attempting rejoin...', existingSession);
-
-                    // Send rejoin request immediately
-                    this.send({
-                        type: 'REJOIN_SESSION',
-                        sessionToken: existingSession.sessionToken
-                    });
-                } else {
-                    // No existing session - save the new session from server
-                    if (window.sessionManager && message.playerId && message.sessionToken) {
-                        window.sessionManager.saveSession({
-                            playerId: message.playerId,
-                            sessionToken: message.sessionToken,
-                            roomId: null, // Will be set when player joins room
-                            playerName: null,
-                            playerColor: null
-                        });
-                    }
-                }
-            }
-
-            // Handle SESSION_RESTORED - update session
-            if (message.type === 'SESSION_RESTORED') {
-                if (window.sessionManager && message.roomId) {
-                    window.sessionManager.updateRoomId(message.roomId);
-                }
-            }
 
             // Handle error messages consistently
             if (message.type === 'ERROR') {
@@ -364,7 +270,7 @@ class ConnectionManager {
                 });
             } else {
                 // Only warn for non-standard messages to reduce noise
-                if (!['CONNECTED', 'PLAYER_IDENTIFIED', 'SESSION_RESTORED'].includes(message.type)) {
+                if (!['CONNECTED', 'PLAYER_IDENTIFIED'].includes(message.type)) {
                     console.warn(`No subscribers for message type: ${message.type}`);
                 }
             }

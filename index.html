@@ -3205,38 +3205,6 @@
         </div>
     </div>
     
-    <!-- Session Rejoin Modal -->
-    <div id="session-rejoin-modal" class="welcome-screen" style="display: none; z-index: 10001;">
-        <div class="beer-hall-lobby" style="max-width: 500px;">
-            <div class="lobby-header">
-                <h2 style="margin: 0 0 16px 0; font-size: 24px;">🎮 Active Game Found</h2>
-                <p style="color: #999; margin: 0 0 24px 0; font-size: 14px;">
-                    You have an active game session. Would you like to rejoin?
-                </p>
-            </div>
-
-            <div id="session-info" style="background: rgba(76, 175, 80, 0.1); border: 1px solid rgba(76, 175, 80, 0.3); border-radius: 8px; padding: 16px; margin-bottom: 24px;">
-                <div style="font-size: 13px; color: #aaa; margin-bottom: 8px;">Your Table:</div>
-                <div id="session-room-name" style="font-size: 18px; font-weight: 600; margin-bottom: 4px;">Table 1</div>
-                <div id="session-players" style="font-size: 13px; color: #999;">2/6 players</div>
-            </div>
-
-            <div id="rejoin-status" style="text-align: center; padding: 12px; background: rgba(76, 175, 80, 0.1); border-radius: 8px; margin-bottom: 16px; font-size: 14px; color: #4CAF50;">
-                ⏳ Reconnecting to your game...
-            </div>
-
-            <div style="display: flex; gap: 12px;">
-                <button id="leave-session-btn" class="size-btn" style="flex: 1; padding: 16px; font-size: 16px; background: rgba(244, 67, 54, 0.1); border-color: rgba(244, 67, 54, 0.3);">
-                    ❌ CANCEL & START NEW
-                </button>
-            </div>
-
-            <div style="text-align: center; margin-top: 16px; font-size: 12px; color: #666;">
-                Reconnection happens automatically. Click cancel only if you want to start a new game.
-            </div>
-        </div>
-    </div>
-
     <!-- Clean Welcome Screen -->
     <div id="welcome-screen" class="welcome-screen">
         <!-- 🍺 Beer Hall Lobby -->
@@ -3585,7 +3553,6 @@
     </div>
 
     <!-- Independent Onboarding System -->
-    <script src="session-manager.js"></script>
     <script src="connection-manager.js"></script>
     <script src="beer-hall-lobby.js"></script>
 

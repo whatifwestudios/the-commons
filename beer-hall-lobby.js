@@ -95,16 +95,11 @@ class BeerHallLobby {
         // Initialize connection through ConnectionManager
         this.initializeConnection();
 
-        // CRITICAL: Check for active session BEFORE doing anything else
-        // This must happen after connection is established but before any other game logic
-        const hasSession = await this.checkForActiveSession();
-        if (!hasSession) {
-            // No active session - show normal beer hall lobby
-            this.showBeerHallLobby();
+        // Show beer hall lobby (fresh start on every page load)
+        this.showBeerHallLobby();
 
-            // Check if SOLO mode is already selected and handle it (only for normal lobby)
-            this.checkInitialSizeSelection();
-        }
+        // Check if SOLO mode is already selected and handle it
+        this.checkInitialSizeSelection();
 
         this.isInitialized = true;
     }
@@ -116,85 +111,6 @@ class BeerHallLobby {
                this.colorSelector &&
                this.findTableBtn &&
                this.readyCheckModal;
-    }
-
-    /**
-     * Check for active session and show rejoin modal if found
-     */
-    async checkForActiveSession() {
-        if (!window.sessionManager) return false;
-
-        const session = window.sessionManager.getSession();
-        if (!session || !session.roomId) {
-            return false;
-        }
-
-        console.log('🔍 Active session found:', session);
-
-        // Show rejoin modal
-        const rejoinModal = document.getElementById('session-rejoin-modal');
-        const roomNameEl = document.getElementById('session-room-name');
-        const playersEl = document.getElementById('session-players');
-
-        if (rejoinModal && roomNameEl) {
-            roomNameEl.textContent = session.roomId || 'Your Game';
-            playersEl.textContent = 'Reconnecting...';
-            rejoinModal.style.display = 'flex';
-        }
-
-        // Set up button handler (only cancel button now - rejoin is automatic)
-        const leaveBtn = document.getElementById('leave-session-btn');
-
-        if (leaveBtn) {
-            leaveBtn.onclick = () => this.handleLeaveSession();
-        }
-
-        // Listen for SESSION_RESTORED or SESSION_EXPIRED from connection manager
-        // These will be fired automatically when connection is established
-        this.connectionManager.subscribe('SESSION_RESTORED', (message) => {
-            console.log('✅ Session automatically restored');
-            // Hide modal and trigger game start
-            if (rejoinModal) {
-                rejoinModal.style.display = 'none';
-            }
-            if (this.onGameStart && message.roomInfo) {
-                this.onGameStart({
-                    name: session.playerName || 'Player',
-                    color: session.playerColor || '#4CAF50',
-                    mode: message.roomInfo.maxPlayers === 1 ? 'solo' : 'multiplayer',
-                    id: message.playerId,
-                    tableId: message.roomId
-                }, message.roomInfo);
-            }
-        });
-
-        this.connectionManager.subscribe('SESSION_EXPIRED', () => {
-            console.log('❌ Session expired automatically');
-            this.handleLeaveSession();
-        });
-
-        return true;
-    }
-
-    /**
-     * Handle leave session button click (cancel rejoin and start fresh)
-     */
-    handleLeaveSession() {
-        console.log('🚪 Leaving session and starting fresh');
-
-        // Clear session
-        if (window.sessionManager) {
-            window.sessionManager.clearSession();
-        }
-
-        // Hide rejoin modal
-        const rejoinModal = document.getElementById('session-rejoin-modal');
-        if (rejoinModal) {
-            rejoinModal.style.display = 'none';
-        }
-
-        // Show normal beer hall lobby
-        this.showBeerHallLobby();
     }
 
     setupEventListeners() {
@@ -501,17 +417,6 @@ class BeerHallLobby {
             if (result.success) {
                 // Solo table created successfully
 
-                // Save session data
-                if (window.sessionManager) {
-                    window.sessionManager.saveSession({
-                        playerId: this.playerId,
-                        sessionToken: window.sessionManager.getSession()?.sessionToken,
-                        roomId: result.table.id,
-                        playerName: playerName,
-                        playerColor: this.selectedColor
-                    });
-                }
-
                 // Create player config for solo mode
                 const playerConfig = {
                     name: playerName,
@@ -748,17 +653,6 @@ class BeerHallLobby {
             if (result.success) {
                 this.currentTable = result.table;
                 // Joined table in background
-
-                // Save session data for multiplayer
-                if (window.sessionManager) {
-                    window.sessionManager.saveSession({
-                        playerId: this.playerId,
-                        sessionToken: window.sessionManager.getSession()?.sessionToken,
-                        roomId: result.table.id,
-                        playerName: this.playerName,
-                        playerColor: this.selectedColor
-                    });
-                }
 
                 // Clear existing player list
                 const playerList = document.getElementById('chat-player-list');
