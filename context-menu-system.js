@@ -45,8 +45,35 @@ class ContextMenuSystem {
      * Show context menu with transition from tooltip
      */
     showWithTransition(row, col, mouseX, mouseY, tooltipBounds) {
-        // Set up the menu content but don't position it yet
-        this.setupMenuContent(row, col);
+        // Copy header from tooltip to preserve exact layout, then update content
+        if (this.game.tooltipSystemV2?.element) {
+            const tooltipHeader = this.game.tooltipSystemV2.element.querySelector('.unified-header');
+            if (tooltipHeader) {
+                // Clone the header to preserve it exactly
+                const headerClone = tooltipHeader.cloneNode(true);
+
+                // Ensure cloned header is immediately visible at full opacity
+                headerClone.style.opacity = '1';
+
+                // Set up menu structure with cloned header
+                this.contextMenu.innerHTML = '';
+                this.contextMenu.appendChild(headerClone);
+
+                // Add empty content container
+                const contentDiv = document.createElement('div');
+                contentDiv.className = 'context-content';
+                this.contextMenu.appendChild(contentDiv);
+
+                // Now populate the content (not the header)
+                this.setupMenuContentOnly(row, col);
+            } else {
+                // Fallback to normal setup if tooltip header not found
+                this.setupMenuContent(row, col);
+            }
+        } else {
+            // Fallback to normal setup
+            this.setupMenuContent(row, col);
+        }
 
         // Position at tooltip location if bounds provided, otherwise use mouse position
         if (tooltipBounds) {
@@ -72,6 +99,45 @@ class ContextMenuSystem {
             this.contextMenu.style.opacity = '1';
             this.contextMenu.style.transform = 'scale(1)';
         }, 10);
+    }
+
+    /**
+     * Setup menu content only (without header) - used for transitions to preserve header
+     */
+    setupMenuContentOnly(row, col) {
+        // Set the selected tile and calculate reach
+        this.selectedTile = { row, col };
+        this.selectedParcel = { row, col };
+        this.game.selectedTile = { row, col };
+        this.game.selectedParcel = { row, col };
+        this.game.scheduleRender();
+
+        // Update the selected tile display
+        const coord = this.game.getParcelCoordinate(row, col);
+        const selectedTileElement = this.game.uiManager.get('selectedTile');
+        if (selectedTileElement) {
+            selectedTileElement.textContent = coord;
+        }
+
+        const parcel = this.game.grid[row][col];
+        // Use server-authoritative price
+        const price = this.game.economicClient?.getParcelPrice(row, col) || 150;
+
+        // Get the existing content element (should already exist from cloned structure)
+        const contentEl = this.contextMenu.querySelector('.context-content');
+        if (!contentEl) {
+            console.error('Context menu content element not found');
+            return;
+        }
+
+        // Populate content based on parcel state
+        if (!parcel.owner || parcel.owner === 'City' || parcel.owner === 'unclaimed') {
+            this.createUnownedParcelMenu(contentEl, row, col, price);
+        } else if (this.game.isCurrentPlayer(parcel.owner)) {
+            this.createPlayerOwnedParcelMenu(contentEl, row, col, parcel);
+        } else {
+            this.createCompetitorOwnedParcelMenu(contentEl, row, col, parcel);
+        }
     }
 
     /**

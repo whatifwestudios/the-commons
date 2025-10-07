@@ -19,28 +19,50 @@
     animation: menu-appear 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
+/* Tooltip transition - no animation on container, header stays perfectly still */
 @keyframes tooltip-to-menu {
-    0% {
-        transform: scale(1);
-        opacity: 1;
-    }
-    50% {
-        transform: scale(0.98);
-        opacity: 0.7;
-    }
-    100% {
-        transform: scale(1);
-        opacity: 0;
+    0%, 100% {
+        transform: none;
     }
 }
 
+/* Fade out tooltip content specifically, header stays completely static */
+#unified-tooltip-v2.transitioning .tooltip-content,
+#unified-tooltip-v2.transitioning .price-section,
+#unified-tooltip-v2.transitioning .carens-grid,
+#unified-tooltip-v2.transitioning .tooltip-row {
+    opacity: 0;
+    transition: opacity 0.2s ease-in-out;
+}
+
+/* Keep header completely static - no opacity change */
+#unified-tooltip-v2.transitioning .unified-header {
+    opacity: 1 !important;
+}
+
+/* Menu appear - no animation on container, header stays perfectly still */
 @keyframes menu-appear {
+    0%, 100% {
+        transform: none;
+    }
+}
+
+/* Fade in menu content specifically, header appears instantly at full opacity */
+#context-menu.appearing .context-content {
+    animation: content-fade-in 0.3s ease-in-out;
+}
+
+/* Keep menu header completely static - no animation */
+#context-menu.appearing .unified-header {
+    opacity: 1 !important;
+    animation: none !important;
+}
+
+@keyframes content-fade-in {
     0% {
-        transform: scale(0.98);
         opacity: 0;
     }
     100% {
-        transform: scale(1);
         opacity: 1;
     }
 }

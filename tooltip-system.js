@@ -129,6 +129,11 @@ class TooltipSystemV2 {
     show(type, data, x, y) {
         clearTimeout(this.hideTimer);
 
+        // Don't show tooltip if context menu is open
+        if (this.game.contextMenuSystem?.isMenuOpen) {
+            return;
+        }
+
         this.currentType = type;
         this.currentData = data;
 
@@ -1153,7 +1158,23 @@ class TooltipSystemV2 {
         // Get the tooltip's exact position for seamless transition
         const tooltipBounds = this.element.getBoundingClientRect();
         const menuX = tooltipBounds.left;
-        const menuY = tooltipBounds.top;
+        const menuY = tooltipBounds.top - 40; // Move menu up 40px
+
+        // Create modified bounds object with adjusted position
+        const adjustedBounds = {
+            left: menuX,
+            top: menuY,
+            right: tooltipBounds.right,
+            bottom: tooltipBounds.bottom - 40,
+            width: tooltipBounds.width,
+            height: tooltipBounds.height
+        };
+
+        // Immediately hide the tooltip header to prevent double-vision during clone
+        const tooltipHeader = this.element.querySelector('.unified-header');
+        if (tooltipHeader) {
+            tooltipHeader.style.opacity = '0';
+        }
 
         // Wait for flourish animation (200ms)
         setTimeout(() => {
@@ -1173,7 +1194,7 @@ class TooltipSystemV2 {
 
                 // Use showWithTransition for smooth alignment
                 if (this.game.contextMenuSystem.showWithTransition) {
-                    this.game.contextMenuSystem.showWithTransition(row, col, menuX, menuY, tooltipBounds);
+                    this.game.contextMenuSystem.showWithTransition(row, col, menuX, menuY, adjustedBounds);
                 } else {
                     // Fallback to regular show method
                     this.game.contextMenuSystem.show(row, col, menuX, menuY);
