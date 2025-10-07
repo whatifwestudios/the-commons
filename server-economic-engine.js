@@ -4425,6 +4425,9 @@ class ServerEconomicEngine {
             throw new Error('Offer amount must be positive');
         }
 
+        // Spend 1 action for making an offer (regardless of outcome)
+        this.spendActions(playerId, 1, 'land offer');
+
         // Calculate building value if parcel has a building
         let buildingValue = 0;
         if (parcel.building) {
