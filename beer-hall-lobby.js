@@ -434,6 +434,12 @@ class BeerHallLobby {
         // Parse preferences
         const sizeData = e.target.dataset.size;
 
+        // Safety check - if no size data, skip
+        if (!sizeData) {
+            console.warn('Size button clicked without data-size attribute');
+            return;
+        }
+
         // Check if it's solo mode (data-size="1")
         if (sizeData === '1') {
             // Solo mode - player will start game by clicking "Enter the Commons"

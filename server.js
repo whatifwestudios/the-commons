@@ -281,8 +281,7 @@ async function handleWebSocketMessage(ws, data) {
                 playerName: player?.name
             });
 
-            // Send full game state sync
-            roomManager.sendGameStateSync(oldPlayerId, targetRoom);
+            // Game state will be synced via normal broadcast channels
             break;
 
         case 'IDENTIFY_PLAYER':
