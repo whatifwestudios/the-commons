@@ -2954,25 +2954,35 @@
     <div class="modal" id="leaderboard-modal">
         <div class="modal-content leaderboard-content">
             <div class="modal-header">
-                <h3>Commonwealth Leaderboard</h3>
+                <h3>Your Score</h3>
                 <button class="modal-close" id="leaderboard-close">&times;</button>
             </div>
             <div class="modal-body">
                 <div class="leaderboard-table">
                     <div class="leaderboard-header">
                         <div class="lb-rank">Rank</div>
-                        <div class="lb-player">Player Name</div>
+                        <div class="lb-player">Player</div>
                         <div class="lb-wealth">Wealth</div>
-                        <div class="lb-lvt">LVT Contribution</div>
-                        <div class="lb-score">Score</div>
+                        <div class="lb-civic">Civic</div>
+                        <div class="lb-score">Total</div>
                     </div>
                     <div class="leaderboard-rows" id="leaderboard-rows">
                         <!-- Dynamic content -->
                     </div>
                 </div>
                 <div class="victory-info">
-                    <p><strong>Early Victory:</strong> A Commonwealth Score of 25 with at least 15% LVT Contribution</p>
-                    <p><strong>Year-End Victory:</strong> Highest Commonwealth Score on Sept 1st</p>
+                    <h4>How Scoring Works:</h4>
+                    <p><strong>Wealth Score:</strong> Your share of total game wealth (0-100). Higher wealth = higher score.</p>
+                    <p><strong>Civic Score:</strong> Taxes paid ÷ public funds used × 10, capped at 187.9. Pay more than you take = higher score.</p>
+                    <p><strong>Total Score:</strong> Wealth Score + Civic Score. Balance both for maximum points!</p>
+
+                    <h4 style="margin-top: 16px;">Two Ways to Win:</h4>
+                    <p><strong>Early Civic Victory:</strong> Total Score ≥ 50.0 AND city population ≥ 100</p>
+                    <p><strong>Year-End Victory (Sept 1):</strong> Highest Total Score wins</p>
+
+                    <p style="margin-top: 12px; font-size: 11px; color: #888;">
+                        Tip: High wealth alone isn't enough—contribute to the public good without over-using public funds to maximize your Civic Score!
+                    </p>
                 </div>
             </div>
         </div>
