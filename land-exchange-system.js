@@ -90,22 +90,29 @@ class LandExchangeSystem {
                             <span class="land-exchange-value" id="offer-current-owner">—</span>
                         </div>
                         <div class="land-exchange-row">
-                            <span class="land-exchange-label">Last Paid</span>
+                            <span class="land-exchange-label">Current Land Value</span>
                             <span class="land-exchange-value" id="offer-last-paid">$—</span>
+                        </div>
+                        <div class="land-exchange-row" style="align-items: center;">
+                            <span class="land-exchange-label">Your Offer</span>
+                            <input type="number" class="land-exchange-input" id="offer-amount" placeholder="Land offer amount" style="flex: 1; max-width: 150px;">
+                        </div>
+                        <div class="land-exchange-row" id="offer-building-row" style="display: none;">
+                            <span class="land-exchange-label">Building Value (Current)</span>
+                            <span class="land-exchange-value" id="offer-building-value">$—</span>
+                        </div>
+                        <div class="land-exchange-row" id="offer-total-row" style="display: none; border-top: 1px solid #333; padding-top: 8px; margin-top: 8px; font-weight: bold;">
+                            <span class="land-exchange-label">Total Cost if Accepted</span>
+                            <span class="land-exchange-value" id="offer-total-cost">$—</span>
+                        </div>
+                        <div style="margin-top: 12px; font-size: 11px; color: #888; line-height: 1.5;">
+                            Your offer is for the land. If accepted, you'll also pay the current building value. All offers are public. Owner must accept or match. Making an offer costs you 1 Action. You may withdraw while pending (costs an additional action).
                         </div>
                     </div>
 
                     <div class="land-exchange-section" id="recent-offers-section" style="display: none;">
                         <div class="land-exchange-section-title">RECENT MARKET ACTIVITY</div>
                         <div id="recent-offers-list"></div>
-                    </div>
-
-                    <div class="land-exchange-section">
-                        <div class="land-exchange-section-title">YOUR OFFER</div>
-                        <input type="number" class="land-exchange-input" id="offer-amount" placeholder="Enter offer amount">
-                        <div style="margin-top: 8px; font-size: 11px; color: #888;">
-                            ⚠️ All offers are public. Owner must accept or match (costs them 1 action).
-                        </div>
                     </div>
 
                     <button class="land-exchange-submit" onclick="game.landExchange.submitOffer()">SUBMIT OFFER</button>
@@ -181,17 +188,51 @@ class LandExchangeSystem {
         const ownerName = parcel.owner ? this.game.getPlayerName(parcel.owner) : 'Unclaimed';
         document.getElementById('offer-current-owner').textContent = ownerName;
 
-        // Use server-authoritative last paid price
-        const lastPaidPrice = this.game.economicClient?.getParcelPrice(row, col) || 100;
+        // Get last purchase price (the real market price for land)
+        const lastPaidPrice = parcel.lastPurchasePrice || 100;
         document.getElementById('offer-last-paid').textContent = `$${lastPaidPrice.toLocaleString()}`;
+
+        // Pre-fill with suggested offer (land value + 20%, not including building)
+        const suggestedOffer = Math.ceil(lastPaidPrice * 1.2);
+        document.getElementById('offer-amount').value = suggestedOffer;
+
+        // Get building value if there's a building
+        let buildingValue = 0;
+        if (parcel.building) {
+            if (!this.game.economicClient) {
+                console.error('[LandExchange] economicClient not available');
+                buildingValue = 0;
+            } else {
+                buildingValue = await this.game.economicClient.getBuildingValue(row, col);
+                console.log(`[LandExchange] Building value for [${row},${col}]: $${buildingValue}`);
+            }
+
+            document.getElementById('offer-building-value').textContent = `$${buildingValue.toLocaleString()}`;
+            document.getElementById('offer-building-row').style.display = 'flex';
+
+            // Show total cost row - YOUR OFFER + building value (updates dynamically on input change)
+            const offerInput = document.getElementById('offer-amount');
+            const updateTotal = () => {
+                const offerAmount = parseInt(offerInput.value) || 0;
+                const totalCost = offerAmount + buildingValue;
+                document.getElementById('offer-total-cost').textContent = `$${totalCost.toLocaleString()}`;
+            };
+
+            // Remove old listener if exists (prevent duplicates)
+            offerInput.removeEventListener('input', this._updateTotalHandler);
+            this._updateTotalHandler = updateTotal;
+            offerInput.addEventListener('input', updateTotal);
+
+            updateTotal(); // Initial calculation
+            document.getElementById('offer-total-row').style.display = 'flex';
+        } else {
+            document.getElementById('offer-building-row').style.display = 'none';
+            document.getElementById('offer-total-row').style.display = 'none';
+        }
 
         // Show recent market activity if available (placeholder for now)
         const recentOffersSection = document.getElementById('recent-offers-section');
         recentOffersSection.style.display = 'none'; // Hide until we implement price history
-
-        // Pre-fill with suggested offer (last paid + 20%)
-        const suggestedOffer = Math.ceil(lastPaidPrice * 1.2);
-        document.getElementById('offer-amount').value = suggestedOffer;
 
         // Store current parcel for submission
         this.currentOfferParcel = { row, col };
@@ -351,6 +392,7 @@ class LandExchangeSystem {
         // Show offers where you're the owner (need to respond)
         for (const offer of offersAsOwner) {
             const parcelCoord = this.game.getParcelCoordinate(offer.row, offer.col);
+            const buildingValueText = offer.buildingValue > 0 ? ` + $${offer.buildingValue.toLocaleString()} bldg` : '';
             html += `
                 <div class="land-exchange-item as-owner"
                      data-offer-id="${offer.id}"
@@ -360,7 +402,7 @@ class LandExchangeSystem {
                         <span class="land-exchange-parcel">${parcelCoord}</span>
                         <span class="land-exchange-role owner">MUST RESPOND</span>
                     </div>
-                    <div class="land-exchange-price">$${offer.offerAmount.toLocaleString()}</div>
+                    <div class="land-exchange-price">$${offer.offerAmount.toLocaleString()} land${buildingValueText}</div>
                     <div class="land-exchange-actions">
                         <button class="land-exchange-btn accept" onclick="event.stopPropagation(); game.landExchange.respondToOffer(${offer.id}, 'accept')">
                             ACCEPT
@@ -376,6 +418,7 @@ class LandExchangeSystem {
         // Show offers you made (can withdraw)
         for (const offer of offersAsOfferer) {
             const parcelCoord = this.game.getParcelCoordinate(offer.row, offer.col);
+            const buildingValueText = offer.buildingValue > 0 ? ` + $${offer.buildingValue.toLocaleString()} bldg` : '';
             html += `
                 <div class="land-exchange-item as-offerer"
                      data-offer-id="${offer.id}"
@@ -385,7 +428,7 @@ class LandExchangeSystem {
                         <span class="land-exchange-parcel">${parcelCoord}</span>
                         <span class="land-exchange-role offerer">YOUR OFFER</span>
                     </div>
-                    <div class="land-exchange-price">$${offer.offerAmount.toLocaleString()}</div>
+                    <div class="land-exchange-price">$${offer.offerAmount.toLocaleString()} land${buildingValueText}</div>
                     <div class="land-exchange-actions">
                         <button class="land-exchange-btn withdraw" onclick="event.stopPropagation(); game.landExchange.withdrawOffer(${offer.id})">
                             WITHDRAW (1⚡)
@@ -403,6 +446,12 @@ class LandExchangeSystem {
      * Highlight parcel on hover
      */
     highlightParcel(row, col) {
+        // Cancel any pending unhighlight
+        clearTimeout(this.unhighlightTimer);
+
+        // Track currently highlighted parcel to prevent flicker
+        this.currentHighlightedParcel = { row, col };
+
         // Set hovered tile for rendering system
         this.game.hoveredTile = { row, col };
 
@@ -414,18 +463,22 @@ class LandExchangeSystem {
         const parcel = this.game.grid[row][col];
         if (!parcel) return;
 
-        // Calculate SCREEN coordinates for tooltip (convert canvas to screen)
+        // Calculate SCREEN coordinates for tooltip using isometric projection
         const canvas = this.game.canvas;
         const rect = canvas.getBoundingClientRect();
-        const tileSize = this.game.renderingSystem?.tileSize || 32;
 
-        // Canvas coordinates
-        const canvasX = col * tileSize + tileSize / 2;
-        const canvasY = row * tileSize + tileSize / 2;
+        // Use rendering system's isometric projection to get canvas coordinates
+        // NOTE: toIsometric signature is (col, row) NOT (row, col)
+        const isoCoords = this.game.renderingSystem?.toIsometric(col, row);
 
-        // Screen coordinates (canvas position + offset within canvas)
-        const screenX = rect.left + canvasX;
-        const screenY = rect.top + canvasY;
+        if (!isoCoords) {
+            console.warn('Could not calculate isometric coordinates for tooltip');
+            return;
+        }
+
+        // Screen coordinates (canvas position + isometric offset)
+        const screenX = rect.left + isoCoords.x;
+        const screenY = rect.top + isoCoords.y;
 
         // Show tooltip using existing tooltip system
         if (this.game.tooltipSystemV2) {
@@ -456,22 +509,32 @@ class LandExchangeSystem {
     }
 
     /**
-     * Remove parcel highlight
+     * Remove parcel highlight (with debounce to prevent flickering on child element hover)
      */
     unhighlightParcel() {
-        // Clear hovered tile
-        this.game.hoveredTile = null;
+        // Clear tracking
+        this.currentHighlightedParcel = null;
 
-        // Hide tooltip
-        if (this.game.tooltipSystemV2) {
-            this.game.tooltipSystemV2.hide();
-        }
+        // Add small delay to prevent flicker when moving within the offer box
+        clearTimeout(this.unhighlightTimer);
+        this.unhighlightTimer = setTimeout(() => {
+            // Only clear if we haven't re-highlighted something else
+            if (!this.currentHighlightedParcel) {
+                // Clear hovered tile
+                this.game.hoveredTile = null;
 
-        // Clear illumination
-        this.game.updateParcelIllumination(null);
+                // Hide tooltip
+                if (this.game.tooltipSystemV2) {
+                    this.game.tooltipSystemV2.hide();
+                }
 
-        // Trigger render to remove highlighting
-        this.game.scheduleRender();
+                // Clear illumination
+                this.game.updateParcelIllumination(null);
+
+                // Trigger render to remove highlighting
+                this.game.scheduleRender();
+            }
+        }, 100); // 100ms delay to prevent flicker
     }
 
     /**

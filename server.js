@@ -647,8 +647,10 @@ app.post('/api/building-repair-cost', (req, res) => {
 app.post('/api/building-value', (req, res) => {
     try {
         const { roomId, row, col } = req.body;
+        console.log(`[API] Building value request: roomId=${roomId}, row=${row}, col=${col}`);
 
         if (!roomId || row === undefined || col === undefined) {
+            console.log('[API] Missing parameters');
             return res.status(400).json({
                 success: false,
                 error: 'Missing required parameters: roomId, row, col'
@@ -657,6 +659,7 @@ app.post('/api/building-value', (req, res) => {
 
         const room = roomManager.getRoom(roomId);
         if (!room || !room.economicEngine) {
+            console.log('[API] Room not found or not initialized');
             return res.status(404).json({
                 success: false,
                 error: 'Room not found or not initialized'
@@ -664,6 +667,7 @@ app.post('/api/building-value', (req, res) => {
         }
 
         const value = room.economicEngine.getBuildingValue(row, col);
+        console.log(`[API] Returning building value: $${value}`);
 
         res.json({
             success: true,

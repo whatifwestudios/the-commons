@@ -1004,11 +1004,17 @@ class TooltipSystemV2 {
     }
 
     positionTooltip(x, y) {
-        // Get tooltip dimensions
+        // Get tooltip dimensions WITHOUT causing visible flash
+        // Strategy: Keep element positioned far off-screen during measurement
+        // The browser won't paint elements at -9999px even if visibility changes
+        this.element.style.position = 'fixed';
+        this.element.style.left = '-9999px';
+        this.element.style.top = '-9999px';
         this.element.style.opacity = '0';
-        this.element.style.visibility = 'visible';
-        const rect = this.element.getBoundingClientRect();
         this.element.style.visibility = 'hidden';
+
+        // Measure dimensions (triggers layout but no paint due to off-screen position)
+        const rect = this.element.getBoundingClientRect();
 
         const viewportWidth = window.innerWidth;
         const viewportHeight = window.innerHeight;
@@ -1037,8 +1043,18 @@ class TooltipSystemV2 {
             left = margin;
         }
 
+        // Temporarily disable transitions to prevent flash during repositioning
+        const originalTransition = this.element.style.transition;
+        this.element.style.transition = 'none';
+
         this.element.style.left = `${left}px`;
         this.element.style.top = `${top}px`;
+
+        // Force reflow to apply position immediately before re-enabling transitions
+        this.element.offsetHeight;
+
+        // Re-enable transitions for smooth show/hide
+        this.element.style.transition = originalTransition;
     }
 
     hide() {

@@ -2207,14 +2207,25 @@ class ServerEconomicEngine {
     calculateBuildingValue(building) {
         const buildingDef = this.buildingDefinitions.get(building.id);
         if (!buildingDef || !buildingDef.economics) {
+            console.log(`[calculateBuildingValue] No definition or economics for building id: ${building.id}`);
             return 0;
+        }
+
+        // Handle buildings under construction - use full build cost
+        if (building.underConstruction) {
+            const buildCost = buildingDef.economics.buildCost || 0;
+            console.log(`[calculateBuildingValue] Building ${building.id} under construction, value = buildCost = $${buildCost}`);
+            return buildCost;
         }
 
         const originalCost = buildingDef.economics.buildCost || 0;
         const condition = this.calculateBuildingCondition(building);
+        const value = originalCost * condition;
+
+        console.log(`[calculateBuildingValue] Building ${building.id}: buildCost=$${originalCost}, condition=${condition.toFixed(2)}, value=$${value.toFixed(0)}`);
 
         // Value directly tied to condition
-        return originalCost * condition;
+        return value;
     }
 
     /**
@@ -2645,10 +2656,13 @@ class ServerEconomicEngine {
                 color: playerState?.color,
                 cityName: playerState?.cityName,
                 // Include action data for client sync
-                actions: playerState?.actions || {
-                    total: this.calculateMonthlyActionAllowance()
+                actions: {
+                    total: this.gameState.playerActions.get(playerId) || 0
                 }
             };
+
+            // DEBUG: Log what we're broadcasting
+            console.log(`[BROADCAST] Player ${playerId} actions: ${players[playerId].actions.total}, from Map: ${this.gameState.playerActions.get(playerId)}`);
         });
 
         // Calculate cashflow for all players (use playerBalances as source)
@@ -3468,7 +3482,8 @@ class ServerEconomicEngine {
                 civicScore: parseFloat(civicScore.toFixed(1)),
                 wealth: playerWealth,
                 lvtPaid: lvtPaid,
-                publicFundingReceived: publicFundingReceived
+                publicFundingReceived: publicFundingReceived,
+                lvtRatio: publicFundingReceived > 0 ? lvtPaid / publicFundingReceived : (lvtPaid > 0 ? 1 : 0)
             });
         }
 
@@ -3492,18 +3507,37 @@ class ServerEconomicEngine {
 
         const scores = this.calculateCommonwealthScores();
 
-        // Format scores for broadcast
-        const formattedScores = scores.map(s => ({
-            playerId: s.playerId,
-            playerName: this.gameState.players.get(s.playerId)?.name || 'Player',
-            playerColor: this.gameState.players.get(s.playerId)?.color,
-            wealth: s.wealth,
-            lvtRatio: s.lvtRatio,
-            score: s.score,
-            wealthScore: s.wealthScore,
-            civicScore: s.civicScore,
-            rank: s.rank
-        }));
+        // Initialize cache if not exists
+        if (!this.lastBroadcastScores) {
+            this.lastBroadcastScores = new Map();
+        }
+
+        // Format scores for broadcast, using cached values when current is 0
+        const formattedScores = scores.map(s => {
+            const cached = this.lastBroadcastScores.get(s.playerId);
+
+            // Use cached values if current wealth/civic scores are 0 but cached values exist
+            const wealthScore = (s.wealthScore === 0 && cached?.wealthScore > 0) ? cached.wealthScore : s.wealthScore;
+            const civicScore = (s.civicScore === 0 && cached?.civicScore > 0) ? cached.civicScore : s.civicScore;
+            const score = wealthScore + civicScore;
+
+            const formatted = {
+                playerId: s.playerId,
+                playerName: this.gameState.players.get(s.playerId)?.name || 'Player',
+                playerColor: this.gameState.players.get(s.playerId)?.color,
+                wealth: s.wealth,
+                lvtRatio: s.lvtRatio,
+                score: parseFloat(score.toFixed(1)),
+                wealthScore: parseFloat(wealthScore.toFixed(1)),
+                civicScore: parseFloat(civicScore.toFixed(1)),
+                rank: s.rank
+            };
+
+            // Cache the formatted scores for next time
+            this.lastBroadcastScores.set(s.playerId, formatted);
+
+            return formatted;
+        });
 
         // Broadcast to all players
         this.broadcastFunction({
@@ -4391,7 +4425,10 @@ class ServerEconomicEngine {
         // Calculate building value if parcel has a building
         let buildingValue = 0;
         if (parcel.building) {
-            buildingValue = this.calculateBuildingValue(parcel.building);
+            const building = this.gameState.buildings.get(`${row},${col}`);
+            if (building) {
+                buildingValue = this.calculateBuildingValue(building);
+            }
         }
 
         // Total escrow = land offer + building value
@@ -4474,16 +4511,37 @@ class ServerEconomicEngine {
 
         if (action === 'accept') {
             // ACCEPT: Transfer ownership, pay seller
+            // Note: Building may have decayed since offer was made, requiring escrow adjustment
+
+            // Recalculate current building value (may have decayed since offer creation)
+            let currentBuildingValue = 0;
+            if (parcel.building) {
+                const building = this.gameState.buildings.get(`${offer.row},${offer.col}`);
+                if (building) {
+                    currentBuildingValue = this.calculateBuildingValue(building);
+                }
+            }
+
+            // Calculate actual payment: land offer + current building value
+            const actualPayment = offer.offerAmount + currentBuildingValue;
+
+            // Calculate refund: original escrow minus actual payment
+            const refundToOfferer = offer.escrowAmount - actualPayment;
+
+            // Refund excess escrow to offerer (if building decayed)
+            if (refundToOfferer > 0) {
+                const offererBalance = this.getPlayerBalance(offer.offererId);
+                this.gameState.playerBalances.set(offer.offererId, offererBalance + refundToOfferer);
+            }
+
+            // Pay owner the actual payment (land + current building value)
+            const ownerBalance = this.getPlayerBalance(playerId);
+            this.gameState.playerBalances.set(playerId, ownerBalance + actualPayment);
 
             // Transfer parcel to offerer
             parcel.owner = offer.offererId;
-            parcel.lastPurchasePrice = offer.offerAmount;
+            parcel.lastPurchasePrice = offer.offerAmount; // Land value only
             parcel.lastAuctionWin = null; // Clear any auction protection
-
-            // Funds already escrowed during offer creation - no need to deduct from offerer again
-            // Pay owner the TOTAL escrowed amount (land + building)
-            const ownerBalance = this.getPlayerBalance(playerId);
-            this.gameState.playerBalances.set(playerId, ownerBalance + offer.escrowAmount);
 
             // Record price in history
             this.gameState.landExchange.offerHistory.push({
@@ -4506,13 +4564,18 @@ class ServerEconomicEngine {
                 newOwner: offer.offererId
             });
 
-            console.log(`💰 Offer ${offerId} accepted: Parcel [${offer.row},${offer.col}] transferred to ${offer.offererId} for $${offer.offerAmount}`);
+            console.log(`💰 Offer ${offerId} accepted: Parcel [${offer.row},${offer.col}] transferred to ${offer.offererId} for $${offer.offerAmount} land + $${currentBuildingValue} building (refund: $${refundToOfferer})`);
 
             return {
                 success: true,
                 action: 'accepted',
                 newOwner: offer.offererId,
-                price: offer.offerAmount
+                price: offer.offerAmount,
+                landValue: offer.offerAmount,
+                buildingValue: currentBuildingValue,
+                totalPayment: actualPayment,
+                refund: refundToOfferer,
+                newBalance: this.getPlayerBalance(offer.offererId) // Offerer's new balance after refund
             };
 
         } else if (action === 'match') {
@@ -4997,9 +5060,19 @@ class ServerEconomicEngine {
     getBuildingValue(row, col) {
         const parcel = this.gameState.grid[row]?.[col];
         if (!parcel || !parcel.building) {
+            console.log(`[getBuildingValue] No building at [${row},${col}]`);
             return 0;
         }
-        return this.calculateBuildingValue(parcel.building);
+        // Get the actual building object from gameState.buildings
+        const building = this.gameState.buildings.get(`${row},${col}`);
+        if (!building) {
+            console.log(`[getBuildingValue] Building ID exists (${parcel.building}) but no building object found at [${row},${col}]`);
+            return 0;
+        }
+
+        const value = this.calculateBuildingValue(building);
+        console.log(`[getBuildingValue] Building at [${row},${col}]: id=${building.id}, underConstruction=${building.underConstruction}, value=$${value}`);
+        return value;
     }
 
     /**

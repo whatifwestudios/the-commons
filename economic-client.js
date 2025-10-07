@@ -1271,9 +1271,15 @@ class EconomicClient {
             this.handleWebSocketUpdate(message);
         });
 
-        // Handle special GAME_STARTED event for city names
+        // Handle special GAME_STARTED event for city names and roomId
         this.connectionManager.subscribe('GAME_STATE', (message) => {
             if (message.eventType === 'GAME_STARTED' && message.eventData?.players) {
+                // Extract roomId from message if available
+                if (message.roomId) {
+                    this.roomId = message.roomId;
+                    console.log(`[EconomicClient] RoomId set from GAME_STARTED: ${this.roomId}`);
+                }
+
                 const players = message.eventData.players;
                 const currentPlayer = players.find(p => p.id === this.game?.playerId);
 
