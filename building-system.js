@@ -1281,11 +1281,12 @@ class BuildingSystem {
      * Calculate current building value - SERVER PREFERRED, CLIENT FALLBACK
      */
     calculateCurrentBuildingValue(parcel, building, row = null, col = null) {
-        // Try server data first if coordinates provided
+        // Try cached server data first if coordinates provided
         if (this.game.economicClient && row !== null && col !== null) {
-            const serverBuildingValue = this.game.economicClient.getBuildingValue?.(row, col);
-            if (serverBuildingValue !== undefined && serverBuildingValue !== null) {
-                return serverBuildingValue;
+            const locationKey = `${row},${col}`;
+            const serverBuilding = this.game.economicClient.buildings?.get(locationKey);
+            if (serverBuilding?.currentValue !== undefined && serverBuilding.currentValue !== null) {
+                return serverBuilding.currentValue;
             }
         }
 

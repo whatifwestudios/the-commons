@@ -721,6 +721,9 @@ class ServerEconomicEngine {
             }
         });
 
+        // Refresh monthly actions for all players
+        this.refreshMonthlyActions();
+
         // Broadcast monthly update to all clients
         if (this.broadcastFunction) {
             this.broadcastFunction({

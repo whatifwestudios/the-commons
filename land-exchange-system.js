@@ -575,6 +575,19 @@ class LandExchangeSystem {
     }
 
     /**
+     * Get all pending offers where current player is the owner
+     */
+    getOffersAsOwner() {
+        const offers = [];
+        for (const offer of this.activeOffers.values()) {
+            if (offer.ownerId === this.game.currentPlayerId) {
+                offers.push(offer);
+            }
+        }
+        return offers;
+    }
+
+    /**
      * Get pending offers for a specific parcel
      */
     getOffersForParcel(row, col) {

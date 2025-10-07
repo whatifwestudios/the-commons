@@ -261,7 +261,7 @@ class GovernanceV3 {
 
         // Register for governance updates
         this.economicClient.onUpdate((update) => {
-            if (update.type === 'GOVERNANCE_UPDATE' || update.type === 'STATE_UPDATE' || update.type === 'TRANSACTION_COMPLETE') {
+            if (update.type === 'GOVERNANCE_UPDATE' || update.type === 'STATE_UPDATE' || update.type === 'TRANSACTION_COMPLETE' || update.type === 'MONTH_CHANGE') {
                 // Received governance update from server
                 this.syncWithServer();
                 // Update player dots when governance data changes

@@ -187,26 +187,20 @@ class IsometricGrid {
                 ];
 
                 // Use server-consistent logic: find month first, then calculate day
+                // Match server's getCurrentGameMonth logic exactly (uses <=, not <)
                 let monthIndex = 0;
-
-                // Find which month we're in (same logic as server getCurrentGameMonth)
                 for (let i = 0; i < monthBoundaries.length; i++) {
-                    if (gameDay < monthBoundaries[i]) {
+                    if (gameDay <= monthBoundaries[i]) {
                         monthIndex = i;
                         break;
                     }
                 }
 
-                // Calculate day within month
-                let dayInMonth;
-                if (monthIndex === 0) {
-                    // September: gameDay 1 = Sept 2, gameDay 2 = Sept 3, etc.
-                    dayInMonth = gameDay + 1;
-                } else {
-                    // Other months: calculate offset from previous boundary
-                    const previousBoundary = monthBoundaries[monthIndex - 1];
-                    dayInMonth = gameDay - previousBoundary;
-                }
+                // Calculate day within month using server's exact formula
+                // Server: monthStart = i === 0 ? 1 : monthBoundaries[i - 1] + 1
+                // Server: dayInMonth = currentDay - monthStart + 1
+                const monthStart = monthIndex === 0 ? 1 : monthBoundaries[monthIndex - 1] + 1;
+                const dayInMonth = gameDay - monthStart + 1;
 
                 const month = monthOrder[monthIndex];
                 const day = dayInMonth;
