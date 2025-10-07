@@ -95,8 +95,12 @@ class BeerHallLobby {
             this.readyCheckModal.style.display = 'none';
         }
 
-        // Show beer hall lobby
-        this.showBeerHallLobby();
+        // Check for active session before showing lobby
+        const hasSession = await this.checkForActiveSession();
+        if (!hasSession) {
+            // No active session - show normal beer hall lobby
+            this.showBeerHallLobby();
+        }
 
         // Check if SOLO mode is already selected and handle it
         this.checkInitialSizeSelection();
@@ -111,6 +115,101 @@ class BeerHallLobby {
                this.colorSelector &&
                this.findTableBtn &&
                this.readyCheckModal;
+    }
+
+    /**
+     * Check for active session and show rejoin modal if found
+     */
+    async checkForActiveSession() {
+        if (!window.sessionManager) return false;
+
+        const session = window.sessionManager.getSession();
+        if (!session || !session.roomId) {
+            return false;
+        }
+
+        console.log('🔍 Active session found:', session);
+
+        // Show rejoin modal
+        const rejoinModal = document.getElementById('session-rejoin-modal');
+        const roomNameEl = document.getElementById('session-room-name');
+        const playersEl = document.getElementById('session-players');
+
+        if (rejoinModal && roomNameEl) {
+            roomNameEl.textContent = session.roomId || 'Your Game';
+            playersEl.textContent = 'Reconnecting...';
+            rejoinModal.style.display = 'flex';
+        }
+
+        // Set up button handlers
+        const rejoinBtn = document.getElementById('rejoin-session-btn');
+        const leaveBtn = document.getElementById('leave-session-btn');
+
+        if (rejoinBtn) {
+            rejoinBtn.onclick = () => this.handleRejoinSession();
+        }
+
+        if (leaveBtn) {
+            leaveBtn.onclick = () => this.handleLeaveSession();
+        }
+
+        return true;
+    }
+
+    /**
+     * Handle rejoin session button click
+     */
+    async handleRejoinSession() {
+        console.log('🔄 Attempting to rejoin session...');
+
+        const success = await this.connectionManager.attemptSessionRejoin();
+
+        if (success) {
+            console.log('✅ Successfully rejoined session');
+            // Hide rejoin modal
+            const rejoinModal = document.getElementById('session-rejoin-modal');
+            if (rejoinModal) {
+                rejoinModal.style.display = 'none';
+            }
+
+            // Trigger game start with restored session
+            if (this.onGameStart && success.roomInfo) {
+                const session = window.sessionManager.getSession();
+                this.onGameStart({
+                    name: session.playerName || 'Player',
+                    color: session.playerColor || '#4CAF50',
+                    mode: success.roomInfo.maxPlayers === 1 ? 'solo' : 'multiplayer',
+                    id: success.playerId,
+                    tableId: success.roomId
+                }, success.roomInfo);
+            }
+        } else {
+            console.log('❌ Failed to rejoin session');
+            // Show error and fall back to normal lobby
+            alert('Unable to rejoin game. It may have ended or your session expired.');
+            this.handleLeaveSession();
+        }
+    }
+
+    /**
+     * Handle leave session button click
+     */
+    handleLeaveSession() {
+        console.log('🚪 Leaving session and starting fresh');
+
+        // Clear session
+        if (window.sessionManager) {
+            window.sessionManager.clearSession();
+        }
+
+        // Hide rejoin modal
+        const rejoinModal = document.getElementById('session-rejoin-modal');
+        if (rejoinModal) {
+            rejoinModal.style.display = 'none';
+        }
+
+        // Show normal beer hall lobby
+        this.showBeerHallLobby();
     }
 
     setupEventListeners() {
@@ -411,6 +510,17 @@ class BeerHallLobby {
             if (result.success) {
                 // Solo table created successfully
 
+                // Save session data
+                if (window.sessionManager) {
+                    window.sessionManager.saveSession({
+                        playerId: this.playerId,
+                        sessionToken: window.sessionManager.getSession()?.sessionToken,
+                        roomId: result.table.id,
+                        playerName: playerName,
+                        playerColor: this.selectedColor
+                    });
+                }
+
                 // Create player config for solo mode
                 const playerConfig = {
                     name: playerName,
@@ -642,6 +752,17 @@ class BeerHallLobby {
             if (result.success) {
                 this.currentTable = result.table;
                 // Joined table in background
+
+                // Save session data for multiplayer
+                if (window.sessionManager) {
+                    window.sessionManager.saveSession({
+                        playerId: this.playerId,
+                        sessionToken: window.sessionManager.getSession()?.sessionToken,
+                        roomId: result.table.id,
+                        playerName: this.playerName,
+                        playerColor: this.selectedColor
+                    });
+                }
 
                 // Clear existing player list
                 const playerList = document.getElementById('chat-player-list');

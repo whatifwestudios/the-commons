@@ -83,12 +83,43 @@ logger.info('✅ WebSocket server created');
 // WebSocket connection management
 const connectedClients = new Set();
 
+// Session management for reconnection support
+// sessionToken -> { playerId, roomId, playerData, lastSeen }
+const activeSessions = new Map();
+const SESSION_TIMEOUT = 2 * 60 * 1000; // 2 minutes
+
+// Generate session token
+function generateSessionToken() {
+    return `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+}
+
+// Clean up expired sessions every 30 seconds
+setInterval(() => {
+    const now = Date.now();
+    const expiredSessions = [];
+
+    for (const [token, session] of activeSessions.entries()) {
+        if (now - session.lastSeen > SESSION_TIMEOUT) {
+            expiredSessions.push(token);
+        }
+    }
+
+    expiredSessions.forEach(token => {
+        const session = activeSessions.get(token);
+        logger.info(`🧹 Cleaning expired session: ${token} (player: ${session?.playerId})`);
+        activeSessions.delete(token);
+    });
+}, 30000);
+
 wss.on('connection', (ws, req) => {
     connectedClients.add(ws);
 
     // Generate unique player ID for this session
     const playerId = `player_${Math.random().toString(36).substr(2, 9)}`;
+    const sessionToken = generateSessionToken();
+
     ws.playerId = playerId;
+    ws.sessionToken = sessionToken;
 
     // Connection health tracking
     ws.connectionTime = Date.now();
@@ -96,11 +127,12 @@ wss.on('connection', (ws, req) => {
     ws.lastPong = Date.now();
     ws.isAlive = true;
 
-    // Send welcome with assigned player ID
+    // Send welcome with assigned player ID and session token
     ws.send(JSON.stringify({
         type: 'CONNECTED',
         message: 'Connected to The Commons multiplayer server',
-        playerId: playerId
+        playerId: playerId,
+        sessionToken: sessionToken
     }));
 
 
@@ -153,6 +185,21 @@ wss.on('connection', (ws, req) => {
             }
         }
 
+        // On disconnect, preserve session for potential reconnection
+        const room = roomManager.getPlayerRoom(playerId);
+        if (room && ws.sessionToken) {
+            const playerData = room.players.get(playerId);
+            if (playerData) {
+                activeSessions.set(ws.sessionToken, {
+                    playerId: playerId,
+                    roomId: room.id,
+                    playerData: playerData,
+                    lastSeen: Date.now()
+                });
+                logger.info(`💾 Session preserved for player ${playerId} in room ${room.id} (${SESSION_TIMEOUT/1000}s timeout)`);
+            }
+        }
+
         connectedClients.delete(ws);
         roomManager.handleDisconnect(playerId);
     });
@@ -180,6 +227,64 @@ async function handleWebSocketMessage(ws, data) {
     const room = roomManager.getPlayerRoom(playerId);
 
     switch (data.type) {
+        case 'REJOIN_SESSION':
+            // Player trying to rejoin with existing session token
+            const { sessionToken } = data;
+
+            if (!sessionToken || !activeSessions.has(sessionToken)) {
+                sendError(ws, 'Invalid or expired session', 'SESSION_EXPIRED');
+                return;
+            }
+
+            const session = activeSessions.get(sessionToken);
+            const targetRoom = roomManager.getRoom(session.roomId);
+
+            if (!targetRoom) {
+                sendError(ws, 'Room no longer exists', 'ROOM_GONE');
+                activeSessions.delete(sessionToken);
+                return;
+            }
+
+            // Restore player identity
+            const oldPlayerId = session.playerId;
+            ws.playerId = oldPlayerId;
+            ws.sessionToken = sessionToken;
+
+            // Update session timestamp
+            session.lastSeen = Date.now();
+
+            // Reconnect to room
+            targetRoom.connections.set(oldPlayerId, ws);
+
+            // Update player connection status
+            const player = targetRoom.players.get(oldPlayerId);
+            if (player) {
+                player.connected = true;
+            }
+
+            logger.info(`🔄 Player ${oldPlayerId} rejoined room ${targetRoom.id} with session ${sessionToken}`);
+
+            // Send session restored confirmation
+            ws.send(JSON.stringify({
+                type: 'SESSION_RESTORED',
+                playerId: oldPlayerId,
+                sessionToken: sessionToken,
+                roomId: targetRoom.id,
+                roomInfo: targetRoom.getInfo(),
+                message: 'Welcome back! Rejoined your game.'
+            }));
+
+            // Notify room that player reconnected
+            targetRoom.broadcast({
+                type: 'PLAYER_RECONNECTED',
+                playerId: oldPlayerId,
+                playerName: player?.name
+            });
+
+            // Send full game state sync
+            roomManager.sendGameStateSync(oldPlayerId, targetRoom);
+            break;
+
         case 'IDENTIFY_PLAYER':
             // 🔧 FIX: Allow client to identify itself with existing player ID and metadata
             if (data.playerId) {
