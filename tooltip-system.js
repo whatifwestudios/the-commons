@@ -97,7 +97,7 @@ class TooltipSystemV2 {
         this.element.id = 'unified-tooltip-v2';
         this.element.className = 'tooltip-v2 hidden';
 
-        // CSS styled to match crisp tooltip - sharp corners, professional
+        // CSS styled to match context menu - width controlled by tooltip-styles.css
         this.element.style.cssText = `
             position: fixed;
             background: #111111;
@@ -108,8 +108,6 @@ class TooltipSystemV2 {
             line-height: 1.4;
             color: white;
             z-index: 10000;
-            min-width: 200px;
-            max-width: 250px;
             box-shadow: 0 8px 24px rgba(0, 0, 0, 0.8);
             pointer-events: none;
             opacity: 0;

@@ -1915,8 +1915,7 @@ body.beer-hall-active #top-bar {
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.8);
     z-index: 1001;
     display: none;
-    min-width: 200px;
-    max-width: 250px;
+    /* Width set in tooltip-styles.css to match tooltip (280px) */
     flex-direction: column;
     font-family: 'SF Mono', Monaco, 'Roboto Mono', monospace;
     font-size: 16px;

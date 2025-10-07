@@ -6,6 +6,8 @@
     font-family: 'SF Mono', Monaco, 'Roboto Mono', monospace;
     font-size: 16px;
     z-index: 10000;
+    width: 280px;
+    box-sizing: border-box;
 }
 
 /* Transition flourish - tooltip to context menu */
@@ -47,6 +49,7 @@
 #unified-tooltip-v2 .unified-header,
 #context-menu .unified-header {
     display: flex;
+    flex-direction: row;
     justify-content: space-between;
     align-items: center;
     margin-bottom: 8px;
