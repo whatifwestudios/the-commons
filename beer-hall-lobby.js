@@ -87,15 +87,16 @@ class BeerHallLobby {
         // Initialize color selection
         await this.populateColors();
 
-        // Initialize connection through ConnectionManager
-        this.initializeConnection();
-
         // Ensure ready check modal is hidden on initialization
         if (this.readyCheckModal) {
             this.readyCheckModal.style.display = 'none';
         }
 
-        // Check for active session before showing lobby
+        // Initialize connection through ConnectionManager
+        this.initializeConnection();
+
+        // CRITICAL: Check for active session BEFORE doing anything else
+        // This must happen after connection is established but before any other game logic
         const hasSession = await this.checkForActiveSession();
         if (!hasSession) {
             // No active session - show normal beer hall lobby
@@ -141,58 +142,42 @@ class BeerHallLobby {
             rejoinModal.style.display = 'flex';
         }
 
-        // Set up button handlers
-        const rejoinBtn = document.getElementById('rejoin-session-btn');
+        // Set up button handler (only cancel button now - rejoin is automatic)
         const leaveBtn = document.getElementById('leave-session-btn');
-
-        if (rejoinBtn) {
-            rejoinBtn.onclick = () => this.handleRejoinSession();
-        }
 
         if (leaveBtn) {
             leaveBtn.onclick = () => this.handleLeaveSession();
         }
 
+        // Listen for SESSION_RESTORED or SESSION_EXPIRED from connection manager
+        // These will be fired automatically when connection is established
+        this.connectionManager.subscribe('SESSION_RESTORED', (message) => {
+            console.log('✅ Session automatically restored');
+            // Hide modal and trigger game start
+            if (rejoinModal) {
+                rejoinModal.style.display = 'none';
+            }
+            if (this.onGameStart && message.roomInfo) {
+                this.onGameStart({
+                    name: session.playerName || 'Player',
+                    color: session.playerColor || '#4CAF50',
+                    mode: message.roomInfo.maxPlayers === 1 ? 'solo' : 'multiplayer',
+                    id: message.playerId,
+                    tableId: message.roomId
+                }, message.roomInfo);
+            }
+        });
+
+        this.connectionManager.subscribe('SESSION_EXPIRED', () => {
+            console.log('❌ Session expired automatically');
+            this.handleLeaveSession();
+        });
+
         return true;
     }
 
     /**
-     * Handle rejoin session button click
-     */
-    async handleRejoinSession() {
-        console.log('🔄 Attempting to rejoin session...');
-
-        const success = await this.connectionManager.attemptSessionRejoin();
-
-        if (success) {
-            console.log('✅ Successfully rejoined session');
-            // Hide rejoin modal
-            const rejoinModal = document.getElementById('session-rejoin-modal');
-            if (rejoinModal) {
-                rejoinModal.style.display = 'none';
-            }
-
-            // Trigger game start with restored session
-            if (this.onGameStart && success.roomInfo) {
-                const session = window.sessionManager.getSession();
-                this.onGameStart({
-                    name: session.playerName || 'Player',
-                    color: session.playerColor || '#4CAF50',
-                    mode: success.roomInfo.maxPlayers === 1 ? 'solo' : 'multiplayer',
-                    id: success.playerId,
-                    tableId: success.roomId
-                }, success.roomInfo);
-            }
-        } else {
-            console.log('❌ Failed to rejoin session');
-            // Show error and fall back to normal lobby
-            alert('Unable to rejoin game. It may have ended or your session expired.');
-            this.handleLeaveSession();
-        }
-    }
-
-    /**
-     * Handle leave session button click
+     * Handle leave session button click (cancel rejoin and start fresh)
      */
     handleLeaveSession() {
         console.log('🚪 Leaving session and starting fresh');

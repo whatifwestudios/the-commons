@@ -310,16 +310,31 @@ class ConnectionManager {
                 return;
             }
 
-            // Handle CONNECTED message - save session
+            // Handle CONNECTED message - check for existing session to rejoin
             if (message.type === 'CONNECTED') {
-                if (window.sessionManager && message.playerId && message.sessionToken) {
-                    window.sessionManager.saveSession({
-                        playerId: message.playerId,
-                        sessionToken: message.sessionToken,
-                        roomId: null, // Will be set when player joins room
-                        playerName: null,
-                        playerColor: null
+                // Check if we have an existing session to rejoin
+                const existingSession = window.sessionManager?.getSession();
+
+                if (existingSession && existingSession.sessionToken && existingSession.roomId) {
+                    // We have an active session - attempt to rejoin instead of creating new session
+                    console.log('🔄 Existing session detected, attempting rejoin...', existingSession);
+
+                    // Send rejoin request immediately
+                    this.send({
+                        type: 'REJOIN_SESSION',
+                        sessionToken: existingSession.sessionToken
                     });
+                } else {
+                    // No existing session - save the new session from server
+                    if (window.sessionManager && message.playerId && message.sessionToken) {
+                        window.sessionManager.saveSession({
+                            playerId: message.playerId,
+                            sessionToken: message.sessionToken,
+                            roomId: null, // Will be set when player joins room
+                            playerName: null,
+                            playerColor: null
+                        });
+                    }
                 }
             }
 
