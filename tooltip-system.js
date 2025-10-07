@@ -176,11 +176,22 @@ class TooltipSystemV2 {
         this.positionAndShow(x, y);
     }
 
+    /**
+     * OPTIMIZATION: Unified method to get server building data
+     * Eliminates duplicate code paths for accessing economic client
+     */
+    getServerBuildingData(row, col) {
+        if (!this.game.economicClient?.buildings) return null;
+        const locationKey = `${row},${col}`;
+        return this.game.economicClient.buildings.get(locationKey);
+    }
+
     getParcelTooltipData(row, col) {
         try {
             const parcel = this.game.grid[row][col];
             if (!parcel) return null;
 
+            // OPTIMIZATION: Fetch building data once and pass through all methods
             const building = parcel.building ? this.game.getBuildingDataByName(parcel.building.type || parcel.building.id || parcel.building) : null;
             const coord = this.game.getParcelCoordinate(row, col);
 
@@ -190,7 +201,8 @@ class TooltipSystemV2 {
                 coord,
                 hasBuilding: !!parcel.building,
                 parcel,
-                building
+                building, // Cached building definition - pass this to all methods
+                buildingDef: building // Alias for clarity in methods
             };
 
             if (!parcel.building) {
@@ -219,8 +231,8 @@ class TooltipSystemV2 {
                 }
                 data.buildingName = buildingName;
 
-                // Get server-synced building state from economic client (AUTHORITATIVE)
-                const serverBuilding = this.game.economicClient?.buildings?.get(`${row},${col}`);
+                // OPTIMIZATION: Use unified server data access method
+                const serverBuilding = this.getServerBuildingData(row, col);
                 if (serverBuilding) {
                     // Use server data as authoritative source
                     data.isUnderConstruction = serverBuilding.isUnderConstruction || false;
@@ -691,8 +703,8 @@ class TooltipSystemV2 {
     renderBuildingValues(data) {
         if (data.isUnderConstruction) return '';
 
-        const buildingData = this.game.getBuildingDataByName(data.parcel.building);
-        const buildingValue = buildingData?.cost || 0;
+        // Use cached building data instead of re-fetching
+        const buildingValue = data.buildingDef?.cost || 0;
         // Use server-authoritative price
         const landValue = this.game.economicClient?.getParcelPrice(data.row, data.col) || 'Loading...';
 
@@ -753,10 +765,10 @@ class TooltipSystemV2 {
     renderBuildingResources(data) {
         if (data.isUnderConstruction) return '';
 
-        const buildingData = this.game.getBuildingDataByName(data.parcel.building);
-        if (!buildingData || !buildingData.resources) return '';
+        // Use cached building data instead of re-fetching
+        if (!data.buildingDef || !data.buildingDef.resources) return '';
 
-        const resources = buildingData.resources;
+        const resources = data.buildingDef.resources;
         const provides = [];
         const needs = [];
 
@@ -813,9 +825,8 @@ class TooltipSystemV2 {
         const condition = data.condition || 100;
         const conditionColor = condition >= 80 ? '#4CAF50' : condition >= 60 ? '#FF9800' : '#f44336';
 
-        // Get decay rate from building data
-        const buildingData = this.game.getBuildingDataByName(data.parcel.building);
-        const decayRate = buildingData?.decayRate || 0.5; // Default 0.5% per day
+        // Use cached building data instead of re-fetching
+        const decayRate = data.buildingDef?.decayRate || 0.5; // Default 0.5% per day
 
         const dailyDecay = decayRate;
         const daysUntilMaintenance = Math.ceil((condition - 60) / dailyDecay); // Maintenance needed at 60%
@@ -1120,43 +1131,17 @@ class TooltipSystemV2 {
     // ==================== EVENT LISTENERS ====================
 
     setupEventListeners() {
-        // Canvas events (parcel tooltips) - Higher priority than legacy systems
+        // PARCEL TOOLTIPS: Handled by ParcelHoverV2 to avoid duplicate mouse tracking
+        // ParcelHoverV2 calls this.show('parcel', ...) directly
+
+        // Only handle click for context menu transition
         if (this.game.canvas) {
-            this.game.canvas.addEventListener('mousemove', this.handleCanvasHover.bind(this), { capture: true });
             this.game.canvas.addEventListener('click', this.handleCanvasClick.bind(this), { capture: true });
-            this.game.canvas.addEventListener('mouseleave', () => this.hide(), { capture: true });
         }
 
-        // Event delegation for all other tooltip types
+        // Event delegation for all other tooltip types (sidebar, DCF, simple)
         document.addEventListener('mouseenter', this.handleElementHover.bind(this), true);
         document.addEventListener('mouseleave', this.handleElementLeave.bind(this), true);
-    }
-
-    handleCanvasHover(e) {
-        // Allow other systems (like ParcelHoverV2) to also process mouse events
-        // Only prevent default browser behavior, don't stop propagation
-
-        if (this.isTransitioning) return;
-
-        // Don't show tooltip if context menu is open (match crisp tooltip behavior)
-        if (this.game.contextMenuSystem?.contextMenu?.classList?.contains('visible')) {
-            this.hide();
-            return;
-        }
-
-        // Get screen coordinates from mouse position (match crisp tooltip method)
-        const rect = e.target.getBoundingClientRect();
-        const screenX = e.clientX - rect.left;
-        const screenY = e.clientY - rect.top;
-
-        // Use screen coordinates directly (no zoom/pan conversion needed)
-        const worldCoords = { x: screenX, y: screenY };
-        const coords = this.game.renderingSystem?.fromIsometric(worldCoords.x, worldCoords.y);
-        if (coords) {
-            this.show('parcel', coords, e.clientX, e.clientY);
-        } else {
-            this.hide();
-        }
     }
 
     handleCanvasClick(e) {
@@ -1411,27 +1396,24 @@ class TooltipSystemV2 {
     }
 
     getBuildingPerformance(row, col) {
-        // Try to get from economic client first (server-authoritative)
-        if (this.game.economicClient?.buildings) {
-            const locationKey = `${row},${col}`;
-            const building = this.game.economicClient.buildings.get(locationKey);
-            if (building) {
-                // Server sends performance data directly on building object
-                const efficiency = building.efficiency || 0;
-                const netRevenue = building.netIncome || 0;
-                const condition = (building.condition || 1.0) * 100;
+        // OPTIMIZATION: Use unified server data access method
+        const building = this.getServerBuildingData(row, col);
+        if (building) {
+            // Server sends performance data directly on building object
+            const efficiency = building.efficiency || 0;
+            const netRevenue = building.netIncome || 0;
+            const condition = (building.condition || 1.0) * 100;
 
-                // Include resource satisfaction data from server
-                const resourceSatisfaction = building.performance?.resourceSatisfaction;
+            // Include resource satisfaction data from server
+            const resourceSatisfaction = building.performance?.resourceSatisfaction;
 
 
-                return {
-                    efficiency: Math.max(0, Math.round(efficiency)),
-                    netRevenue: netRevenue,
-                    condition: condition,
-                    resourceSatisfaction: resourceSatisfaction
-                };
-            }
+            return {
+                efficiency: Math.max(0, Math.round(efficiency)),
+                netRevenue: netRevenue,
+                condition: condition,
+                resourceSatisfaction: resourceSatisfaction
+            };
         }
 
         // Fallback for older data
@@ -1849,625 +1831,8 @@ class TooltipSystemV2 {
     }
 }
 
-// Auto-attach CSS styles
-if (typeof document !== 'undefined') {
-    const style = document.createElement('style');
-    style.textContent = `
-        #unified-tooltip-v2.tooltip-v2 {
-            font-family: 'SF Mono', Monaco, 'Roboto Mono', monospace;
-            font-size: 16px;
-        }
-
-        #unified-tooltip-v2 .tooltip-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 8px;
-            padding-bottom: 6px;
-            border-bottom: 1px solid #333;
-        }
-
-        #unified-tooltip-v2 .tooltip-coord {
-            font-size: 18px;
-            font-weight: 300;
-            color: white;
-        }
-
-        #unified-tooltip-v2 .tooltip-status {
-            font-size: 14px;
-            text-transform: uppercase;
-            padding: 2px 6px;
-            border-radius: 3px;
-            
-        }
-
-        .tooltip-status.unowned { background: #666; color: #ccc; }
-        .tooltip-status.owned { background: #2196F3; color: #fff; }
-        .tooltip-status.construction { background: #FF9800; color: #fff; }
-        .tooltip-status.built { background: #4CAF50; color: #fff; }
-
-        .building-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 6px;
-        }
-
-        .building-name {
-            font-weight: bold;
-            color: #e0e0e0;
-        }
-
-        .player-badge {
-            padding: 6px 10px;
-            border-radius: 4px;
-            font-size: 16px;
-            font-weight: 600;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-            box-shadow: 0 1px 2px rgba(0,0,0,0.3);
-        }
-
-        .construction-status {
-            margin: 8px 0;
-        }
-
-        .construction-message {
-            font-size: 13px;
-            color: #999;
-            text-align: center;
-            padding: 8px 0;
-        }
-
-        .performance-metrics {
-            margin: 8px 0;
-        }
-
-        .metric-row {
-            display: flex;
-            justify-content: space-between;
-            margin: 2px 0;
-        }
-
-        .metric-label {
-            color: #ccc;
-        }
-
-        .metric-value {
-            font-weight: bold;
-        }
-
-        .metric-value.positive { color: #4CAF50; }
-        .metric-value.negative { color: #f44336; }
-
-        .jeefhh-needs {
-            margin-top: 8px;
-        }
-
-        .needs-header {
-            font-size: 13px;
-            text-transform: uppercase;
-            color: #999;
-            margin-bottom: 4px;
-        }
-
-        .needs-list {
-            display: flex;
-            flex-direction: column;
-            gap: 2px;
-        }
-
-        .need-item {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 2px 4px;
-            border-radius: 3px;
-        }
-
-        .need-item.warning {
-            background: rgba(255, 152, 0, 0.2);
-            border-left: 2px solid #FF9800;
-        }
-
-        .need-item.critical {
-            background: rgba(244, 67, 54, 0.2);
-            border-left: 2px solid #f44336;
-        }
-
-        .need-name {
-            font-size: 13px;
-            color: #ccc;
-        }
-
-        .need-value {
-            font-size: 13px;
-            font-weight: bold;
-        }
-
-        .carens-opportunity {
-            margin-top: 8px;
-        }
-
-        .opportunity-header {
-            font-size: 13px;
-            text-transform: uppercase;
-            color: #999;
-            margin-bottom: 4px;
-        }
-
-        .carens-hint {
-            font-style: italic;
-            color: #4CAF50;
-            margin-bottom: 4px;
-            font-size: 14px;
-        }
-
-        .carens-metric {
-            display: flex;
-            justify-content: space-between;
-        }
-
-        .carens-excellent {
-            color: #4CAF50;
-            text-align: center;
-            font-weight: bold;
-            margin: 8px 0;
-        }
-
-        .needs-transition {
-            color: #4CAF50;
-            text-align: center;
-            margin: 8px 0;
-            font-size: 14px;
-        }
-
-        .empty-parcel {
-            text-align: center;
-            padding: 8px 0;
-        }
-
-        .parcel-price {
-            font-weight: bold;
-            color: #4CAF50;
-            margin-bottom: 4px;
-        }
-
-        .action-hint {
-            font-size: 13px;
-            color: #999;
-        }
-
-        .ownership-status {
-            font-weight: bold;
-            margin-bottom: 4px;
-        }
-
-        .sidebar-tooltip .metric-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 6px;
-        }
-
-        .sidebar-tooltip .metric-name {
-            font-weight: bold;
-            color: #4CAF50;
-        }
-
-        .sidebar-tooltip .metric-value {
-            font-weight: bold;
-            color: #e0e0e0;
-        }
-
-        .sidebar-tooltip .metric-description {
-            font-size: 14px;
-            color: #ccc;
-            line-height: 1.3;
-        }
-
-        .top-contributors {
-            margin: 8px 0;
-            padding-top: 6px;
-            border-top: 1px solid #333;
-        }
-
-        .contributors-header {
-            font-size: 14px;
-            color: #aaa;
-            margin-bottom: 4px;
-            font-weight: bold;
-        }
-
-        .contributor-line {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            font-size: 13px;
-            margin-bottom: 2px;
-        }
-
-        .building-name {
-            color: #ccc;
-        }
-
-        .contribution-value {
-            color: #4CAF50;
-            font-weight: bold;
-        }
-
-        .dcf-tooltip .dcf-header {
-            font-weight: bold;
-            color: #4CAF50;
-            margin-bottom: 6px;
-        }
-
-        .dcf-breakdown {
-            display: flex;
-            flex-direction: column;
-            gap: 2px;
-        }
-
-        .dcf-line {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-
-        .dcf-source {
-            color: #ccc;
-            font-size: 14px;
-        }
-
-        .dcf-amount {
-            font-weight: bold;
-            font-size: 14px;
-        }
-
-        .dcf-amount.positive { color: #4CAF50; }
-        .dcf-amount.negative { color: #f44336; }
-
-        .simple-tooltip {
-            font-size: 14px;
-            color: #e0e0e0;
-            max-width: 200px;
-        }
-
-        /* Compact building tooltip styles */
-        .owner-info {
-            font-size: 14px;
-            margin-bottom: 6px;
-            padding-bottom: 4px;
-            border-bottom: 1px solid #333;
-        }
-
-        .compact-performance {
-            margin: 6px 0;
-            padding: 4px 0;
-            border-bottom: 1px solid #1a1a1a;
-        }
-
-        .perf-line {
-            font-size: 11px;
-            margin: 3px 0;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-
-        .compact-resources {
-            font-size: 11px;
-            margin: 4px 0;
-            line-height: 1.3;
-        }
-
-        /* Enhanced building tooltip sections */
-        .tooltip-section {
-            margin: 8px 0;
-            padding: 6px 0;
-            border-top: 1px solid #333;
-        }
-
-        .tooltip-section:first-child {
-            border-top: none;
-            margin-top: 0;
-        }
-
-        .section-header {
-            font-size: 14px;
-            font-weight: 600;
-            color: #4A90E2;
-            margin-bottom: 6px;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-        }
-
-        .production-list {
-            display: flex;
-            flex-direction: column;
-            gap: 2px;
-        }
-
-        .section-label {
-            color: #fff;
-            font-size: 13px;
-            font-weight: 400;
-            margin-bottom: 4px;
-            text-align: left;
-        }
-
-        .resource-list {
-            display: flex;
-            flex-direction: column;
-            gap: 2px;
-            text-align: left;
-        }
-
-        .resource-item {
-            color: #fff;
-            font-size: 13px;
-            font-weight: 300;
-            padding: 2px 0;
-            text-align: left;
-        }
-
-        .need-satisfaction {
-            font-weight: 600;
-            padding: 1px 4px;
-            border-radius: 2px;
-            font-size: 13px;
-        }
-
-        .need-satisfaction.satisfied {
-            background: rgba(76, 175, 80, 0.2);
-            color: #4CAF50;
-        }
-
-        .need-satisfaction.moderate {
-            background: rgba(255, 152, 0, 0.2);
-            color: #FF9800;
-        }
-
-        .need-satisfaction.unsatisfied {
-            background: rgba(244, 67, 54, 0.2);
-            color: #f44336;
-        }
-
-        .carens-list {
-            display: flex;
-            flex-direction: column;
-            gap: 3px;
-        }
-
-        .carens-item {
-            display: flex;
-            align-items: center;
-            gap: 6px;
-            font-size: 14px;
-        }
-
-        .carens-emoji {
-            font-size: 14px;
-            width: 16px;
-            text-align: center;
-        }
-
-        .carens-name {
-            flex: 1;
-            color: #ccc;
-        }
-
-        .carens-value {
-            font-weight: 600;
-            font-size: 14px;
-        }
-
-        .carens-value.positive {
-            color: #4CAF50;
-        }
-
-        .carens-value.negative {
-            color: #f44336;
-        }
-
-        /* New standardized CARENS color classes for -100 to +100 scale */
-        .carens-positive {
-            color: #4CAF50;
-            font-weight: 600;
-        }
-
-        .carens-neutral {
-            color: #FFA726;
-            font-weight: 500;
-        }
-
-        .carens-negative {
-            color: #f44336;
-            font-weight: 600;
-        }
-
-        /* Font size classes for tooltip elements */
-        .tooltip-header .tooltip-coord {
-            font-size: 12px;
-            font-weight: 600;
-        }
-
-        .tooltip-header .tooltip-status {
-            font-size: 11px;
-            font-weight: 500;
-        }
-
-        .building-name {
-            font-size: 14px;
-            font-weight: 600;
-        }
-
-        .tooltip-content {
-            font-size: 13px;
-        }
-
-        .action-hint {
-            font-size: 12px;
-        }
-
-        .empty-parcel .action-hint {
-            font-size: 11px;
-        }
-
-        /* Standardized ownership badge for header alignment */
-        .ownership-badge {
-            padding: 6px 10px;
-            border-radius: 3px;
-            font-size: 13px;
-            font-weight: 500;
-            text-transform: uppercase;
-        }
-
-        .ownership-badge.city {
-            
-            color: white;
-        }
-
-        .ownership-badge.player {
-            /* Colors set inline with player color and contrast */
-        }
-
-        .tooltip-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 8px;
-            padding-bottom: 6px;
-            border-bottom: 1px solid #2a2a2a;
-        }
-
-        #context-menu .context-menu-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 8px;
-            padding-bottom: 6px;
-            border-bottom: 1px solid #2a2a2a;
-        }
-
-        #context-menu .context-coord {
-            font-size: 18px;
-            font-weight: 300;
-            color: white;
-        }
-
-        #context-menu .context-status {
-            font-size: 14px;
-            text-transform: uppercase;
-            padding: 2px 6px;
-            border-radius: 3px;
-            
-        }
-    `;
-
-    document.head.appendChild(style);
-}
-
-// Make standardized header methods globally available
-window.ParcelHeaderUtils = {
-    createOwnershipBadge: function(game, parcel, isHovering = false) {
-        const owner = parcel?.owner;
-
-        // City/unclaimed parcels show dark gray badge when not hovering/clicking
-        if (!owner || owner === 'City' || owner === 'unclaimed') {
-            if (!isHovering) {
-                return `<span class="ownership-badge city">CITY</span>`;
-            }
-            // When hovering/clicking, show as available for purchase
-            return null;
-        }
-
-        const isCurrentPlayer = game.isCurrentPlayer(owner);
-
-        if (isHovering) {
-            // When hovering/clicking, use owner's actual color with contrast
-            const playerColor = this.getPlayerColor(game, owner);
-            const contrastColor = this.getContrastingColor(playerColor);
-            const displayText = isCurrentPlayer ? 'Owned by you' : `Owned by ${this.getPlayerName(game, owner)}`;
-
-            return `<span class="ownership-badge player" style="background: ${playerColor}; color: ${contrastColor};">${displayText}</span>`;
-        } else {
-            // Default state: use owner's actual color for non-hovering state too
-            const playerColor = this.getPlayerColor(game, owner);
-            const contrastColor = this.getContrastingColor(playerColor);
-            const playerName = isCurrentPlayer ? 'YOU' : this.getPlayerName(game, owner).toUpperCase();
-            return `<span class="ownership-badge player" style="background: ${playerColor}; color: ${contrastColor};">${playerName}</span>`;
-        }
-    },
-
-    createStandardHeader: function(game, coord, parcelData, isHovering = false, isContextMenu = false) {
-        const parcel = parcelData.parcel || parcelData;
-        const ownershipBadge = this.createOwnershipBadge(game, parcel, isHovering);
-        const headerClass = isContextMenu ? 'context-menu-header' : 'tooltip-header';
-        const coordClass = isContextMenu ? 'context-coord' : 'tooltip-coord';
-        const statusClass = isContextMenu ? 'context-status' : 'tooltip-status';
-
-        if (ownershipBadge) {
-            return `
-                <div class="${headerClass}">
-                    <div class="${coordClass}">${coord}</div>
-                    <div class="${statusClass}">${ownershipBadge}</div>
-                </div>
-            `;
-        } else {
-            // Show purchase price if available for purchase
-            const row = parcelData.row || 0;
-            const col = parcelData.col || 0;
-            // 🚫 GHOST BUSTED! Use server price
-            const price = game.economicClient?.getParcelPrice(row, col) || 'GHOST';
-            const priceText = price ? `$${price.toLocaleString()}` : 'AVAILABLE';
-            return `
-                <div class="${headerClass}">
-                    <div class="${coordClass}">${coord}</div>
-                    <div class="${statusClass}">
-                        <span class="ownership-badge city">${priceText}</span>
-                    </div>
-                </div>
-            `;
-        }
-    },
-
-    getPlayerColor: function(game, playerId) {
-        if (game?.renderer) {
-            return game.renderer.getPlayerColor(playerId);
-        }
-        return '#4CAF50';
-    },
-
-    getPlayerName: function(game, playerId) {
-        // For current player, use beer hall lobby chosen name
-        if (game.isCurrentPlayer && game.isCurrentPlayer(playerId)) {
-            return window.beerHallLobby?.playerName || playerId;
-        }
-
-        // For other players, try to get their display name
-        if (game.getPlayerName) {
-            return game.getPlayerName(playerId);
-        }
-
-        // Fallback to player ID
-        return playerId;
-    },
-
-    getContrastingColor: function(backgroundColor) {
-        // Convert hex to RGB
-        const hex = backgroundColor.replace('#', '');
-        const r = parseInt(hex.substr(0, 2), 16);
-        const g = parseInt(hex.substr(2, 2), 16);
-        const b = parseInt(hex.substr(4, 2), 16);
-
-        // Calculate luminance
-        const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
-
-        // Return black for light colors, white for dark colors
-        return luminance > 0.5 ? '#000000' : '#ffffff';
-    }
-};
+// OPTIMIZATION: CSS styles moved to tooltip-styles.css for better organization
+// Global ParcelHeaderUtils moved to parcel-header-utils.js for modularity
 
 // Export for use
 if (typeof module !== 'undefined' && module.exports) {

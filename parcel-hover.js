@@ -64,6 +64,10 @@ class ParcelHoverV2 {
 
         // Simple mousemove handler with proper cleanup tracking
         this.eventManager.addEventListener(this.game.canvas, 'mousemove', (e) => {
+            // Store mouse position for tooltip system
+            this.lastMouseX = e.clientX;
+            this.lastMouseY = e.clientY;
+
             const rect = this.game.canvas.getBoundingClientRect();
             const screenX = e.clientX - rect.left;
             const screenY = e.clientY - rect.top;
@@ -113,11 +117,42 @@ class ParcelHoverV2 {
             // Start animation timer when hover begins
             if (!wasHovering && nowHovering) {
                 this.hoverStartTime = Date.now();
+                this.startBobAnimation();
             } else if (!nowHovering) {
                 this.hoverStartTime = null;
+                this.stopBobAnimation();
             }
 
             this.game.scheduleRender();
+        }
+    }
+
+    /**
+     * Start bob animation loop (only runs while hovering)
+     */
+    startBobAnimation() {
+        if (this.bobAnimationId) return; // Already running
+
+        const animate = () => {
+            if (!this.currentHover || !this.hoverStartTime) {
+                this.bobAnimationId = null;
+                return; // Stop if no longer hovering
+            }
+
+            this.game.scheduleRender();
+            this.bobAnimationId = requestAnimationFrame(animate);
+        };
+
+        this.bobAnimationId = requestAnimationFrame(animate);
+    }
+
+    /**
+     * Stop bob animation loop
+     */
+    stopBobAnimation() {
+        if (this.bobAnimationId) {
+            cancelAnimationFrame(this.bobAnimationId);
+            this.bobAnimationId = null;
         }
     }
 
@@ -164,9 +199,10 @@ class ParcelHoverV2 {
         const { row, col } = this.currentHover;
 
         // Delegate to TooltipSystemV2 with proper data format
+        // Use our tracked mouse position instead of game.lastMouseEvent
         if (this.game.tooltipSystemV2?.show) {
-            const mouseX = this.game.lastMouseEvent?.clientX || 0;
-            const mouseY = this.game.lastMouseEvent?.clientY || 0;
+            const mouseX = this.lastMouseX || 0;
+            const mouseY = this.lastMouseY || 0;
             this.game.tooltipSystemV2.show('parcel', { row, col }, mouseX, mouseY);
         }
     }
@@ -253,10 +289,8 @@ class ParcelHoverV2 {
         // Start lifted by full amount, bob between 0 and lift height
         const bobOffset = -this.buildingLiftHeight * easedProgress;
 
-        // Keep animation running
-        if (this.game.scheduleRender) {
-            this.game.scheduleRender();
-        }
+        // Animation loop is now handled by startBobAnimation/stopBobAnimation
+        // No need to call scheduleRender here - already handled by animation loop
 
         return bobOffset;
     }
@@ -289,6 +323,14 @@ class ParcelHoverV2 {
             };
         }
 
+        // Enforce cache size limit (LRU eviction)
+        const MAX_CACHE_SIZE = 50;
+        if (this.tintedBuildingCache.size >= MAX_CACHE_SIZE) {
+            // Remove oldest entry (first key in Map)
+            const firstKey = this.tintedBuildingCache.keys().next().value;
+            this.tintedBuildingCache.delete(firstKey);
+        }
+
         // Create tinted version on-demand
         // Get image from building definitions and global cache
         const buildingDef = this.game.buildingManager?.getBuildingById(buildingId);
@@ -298,40 +340,29 @@ class ParcelHoverV2 {
         const originalImage = window.buildingImageCache?.get(imagePath);
         if (!originalImage || !originalImage.complete) return null;
 
-        // Create offscreen canvas for tinting
+        // OPTIMIZED: Use canvas composite operations instead of pixel manipulation
+        // This is GPU-accelerated and much faster than iterating over pixels
         const canvas = document.createElement('canvas');
         canvas.width = originalImage.width;
         canvas.height = originalImage.height;
-        const ctx = canvas.getContext('2d');
+        const ctx = canvas.getContext('2d', { willReadFrequently: false }); // Performance hint
 
         // Draw original image
         ctx.drawImage(originalImage, 0, 0);
 
-        // Get image data to apply tint
-        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-        const data = imageData.data;
+        // Apply color tint using composite operations (much faster than pixel iteration)
+        ctx.globalCompositeOperation = 'multiply';
+        ctx.fillStyle = this._playerColor;
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-        // Parse player color
-        const colorMatch = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(this._playerColor);
-        if (!colorMatch) return null;
+        // Restore original brightness by blending with original
+        ctx.globalCompositeOperation = 'lighter';
+        ctx.globalAlpha = 0.5;
+        ctx.drawImage(originalImage, 0, 0);
 
-        const tintR = parseInt(colorMatch[1], 16);
-        const tintG = parseInt(colorMatch[2], 16);
-        const tintB = parseInt(colorMatch[3], 16);
-
-        // Apply tint to non-transparent pixels only
-        for (let i = 0; i < data.length; i += 4) {
-            const alpha = data[i + 3];
-            if (alpha > 0) {
-                // Blend original color with tint color (50/50 mix)
-                data[i] = (data[i] + tintR) / 2;     // R
-                data[i + 1] = (data[i + 1] + tintG) / 2; // G
-                data[i + 2] = (data[i + 2] + tintB) / 2; // B
-                // Alpha unchanged
-            }
-        }
-
-        ctx.putImageData(imageData, 0, 0);
+        // Reset composite mode
+        ctx.globalCompositeOperation = 'source-over';
+        ctx.globalAlpha = 1.0;
 
         // Cache the result
         this.tintedBuildingCache.set(cacheKey, canvas);

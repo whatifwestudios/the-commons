@@ -1,0 +1,263 @@
+/* Tooltip System V2 Styles */
+/* Extracted from tooltip-system.js for better organization and performance */
+
+#unified-tooltip-v2.tooltip-v2 {
+    font-family: 'SF Mono', Monaco, 'Roboto Mono', monospace;
+    font-size: 16px;
+}
+
+#unified-tooltip-v2 .tooltip-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid #333;
+}
+
+#unified-tooltip-v2 .tooltip-coord {
+    font-size: 18px;
+    font-weight: 300;
+    color: white;
+}
+
+#unified-tooltip-v2 .tooltip-status {
+    font-size: 14px;
+    text-transform: uppercase;
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-weight: 500;
+}
+
+#unified-tooltip-v2 .tooltip-status.owned { background: #2196F3; color: white; }
+#unified-tooltip-v2 .tooltip-status.unowned { background: #666; color: white; }
+#unified-tooltip-v2 .tooltip-status.construction { background: #FF9800; color: white; }
+#unified-tooltip-v2 .tooltip-status.operational { background: #4CAF50; color: white; }
+
+#unified-tooltip-v2 .tooltip-content {
+    color: #E0E0E0;
+    line-height: 1.5;
+}
+
+#unified-tooltip-v2 .building-name {
+    font-size: 20px;
+    font-weight: 600;
+    color: white;
+    margin-bottom: 8px;
+}
+
+#unified-tooltip-v2 .metric-row {
+    display: flex;
+    justify-content: space-between;
+    margin: 4px 0;
+    padding: 2px 0;
+}
+
+#unified-tooltip-v2 .metric-label {
+    color: #BDBDBD;
+    font-size: 14px;
+}
+
+#unified-tooltip-v2 .metric-value {
+    font-weight: 600;
+    color: white;
+    font-size: 14px;
+}
+
+#unified-tooltip-v2 .performance-section,
+#unified-tooltip-v2 .condition-section,
+#unified-tooltip-v2 .revenue-section {
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px solid #444;
+}
+
+#unified-tooltip-v2 .section-header {
+    font-size: 14px;
+    font-weight: 600;
+    color: #90CAF9;
+    margin-bottom: 6px;
+    text-transform: uppercase;
+}
+
+#unified-tooltip-v2 .resource-needs {
+    margin-top: 6px;
+}
+
+#unified-tooltip-v2 .resource-item {
+    color: #FFAB91;
+    font-size: 13px;
+    margin: 2px 0;
+}
+
+#unified-tooltip-v2 .carens-boost {
+    margin-top: 6px;
+}
+
+#unified-tooltip-v2 .boost-item {
+    color: #81C784;
+    font-size: 13px;
+    margin: 2px 0;
+}
+
+#unified-tooltip-v2 .construction-progress {
+    margin-top: 8px;
+}
+
+#unified-tooltip-v2 .progress-bar {
+    width: 100%;
+    height: 8px;
+    background: #333;
+    border-radius: 4px;
+    overflow: hidden;
+    margin: 4px 0;
+}
+
+#unified-tooltip-v2 .progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #FF9800, #FFB74D);
+    transition: width 0.3s ease;
+}
+
+#unified-tooltip-v2 .price-info {
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px solid #444;
+}
+
+#unified-tooltip-v2 .price-label {
+    color: #BDBDBD;
+    font-size: 14px;
+}
+
+#unified-tooltip-v2 .price-value {
+    font-size: 18px;
+    font-weight: 700;
+    color: #4CAF50;
+}
+
+#unified-tooltip-v2 .ownership-badge {
+    display: inline-block;
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    margin-left: 8px;
+}
+
+#unified-tooltip-v2 .ownership-badge.city {
+    background: #424242;
+    color: #9E9E9E;
+}
+
+#unified-tooltip-v2 .ownership-badge.player {
+    /* Dynamic background/color set via inline styles */
+}
+
+/* Sidebar tooltip styles */
+#unified-tooltip-v2.sidebar-tooltip {
+    max-width: 300px;
+}
+
+#unified-tooltip-v2.sidebar-tooltip .metric-name {
+    font-size: 16px;
+    font-weight: 600;
+    color: white;
+    margin-bottom: 4px;
+}
+
+#unified-tooltip-v2.sidebar-tooltip .metric-value {
+    font-size: 20px;
+    font-weight: 700;
+    color: #4CAF50;
+    margin-bottom: 8px;
+}
+
+#unified-tooltip-v2.sidebar-tooltip .metric-description {
+    font-size: 14px;
+    color: #BDBDBD;
+    line-height: 1.4;
+}
+
+/* DCF tooltip styles */
+#unified-tooltip-v2.dcf-tooltip {
+    max-width: 350px;
+}
+
+#unified-tooltip-v2.dcf-tooltip .dcf-title {
+    font-size: 16px;
+    font-weight: 600;
+    color: white;
+    margin-bottom: 8px;
+}
+
+#unified-tooltip-v2.dcf-tooltip .dcf-row {
+    display: flex;
+    justify-content: space-between;
+    margin: 4px 0;
+    font-size: 14px;
+}
+
+#unified-tooltip-v2.dcf-tooltip .dcf-label {
+    color: #BDBDBD;
+}
+
+#unified-tooltip-v2.dcf-tooltip .dcf-value {
+    color: white;
+    font-weight: 600;
+}
+
+/* Simple tooltip styles */
+#unified-tooltip-v2.simple-tooltip {
+    max-width: 200px;
+    font-size: 14px;
+    padding: 8px 12px;
+}
+
+/* Building values section */
+#unified-tooltip-v2 .building-values {
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px solid #444;
+}
+
+#unified-tooltip-v2 .value-header {
+    font-size: 14px;
+    font-weight: 600;
+    color: #90CAF9;
+    margin-bottom: 6px;
+    text-transform: uppercase;
+}
+
+#unified-tooltip-v2 .value-row {
+    display: flex;
+    justify-content: space-between;
+    margin: 4px 0;
+}
+
+#unified-tooltip-v2 .value-label {
+    color: #BDBDBD;
+    font-size: 14px;
+}
+
+#unified-tooltip-v2 .value-amount {
+    font-weight: 600;
+    color: #4CAF50;
+    font-size: 14px;
+}
+
+/* Condition section styling */
+#unified-tooltip-v2 .condition-header {
+    font-size: 14px;
+    font-weight: 600;
+    color: #90CAF9;
+    margin-bottom: 6px;
+    text-transform: uppercase;
+}
+
+/* Performance indicators */
+#unified-tooltip-v2 .performance-excellent { color: #4CAF50; }
+#unified-tooltip-v2 .performance-good { color: #8BC34A; }
+#unified-tooltip-v2 .performance-average { color: #FF9800; }
+#unified-tooltip-v2 .performance-poor { color: #f44336; }
