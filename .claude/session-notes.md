@@ -1,128 +1,76 @@
-# Session Notes - Land Exchange Implementation
+# Session Notes - Commonwealth Score & Victory Screen
 
-**Date**: 2025-10-06
-**Commit**: c6927f9 - "Replace parcel auction system with Land Exchange + simplify Actions"
+**Date**: 2025-10-07
+**Latest Commit**: (pending) - "Fix Land Exchange building value broadcast"
 
 ## What Was Completed
 
-### 1. Action System Overhaul
-- **Simplified from two buckets to single bucket**: All actions now rollover monthly (no more "expiring vs purchased" confusion)
-- **Changed monthly allowance formula**: 18 actions in Sept → 7 actions in Aug (declining by 1/month, down from 20→10 declining by 2/month)
-- **Added action enforcement**:
-  - `processBuildStart()` now validates and deducts actions
-  - `processParcelPurchase()` now validates and deducts actions
-- **Updated UI**: Removed confusing "expiring/rollover" display, now just shows total actions
+### 1. Fixed Commonwealth Score Modal (NaN Bug)
+**Problem**: Leaderboard showing "NaN" after purchasing parcels and paying LVT
+**Root Cause**: ui-manager.js accessing old lvtRatio field
 
-### 2. Land Exchange System (Replaced Parcel Auctions)
-- **Removed entire auction system**: Deleted parcel-auction-system.js (1,252 lines) and all auction-related code
-- **New async offer system**:
-  - Players make offers on competitor parcels (max 3 active offers per player)
-  - Owners MUST respond: accept (free) or match (1 action + pay difference to treasury)
-  - NO decline option - forces engagement
-  - Public offers enable price discovery (land values rise organically)
+**Fix**:
+- Updated updateLeaderboard() to use wealthScore, civicScore, score
+- Added defensive NaN handling with fallback to '0.0'
 
-### 3. Global Blocking Mechanism
-- **Critical rule**: Players with pending offers on ANY of their parcels cannot buy OR build ANYWHERE until all offers are resolved
-- **Implementation**:
-  - [context-menu-system.js:179-189](context-menu-system.js#L179-L189) - blocks buying when pending offers exist
-  - [context-menu-system.js:223-233](context-menu-system.js#L223-L233) - blocks building when pending offers exist
-  - Shows clear UI: "🔒 BUYING/BUILDING BLOCKED - Resolve pending offers first"
+### 2. Renamed "Commonwealth Leaderboard" to "Your Score"
+**Changes**:
+- Modal title and column headers updated
+- Rewrote help text explaining dual-score system
+- Two victory paths: Early Civic (Score ≥50 + pop ≥100) or Year-End (day 366)
 
-### 4. Hover Preview System
-- **Fixed tooltip positioning**: Converts canvas coordinates to screen coordinates properly
-  ```javascript
-  const screenX = rect.left + canvasX;
-  const screenY = rect.top + canvasY;
-  ```
-- **Building animations**: Sets `selectedTile` and `selectedParcel` to trigger lift/bounce effects
-- **Adjacent highlighting**: Calculates `parcelReach` to show adjacent parcels in player color
-- **Location**: [land-exchange-system.js:399-449](land-exchange-system.js#L399-L449)
+### 3. Implemented Victory Screen UI
+**Features**:
+- Animated crown modal with golden theme
+- Winner announcement with player color badge
+- Final scoreboard (all players with Wealth/Civic/Total)
+- Game summary stats (6 stats grid)
+- victory-screen.js subscribes to GAME_VICTORY WebSocket messages
 
-## Key Files Modified
+## Victory Conditions
 
-### Server-Side
-- **server-economic-engine.js**:
-  - Simplified action system (Lines 3457-3607)
-  - Added action enforcement (Lines 745-750, 2824-2834)
-  - New Land Exchange methods (Lines 4171-4467):
-    - `processMakeOffer()` - create offer with validation
-    - `processOfferResponse()` - accept or match
-    - `processWithdrawOffer()` - remove offer (costs 1 action)
-    - Explicit serialization to avoid circular JSON refs
+**Early Civic Victory**: Score ≥50.0 AND population ≥100
+**Year-End Victory**: Day 366 (Sept 1) - highest score wins
 
-- **server-room-manager.js**:
-  - Removed `processExpiredParcelAuctions()` call (Line 637)
+## Testing Needed
 
-### Client-Side
-- **land-exchange-system.js**: Complete new file (507 lines)
-  - Modal for making offers
-  - Sidebar showing active offers (as offerer/owner)
-  - Hover preview with proper visual effects
+1. Test both victory conditions in multiplayer
+2. Verify victory modal displays correctly
+3. Test edge cases (ties, disconnects)
 
-- **context-menu-system.js**:
-  - Global blocking implementation
-  - Shows pending offers in context menu (must respond)
+## Files Modified (Previous Session)
 
-- **game.js**:
-  - Initialize Land Exchange (Lines 527-530)
-  - Simplified action display (Lines 921-946)
+- ui-manager.js - Fixed NaN bug
+- index.html - Victory modal HTML + CSS, updated leaderboard
+- victory-screen.js - NEW: Victory modal controller
 
-- **index.html**:
-  - Removed 300+ lines of auction CSS
-  - Added clean Land Exchange CSS with hover effects
+Pushed to GitHub: commits b93d6d2, 4694270
 
-## Errors Fixed
+---
 
-1. **Syntax Error**: Extra closing brace after Land Exchange methods → Removed
-2. **Circular JSON**: Broadcasting full offer objects → Explicitly serialize only safe fields
-3. **Missing Method**: `processExpiredParcelAuctions()` still being called → Removed call
-4. **Global Blocking**: Not blocking ALL actions → Added checks for ANY pending offers
-5. **Hover Preview**: Wrong tooltip position + missing animations → Fixed coordinate conversion + visual effects
+## Session Continuation: Land Exchange Building Value Fix
 
-## Testing Status
+**Date**: 2025-10-07
 
-✅ All fixes implemented and pushed to GitHub
-⏳ **Needs user testing**:
-- Verify global blocking works (pending offers block buying/building everywhere)
-- Verify hover preview shows tooltip correctly with building animations
-- Verify adjacent parcels highlight in player color
-- Verify no console errors
+### 4. Fixed Land Exchange Building Value Display
 
-## Next Steps When Returning
+**Problem**: Building value showing $0 in Make Offer modal, despite server calculating correctly
 
-1. **User should test the Land Exchange system**:
-   - Make an offer on a competitor parcel
-   - Hover over offer in sidebar → verify tooltip + animations work
-   - Try to buy/build while pending offers exist → should be blocked
-   - Accept or match an offer → verify parcel transfer/payment works
+**Root Cause**:
+- Server broadcast (OFFER_MADE) was missing `buildingValue` and `escrowAmount` fields
+- Client UI couldn't display values that weren't included in the broadcast message
 
-2. **Potential improvements** (if user requests):
-   - Offer expiration timer (currently offers last forever)
-   - Notification system when receiving offers
-   - Historical offer tracking/analytics
-   - Offer comparison UI (multiple offers on same parcel)
+**Cash Flow Analysis** (verified correct):
+1. **Escrow (line 4444)**: Correctly debits `offerAmount + buildingValue`
+2. **Acceptance (line 4536)**: Refunds decay difference to offerer
+3. **Acceptance (line 4541)**: Credits owner with `actualPayment` (offer + current building value)
 
-3. **Other game systems to review** (based on context):
-   - Action Marketplace (may need updates to align with new Action system)
-   - Governance system integration
-   - Victory conditions
+**Fix**:
+- Added `buildingValue` and `escrowAmount` to OFFER_MADE broadcast (lines 4478-4479)
+- Client already had UI code to display these values (lines 395, 405, 421, 431 in land-exchange-system.js)
 
-## Architecture Notes
+## Files Modified (This Session)
 
-- **Server-authoritative**: All validation on backend, client just sends transactions
-- **WebSocket broadcasting**: Real-time updates to all players
-- **Explicit serialization**: Avoid circular refs by manually selecting fields to broadcast
-- **Single source of truth**: `gameState.landExchange.activeOffers` Map on server
-- **Visual effects integration**: Reuses existing rendering system (selectedTile, parcelReach, tooltipSystemV2)
+- server-economic-engine.js - Added buildingValue and escrowAmount to broadcast
 
-## File Structure Cleanup
-
-Removed `-v2` suffixes from files (now using cleaned-up versions):
-- action-marketplace.js
-- economic-client.js
-- governance.js
-- parcel-hover.js
-- rendering-system.js
-- tooltip-system.js
-
-Kept backup: `server-economic-engine.js.backup-before-land-exchange`
+Ready to commit and test.

@@ -4442,6 +4442,8 @@ class ServerEconomicEngine {
 
         // ✅ ESCROW FUNDS (lock total amount for land + building)
         this.gameState.playerBalances.set(playerId, playerBalance - totalEscrowAmount);
+        console.log(`💰 [ESCROW] Player ${playerId} escrowed $${totalEscrowAmount} ($${offerAmount} land + $${buildingValue} building)`);
+        console.log(`💰 [ESCROW] Balance: $${playerBalance} → $${playerBalance - totalEscrowAmount}`);
 
         // Create offer
         const offerId = this.gameState.landExchange.nextOfferId++;
@@ -4473,6 +4475,8 @@ class ServerEconomicEngine {
                 offererId: offer.offererId,
                 ownerId: offer.ownerId,
                 offerAmount: offer.offerAmount,
+                buildingValue: offer.buildingValue, // Include building value for UI display
+                escrowAmount: offer.escrowAmount, // Total escrowed for transparency
                 status: offer.status,
                 createdAt: offer.createdAt,
                 parcelLastPaid: offer.parcelLastPaid
