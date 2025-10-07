@@ -553,6 +553,154 @@ class ServerEconomicEngine {
 
         // Broadcast Commonwealth scores update every day
         this.broadcastCommonwealthScores();
+
+        // Check for victory conditions
+        this.checkVictoryConditions(currentDay);
+    }
+
+    /**
+     * Check victory conditions and trigger game end if met
+     */
+    checkVictoryConditions(currentDay) {
+        // Don't check if game already ended
+        if (this.gameState.gameEnded) {
+            return;
+        }
+
+        const scores = this.calculateCommonwealthScores();
+        const topScore = scores[0]; // Highest scorer
+        const population = this.getCityPopulation();
+
+        // Victory Condition 1: Early Victory (Civic Victory)
+        // - Commonwealth Score >= 50.0
+        // - City population >= 100
+        if (topScore && topScore.score >= 50.0 && population >= 100) {
+            this.triggerVictory(topScore.playerId, 'EARLY_CIVIC_VICTORY', scores, currentDay);
+            return;
+        }
+
+        // Victory Condition 2: Year-End Victory (Sept 1, day 366)
+        // - Game reaches day 366 (Sept 1 of next year)
+        // - Highest Commonwealth Score wins
+        if (currentDay >= 366) {
+            this.triggerVictory(topScore.playerId, 'YEAR_END_VICTORY', scores, currentDay);
+            return;
+        }
+    }
+
+    /**
+     * Trigger game victory and broadcast results
+     */
+    triggerVictory(winnerId, victoryType, scores, finalDay) {
+        console.log(`🏆 VICTORY! Player ${winnerId} wins via ${victoryType} on day ${finalDay}`);
+
+        // Mark game as ended
+        this.gameState.gameEnded = true;
+        this.gameState.victoryType = victoryType;
+        this.gameState.winnerId = winnerId;
+        this.gameState.finalDay = finalDay;
+
+        // Calculate fun stats for victory screen
+        const funStats = this.calculateFunStats();
+
+        // Broadcast victory to all players
+        if (this.broadcastFunction) {
+            this.broadcastFunction({
+                type: 'GAME_VICTORY',
+                winner: {
+                    playerId: winnerId,
+                    playerName: this.gameState.players.get(winnerId)?.name || 'Unknown',
+                    playerColor: this.gameState.players.get(winnerId)?.color || '#FFFFFF'
+                },
+                victoryType: victoryType,
+                finalDay: finalDay,
+                scores: scores.map(s => ({
+                    playerId: s.playerId,
+                    playerName: this.gameState.players.get(s.playerId)?.name || 'Player',
+                    playerColor: this.gameState.players.get(s.playerId)?.color,
+                    rank: s.rank,
+                    score: s.score,
+                    wealthScore: s.wealthScore,
+                    civicScore: s.civicScore,
+                    wealth: s.wealth,
+                    lvtPaid: s.lvtPaid,
+                    publicFundingReceived: s.publicFundingReceived
+                })),
+                funStats: funStats,
+                timestamp: Date.now()
+            });
+        }
+
+        // TODO: Save game to database for historical rankings
+    }
+
+    /**
+     * Calculate fun stats for victory screen
+     */
+    calculateFunStats() {
+        const stats = {
+            // City totals
+            totalPopulation: this.getCityPopulation(),
+            totalWealth: 0,
+            totalLVTRaised: 0,
+            totalPublicSpending: 0,
+
+            // Building stats
+            totalBuildings: this.gameState.buildings.size,
+            buildingsByCategory: {
+                housing: 0,
+                jobs: 0,
+                education: 0,
+                healthcare: 0,
+                food: 0,
+                happiness: 0
+            },
+
+            // Governance stats
+            finalLVTRate: this.governanceSystem?.getCurrentLVTRate() || 0,
+            totalVotesCast: 0,
+
+            // Land Exchange stats (if available)
+            totalOffersMade: 0,
+            totalOffersAccepted: 0,
+            totalOffersMatched: 0,
+            offerAcceptanceRate: 0
+        };
+
+        // Calculate totals
+        for (const [playerId, playerState] of this.gameState.players) {
+            const playerWealth = this.calculatePlayerWealth(playerId, this.getPlayerBalance(playerId));
+            stats.totalWealth += playerWealth;
+            stats.totalLVTRaised += (playerState.totalLVTPaid || 0);
+            stats.totalPublicSpending += (playerState.totalPublicFundingReceived || 0);
+        }
+
+        // Count buildings by category
+        for (const [locationKey, building] of this.gameState.buildings) {
+            const buildingDef = this.buildingDefinitions.get(building.id);
+            if (buildingDef && buildingDef.category) {
+                const category = buildingDef.category;
+                if (stats.buildingsByCategory.hasOwnProperty(category)) {
+                    stats.buildingsByCategory[category]++;
+                }
+            }
+        }
+
+        // Land Exchange stats
+        if (this.gameState.landExchange) {
+            const offers = Array.from(this.gameState.landExchange.activeOffers.values());
+            stats.totalOffersMade = offers.length + (this.gameState.landExchange.offerHistory?.length || 0);
+
+            const history = this.gameState.landExchange.offerHistory || [];
+            stats.totalOffersAccepted = history.filter(h => h.type === 'accepted').length;
+            stats.totalOffersMatched = history.filter(h => h.type === 'matched').length;
+
+            if (stats.totalOffersMade > 0) {
+                stats.offerAcceptanceRate = Math.round((stats.totalOffersAccepted / stats.totalOffersMade) * 100);
+            }
+        }
+
+        return stats;
     }
 
     /**
