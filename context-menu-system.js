@@ -75,52 +75,59 @@ class ContextMenuSystem {
             this.setupMenuContent(row, col);
         }
 
-        // Position at tooltip location with edge detection
-        if (tooltipBounds) {
-            // Use tooltip bounds but apply edge detection
-            const menuWidth = this.contextMenu.offsetWidth || 280;
-            const menuHeight = this.contextMenu.offsetHeight || 400;
-            const viewportWidth = window.innerWidth;
-            const viewportHeight = window.innerHeight;
-
-            let x = tooltipBounds.left;
-            let y = tooltipBounds.top;
-
-            // Flip left if overflowing right edge
-            if (x + menuWidth > viewportWidth) {
-                x = Math.max(10, viewportWidth - menuWidth - 10);
-            }
-
-            // Flip up if overflowing bottom edge
-            if (y + menuHeight > viewportHeight) {
-                y = Math.max(10, viewportHeight - menuHeight - 10);
-            }
-
-            // Ensure menu doesn't go off top or left edges
-            x = Math.max(10, x);
-            y = Math.max(10, y);
-
-            this.contextMenu.style.left = `${x}px`;
-            this.contextMenu.style.top = `${y}px`;
-        } else {
-            // Fallback to mouse position
-            this.positionMenu(mouseX, mouseY);
-        }
-
-        // Show menu and apply smooth transition
+        // Show menu first (invisible) to get actual dimensions
+        this.contextMenu.style.visibility = 'hidden';
         this.contextMenu.classList.add('visible');
         this.isMenuOpen = true;
 
-        // Apply smooth appearance transition
-        this.contextMenu.style.transform = 'scale(0.95)';
-        this.contextMenu.style.opacity = '0.8';
+        // Wait for DOM to render, then position with actual dimensions
+        requestAnimationFrame(() => {
+            // Position at tooltip location with edge detection
+            if (tooltipBounds) {
+                // Get ACTUAL rendered dimensions
+                const menuWidth = this.contextMenu.offsetWidth;
+                const menuHeight = this.contextMenu.offsetHeight;
+                const viewportWidth = window.innerWidth;
+                const viewportHeight = window.innerHeight;
 
-        // Animate to full appearance
-        setTimeout(() => {
-            this.contextMenu.style.transition = 'opacity 150ms ease-out, transform 150ms ease-out';
-            this.contextMenu.style.opacity = '1';
-            this.contextMenu.style.transform = 'scale(1)';
-        }, 10);
+                let x = tooltipBounds.left;
+                let y = tooltipBounds.top;
+
+                // Flip left if overflowing right edge
+                if (x + menuWidth > viewportWidth) {
+                    x = Math.max(10, viewportWidth - menuWidth - 10);
+                }
+
+                // Flip up if overflowing bottom edge
+                if (y + menuHeight > viewportHeight) {
+                    y = Math.max(10, viewportHeight - menuHeight - 10);
+                }
+
+                // Ensure menu doesn't go off top or left edges
+                x = Math.max(10, x);
+                y = Math.max(10, y);
+
+                this.contextMenu.style.left = `${x}px`;
+                this.contextMenu.style.top = `${y}px`;
+            } else {
+                // Fallback to mouse position
+                this.positionMenu(mouseX, mouseY);
+            }
+
+            // Now make visible and apply transition
+            this.contextMenu.style.visibility = 'visible';
+
+            // Apply smooth appearance transition
+            this.contextMenu.style.transform = 'scale(0.95)';
+            this.contextMenu.style.opacity = '0.8';
+
+            // Animate to full appearance
+            setTimeout(() => {
+                this.contextMenu.style.transition = 'opacity 150ms ease-out, transform 150ms ease-out';
+                this.contextMenu.style.opacity = '1';
+                this.contextMenu.style.transform = 'scale(1)';
+            }, 10);
+        });
     }
 
     /**
@@ -835,7 +842,7 @@ class ContextMenuSystem {
     }
 
     /**
-     * Show submenu
+     * Show submenu with smart positioning (left/right based on available space)
      */
     showSubmenu(submenu) {
         // Clear any existing timer
@@ -844,6 +851,42 @@ class ContextMenuSystem {
         // Hide current submenu if different from the one being shown
         if (this.currentSubmenu && this.currentSubmenu !== submenu) {
             this.hideSubmenu(this.currentSubmenu);
+        }
+
+        // Detect if submenu should open to the left
+        const menuRect = this.contextMenu.getBoundingClientRect();
+        const submenuWidth = 240; // matches CSS width
+        const viewportWidth = window.innerWidth;
+        const sidebarWidth = 300; // approximate sidebar width
+
+        // Check if opening to the right would collide with sidebar or viewport edge
+        const wouldHitSidebar = (menuRect.right + submenuWidth + 8) > (viewportWidth - sidebarWidth);
+        const wouldHitEdge = (menuRect.right + submenuWidth + 8) > viewportWidth;
+
+        if (wouldHitSidebar || wouldHitEdge) {
+            // Open to the left
+            submenu.classList.add('open-left');
+
+            // Update arrow direction for the parent category button
+            const categoryBtn = submenu.parentElement.querySelector('.category-btn');
+            if (categoryBtn) {
+                const arrow = categoryBtn.querySelector('.category-arrow');
+                if (arrow) {
+                    arrow.textContent = '←';
+                }
+            }
+        } else {
+            // Open to the right (default)
+            submenu.classList.remove('open-left');
+
+            // Ensure arrow points right
+            const categoryBtn = submenu.parentElement.querySelector('.category-btn');
+            if (categoryBtn) {
+                const arrow = categoryBtn.querySelector('.category-arrow');
+                if (arrow) {
+                    arrow.textContent = '→';
+                }
+            }
         }
 
         // Show the new submenu

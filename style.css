@@ -2071,6 +2071,12 @@ body.beer-hall-active #top-bar {
     pointer-events: auto;
 }
 
+/* Open submenu to the left when near sidebar */
+.building-submenu.open-left {
+    left: auto;
+    right: calc(100% + 8px);
+}
+
 .context-section {
     position: relative;
 }
