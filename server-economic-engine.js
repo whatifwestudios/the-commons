@@ -417,9 +417,11 @@ class ServerEconomicEngine {
 
         // Trigger daily events on day transitions
         if (currentDay > previousDay) {
-        // console.log(`🕒 DAY TRANSITION: ${previousDay} → ${currentDay} (time: ${this.gameState.gameTime.toFixed(3)})`);
+            console.log(`🕒 DAY TRANSITION: ${previousDay} → ${currentDay} (time: ${this.gameState.gameTime.toFixed(3)})`);
+            console.log(`[DAY TRANSITION DEBUG] Processing daily events for day ${currentDay}`);
             this.processDailyEvents();
             this.lastProcessedDay = currentDay;
+            console.log(`[DAY TRANSITION DEBUG] Daily events completed, lastProcessedDay now: ${this.lastProcessedDay}`);
         }
 
         return this.gameState.gameTime;
