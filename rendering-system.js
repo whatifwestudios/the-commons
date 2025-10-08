@@ -23,6 +23,12 @@ class RenderingSystemV2 {
         this.animationFrameId = null;
         this.hasConstructionBuildings = false;
 
+        // Performance monitoring
+        this.renderCount = 0;
+        this.renderStartTime = Date.now();
+        this.lastRenderTime = 0;
+        this.renderTimes = [];
+
         // Event cleanup manager for memory leak prevention
         if (typeof window !== 'undefined' && window.EventCleanupManager) {
             this.eventManager = new window.EventCleanupManager();
@@ -103,6 +109,8 @@ class RenderingSystemV2 {
         if (!this.renderScheduled) return;
         this.renderScheduled = false;
 
+        const renderStart = performance.now();
+
         // Clear canvas
         this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
 
@@ -121,6 +129,32 @@ class RenderingSystemV2 {
         if (this.hasConstructionBuildings) {
             // Schedule next frame for oscillating animation
             this.scheduleRender();
+        }
+
+        // Performance monitoring
+        const renderEnd = performance.now();
+        const renderDuration = renderEnd - renderStart;
+        this.renderCount++;
+        this.lastRenderTime = renderDuration;
+        this.renderTimes.push(renderDuration);
+
+        // Keep only last 100 render times
+        if (this.renderTimes.length > 100) {
+            this.renderTimes.shift();
+        }
+
+        // Log performance stats every 5 seconds
+        const elapsed = Date.now() - this.renderStartTime;
+        if (elapsed > 5000) {
+            const avgRenderTime = this.renderTimes.reduce((a, b) => a + b, 0) / this.renderTimes.length;
+            const maxRenderTime = Math.max(...this.renderTimes);
+            const fps = this.renderCount / (elapsed / 1000);
+            console.log(`[PERF] Renders: ${this.renderCount} | FPS: ${fps.toFixed(1)} | Avg: ${avgRenderTime.toFixed(2)}ms | Max: ${maxRenderTime.toFixed(2)}ms`);
+
+            // Reset counters
+            this.renderCount = 0;
+            this.renderStartTime = Date.now();
+            this.renderTimes = [];
         }
     }
 

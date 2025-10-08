@@ -75,11 +75,33 @@ class ContextMenuSystem {
             this.setupMenuContent(row, col);
         }
 
-        // Position at tooltip location if bounds provided, otherwise use mouse position
+        // Position at tooltip location with edge detection
         if (tooltipBounds) {
-            // Position exactly where tooltip was for seamless transition
-            this.contextMenu.style.left = `${tooltipBounds.left}px`;
-            this.contextMenu.style.top = `${tooltipBounds.top}px`;
+            // Use tooltip bounds but apply edge detection
+            const menuWidth = this.contextMenu.offsetWidth || 280;
+            const menuHeight = this.contextMenu.offsetHeight || 400;
+            const viewportWidth = window.innerWidth;
+            const viewportHeight = window.innerHeight;
+
+            let x = tooltipBounds.left;
+            let y = tooltipBounds.top;
+
+            // Flip left if overflowing right edge
+            if (x + menuWidth > viewportWidth) {
+                x = Math.max(10, viewportWidth - menuWidth - 10);
+            }
+
+            // Flip up if overflowing bottom edge
+            if (y + menuHeight > viewportHeight) {
+                y = Math.max(10, viewportHeight - menuHeight - 10);
+            }
+
+            // Ensure menu doesn't go off top or left edges
+            x = Math.max(10, x);
+            y = Math.max(10, y);
+
+            this.contextMenu.style.left = `${x}px`;
+            this.contextMenu.style.top = `${y}px`;
         } else {
             // Fallback to mouse position
             this.positionMenu(mouseX, mouseY);
@@ -410,14 +432,45 @@ class ContextMenuSystem {
     }
 
     /**
-     * Position context menu at coordinates
+     * Position context menu at coordinates with edge detection
      */
     positionMenu(mouseX, mouseY) {
-        // Position the context menu exactly at provided coordinates
-        if (this.contextMenu && this.contextMenu.classList) {
-            this.contextMenu.style.left = `${mouseX}px`;
-            this.contextMenu.style.top = `${mouseY}px`;
+        if (!this.contextMenu || !this.contextMenu.classList) return;
+
+        // Get menu dimensions (use offsetWidth/Height if visible, otherwise estimate)
+        const menuWidth = this.contextMenu.offsetWidth || 280;
+        const menuHeight = this.contextMenu.offsetHeight || 400;
+
+        const viewportWidth = window.innerWidth;
+        const viewportHeight = window.innerHeight;
+
+        let x = mouseX;
+        let y = mouseY;
+
+        // Add small offset so menu doesn't overlap cursor
+        const offsetX = 10;
+        const offsetY = 10;
+
+        // Flip left if overflowing right edge
+        if (x + menuWidth + offsetX > viewportWidth) {
+            x = mouseX - menuWidth - offsetX;
+        } else {
+            x = mouseX + offsetX;
         }
+
+        // Flip up if overflowing bottom edge
+        if (y + menuHeight + offsetY > viewportHeight) {
+            y = mouseY - menuHeight - offsetY;
+        } else {
+            y = mouseY + offsetY;
+        }
+
+        // Ensure menu doesn't go off top or left edges
+        x = Math.max(10, x);
+        y = Math.max(10, y);
+
+        this.contextMenu.style.left = `${x}px`;
+        this.contextMenu.style.top = `${y}px`;
     }
 
     /**
