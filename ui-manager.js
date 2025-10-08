@@ -881,19 +881,22 @@ class UIManager {
         
         // Setup city menu
         this.setupCityMenu(game);
-        
+
         // Setup player menu
         this.setupPlayerMenu(game);
-        
+
+        // Setup cashflow menu
+        this.setupCashflowMenu(game);
+
         // Setup layer controls
         this.setupLayerControls(game);
-        
+
         // Setup keyboard shortcuts
         this.setupKeyboardShortcuts(game);
-        
+
         // Setup tool buttons
         this.setupToolButtons(game);
-        
+
         // Setup window resize handler
         this.setupWindowResize(game);
     }
