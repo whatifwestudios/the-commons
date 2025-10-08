@@ -524,6 +524,9 @@ class ServerEconomicEngine {
      * Process daily events (cashflow, resident movement, etc.)
      */
     processDailyEvents() {
+        console.log(`[DAILY EVENTS] ⚠️ processDailyEvents called for day ${Math.floor(this.gameState.gameTime)}`);
+        console.trace('[DAILY EVENTS] Call stack:');
+
         // Only log every 10th day to reduce log spam
         const currentDay = Math.floor(this.gameState.gameTime);
         if (currentDay % 10 === 0) {
@@ -2850,11 +2853,79 @@ class ServerEconomicEngine {
     }
 
     /**
-     * Get player cashflow details
+     * Get player cashflow details (READ-ONLY - does not modify balance)
      */
     getPlayerCashflowDetails(playerId) {
         const player = this.getOrCreatePlayer(playerId);
-        return this.calculatePlayerCashflow(playerId);
+        return this.getPlayerCashflowBreakdown(playerId);
+    }
+
+    /**
+     * Get cashflow breakdown WITHOUT modifying player balance (read-only)
+     */
+    getPlayerCashflowBreakdown(playerId) {
+        const currentBalance = this.getPlayerBalance(playerId);
+
+        let totalRevenue = 0;
+        let totalMaintenance = 0;
+        let totalLVT = 0;
+        const buildingBreakdown = [];
+
+        // Sum from player's buildings
+        for (const [locationKey, building] of this.gameState.buildings) {
+            if (building.ownerId === playerId && !building.underConstruction && building.performance && building.performance.summary) {
+                const perf = building.performance.summary;
+                totalRevenue += perf.revenue || 0;
+                totalMaintenance += perf.maintenance || 0;
+
+                buildingBreakdown.push({
+                    location: building.location,
+                    buildingId: building.id,
+                    revenue: perf.revenue || 0,
+                    maintenance: perf.maintenance || 0,
+                    netIncome: perf.netIncome || 0
+                });
+            }
+        }
+
+        // Calculate daily LVT expenses for owned parcels
+        const lvtRate = this.getCurrentLVTRate();
+        for (let row = 0; row < this.gameState.grid.length; row++) {
+            for (let col = 0; col < this.gameState.grid[row].length; col++) {
+                const parcel = this.gameState.grid[row][col];
+                if (parcel.owner === playerId) {
+                    const landValue = 100;
+                    const dailyLVT = (landValue * lvtRate) / 365;
+                    totalLVT += dailyLVT;
+                }
+            }
+        }
+
+        const netCashflow = totalRevenue - totalMaintenance - totalLVT;
+
+        // Calculate wealth (cash + building values)
+        let buildingValues = 0;
+        for (const [locationKey, building] of this.gameState.buildings) {
+            if (building.ownerId === playerId) {
+                const buildingDef = this.buildingDefinitions.get(building.id);
+                if (buildingDef && buildingDef.economics) {
+                    buildingValues += buildingDef.economics.cost || 0;
+                }
+            }
+        }
+        const wealth = currentBalance + buildingValues;
+
+        // Return breakdown WITHOUT modifying balance
+        return {
+            playerId,
+            totalRevenue,
+            totalMaintenance,
+            totalLVT,
+            netCashflow,
+            cash: currentBalance, // Current balance, not modified
+            wealth: wealth,
+            buildingBreakdown
+        };
     }
 
     /**
@@ -5069,7 +5140,7 @@ class ServerEconomicEngine {
         return {
             ...player,
             wealth,
-            cashflow: this.calculatePlayerCashflow(playerId)
+            cashflow: this.getPlayerCashflowBreakdown(playerId)
         };
     }
 
