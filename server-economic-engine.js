@@ -2439,10 +2439,19 @@ class ServerEconomicEngine {
         let totalLVT = 0;
         const buildingBreakdown = [];
 
+        console.log(`\n[CASHFLOW DEBUG] === Calculating cashflow for ${playerId} ===`);
+        console.log(`[CASHFLOW DEBUG] Current balance: $${currentBalance.toFixed(2)}`);
+
         // Sum from player's buildings
         for (const [locationKey, building] of this.gameState.buildings) {
             if (building.ownerId === playerId && !building.underConstruction && building.performance && building.performance.summary) {
                 const perf = building.performance.summary;
+
+                console.log(`[CASHFLOW DEBUG] Building: ${building.id} at ${locationKey}`);
+                console.log(`[CASHFLOW DEBUG]   Revenue: $${(perf.revenue || 0).toFixed(2)}`);
+                console.log(`[CASHFLOW DEBUG]   Maintenance: $${(perf.maintenance || 0).toFixed(2)}`);
+                console.log(`[CASHFLOW DEBUG]   Net: $${(perf.netIncome || 0).toFixed(2)}`);
+
                 totalRevenue += perf.revenue || 0;
                 totalMaintenance += perf.maintenance || 0;
 
@@ -2455,6 +2464,10 @@ class ServerEconomicEngine {
                 });
             }
         }
+
+        console.log(`[CASHFLOW DEBUG] Total revenue from buildings: $${totalRevenue.toFixed(2)}`);
+        console.log(`[CASHFLOW DEBUG] Total maintenance: $${totalMaintenance.toFixed(2)}`);
+        console.log(`[CASHFLOW DEBUG] Number of buildings counted: ${buildingBreakdown.length}`);
 
         // Calculate daily LVT expenses for owned parcels
         const lvtRate = this.getCurrentLVTRate();
@@ -2469,7 +2482,12 @@ class ServerEconomicEngine {
             }
         }
 
+        console.log(`[CASHFLOW DEBUG] Total LVT: $${totalLVT.toFixed(2)}`);
+
         const netCashflow = totalRevenue - totalMaintenance - totalLVT;
+
+        console.log(`[CASHFLOW DEBUG] NET CASHFLOW: $${netCashflow.toFixed(2)}`);
+        console.log(`[CASHFLOW DEBUG] New balance will be: $${currentBalance.toFixed(2)} + $${netCashflow.toFixed(2)} = $${(currentBalance + netCashflow).toFixed(2)}`);
 
         // Update player cash in playerBalances
         const newBalance = currentBalance + netCashflow;
