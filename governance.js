@@ -218,12 +218,12 @@ class GovernanceV3 {
         }
 
         // Sync treasury data from server via economic client
-        if (this.economicClient && this.economicClient.gameState) {
+        if (this.economicClient && this.economicClient.governance) {
             // Get unallocated funds (treasury not yet distributed to budgets)
-            this.treasuryData.unallocatedFunds = this.economicClient.gameState.treasury || 0;
+            this.treasuryData.unallocatedFunds = this.economicClient.governance.treasury || 0;
 
             // Get category budgets
-            this.treasuryData.categoryBudgets = this.economicClient.gameState.budgets || {};
+            this.treasuryData.categoryBudgets = this.economicClient.governance.budgets || {};
 
             // Calculate City Treasury = unallocated + sum of all budget balances
             const budgetSum = Object.values(this.treasuryData.categoryBudgets).reduce((sum, val) => sum + val, 0);
@@ -238,8 +238,8 @@ class GovernanceV3 {
         }
 
         // Get monthly budget data from economic client
-        if (this.economicClient && this.economicClient.gameState && this.economicClient.gameState.monthlyBudget) {
-            const monthlyBudget = this.economicClient.gameState.monthlyBudget;
+        if (this.economicClient && this.economicClient.governance && this.economicClient.governance.monthlyBudget) {
+            const monthlyBudget = this.economicClient.governance.monthlyBudget;
             this.treasuryData.budgetAllocations = monthlyBudget.totalAllocations || {};
             this.treasuryData.budgetProportions = monthlyBudget.proportions || {};
 

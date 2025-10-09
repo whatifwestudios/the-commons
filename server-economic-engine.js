@@ -2740,10 +2740,10 @@ class ServerEconomicEngine {
                 cashflow: cashflowData,
                 grid: this.gameState.grid,
                 governance: {
-                    treasury: this.governanceSystem ? this.governanceSystem.getTreasury() : 0,
+                    treasury: this.gameState.treasury || 0,  // Use gameState.treasury (unallocated funds)
                     taxRate: this.governanceSystem ? this.governanceSystem.governance.taxRate : 0.5,
                     monthlyBudget: this.gameState.monthlyBudget || null,
-                    budgets: this.gameState.budgets || {}  // Use gameState.budgets instead of governanceSystem
+                    budgets: this.gameState.budgets || {}
                 },
                 monthlyActionAllowance: this.calculateMonthlyActionAllowance(),
                 lvtRate: this.getCurrentLVTRate(),  // Include current LVT rate
