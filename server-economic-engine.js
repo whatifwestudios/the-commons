@@ -3548,10 +3548,6 @@ class ServerEconomicEngine {
             // Add to treasury
             this.gameState.treasury += treasuryAmount;
 
-            // Also add to external governance system if it exists (for backwards compatibility)
-            if (this.governanceSystem) {
-                this.governanceSystem.addFunds(treasuryAmount, description);
-            }
         // console.log(`[REVENUE] Treasury: +$${treasuryAmount.toLocaleString()} from ${description}`);
         }
     }
@@ -3720,11 +3716,6 @@ class ServerEconomicEngine {
 
                             // Add to treasury (will be allocated to budgets monthly)
                             this.gameState.treasury += dailyLVT;
-
-                            // Also add to external governance system if it exists (for backwards compatibility)
-                            if (this.governanceSystem) {
-                                this.governanceSystem.addFunds(dailyLVT, `Daily LVT from parcel [${row},${col}]`);
-                            }
 
                             totalLVT += dailyLVT;
 
@@ -4269,11 +4260,6 @@ class ServerEconomicEngine {
 
             // Add fee to treasury
             this.gameState.treasury += fee;
-
-            // Also add to external governance system if it exists (for backwards compatibility)
-            if (this.governanceSystem) {
-                this.governanceSystem.addFunds(fee, 'marketplace cancellation fees');
-            }
         }
 
         // Refund high bidder if any
@@ -4371,11 +4357,6 @@ class ServerEconomicEngine {
 
         // Add fee to treasury
         this.gameState.treasury += fee;
-
-        // Also add to external governance system if it exists (for backwards compatibility)
-        if (this.governanceSystem) {
-            this.governanceSystem.addFunds(fee, 'marketplace early end fees');
-        }
 
         // Mark listing as ended early
         listing.status = 'ended_early';
