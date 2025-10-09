@@ -10,6 +10,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const BuildingPerformanceCache = require('./building-performance-cache');
 
 class ServerEconomicEngine {
     constructor(room = null) {
@@ -154,6 +155,9 @@ class ServerEconomicEngine {
                 invalidations: 0
             }
         };
+
+        // Initialize smart performance cache with decay tables (Phase 1 & 2)
+        this.performanceCache = new BuildingPerformanceCache();
 
         // Delta tracking for optimized updates
         this.pendingChanges = {
@@ -490,15 +494,15 @@ class ServerEconomicEngine {
             // Recalculate room-wide economics with new completed buildings
             this.recalculateGlobalEconomics();
 
-            // Ensure all completed buildings have performance data before broadcasting
+            // PHASE 1: Mark all buildings stale and calculate performance for completed buildings
+            this.performanceCache.markAllBuildingsStale('building_auto_completed');
+
             completedBuildings.forEach(({ locationKey, building }) => {
                 const [row, col] = building.location;
-                if (!building.performance || !building.performance.summary) {
-                    building.performance = this.calculateBuildingPerformance(row, col);
-                    if (building.performance && building.performance.summary) {
-        // console.log(`[CARENS] Performance calculated: ${building.id} at [${row},${col}] - Revenue: $${building.performance.summary.revenue}, Net: $${building.performance.summary.netIncome}`);
-                    }
-                }
+                const performance = this.calculateBuildingPerformance(row, col);
+                building.performanceCache = performance; // Use new cache field
+                building.performance = performance;      // Keep old field for compatibility
+        // console.log(`[CARENS] Performance calculated: ${building.id} at [${row},${col}] - Revenue: $${performance.summary.revenue}, Net: $${performance.summary.netIncome}`);
             });
 
             // Broadcast building completion updates
@@ -546,11 +550,17 @@ class ServerEconomicEngine {
         // Process daily LVT collection
         this.processDailyLVT();
 
-        // Calculate daily cashflow for all players
-        this.calculateAllPlayerCashflows();
-
-        // Age buildings
+        // PHASE 1: Age buildings FIRST (marks all stale)
         this.ageAllBuildings();
+
+        // PHASE 1: Recalculate global economy with new building states
+        this.recalculateGlobalEconomics();
+
+        // PHASE 1: Batch recalculate all building performances with fresh data
+        this.recalculateAllBuildingPerformances();
+
+        // Calculate daily cashflow for all players (uses fresh cached performance)
+        this.calculateAllPlayerCashflows();
 
         // Always broadcast gameTime updates to keep all clients synchronized
         // Even on quiet days, time must stay in sync across all players
@@ -996,6 +1006,10 @@ class ServerEconomicEngine {
         this.invalidateCaches('building_added', [locationKey]);
         this.pendingChanges.buildings.add(locationKey);
 
+        // PHASE 1: Mark all buildings stale (new building affects global JEEFHH/CARENS)
+        // Note: Performance will be recalculated when building completes construction
+        this.performanceCache.markAllBuildingsStale('building_construction_started');
+
         // console.log(`[INFO] Construction started: ${buildingId} at ${locationKey} by ${playerId}`);
 
         return {
@@ -1042,9 +1056,13 @@ class ServerEconomicEngine {
         // console.log(`🏞️ Grid updated: parcel [${row},${col}] now has building ${building.id}`);
         }
 
-        // Calculate initial performance
+        // PHASE 1: Calculate initial performance and cache it
         const performance = this.calculateBuildingPerformance(row, col);
-        building.performance = performance;
+        building.performanceCache = performance; // Use new cache field
+        building.performance = performance;      // Keep old field for compatibility
+
+        // PHASE 1: Mark all buildings stale (completed building affects global JEEFHH/CARENS)
+        this.performanceCache.markAllBuildingsStale('building_completed');
 
         // console.log(`[INFO] Construction completed: ${building.id} at ${locationKey}`);
 
@@ -1106,6 +1124,10 @@ class ServerEconomicEngine {
         // Intelligently invalidate only affected caches
         this.invalidateCaches('building_removed', [locationKey]);
         this.pendingChanges.buildings.add(locationKey);
+
+        // PHASE 1: Remove from cache and mark all buildings stale (destroyed building affects global JEEFHH/CARENS)
+        this.performanceCache.removeBuildingFromCache(locationKey);
+        this.performanceCache.markAllBuildingsStale('building_destroyed');
 
         // Remove building reference from grid parcel
         if (this.gameState.grid[row] && this.gameState.grid[row][col]) {
@@ -1406,11 +1428,12 @@ class ServerEconomicEngine {
         const actualRevenue = baseRevenue * performance * conditionFactor * globalJEEFHHMultiplier;
 
         // Maintenance calculation - increases with age due to decay
+        // PHASE 2: Use precomputed decay tables instead of Math.pow()
         const baseMaintenance = econ.maintenanceCost || 0;
-        const decayRate = (econ.decayRate || 0.05) / 100; // Convert % to decimal
         const buildingAge = building.age || 0;
-        // Maintenance increases with cumulative decay: base * (1 + decayRate)^age
-        const actualMaintenance = baseMaintenance * Math.pow(1 + decayRate, buildingAge);
+        const decayRate = (econ.decayRate || 0.05) / 100; // Keep for debug logging
+        const decayFactors = this.performanceCache.getDecayFactors(buildingDef, buildingAge);
+        const actualMaintenance = baseMaintenance * decayFactors.maintenanceMultiplier;
 
         const performanceData = {
             location: [row, col],
@@ -1490,6 +1513,53 @@ class ServerEconomicEngine {
         }
 
         return performanceData;
+    }
+
+    /**
+     * Get building performance with smart caching (Phase 1)
+     * Recalculates only if performance is stale/missing
+     */
+    getBuildingPerformance(row, col) {
+        const locationKey = `${row},${col}`;
+        const building = this.gameState.buildings.get(locationKey);
+
+        if (!building || building.underConstruction) {
+            return null;
+        }
+
+        // Check if we have cached performance and it's not stale
+        if (building.performanceCache && !this.performanceCache.isBuildingStale(locationKey)) {
+            this.performanceCache.stats.cacheHits++;
+            return building.performanceCache;
+        }
+
+        // Cache miss or stale - recalculate
+        this.performanceCache.stats.cacheMisses++;
+        const performance = this.calculateBuildingPerformance(row, col);
+
+        // Store in building's cache
+        building.performanceCache = performance;
+
+        // Remove from stale set (if applicable)
+        this.performanceCache.staleBuildingSet.delete(locationKey);
+
+        return performance;
+    }
+
+    /**
+     * Batch recalculate all building performances (Phase 1)
+     * Called after daily aging or global economy changes
+     */
+    recalculateAllBuildingPerformances() {
+        for (const [locationKey, building] of this.gameState.buildings) {
+            if (!building.underConstruction) {
+                const [row, col] = building.location;
+                building.performanceCache = this.calculateBuildingPerformance(row, col);
+            }
+        }
+
+        // Clear all stale flags - cache is now fresh
+        this.performanceCache.clearStaleFlags();
     }
 
     /**
@@ -2436,63 +2506,39 @@ class ServerEconomicEngine {
      * Calculate cashflow for a specific player
      */
     calculatePlayerCashflow(playerId) {
-        // Use playerBalances Map for balance tracking
         const currentBalance = this.getPlayerBalance(playerId);
 
         let totalRevenue = 0;
         let totalMaintenance = 0;
-        let totalLVT = 0;
         const buildingBreakdown = [];
 
-        console.log(`\n[CASHFLOW DEBUG] === Calculating cashflow for ${playerId} ===`);
-        console.log(`[CASHFLOW DEBUG] Current balance: $${currentBalance.toFixed(2)}`);
-
-        // Sum from player's buildings
+        // Sum from player's buildings using cached performance
         for (const [locationKey, building] of this.gameState.buildings) {
-            if (building.ownerId === playerId && !building.underConstruction && building.performance && building.performance.summary) {
-                const perf = building.performance.summary;
+            if (building.ownerId === playerId && !building.underConstruction) {
+                // Get performance from cache (defensive: recalc if missing)
+                const [row, col] = building.location;
+                const perfData = this.getBuildingPerformance(row, col);
 
-                console.log(`[CASHFLOW DEBUG] Building: ${building.id} at ${locationKey}`);
-                console.log(`[CASHFLOW DEBUG]   Revenue: $${(perf.revenue || 0).toFixed(2)}`);
-                console.log(`[CASHFLOW DEBUG]   Maintenance: $${(perf.maintenance || 0).toFixed(2)}`);
-                console.log(`[CASHFLOW DEBUG]   Net: $${(perf.netIncome || 0).toFixed(2)}`);
+                if (perfData && perfData.summary) {
+                    const perf = perfData.summary;
 
-                totalRevenue += perf.revenue || 0;
-                totalMaintenance += perf.maintenance || 0;
+                    totalRevenue += perf.revenue || 0;
+                    totalMaintenance += perf.maintenance || 0;
 
-                buildingBreakdown.push({
-                    location: building.location,
-                    buildingId: building.id,
-                    revenue: perf.revenue || 0,
-                    maintenance: perf.maintenance || 0,
-                    netIncome: perf.netIncome || 0
-                });
-            }
-        }
-
-        console.log(`[CASHFLOW DEBUG] Total revenue from buildings: $${totalRevenue.toFixed(2)}`);
-        console.log(`[CASHFLOW DEBUG] Total maintenance: $${totalMaintenance.toFixed(2)}`);
-        console.log(`[CASHFLOW DEBUG] Number of buildings counted: ${buildingBreakdown.length}`);
-
-        // Calculate daily LVT expenses for owned parcels
-        const lvtRate = this.getCurrentLVTRate();
-        for (let row = 0; row < this.gameState.grid.length; row++) {
-            for (let col = 0; col < this.gameState.grid[row].length; col++) {
-                const parcel = this.gameState.grid[row][col];
-                if (parcel.owner === playerId) {
-                    const landValue = 100; // Standard parcel price
-                    const dailyLVT = (landValue * lvtRate) / 365;
-                    totalLVT += dailyLVT;
+                    buildingBreakdown.push({
+                        location: building.location,
+                        buildingId: building.id,
+                        revenue: perf.revenue || 0,
+                        maintenance: perf.maintenance || 0,
+                        netIncome: perf.netIncome || 0
+                    });
                 }
             }
         }
 
-        console.log(`[CASHFLOW DEBUG] Total LVT: $${totalLVT.toFixed(2)}`);
-
-        const netCashflow = totalRevenue - totalMaintenance - totalLVT;
-
-        console.log(`[CASHFLOW DEBUG] NET CASHFLOW: $${netCashflow.toFixed(2)}`);
-        console.log(`[CASHFLOW DEBUG] New balance will be: $${currentBalance.toFixed(2)} + $${netCashflow.toFixed(2)} = $${(currentBalance + netCashflow).toFixed(2)}`);
+        // Calculate net cashflow from buildings (revenue - maintenance)
+        // Note: LVT is already deducted by processDailyLVT()
+        const netCashflow = totalRevenue - totalMaintenance;
 
         // Update player cash in playerBalances
         const newBalance = currentBalance + netCashflow;
@@ -2510,16 +2556,10 @@ class ServerEconomicEngine {
         }
         const wealth = newBalance + buildingValues;
 
-        // Only log cashflow if there's actual activity (non-zero or significant change)
-        if (netCashflow !== 0 || buildingBreakdown.length > 0 || totalLVT > 0) {
-        // console.log(`[REVENUE] Cashflow calculated for ${playerId}: $${netCashflow.toFixed(2)} (Revenue: $${totalRevenue.toFixed(2)}, Maintenance: $${totalMaintenance.toFixed(2)}, LVT: $${totalLVT.toFixed(2)})`);
-        }
-
         return {
             playerId,
             totalRevenue,
             totalMaintenance,
-            totalLVT,
             netCashflow,
             cash: newBalance,
             wealth: wealth,
@@ -2531,7 +2571,8 @@ class ServerEconomicEngine {
      * Age all buildings
      */
     ageAllBuildings() {
-        const maintenanceCosts = new Map(); // Track maintenance costs per player
+        // PHASE 1 FIX: Maintenance is now handled by calculatePlayerCashflow() with age-adjusted amounts
+        // This function only ages buildings and updates decay/condition
 
         for (const [locationKey, building] of this.gameState.buildings) {
             building.age += 1; // Age in game days
@@ -2539,7 +2580,6 @@ class ServerEconomicEngine {
             // Use building-specific decay rate from building definition
             const buildingDef = this.buildingDefinitions.get(building.id);
             const dailyDecayRate = buildingDef?.economics?.decayRate || 0; // Already in % per day format
-            const maintenanceCost = buildingDef?.economics?.maintenanceCost || 0;
 
             // Apply daily decay rate
             // decayRate is expressed as % per day (e.g., 0.12 = 0.12% per day)
@@ -2548,28 +2588,11 @@ class ServerEconomicEngine {
             building.decay = Math.min(newDecay, 1.0); // Cap at 100% decay
             building.condition = Math.max(0.1, 1.0 - building.decay);
 
-            // Apply maintenance costs to building owner
-            if (maintenanceCost > 0 && building.ownerId) {
-                const currentCost = maintenanceCosts.get(building.ownerId) || 0;
-                maintenanceCosts.set(building.ownerId, currentCost + maintenanceCost);
-            }
-
-        // console.log(`🏠 Building ${building.id} at ${locationKey}: age=${building.age} days, decay=${(building.decay*100).toFixed(2)}%, condition=${(building.condition*100).toFixed(1)}%, maintenance=$${maintenanceCost}`);
+        // console.log(`🏠 Building ${building.id} at ${locationKey}: age=${building.age} days, decay=${(building.decay*100).toFixed(2)}%, condition=${(building.condition*100).toFixed(1)}%`);
         }
 
-        // Deduct maintenance costs from player balances
-        for (const [playerId, totalMaintenance] of maintenanceCosts) {
-            // Safety check: skip if player doesn't exist in balance system
-            if (!this.gameState.playerBalances.has(playerId)) {
-                console.warn(`[WARN] Skipping maintenance for missing player: ${playerId}`);
-                continue;
-            }
-
-            const currentBalance = this.getPlayerBalance(playerId);
-            const newBalance = Math.max(0, currentBalance - totalMaintenance);
-            this.gameState.playerBalances.set(playerId, newBalance);
-        // console.log(`💸 Player ${playerId} paid $${totalMaintenance.toFixed(2)} in building maintenance (${currentBalance.toFixed(2)} → ${newBalance.toFixed(2)})`);
-        }
+        // PHASE 1: Mark all buildings stale after aging (age and condition changed)
+        this.performanceCache.markAllBuildingsStale('daily_aging');
     }
 
     /**
@@ -2628,11 +2651,12 @@ class ServerEconomicEngine {
      * Sends complete, normalized game state to all clients
      */
     broadcastGameState(eventType = 'STATE_UPDATE', eventData = {}) {
-        // Convert buildings Map to normalized array
+        // PHASE 1: Convert buildings Map to normalized array using cached performance
         const buildings = [];
         this.gameState.buildings.forEach((building, locationKey) => {
-            // Include performance data directly in building object
-            const performance = this.calculateBuildingPerformanceSimple(building);
+            // Use cached performance data instead of recalculating
+            const [row, col] = building.location;
+            const perfData = building.underConstruction ? null : this.getBuildingPerformance(row, col);
 
             buildings.push({
                 id: building.id,
@@ -2649,13 +2673,13 @@ class ServerEconomicEngine {
                 graphics: building.graphics,
                 graphicsFile: building.graphicsFile,
                 images: building.images,
-                // Performance data for immediate client use
-                residents: performance?.residents || 0,
-                workers: performance?.workers || 0,
-                efficiency: performance?.efficiency || 1.0,
-                revenue: performance?.revenue || 0,
-                expenses: performance?.expenses || 0,
-                netIncome: performance?.netIncome || 0
+                // PHASE 1: Use cached performance data
+                residents: 0, // TODO: Add residents to performance data
+                workers: 0,   // TODO: Add workers to performance data
+                efficiency: perfData ? (perfData.summary.performance / 100) : 1.0,
+                revenue: perfData?.summary?.revenue || 0,
+                expenses: perfData?.summary?.maintenance || 0,
+                netIncome: perfData?.summary?.netIncome || 0
             });
         });
 
@@ -2871,20 +2895,26 @@ class ServerEconomicEngine {
         let totalLVT = 0;
         const buildingBreakdown = [];
 
-        // Sum from player's buildings
+        // PHASE 1: Sum from player's buildings using cached performance
         for (const [locationKey, building] of this.gameState.buildings) {
-            if (building.ownerId === playerId && !building.underConstruction && building.performance && building.performance.summary) {
-                const perf = building.performance.summary;
-                totalRevenue += perf.revenue || 0;
-                totalMaintenance += perf.maintenance || 0;
+            if (building.ownerId === playerId && !building.underConstruction) {
+                // Get performance from cache (defensive: recalc if missing)
+                const [row, col] = building.location;
+                const perfData = this.getBuildingPerformance(row, col);
 
-                buildingBreakdown.push({
-                    location: building.location,
-                    buildingId: building.id,
-                    revenue: perf.revenue || 0,
-                    maintenance: perf.maintenance || 0,
-                    netIncome: perf.netIncome || 0
-                });
+                if (perfData && perfData.summary) {
+                    const perf = perfData.summary;
+                    totalRevenue += perf.revenue || 0;
+                    totalMaintenance += perf.maintenance || 0;
+
+                    buildingBreakdown.push({
+                        location: building.location,
+                        buildingId: building.id,
+                        revenue: perf.revenue || 0,
+                        maintenance: perf.maintenance || 0,
+                        netIncome: perf.netIncome || 0
+                    });
+                }
             }
         }
 
