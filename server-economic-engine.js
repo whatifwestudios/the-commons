@@ -3274,18 +3274,23 @@ class ServerEconomicEngine {
         const totalPoints = this.gameState.monthlyBudget.totalPoints;
 
         if (totalPoints === 0) {
-        // console.log(`📦 MONTHLY TRANSFER: No allocations - treasury funds remain unallocated`);
+            console.log(`📦 MONTHLY TRANSFER: No allocations (totalPoints=0) - treasury funds remain unallocated`);
             return;
         }
 
         // Get treasury balance from gameState
         const treasuryBalance = this.gameState.treasury || 0;
 
+        console.log(`💰 MONTHLY TRANSFER: Treasury balance: $${treasuryBalance.toFixed(2)}, Total points allocated: ${totalPoints}`);
+
         if (treasuryBalance > 0) {
             console.log(`[REVENUE] MONTHLY TRANSFER: Allocating $${treasuryBalance.toFixed(2)} from treasury to budgets`);
             this.allocateBudgets(treasuryBalance);
             // Clear treasury after allocation
             this.gameState.treasury = 0;
+            console.log(`[REVENUE] MONTHLY TRANSFER: Treasury cleared to $0`);
+        } else {
+            console.log(`📦 MONTHLY TRANSFER: Treasury already empty (balance: $${treasuryBalance.toFixed(2)})`);
         }
     }
 
@@ -3737,7 +3742,7 @@ class ServerEconomicEngine {
         // System debug: Assessed LVT on ${parcelCount} player-owned parcels`);
 
         if (totalLVT > 0) {
-        // console.log(`[REVENUE] Daily LVT collected: $${totalLVT.toFixed(2)} from ${parcelCount} parcels`);
+            console.log(`💰 Daily LVT: Total collected: $${totalLVT.toFixed(2)} from ${parcelCount} parcels. Treasury now: $${this.gameState.treasury.toFixed(2)}`);
         }
     }
 
