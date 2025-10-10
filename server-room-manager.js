@@ -362,34 +362,47 @@ class GameRoom {
     checkVictoryConditions() {
         if (this.state !== 'IN_PROGRESS') return;
 
-        // Check if it's Sept 1st (end of year) - game ends after 365 days
         const currentDay = Math.floor(this.economicEngine.gameState.gameTime);
+        const scores = this.economicEngine.calculateCommonwealthScores();
+
+        // Aug 1 Warning (Day 335) - One month remaining
+        if (currentDay === 335 && !this.oneMonthWarningSent) {
+            this.oneMonthWarningSent = true;
+            this.broadcast({
+                type: 'ONE_MONTH_WARNING',
+                scores: scores.map(s => ({
+                    playerId: s.playerId,
+                    playerName: s.playerName,
+                    playerColor: s.playerColor,
+                    score: s.score,
+                    rank: s.rank
+                })),
+                message: 'The year ends on September 1st. One month remaining!'
+            });
+        }
+
+        // Sept 1st (Day 365) - Year-end victory (ALWAYS triggers)
         if (currentDay >= 365) {
-            // Year-end victory - highest Commonwealth Score wins
-            const scores = this.economicEngine.calculateCommonwealthScores();
             if (scores.length > 0) {
                 const winner = scores[0];
-                this.endGame(winner.playerId, `Year-End Victory (CW Score: ${winner.score.toFixed(1)})`);
+                this.endGame(winner.playerId, `Year-End Victory (Score: ${winner.score.toFixed(1)})`);
                 return;
             }
         }
 
-        // Early Victory: Commonwealth Score of 25+ with 15% LVT contribution ratio
-        const EARLY_VICTORY_SCORE = 25.0;
-        const MIN_LVT_RATIO = 0.15;
-        const MIN_WEALTH = 50000; // Prevent gaming with low wealth
+        // Early Victory: Score ≥ (average + 75) after day 30
+        // This scales automatically with player count due to normalization
+        if (currentDay >= 30 && scores.length > 0) {
+            const averageScore = scores.reduce((sum, s) => sum + s.score, 0) / scores.length;
+            const topScore = scores[0].score;
+            const earlyVictoryThreshold = averageScore + 75;
 
-        const scores = this.economicEngine.calculateCommonwealthScores();
-
-        for (const playerScore of scores) {
-            // Check early victory conditions
-            if (playerScore.score >= EARLY_VICTORY_SCORE &&
-                playerScore.lvtRatio >= MIN_LVT_RATIO &&
-                playerScore.wealth >= MIN_WEALTH) {
-
+            if (topScore >= earlyVictoryThreshold) {
+                const winner = scores[0];
+                const lead = topScore - (scores[1]?.score || 0);
                 this.endGame(
-                    playerScore.playerId,
-                    `Civic Victory (CW Score: ${playerScore.score.toFixed(1)}, LVT Contribution: ${(playerScore.lvtRatio * 100).toFixed(1)}%)`
+                    winner.playerId,
+                    `Dominant Victory (Score: ${winner.score.toFixed(1)}, Lead: +${lead.toFixed(1)})`
                 );
                 return;
             }
@@ -430,18 +443,32 @@ class GameRoom {
         this.state = 'COMPLETED';
 
         const winnerData = this.players.get(winnerId);
-        // console.log(`🏆 Game ended! Winner: ${winnerId} - ${victoryType}`);
+        const scores = this.economicEngine.calculateCommonwealthScores();
+        const winnerScore = scores.find(s => s.playerId === winnerId);
 
-        // Broadcast victory
+        console.log(`🏆 Game ended! Winner: ${winnerData?.name || winnerId} - ${victoryType}`);
+
+        // Broadcast victory (use GAME_VICTORY for client-side victory screen)
         this.broadcast({
-            type: 'GAME_OVER',
+            type: 'GAME_VICTORY',
             winner: {
                 playerId: winnerId,
                 playerName: winnerData?.name || 'Player',
-                color: winnerData?.color
+                playerColor: winnerData?.color
             },
             victoryType: victoryType,
-            finalStats: this.getGameStats(),
+            winnerScore: winnerScore,
+            scores: scores.map(s => ({
+                playerId: s.playerId,
+                playerName: s.playerName,
+                playerColor: s.playerColor,
+                score: s.score,
+                wealthScore: s.wealthScore,
+                civicScore: s.civicScore,
+                wealth: s.wealth,
+                rawCivicContribution: s.rawCivicContribution
+            })),
+            funStats: this.getGameStats(),
             timestamp: Date.now()
         });
 

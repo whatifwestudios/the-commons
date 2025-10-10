@@ -3563,21 +3563,34 @@ class ServerEconomicEngine {
      */
     calculateCommonwealthScores() {
         const scores = new Map();
-        const CIVIC_SCORE_CAP = 187.9; // Year Progress and Poverty was published (1879)
 
-        // Calculate totals for relative scoring
+        // First pass: Calculate totals for relative scoring
         let totalWealth = 0;
-        let totalLVTRaised = 0;
+        let totalCivicContribution = 0;
+        const playerCivicContributions = new Map();
 
         for (const [playerId, playerState] of this.gameState.players) {
             const playerWealth = this.calculatePlayerWealth(playerId, this.getPlayerBalance(playerId));
             totalWealth += playerWealth;
-            totalLVTRaised += (playerState.totalLVTPaid || 0);
+
+            // Calculate raw civic contribution (sum of CARENS-based building scores)
+            let civicContribution = 0;
+            for (const [locationKey, building] of this.gameState.buildings) {
+                if (building.owner !== playerId) continue;
+
+                const buildingDef = this.getBuildingDefinition(building.type);
+                if (buildingDef && buildingDef.civicScore !== undefined) {
+                    civicContribution += buildingDef.civicScore;
+                }
+            }
+
+            playerCivicContributions.set(playerId, civicContribution);
+            totalCivicContribution += Math.max(0, civicContribution); // Only count positive contributions to total
         }
 
         // Prevent division by zero
         totalWealth = Math.max(totalWealth, 1);
-        totalLVTRaised = Math.max(totalLVTRaised, 1);
+        totalCivicContribution = Math.max(totalCivicContribution, 1);
 
         // Calculate individual scores
         for (const [playerId, playerState] of this.gameState.players) {
@@ -3588,27 +3601,40 @@ class ServerEconomicEngine {
             // Wealth Score: (player wealth / total wealth) × 100
             const wealthScore = (playerWealth / totalWealth) * 100;
 
-            // Civic Score: (LVT paid / public funding received) × 10, capped at 187.9
+            // Civic Score: (player civic contribution / total civic contribution) × 100
+            // Mirrors wealth score calculation - your share of total civic contribution
+            const rawCivicContribution = playerCivicContributions.get(playerId) || 0;
             let civicScore;
-            if (lvtPaid === 0) {
-                civicScore = 0; // No contribution = 0 civic score
-            } else if (publicFundingReceived === 0) {
-                civicScore = CIVIC_SCORE_CAP; // Perfect citizen - paid taxes, used no public funds
+
+            if (rawCivicContribution <= 0) {
+                // Negative or zero civic contribution = 0 civic score
+                civicScore = 0;
             } else {
-                civicScore = Math.min((lvtPaid / publicFundingReceived) * 10, CIVIC_SCORE_CAP);
+                // Positive contribution = your % of total positive civic contribution
+                civicScore = (rawCivicContribution / totalCivicContribution) * 100;
             }
 
-            // Commonwealth Score = Wealth Score + Civic Score
-            const commonwealthScore = wealthScore + civicScore;
+            // Commonwealth Score: Normalized to 0-200 scale for player-count independence
+            // Formula: (wealthScore + civicScore) × (playerCount / 2)
+            // This makes scores comparable across different game sizes:
+            // - 2 players: multiplier = 1 (no change)
+            // - 4 players: multiplier = 2
+            // - 12 players: multiplier = 6
+            const playerCount = this.gameState.players.size;
+            const normalizer = playerCount / 2;
+            const rawScore = wealthScore + civicScore;
+            const normalizedScore = rawScore * normalizer;
 
             scores.set(playerId, {
-                score: parseFloat(commonwealthScore.toFixed(1)),
+                score: parseFloat(normalizedScore.toFixed(1)),
+                rawScore: parseFloat(rawScore.toFixed(1)), // Pre-normalized score (for debugging)
                 wealthScore: parseFloat(wealthScore.toFixed(1)),
                 civicScore: parseFloat(civicScore.toFixed(1)),
                 wealth: playerWealth,
                 lvtPaid: lvtPaid,
                 publicFundingReceived: publicFundingReceived,
-                lvtRatio: publicFundingReceived > 0 ? lvtPaid / publicFundingReceived : (lvtPaid > 0 ? 1 : 0)
+                lvtRatio: publicFundingReceived > 0 ? lvtPaid / publicFundingReceived : (lvtPaid > 0 ? 1 : 0),
+                rawCivicContribution: rawCivicContribution // For debugging
             });
         }
 

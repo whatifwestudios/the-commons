@@ -3111,17 +3111,27 @@
                 </div>
                 <div class="victory-info">
                     <h4>How Scoring Works:</h4>
-                    <p><strong>Wealth Score:</strong> Your share of total game wealth (0-100). Higher wealth = higher score.</p>
-                    <p><strong>Civic Score:</strong> Taxes paid ÷ public funds used × 10, capped at 187.9. Pay more than you take = higher score.</p>
-                    <p><strong>Total Score:</strong> Wealth Score + Civic Score. Balance both for maximum points!</p>
+                    <p><strong>Wealth Score:</strong> Your share of total game wealth.</p>
+                    <p><strong>Civic Score:</strong> Your share of total civic contribution.</p>
+                    <p><strong>Commonwealth Score:</strong> (Wealth + Civic)</p>
+                    <p style="font-size: 12px; color: #aaa; margin-top: 5px;">
+                        Note: scores normalized for easy comparison across game sizes.
+                    </p>
 
-                    <h4 style="margin-top: 16px;">Two Ways to Win:</h4>
-                    <p><strong>Early Civic Victory:</strong> Total Score ≥ 50.0 AND city population ≥ 100</p>
-                    <p><strong>Year-End Victory (Sept 1):</strong> Highest Total Score wins</p>
+                    <h4 style="margin-top: 16px;">Target Scores:</h4>
+                    <p style="font-size: 14px;">
+                        • <strong>0-50:</strong> Below average<br>
+                        • <strong>50-100:</strong> Average player<br>
+                        • <strong>100-150:</strong> Strong player<br>
+                        • <strong>150-200:</strong> Winning position
+                    </p>
+
+                    <h4 style="margin-top: 16px;">Victory Conditions:</h4>
+                    <p><strong>Dominant Victory:</strong> If after 30 days one player has a score 75 points higher than the average across all players, they win.</p>
+                    <p><strong>Year-End Victory:</strong> Highest score on Sept 1 (day 365)</p>
 
                     <p style="margin-top: 12px; font-size: 11px; color: #888;">
-                        Tip: High wealth alone isn't enough—contribute to the public good without over-using public funds to maximize your Civic Score!
-                    </p>
+                        Strategy: Balance wealth and civic contributions. Pure wealth or pure civic strategies are very hard to win with!            </p>
                 </div>
             </div>
         </div>
@@ -3593,6 +3603,7 @@
     <script src="action-marketplace.js"></script>
     <script src="land-exchange-system.js"></script>
     <script src="victory-screen.js"></script>
+    <script src="one-month-warning.js"></script>
     <script src="game.js?v=15"></script>
 
     <script>

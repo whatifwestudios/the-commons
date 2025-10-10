@@ -84,7 +84,8 @@
       "Bash(git mv:*)",
       "Read(//WSL.LOCALHOST/UBUNTU-24.04/home/zjb/the-commons-clean/**)",
       "Bash(git log:*)",
-      "Bash(./restart.sh)"
+      "Bash(./restart.sh)",
+      "Bash(tasklist)"
     ],
     "deny": [],
     "ask": []

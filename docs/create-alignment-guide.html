@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Building Sprite Alignment Guide Generator</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 1200px;
+            margin: 20px auto;
+            padding: 20px;
+            background: #1e1e1e;
+            color: #d4d4d4;
+        }
+        h1 {
+            color: #4EC9B0;
+            border-bottom: 2px solid #4EC9B0;
+            padding-bottom: 10px;
+        }
+        h2 {
+            color: #DCDCAA;
+            margin-top: 30px;
+        }
+        .canvas-container {
+            display: inline-block;
+            margin: 20px;
+            background: white;
+            padding: 10px;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+        }
+        canvas {
+            border: 2px solid #333;
+            display: block;
+            image-rendering: pixelated;
+            image-rendering: crisp-edges;
+        }
+        .info {
+            background: #2d2d2d;
+            padding: 15px;
+            border-radius: 5px;
+            border-left: 4px solid #4EC9B0;
+            margin: 20px 0;
+        }
+        .spec {
+            background: #264f78;
+            padding: 10px;
+            border-radius: 5px;
+            margin: 10px 0;
+            font-family: 'Consolas', 'Courier New', monospace;
+        }
+        button {
+            background: #0e639c;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            font-size: 16px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 10px 5px;
+            transition: background 0.3s;
+        }
+        button:hover {
+            background: #1177bb;
+        }
+        .grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+        @media (max-width: 800px) {
+            .grid {
+                grid-template-columns: 1fr;
+            }
+        }
+        .label {
+            color: #9CDCFE;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <h1>🏗️ Building Sprite Alignment Guide Generator</h1>
+
+    <div class="info">
+        <h3>📐 Purpose</h3>
+        <p>This tool generates reference images showing the exact diamond footprint and alignment grid for The Commons building sprites. Use these images as overlays or references when creating building sprites in Layer.ai or other tools.</p>
+    </div>
+
+    <div class="spec">
+        <div class="label">Canvas Dimensions:</div>
+        Width: 96px (exact) × Height: Variable (100-300px based on building height)<br><br>
+        <div class="label">Diamond Base:</div>
+        96px wide × 48px tall (2:1 ratio for 30° isometric)<br><br>
+        <div class="label">Critical Points:</div>
+        • Bottom center: (48, canvas_bottom)<br>
+        • Left point: (0, canvas_bottom - 24)<br>
+        • Right point: (96, canvas_bottom - 24)<br>
+        • Top point: (48, canvas_bottom - 48)
+    </div>
+
+    <h2>Reference Guides</h2>
+
+    <div class="grid">
+        <div class="canvas-container">
+            <h3>1-Story Building (120px tall)</h3>
+            <canvas id="canvas1" width="96" height="120"></canvas>
+        </div>
+
+        <div class="canvas-container">
+            <h3>2-Story Building (180px tall)</h3>
+            <canvas id="canvas2" width="96" height="180"></canvas>
+        </div>
+
+        <div class="canvas-container">
+            <h3>3-Story Building (240px tall)</h3>
+            <canvas id="canvas3" width="96" height="240"></canvas>
+        </div>
+
+        <div class="canvas-container">
+            <h3>Tall Building (300px tall)</h3>
+            <canvas id="canvas4" width="96" height="300"></canvas>
+        </div>
+    </div>
+
+    <div style="text-align: center; margin-top: 30px;">
+        <button onclick="downloadAllGuides()">📥 Download All Reference Images</button>
+        <button onclick="downloadWithGrid()">📥 Download Grid Overlay Template</button>
+    </div>
+
+    <div class="info" style="margin-top: 30px;">
+        <h3>💡 How to Use These References</h3>
+        <ul>
+            <li><strong>Layer.ai:</strong> Upload a reference image and include in your prompt: "Building should align with the diamond grid shown in reference image"</li>
+            <li><strong>Photoshop/GIMP:</strong> Import as a layer and draw your building on top, matching the diamond footprint</li>
+            <li><strong>Pixel Art Tools:</strong> Use as an overlay layer to ensure proper alignment</li>
+            <li><strong>AI Tools:</strong> Include as a reference image to show the exact dimensions and perspective</li>
+        </ul>
+    </div>
+
+    <script>
+        // Draw alignment guide on canvas
+        function drawAlignmentGuide(canvasId) {
+            const canvas = document.getElementById(canvasId);
+            const ctx = canvas.getContext('2d');
+            const width = canvas.width;
+            const height = canvas.height;
+
+            // Clear canvas
+            ctx.fillStyle = 'rgba(255, 255, 255, 0)';
+            ctx.fillRect(0, 0, width, height);
+
+            // Draw checkerboard background to show transparency
+            const gridSize = 8;
+            for (let y = 0; y < height; y += gridSize) {
+                for (let x = 0; x < width; x += gridSize) {
+                    if ((x / gridSize + y / gridSize) % 2 === 0) {
+                        ctx.fillStyle = '#e0e0e0';
+                    } else {
+                        ctx.fillStyle = '#f5f5f5';
+                    }
+                    ctx.fillRect(x, y, gridSize, gridSize);
+                }
+            }
+
+            // Draw vertical center line
+            ctx.strokeStyle = '#FF6B6B';
+            ctx.lineWidth = 1;
+            ctx.setLineDash([5, 5]);
+            ctx.beginPath();
+            ctx.moveTo(48, 0);
+            ctx.lineTo(48, height);
+            ctx.stroke();
+            ctx.setLineDash([]);
+
+            // Draw horizontal baseline
+            ctx.strokeStyle = '#4ECDC4';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(0, height - 1);
+            ctx.lineTo(width, height - 1);
+            ctx.stroke();
+
+            // Draw diamond footprint
+            const bottomY = height;
+            const diamondPoints = [
+                { x: 48, y: bottomY - 48, label: 'Top' },      // Top
+                { x: 96, y: bottomY - 24, label: 'Right' },    // Right
+                { x: 48, y: bottomY, label: 'Bottom' },        // Bottom
+                { x: 0, y: bottomY - 24, label: 'Left' }       // Left
+            ];
+
+            // Fill diamond with semi-transparent color
+            ctx.fillStyle = 'rgba(78, 205, 196, 0.2)';
+            ctx.beginPath();
+            ctx.moveTo(diamondPoints[0].x, diamondPoints[0].y);
+            for (let i = 1; i < diamondPoints.length; i++) {
+                ctx.lineTo(diamondPoints[i].x, diamondPoints[i].y);
+            }
+            ctx.closePath();
+            ctx.fill();
+
+            // Draw diamond outline
+            ctx.strokeStyle = '#4ECDC4';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+
+            // Draw dimension lines
+            // Width dimension (bottom)
+            ctx.strokeStyle = '#FF6B6B';
+            ctx.lineWidth = 1;
+            const dimY = height - 5;
+            ctx.beginPath();
+            ctx.moveTo(0, dimY);
+            ctx.lineTo(0, dimY - 5);
+            ctx.moveTo(0, dimY);
+            ctx.lineTo(96, dimY);
+            ctx.moveTo(96, dimY);
+            ctx.lineTo(96, dimY - 5);
+            ctx.stroke();
+
+            // Width label
+            ctx.fillStyle = '#FF6B6B';
+            ctx.font = 'bold 10px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText('96px', 48, dimY - 8);
+
+            // Height dimension (right side)
+            const dimX = width - 5;
+            ctx.beginPath();
+            ctx.moveTo(dimX, 0);
+            ctx.lineTo(dimX + 5, 0);
+            ctx.moveTo(dimX, 0);
+            ctx.lineTo(dimX, height);
+            ctx.moveTo(dimX, height);
+            ctx.lineTo(dimX + 5, height);
+            ctx.stroke();
+
+            // Draw corner markers showing canvas bounds
+            ctx.fillStyle = '#FF6B6B';
+            const markerSize = 5;
+            // Top-left
+            ctx.fillRect(0, 0, markerSize, 1);
+            ctx.fillRect(0, 0, 1, markerSize);
+            // Top-right
+            ctx.fillRect(width - markerSize, 0, markerSize, 1);
+            ctx.fillRect(width - 1, 0, 1, markerSize);
+            // Bottom-left
+            ctx.fillRect(0, height - 1, markerSize, 1);
+            ctx.fillRect(0, height - markerSize, 1, markerSize);
+            // Bottom-right
+            ctx.fillRect(width - markerSize, height - 1, markerSize, 1);
+            ctx.fillRect(width - 1, height - markerSize, 1, markerSize);
+
+            // Draw point markers
+            diamondPoints.forEach(point => {
+                // Draw point
+                ctx.fillStyle = '#FF6B6B';
+                ctx.beginPath();
+                ctx.arc(point.x, point.y, 3, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Draw label
+                ctx.fillStyle = '#333';
+                ctx.font = 'bold 9px Arial';
+                ctx.textAlign = 'center';
+                const labelY = point.label === 'Bottom' ? point.y - 8 : point.y + 12;
+                ctx.fillText(point.label, point.x, labelY);
+
+                // Draw coordinates
+                ctx.font = '8px Arial';
+                ctx.fillStyle = '#666';
+                const coordText = `(${point.x}, ${point.y === bottomY ? 'H' : point.y})`;
+                ctx.fillText(coordText, point.x, labelY + 10);
+            });
+
+            // Add title
+            ctx.fillStyle = '#333';
+            ctx.font = 'bold 11px Arial';
+            ctx.textAlign = 'left';
+            ctx.fillText(`Canvas: ${width} × ${height}px`, 5, 12);
+
+            // Add instructions
+            ctx.font = '9px Arial';
+            ctx.fillStyle = '#666';
+            ctx.fillText('Building must fill this diamond', 5, 25);
+            ctx.fillText('and touch bottom edge', 5, 35);
+        }
+
+        // Draw grid overlay template
+        function drawGridOverlay() {
+            const canvas = document.createElement('canvas');
+            canvas.width = 96;
+            canvas.height = 200;
+            const ctx = canvas.getContext('2d');
+
+            // Transparent background
+            ctx.clearRect(0, 0, 96, 200);
+
+            // Draw 8px grid
+            ctx.strokeStyle = 'rgba(100, 100, 100, 0.3)';
+            ctx.lineWidth = 0.5;
+            for (let x = 0; x < 96; x += 8) {
+                ctx.beginPath();
+                ctx.moveTo(x, 0);
+                ctx.lineTo(x, 200);
+                ctx.stroke();
+            }
+            for (let y = 0; y < 200; y += 8) {
+                ctx.beginPath();
+                ctx.moveTo(0, y);
+                ctx.lineTo(96, y);
+                ctx.stroke();
+            }
+
+            // Emphasize center line
+            ctx.strokeStyle = 'rgba(255, 107, 107, 0.5)';
+            ctx.lineWidth = 1;
+            ctx.setLineDash([5, 5]);
+            ctx.beginPath();
+            ctx.moveTo(48, 0);
+            ctx.lineTo(48, 200);
+            ctx.stroke();
+            ctx.setLineDash([]);
+
+            // Draw diamond
+            ctx.strokeStyle = 'rgba(78, 205, 196, 0.8)';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(48, 152);  // Top (200 - 48)
+            ctx.lineTo(96, 176);  // Right (200 - 24)
+            ctx.lineTo(48, 200);  // Bottom
+            ctx.lineTo(0, 176);   // Left
+            ctx.closePath();
+            ctx.stroke();
+
+            return canvas;
+        }
+
+        // Download a single canvas as PNG
+        function downloadCanvas(canvas, filename) {
+            const link = document.createElement('a');
+            link.download = filename;
+            link.href = canvas.toDataURL('image/png');
+            link.click();
+        }
+
+        // Download all alignment guides
+        function downloadAllGuides() {
+            downloadCanvas(document.getElementById('canvas1'), 'building-alignment-1story-120px.png');
+            downloadCanvas(document.getElementById('canvas2'), 'building-alignment-2story-180px.png');
+            downloadCanvas(document.getElementById('canvas3'), 'building-alignment-3story-240px.png');
+            downloadCanvas(document.getElementById('canvas4'), 'building-alignment-tall-300px.png');
+            alert('✅ All reference images downloaded! Check your Downloads folder.');
+        }
+
+        // Download grid overlay template
+        function downloadWithGrid() {
+            const canvas = drawGridOverlay();
+            downloadCanvas(canvas, 'building-grid-overlay-96x200.png');
+            alert('✅ Grid overlay template downloaded! Use this as a layer in your image editor.');
+        }
+
+        // Initialize all canvases
+        window.addEventListener('load', () => {
+            drawAlignmentGuide('canvas1');
+            drawAlignmentGuide('canvas2');
+            drawAlignmentGuide('canvas3');
+            drawAlignmentGuide('canvas4');
+        });
+    </script>
+</body>
+</html>
