@@ -9,7 +9,7 @@
       "isDefault": true,
       "civicScore": 66.9,
       "economics": {
-        "buildCost": 1500,
+        "buildCost": 900,
         "constructionDays": 5,
         "maxRevenue": 0,
         "maintenanceCost": 8,
@@ -19,7 +19,7 @@
         "jobsProvided": 3,
         "jobsRequired": 0,
         "energyProvided": 0,
-        "energyRequired": 5,
+        "energyRequired": 13,
         "educationProvided": 0,
         "educationRequired": 0,
         "foodProvided": 0,
@@ -211,7 +211,7 @@
         "jobsProvided": 0,
         "jobsRequired": 0,
         "energyProvided": 0,
-        "energyRequired": 0,
+        "energyRequired": 1,
         "educationProvided": 0,
         "educationRequired": 0,
         "foodProvided": 0,
@@ -515,6 +515,70 @@
       "images": {
         "built": "assets/buildings/commercial/taqueria.png"
       }
+    },
+    {
+      "id": "corporate_marvel",
+      "name": "Corporate World Headquarters",
+      "category": "commercial",
+      "description": "A marvel level building! There could be some shady dealings going down but the pay is incredible.",
+      "graphicsFile": "assets/buildings/commercial/corporate_marvel.png",
+      "isDefault": true,
+      "civicScore": -6.3,
+      "economics": {
+        "buildCost": 35000,
+        "constructionDays": 27,
+        "maxRevenue": 620,
+        "maintenanceCost": 150,
+        "decayRate": 0.1225
+      },
+      "resources": {
+        "jobsProvided": 600,
+        "jobsRequired": 150,
+        "energyProvided": 0,
+        "energyRequired": 350,
+        "educationProvided": 0,
+        "educationRequired": 40,
+        "foodProvided": 90,
+        "foodRequired": 0,
+        "housingProvided": 0,
+        "housingRequired": 0,
+        "healthcareProvided": 0,
+        "healthcareRequired": 0
+      },
+      "livability": {
+        "culture": {
+          "impact": 40,
+          "attenuation": 8
+        },
+        "affordability": {
+          "impact": -40,
+          "attenuation": 10
+        },
+        "resilience": {
+          "impact": 20,
+          "attenuation": 2
+        },
+        "environment": {
+          "impact": -45,
+          "attenuation": 8
+        },
+        "noise": {
+          "impact": -15,
+          "attenuation": 1
+        },
+        "safety": {
+          "impact": 20,
+          "attenuation": 5
+        }
+      },
+      "graphics": {
+        "filename": "corporate_marvel.png",
+        "path": "assets/buildings/commercial/corporate_marvel.png",
+        "fallbackPath": "assets/buildings/default.svg"
+      },
+      "images": {
+        "built": "assets/buildings/commercial/corporate_marvel.png"
+      }
     }
   ],
   "education": [
@@ -645,6 +709,134 @@
       "images": {
         "built": "assets/buildings/education/high_school.png"
       }
+    },
+    {
+      "id": "art_school_marvel",
+      "name": "Art School Marvel",
+      "category": "education",
+      "description": "A marvel level building! A true show stopper and world renowned for producing best in class, cutting edge art. Center of the international art scene.",
+      "graphicsFile": "assets/buildings/education/art_school_marvel.png",
+      "isDefault": true,
+      "civicScore": 10.9,
+      "economics": {
+        "buildCost": 22000,
+        "constructionDays": 35,
+        "maxRevenue": 500,
+        "maintenanceCost": 205,
+        "decayRate": 0.1105
+      },
+      "resources": {
+        "jobsProvided": 350,
+        "jobsRequired": 85,
+        "energyProvided": 0,
+        "energyRequired": 250,
+        "educationProvided": 50,
+        "educationRequired": 25,
+        "foodProvided": 40,
+        "foodRequired": 0,
+        "housingProvided": 0,
+        "housingRequired": 0,
+        "healthcareProvided": 0,
+        "healthcareRequired": 0
+      },
+      "livability": {
+        "culture": {
+          "impact": 65,
+          "attenuation": 12
+        },
+        "affordability": {
+          "impact": -25,
+          "attenuation": 8
+        },
+        "resilience": {
+          "impact": 25,
+          "attenuation": 2
+        },
+        "environment": {
+          "impact": -30,
+          "attenuation": 6
+        },
+        "noise": {
+          "impact": -12,
+          "attenuation": 1
+        },
+        "safety": {
+          "impact": 15,
+          "attenuation": 4
+        }
+      },
+      "graphics": {
+        "filename": "art_school_marvel.png",
+        "path": "assets/buildings/education/art_school_marvel.png",
+        "fallbackPath": "assets/buildings/default.svg"
+      },
+      "images": {
+        "built": "assets/buildings/education/art_school_marvel.png"
+      }
+    },
+    {
+      "id": "art_school",
+      "name": "Art School",
+      "category": "education",
+      "description": "A great place to get your creative career going",
+      "graphicsFile": "assets/buildings/education/art_school.png",
+      "isDefault": true,
+      "civicScore": 14.5,
+      "economics": {
+        "buildCost": 2345,
+        "constructionDays": 9,
+        "maxRevenue": 100,
+        "maintenanceCost": 22,
+        "decayRate": 0.0905
+      },
+      "resources": {
+        "jobsProvided": 55,
+        "jobsRequired": 15,
+        "energyProvided": 0,
+        "energyRequired": 33,
+        "educationProvided": 28,
+        "educationRequired": 0,
+        "foodProvided": 15,
+        "foodRequired": 0,
+        "housingProvided": 0,
+        "housingRequired": 0,
+        "healthcareProvided": 0,
+        "healthcareRequired": 0
+      },
+      "livability": {
+        "culture": {
+          "impact": 45,
+          "attenuation": 6
+        },
+        "affordability": {
+          "impact": -10,
+          "attenuation": 5
+        },
+        "resilience": {
+          "impact": 10,
+          "attenuation": 3
+        },
+        "environment": {
+          "impact": -3,
+          "attenuation": 2
+        },
+        "noise": {
+          "impact": -8,
+          "attenuation": 1
+        },
+        "safety": {
+          "impact": 7,
+          "attenuation": 2
+        }
+      },
+      "graphics": {
+        "filename": "art_school.png",
+        "path": "assets/buildings/education/art_school.png",
+        "fallbackPath": "assets/buildings/default.svg"
+      },
+      "images": {
+        "built": "assets/buildings/education/art_school.png"
+      }
     }
   ],
   "energy": [
@@ -655,7 +847,7 @@
       "description": "Renewable energy generation facility",
       "graphicsFile": "assets/buildings/energy/solar_farm.png",
       "isDefault": true,
-      "civicScore": 122.9,
+      "civicScore": 91.2,
       "economics": {
         "buildCost": 1000,
         "constructionDays": 4,
@@ -692,7 +884,7 @@
         },
         "environment": {
           "impact": 75,
-          "attenuation": 1
+          "attenuation": 3
         },
         "noise": {
           "impact": 10,
@@ -719,19 +911,19 @@
       "description": "A dirty source of energy that pollutes",
       "graphicsFile": "assets/buildings/energy/coal_plant.png",
       "isDefault": true,
-      "civicScore": -36.5,
+      "civicScore": -47.0,
       "economics": {
-        "buildCost": 1900,
-        "constructionDays": 2300,
-        "maxRevenue": 9,
-        "maintenanceCost": 160,
+        "buildCost": 2300,
+        "constructionDays": 16,
+        "maxRevenue": 160,
+        "maintenanceCost": 30,
         "decayRate": 0.22
       },
       "resources": {
-        "jobsProvided": 0,
-        "jobsRequired": 28,
-        "energyProvided": 0,
-        "energyRequired": 77,
+        "jobsProvided": 28,
+        "jobsRequired": 0,
+        "energyProvided": 87,
+        "energyRequired": 0,
         "educationProvided": 0,
         "educationRequired": 0,
         "foodProvided": 0,
@@ -756,7 +948,7 @@
         },
         "environment": {
           "impact": -80,
-          "attenuation": 40
+          "attenuation": 12
         },
         "noise": {
           "impact": -45,
@@ -783,10 +975,10 @@
       "description": "Cleaner than coal but still fossil fuel",
       "graphicsFile": "assets/buildings/energy/natural_gas_plant.png",
       "isDefault": true,
-      "civicScore": -15.4,
+      "civicScore": -22.7,
       "economics": {
         "buildCost": 3700,
-        "constructionDays": 12,
+        "constructionDays": 14,
         "maxRevenue": 220,
         "maintenanceCost": 25,
         "decayRate": 0.1
@@ -794,7 +986,7 @@
       "resources": {
         "jobsProvided": 20,
         "jobsRequired": 0,
-        "energyProvided": 100,
+        "energyProvided": 133,
         "energyRequired": 0,
         "educationProvided": 0,
         "educationRequired": 0,
@@ -819,8 +1011,8 @@
           "attenuation": 12
         },
         "environment": {
-          "impact": -35,
-          "attenuation": 10
+          "impact": -45,
+          "attenuation": 6
         },
         "noise": {
           "impact": -22,
@@ -865,7 +1057,7 @@
         "educationProvided": 0,
         "educationRequired": 0,
         "foodProvided": 0,
-        "foodRequired": 2,
+        "foodRequired": 0,
         "housingProvided": 0,
         "housingRequired": 0,
         "healthcareProvided": 0,
@@ -927,7 +1119,7 @@
         "jobsProvided": 0,
         "jobsRequired": 0,
         "energyProvided": 0,
-        "energyRequired": 0,
+        "energyRequired": 1,
         "educationProvided": 0,
         "educationRequired": 0,
         "foodProvided": 0,
@@ -970,6 +1162,72 @@
       },
       "images": {
         "built": "assets/buildings/recreation/skate_park.png"
+      }
+    }
+  ],
+  "healthcare": [
+    {
+      "id": "hospital",
+      "name": "Hospital",
+      "category": "healthcare",
+      "description": "Community healthcare facility providing medical services",
+      "graphicsFile": "assets/buildings/healthcare/hospital.png",
+      "isDefault": true,
+      "civicScore": 33.3,
+      "economics": {
+        "buildCost": 2650,
+        "constructionDays": 17,
+        "maxRevenue": 62,
+        "maintenanceCost": 28,
+        "decayRate": 0.105
+      },
+      "resources": {
+        "jobsProvided": 90,
+        "jobsRequired": 60,
+        "energyProvided": 0,
+        "energyRequired": 80,
+        "educationProvided": 0,
+        "educationRequired": 35,
+        "foodProvided": 15,
+        "foodRequired": 0,
+        "housingProvided": 0,
+        "housingRequired": 0,
+        "healthcareProvided": 60,
+        "healthcareRequired": 0
+      },
+      "livability": {
+        "culture": {
+          "impact": 31,
+          "attenuation": 8
+        },
+        "affordability": {
+          "impact": 15,
+          "attenuation": 8
+        },
+        "resilience": {
+          "impact": 40,
+          "attenuation": 12
+        },
+        "environment": {
+          "impact": -12,
+          "attenuation": 2
+        },
+        "noise": {
+          "impact": -15,
+          "attenuation": 2
+        },
+        "safety": {
+          "impact": 55,
+          "attenuation": 5
+        }
+      },
+      "graphics": {
+        "filename": "hospital.png",
+        "path": "assets/buildings/healthcare/hospital.png",
+        "fallbackPath": "assets/buildings/default.svg"
+      },
+      "images": {
+        "built": "assets/buildings/healthcare/hospital.png"
       }
     }
   ]

@@ -40,8 +40,13 @@ def calculate_civic_score(building):
     return round(civic_score, 1), breakdown
 
 def main():
-    input_file = 'buildings-data-revised.csv'
-    output_file = 'buildings-data-final.csv'
+    import sys
+
+    # Allow input file as argument, default to buildings-data-revised.csv
+    input_file = sys.argv[1] if len(sys.argv) > 1 else 'buildings-data-revised.csv'
+
+    # Output file is same as input (overwrite)
+    output_file = input_file
 
     # Read CSV
     with open(input_file, 'r', encoding='utf-8') as f:

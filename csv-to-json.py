@@ -111,7 +111,10 @@ def csv_to_buildings_json(csv_file):
     return buildings_by_category
 
 def main():
-    input_csv = 'buildings-data-final.csv'
+    import sys
+
+    # Allow CSV filename as argument, default to buildings-data-final.csv
+    input_csv = sys.argv[1] if len(sys.argv) > 1 else 'buildings-data-final.csv'
     output_json = 'buildings-data.json'
 
     buildings = csv_to_buildings_json(input_csv)
