@@ -73,9 +73,13 @@ class ServerEconomicEngine {
             // Action Marketplace
             actionMarketplace: {
                 nextListingId: 1,
-                listings: new Map(), // key: listingId -> AuctionListing
-                priceHistory: [],
-                avgPrice: 0
+                listings: new Map(), // key: listingId -> SimpleListing
+                priceHistory: {
+                    listings: [],  // {timestamp, gameMonth, price}
+                    sales: []      // {timestamp, gameMonth, price}
+                },
+                avgListingPrice: 0,
+                avgSalePrice: 0
             },
 
             // Land Exchange System (offer-based parcel trading)
@@ -809,21 +813,18 @@ class ServerEconomicEngine {
                     result = await this.processCreateActionListing(transaction);
                     break;
 
-                case 'ACTION_BID':
-                    result = await this.processActionBid(transaction);
-                    break;
-
-                case 'ACTION_BUY_NOW':
-                    result = await this.processActionBuyNow(transaction);
+                case 'ACTION_PURCHASE':
+                case 'ACTION_BUY_NOW': // Legacy support
+                    result = await this.processActionPurchase(transaction);
                     break;
 
                 case 'ACTION_CANCEL_LISTING':
                     result = await this.processCancelActionListing(transaction);
                     break;
 
-                case 'ACTION_END_EARLY':
-                    result = await this.processEndActionEarly(transaction);
-                    break;
+                // REMOVED: Auction-based transactions
+                // case 'ACTION_BID':
+                // case 'ACTION_END_EARLY':
 
                 // Land Exchange System
                 case 'LAND_EXCHANGE_MAKE_OFFER':
@@ -4068,51 +4069,55 @@ class ServerEconomicEngine {
      * Process creating an action listing
      */
     async processCreateActionListing(transaction) {
-        // console.log('🏪 Server: Processing ACTION_CREATE_LISTING:', transaction);
-        const { playerId, quantity, reservePrice, buyNowPrice } = transaction;
+        const { playerId, price } = transaction;
 
         const player = this.getOrCreatePlayer(playerId);
 
-        // Ensure actions object exists (for players created before actions system)
+        // Validate price
+        if (!price || price <= 0) {
+            throw new Error('Price must be greater than 0');
+        }
+
+        // Ensure actions object exists
         if (!player.actions) {
-            player.actions = {
-                total: this.calculateMonthlyActionAllowance()
-            };
+            player.actions = { total: this.isSoloMode() ? 9999 : 100 };
             this.gameState.playerActions.set(playerId, player.actions.total);
-            console.log(`[PERF] Initialized missing actions for player ${playerId}`);
         }
 
-        // Validate player has enough actions
-        if (player.actions.total < quantity) {
-            throw new Error(`Insufficient actions to list: need ${quantity}, have ${player.actions.total}`);
+        // Validate player has at least 1 action
+        if (player.actions.total < 1) {
+            throw new Error(`Insufficient actions to list: need 1, have ${player.actions.total}`);
         }
 
-        // Calculate auction expiration (end of current month)
-        const nextMonthStart = this.getNextMonthStartDay();
-        const expiresAt = Date.now() + ((nextMonthStart - this.gameState.gameTime) * this.GAME_DAY_MS);
-
-        // Create listing
+        // Create simple listing (always 1 action)
         const listing = {
             id: this.gameState.actionMarketplace.nextListingId++,
             sellerId: playerId,
-            quantity: quantity,
-            reservePrice: reservePrice,
-            buyNowPrice: buyNowPrice || null,
-            currentBid: 0,
-            highBidderId: null,
+            price: price,
+            quantity: 1,  // Always 1 action per listing
             status: 'active',
             createdAt: Date.now(),
-            expiresAt: expiresAt,
-            month: this.getCurrentGameMonth()
+            soldAt: null,
+            soldTo: null
         };
 
-        // Remove actions from seller (hold in escrow)
-        this.spendActions(playerId, quantity, 'action listing');
+        // Escrow action (deduct from seller's balance)
+        this.spendActions(playerId, 1, 'action listing');
 
         // Add to marketplace
         this.gameState.actionMarketplace.listings.set(listing.id, listing);
 
-        // console.log(`🏪 Action listing created: ${quantity} actions by ${playerId} for $${reservePrice.toLocaleString()}+ (listing ${listing.id})`);
+        // Record in price history
+        this.gameState.actionMarketplace.priceHistory.listings.push({
+            timestamp: Date.now(),
+            gameMonth: this.getCurrentGameMonth(),
+            price: price
+        });
+
+        // Recalculate average listing price
+        this.calculateAvgListingPrice();
+
+        console.log(`🏪 Action listed: ${playerId} listing 1 action for $${price.toLocaleString()} (listing ${listing.id})`);
 
         return {
             success: true,
@@ -4192,115 +4197,76 @@ class ServerEconomicEngine {
     }
 
     /**
-     * Process buy now action
+     * Process instant purchase of an action listing
      */
-    async processActionBuyNow(transaction) {
+    async processActionPurchase(transaction) {
         const { playerId, listingId } = transaction;
 
         const listing = this.gameState.actionMarketplace.listings.get(listingId);
-        if (!listing || listing.status !== 'active' || !listing.buyNowPrice) {
-            throw new Error('Buy now not available');
+        if (!listing || listing.status !== 'active') {
+            throw new Error('Listing not available for purchase');
         }
 
         if (listing.sellerId === playerId) {
             throw new Error('Cannot buy your own listing');
         }
 
-        const player = this.getOrCreatePlayer(playerId);
+        const buyer = this.getOrCreatePlayer(playerId);
+        const seller = this.getOrCreatePlayer(listing.sellerId);
 
-        // Calculate buy now price with premium
-        const buyNowPrice = this.calculateBuyNowPrice(listing);
+        const price = listing.price;
 
-        // Validate player has enough cash
-        if (player.cash < buyNowPrice) {
-            throw new Error(`Insufficient funds: need $${buyNowPrice.toLocaleString()}, have $${player.cash.toLocaleString()}`);
+        // Validate buyer has enough cash
+        if (buyer.cash < price) {
+            throw new Error(`Insufficient funds: need $${price.toLocaleString()}, have $${buyer.cash.toLocaleString()}`);
         }
 
-        // Refund previous high bidder if any
-        if (listing.highBidderId && listing.currentBid > 0) {
-            const previousBidder = this.getOrCreatePlayer(listing.highBidderId);
-            previousBidder.cash += listing.currentBid;
-
-            previousBidder.transactions.push({
-                type: 'BID_REFUND',
-                amount: listing.currentBid,
-                timestamp: Date.now(),
-                description: `Bid refund - action listing ${listingId} bought`
-            });
-        }
-
-        // Charge buyer
-        player.cash -= buyNowPrice;
-        player.transactions.push({
-            type: 'ACTION_BUY_NOW',
-            amount: -buyNowPrice,
+        // Atomic transaction: Transfer funds buyer → seller
+        buyer.cash -= price;
+        buyer.transactions.push({
+            type: 'ACTION_PURCHASE',
+            amount: -price,
             timestamp: Date.now(),
-            description: `Bought ${listing.quantity} actions for $${buyNowPrice.toLocaleString()}`
+            description: `Bought 1 action for $${price.toLocaleString()}`
         });
 
-        // Pay seller
-        const seller = this.getOrCreatePlayer(listing.sellerId);
-        seller.cash += buyNowPrice;
+        seller.cash += price;
         seller.transactions.push({
             type: 'ACTION_SALE',
-            amount: buyNowPrice,
+            amount: price,
             timestamp: Date.now(),
-            description: `Sold ${listing.quantity} actions for $${buyNowPrice.toLocaleString()}`
+            description: `Sold 1 action for $${price.toLocaleString()}`
         });
 
-        // Give actions to buyer
-        this.addPurchasedActions(playerId, listing.quantity, 'buy now');
+        // Update server-authoritative balances
+        this.gameState.playerBalances.set(playerId, buyer.cash);
+        this.gameState.playerBalances.set(listing.sellerId, seller.cash);
+
+        // Transfer action from escrow to buyer
+        this.addPurchasedActions(playerId, 1, 'marketplace purchase');
 
         // Mark listing as sold
         listing.status = 'sold';
-        listing.finalPrice = buyNowPrice;
-        listing.winnerId = playerId;
         listing.soldAt = Date.now();
+        listing.soldTo = playerId;
 
-        // Update price history
-        this.gameState.actionMarketplace.priceHistory.push({
-            price: buyNowPrice,
-            quantity: listing.quantity,
-            date: Date.now(),
-            type: 'buy_now'
+        // Record in price history
+        this.gameState.actionMarketplace.priceHistory.sales.push({
+            timestamp: Date.now(),
+            gameMonth: this.getCurrentGameMonth(),
+            price: price
         });
 
-        this.updateAveragePrice();
+        // Recalculate averages
+        this.calculateAvgSalePrice();
 
-        // console.log(`🏪 Buy now completed: ${listing.quantity} actions sold for $${buyNowPrice.toLocaleString()}`);
+        console.log(`🏪 Action purchased: ${playerId} bought 1 action from ${listing.sellerId} for $${price.toLocaleString()}`);
 
         return {
             success: true,
-            finalPrice: buyNowPrice,
-            actionsReceived: listing.quantity
+            price: price,
+            actionsReceived: 1
         };
-    }
-
-    /**
-     * Calculate buy now price with time-based premium
-     */
-    calculateBuyNowPrice(listing) {
-        if (!listing.buyNowPrice) return 0;
-
-        // If no bids yet, use base buy now price
-        if (listing.currentBid === 0) {
-            return listing.buyNowPrice;
-        }
-
-        // Calculate month progress (0 = start, 1 = end)
-        const monthProgress = this.calculateMonthProgress();
-
-        // Premium starts at 500% and decays to 0%
-        const maxPremiumRate = 5.0; // 500%
-        const currentPremiumRate = maxPremiumRate * (1 - monthProgress);
-
-        // If current bid exceeds buy now + premium, no premium (bidding war)
-        const premiumPrice = listing.buyNowPrice * (1 + currentPremiumRate);
-        if (listing.currentBid >= premiumPrice) {
-            return listing.buyNowPrice;
-        }
-
-        return Math.floor(premiumPrice);
     }
 
     /**
@@ -4318,69 +4284,69 @@ class ServerEconomicEngine {
             throw new Error('Can only cancel your own listings');
         }
 
-        // Calculate fee if there are bids
-        let fee = 0;
-        if (listing.currentBid > 0) {
-            const monthProgress = this.calculateMonthProgress();
-            const maxFeeRate = 5.0; // 500% of current bid
-            const currentFeeRate = maxFeeRate * (1 - monthProgress);
-            fee = Math.floor(listing.currentBid * currentFeeRate);
-        }
-
-        const player = this.getOrCreatePlayer(playerId);
-
-        // Validate player can afford fee
-        if (player.cash < fee) {
-            throw new Error(`Insufficient funds for cancellation fee: need $${fee.toLocaleString()}, have $${player.cash.toLocaleString()}`);
-        }
-
-        // Charge fee
-        if (fee > 0) {
-            player.cash -= fee;
-            player.transactions.push({
-                type: 'LISTING_CANCEL_FEE',
-                amount: -fee,
-                timestamp: Date.now(),
-                description: `Cancellation fee for action listing ${listingId}`
-            });
-
-            // Add fee to treasury
-            this.gameState.treasury += fee;
-        }
-
-        // Refund high bidder if any
-        if (listing.highBidderId && listing.currentBid > 0) {
-            const bidder = this.getOrCreatePlayer(listing.highBidderId);
-            bidder.cash += listing.currentBid;
-
-            bidder.transactions.push({
-                type: 'BID_REFUND',
-                amount: listing.currentBid,
-                timestamp: Date.now(),
-                description: `Bid refund - listing ${listingId} cancelled`
-            });
-        }
-
-        // Return actions to seller (they will expire at month end)
-        this.addPurchasedActions(playerId, listing.quantity, 'cancelled listing');
+        // Return action to seller from escrow (no fee)
+        this.addPurchasedActions(playerId, 1, 'cancelled listing');
 
         // Mark listing as cancelled
         listing.status = 'cancelled';
         listing.cancelledAt = Date.now();
-        listing.cancellationFee = fee;
 
-        // console.log(`🏪 Listing cancelled: ${listingId} with fee $${fee.toLocaleString()}`);
+        // Recalculate average listing price (exclude cancelled listings)
+        this.calculateAvgListingPrice();
+
+        console.log(`🏪 Listing cancelled: ${listingId} by ${playerId}, action returned`);
 
         return {
             success: true,
-            fee: fee,
-            actionsReturned: listing.quantity
+            actionsReturned: 1
         };
     }
 
     /**
-     * Process ending auction early
+     * Calculate average listing price from active listings
      */
+    calculateAvgListingPrice() {
+        const activeListings = Array.from(this.gameState.actionMarketplace.listings.values())
+            .filter(l => l.status === 'active');
+
+        if (activeListings.length === 0) {
+            this.gameState.actionMarketplace.avgListingPrice = 0;
+            return;
+        }
+
+        const totalPrice = activeListings.reduce((sum, listing) => sum + listing.price, 0);
+        this.gameState.actionMarketplace.avgListingPrice = totalPrice / activeListings.length;
+    }
+
+    /**
+     * Calculate average sale price with recency weighting
+     */
+    calculateAvgSalePrice() {
+        const sales = this.gameState.actionMarketplace.priceHistory.sales;
+
+        if (sales.length === 0) {
+            this.gameState.actionMarketplace.avgSalePrice = 0;
+            return;
+        }
+
+        const now = Date.now();
+        const recencyWindow = 7 * 24 * 60 * 60 * 1000; // 7 days in ms
+
+        let totalWeighted = 0;
+        let totalWeight = 0;
+
+        sales.forEach(sale => {
+            const age = now - sale.timestamp;
+            const weight = Math.exp(-age / recencyWindow); // Exponential decay
+            totalWeighted += sale.price * weight;
+            totalWeight += weight;
+        });
+
+        this.gameState.actionMarketplace.avgSalePrice = totalWeight > 0 ? totalWeighted / totalWeight : 0;
+    }
+
+    // REMOVED: Auction-based method no longer used
+    /*
     async processEndActionEarly(transaction) {
         const { playerId, listingId } = transaction;
 
