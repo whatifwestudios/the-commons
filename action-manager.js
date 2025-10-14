@@ -202,9 +202,24 @@ class ActionManager {
             this.game.uiManager.updateStyle('currentActions', 'color', color);
         }
 
+        // Update top bar action count (new location)
+        const topBarCount = document.getElementById('top-bar-actions-count');
+        if (topBarCount) {
+            topBarCount.textContent = displayText;
+
+            // Color code based on remaining actions
+            let color = '#E8D4A0'; // Default pale yellow
+            if (currentActions !== null && currentActions <= 2) {
+                color = '#FF4444'; // Red at 2 or less
+            } else if (currentActions !== null && currentActions <= 5) {
+                color = '#FFD700'; // Brighter yellow at 5 or less
+            }
+            topBarCount.style.color = color;
+        }
+
         // Update marketplace display if available
-        if (this.game.actionMarketplace && this.game.actionMarketplace.updateMarketplaceDisplay) {
-            this.game.actionMarketplace.updateMarketplaceDisplay();
+        if (this.game.actionMarketplace && this.game.actionMarketplace.updateDisplay) {
+            this.game.actionMarketplace.updateDisplay();
         }
     }
 

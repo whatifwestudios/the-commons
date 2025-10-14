@@ -2691,12 +2691,19 @@ class ServerEconomicEngine {
             return enhanced;
         });
 
+        // Count total sales from price history
+        const totalSales = actionMarketplace.priceHistory.sales.length;
+
         const result = {
-            ...actionMarketplace,
             listings: enhancedListings,
+            priceHistory: actionMarketplace.priceHistory,
+            stats: {
+                avgListingPrice: actionMarketplace.avgListingPrice || null,
+                avgSalePrice: actionMarketplace.avgSalePrice || null,
+                totalSales: totalSales
+            },
             monthProgress: this.calculateMonthProgress() // Include month progress for client use
         };
-
 
         return result;
     }
@@ -2800,7 +2807,7 @@ class ServerEconomicEngine {
                     monthlyBudget: this.gameState.monthlyBudget || null,
                     budgets: this.gameState.budgets || {}
                 },
-                monthlyActionAllowance: this.calculateMonthlyActionAllowance(),
+                monthlyActionAllowance: 0, // No monthly refresh - players start with 100 actions
                 lvtRate: this.getCurrentLVTRate(),  // Include current LVT rate
                 // Add action marketplace data
                 actionMarketplace: this.getMarketplaceDataForBroadcast()
@@ -3121,9 +3128,9 @@ class ServerEconomicEngine {
                 transactions: [],
                 buildings: [],
                 lastCashflowUpdate: 0,
-                // Action inventory (server-authoritative) - SIMPLIFIED: Single bucket, all actions rollover
+                // Action inventory (server-authoritative) - No monthly refresh, fixed starting amount
                 actions: {
-                    total: this.calculateMonthlyActionAllowance() // All actions rollover monthly
+                    total: this.isSoloMode() ? 9999 : 100 // 100 actions for multiplayer, unlimited for solo
                 },
                 governance: {
                     votingPoints: initialPoints, // Set correct initial points
@@ -3881,22 +3888,10 @@ class ServerEconomicEngine {
      * Solo Mode gets unlimited (9999) actions
      */
     calculateMonthlyActionAllowance() {
-        // Check if this is Solo Mode (room with maxPlayers === 1)
-        if (this.isSoloMode()) {
-            return 9999; // Unlimited actions for Solo Mode
-        }
-
-        const monthOrder = ['SEPT', 'OCT', 'NOV', 'DEC', 'JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG'];
-        const currentMonth = this.getCurrentGameMonth();
-        const currentMonthIndex = monthOrder.indexOf(currentMonth);
-        const baseActions = 18;
-        const reduction = currentMonthIndex * 1;
-        const minimumActions = 7;
-
-        const allowance = Math.max(minimumActions, baseActions - reduction);
-        console.log(`[ACTIONS] calculateMonthlyActionAllowance: gameTime=${this.gameState.gameTime}, month=${currentMonth}, index=${currentMonthIndex}, allowance=${allowance}`);
-
-        return allowance;
+        // DEPRECATED: No monthly action refresh in new system
+        // Players start with 100 actions (or 9999 in solo mode) and that's it
+        // This function kept for backwards compatibility but should not be used
+        return 0;
     }
 
     /**
@@ -4009,7 +4004,7 @@ class ServerEconomicEngine {
         // Ensure actions object exists (safety check for existing players)
         if (!player.actions) {
             player.actions = {
-                total: this.calculateMonthlyActionAllowance()
+                total: this.isSoloMode() ? 9999 : 100
             };
             console.log(`[PERF] Initialized missing actions object for player ${playerId}`);
         }

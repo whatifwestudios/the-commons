@@ -34,6 +34,7 @@ class UIManager {
             
             // Actions
             currentActions: 'current-actions',
+            topBarActionsCount: 'top-bar-actions-count',
             marketListings: 'market-listings',
             actionAvgPrice: 'action-avg-price',
             

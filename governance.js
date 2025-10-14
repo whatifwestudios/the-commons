@@ -1006,30 +1006,38 @@ class GovernanceV3 {
         const totalAllocated = Object.values(this.localState.allocations).reduce((sum, val) => sum + val, 0) + Math.abs(this.localState.lvtVote);
         const percentage = totalAllocated > 0 ? Math.round((pointsAllocated / totalAllocated) * 100) : 0;
 
-        // Get all buildings that match this category from the player's actual buildings
-        let actualBuildings = [];
-        if (this.economicClient && this.economicClient.gameState && this.economicClient.gameState.buildings) {
-            const playerId = this.economicClient.playerId;
-            for (const [locationKey, building] of this.economicClient.gameState.buildings) {
-                if (building.ownerId === playerId) {
-                    // Check if building matches this category (you can expand this logic)
-                    const buildingDef = this.economicClient.buildingDefinitions?.get(building.id);
-                    if (buildingDef && buildingDef.category === category) {
-                        actualBuildings.push(buildingDef.name || building.id);
-                    }
+        // Get all building DEFINITIONS that qualify for this category's funding
+        let qualifyingBuildings = [];
+        if (this.economicClient && this.economicClient.buildingDefinitions) {
+            for (const [buildingId, buildingDef] of this.economicClient.buildingDefinitions) {
+                // Check if building matches this category
+                if (buildingDef.category === category) {
+                    qualifyingBuildings.push({
+                        name: buildingDef.name || buildingId,
+                        cost: buildingDef.cost || 0,
+                        civic: buildingDef.civic || 0,
+                        maintenance: buildingDef.maintenance || 0
+                    });
                 }
             }
+            // Sort by cost (cheapest first)
+            qualifyingBuildings.sort((a, b) => a.cost - b.cost);
         }
 
         let buildingsHtml = '';
-        if (actualBuildings.length > 0) {
-            buildingsHtml = actualBuildings.map(buildingName =>
-                `<div class="building-item">
-                    <div class="building-name">${buildingName}</div>
+        if (qualifyingBuildings.length > 0) {
+            buildingsHtml = qualifyingBuildings.map(building =>
+                `<div class="building-item" style="padding: 10px; border-bottom: 1px solid rgba(255,255,255,0.1);">
+                    <div class="building-name" style="font-weight: 600; margin-bottom: 4px;">${building.name}</div>
+                    <div class="building-stats" style="font-size: 11px; color: #888; display: flex; gap: 12px;">
+                        <span>Cost: $${building.cost.toLocaleString()}</span>
+                        <span>Civic: ${building.civic > 0 ? '+' : ''}${building.civic}</span>
+                        <span>Maint: $${building.maintenance}/day</span>
+                    </div>
                 </div>`
             ).join('');
         } else {
-            buildingsHtml = `<div class="no-buildings">You don't have any ${category} buildings yet.</div>`;
+            buildingsHtml = `<div class="no-buildings">No ${category} buildings available.</div>`;
         }
 
         content.innerHTML = `
@@ -1049,8 +1057,8 @@ class GovernanceV3 {
                 </div>
             </div>
             <div class="buildings-list">
-                <h5>Your ${data.title.replace(' Budget', '')} Buildings:</h5>
-                <div class="buildings-grid">${buildingsHtml}</div>
+                <h5>Buildings Eligible for ${data.title}:</h5>
+                <div class="buildings-catalog">${buildingsHtml}</div>
             </div>
         `;
 

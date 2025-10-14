@@ -2208,6 +2208,11 @@
                 </button>
             </div>
             <div class="top-bar-section">
+                <button class="top-bar-btn" id="actions-btn">
+                    <span>ACTIONS: </span><span id="top-bar-actions-count">--</span><span> ⚡</span>
+                </button>
+            </div>
+            <div class="top-bar-section">
                 <div class="top-bar-info">
                     <div class="info-item finances-row">
                         <div class="finance-item">
@@ -2492,28 +2497,7 @@
                     </div>
                 </div>
             </div>
-            
 
-            <!-- Action Manager Section -->
-            <div class="sidebar-section collapsible action-manager" id="action-manager-section">
-                <div class="section-header" data-target="action-manager-content">
-                    <span>ACTION MANAGER</span>
-                    <span class="collapse-icon"></span>
-                </div>
-                <div id="action-manager-content" class="section-content action-manager-content">
-                    <div class="action-stats">
-                        <div class="action-stat-row">
-                            <span class="action-label">Actions remaining</span>
-                            <span class="action-value" id="current-actions">--</span>
-                        </div>
-                        <div class="action-stat-row">
-                            <span class="action-label">Time until refresh</span>
-                            <span class="action-value" id="month-progress-text">--</span>
-                        </div>
-                    </div>
-                    <button class="action-btn" id="open-action-marketplace">⚡ Market (<span id="market-listings">0</span>)</button>
-                </div>
-            </div>
 
             <!-- Chat Section -->
             <div class="sidebar-section collapsible chat-section" id="chat-section">
@@ -3104,37 +3088,61 @@
 
     <!-- Solo game - no multiplayer lobby needed -->
     
-    <!-- Action Marketplace Modal -->
-    <div id="action-marketplace-modal" class="modal">
-        <div class="modal-content action-marketplace">
-            <div class="modal-header">
-                <h2>Action Market</h2>
-                <span class="action-availability">Your Actions Available: <strong id="modal-action-balance">00</strong></span>
-                <button class="modal-close" onclick="window.game.closeActionMarketplace()">&times;</button>
+    <!-- Action Marketplace Tray -->
+    <div id="action-marketplace-tray" class="action-marketplace-tray">
+        <div class="tray-content">
+            <div class="tray-header">
+                <h3>Action Marketplace</h3>
+                <div class="header-stats">
+                    <span class="header-stat">Your Actions: <span id="marketplace-action-count">--</span></span>
+                </div>
+                <button class="close-btn" id="close-marketplace-tray">×</button>
             </div>
-            <div class="modal-body">
-                <div class="marketplace-tabs">
-                    <button class="tab-btn active" data-tab="your-actions">Sell Actions</button>
-                    <button class="tab-btn" data-tab="marketplace" id="marketplace-tab-btn">Market</button>
-                </div>
 
-                <div class="tab-content active" id="your-actions">
-                    <div class="sell-actions-row">
-                        <input type="number" id="sell-quantity" min="1" max="10" value="1" placeholder="Quantity">
-                        <input type="number" id="sell-reserve" min="1000" placeholder="Total Starting Price">
-                        <button class="btn-primary" onclick="window.game.listActionsForSale()">List for Sale</button>
+            <div class="stats-row">
+                <div class="stat-card">
+                    <span class="stat-label">Active Listings</span>
+                    <span class="stat-value" id="marketplace-active-listings">0</span>
+                </div>
+                <div class="stat-card">
+                    <span class="stat-label">Avg Listing Price</span>
+                    <span class="stat-value" id="marketplace-avg-listing">N/A</span>
+                </div>
+                <div class="stat-card">
+                    <span class="stat-label">Avg Sale Price</span>
+                    <span class="stat-value" id="marketplace-avg-sale">No data yet</span>
+                </div>
+                <div class="stat-card">
+                    <span class="stat-label">Total Sales</span>
+                    <span class="stat-value" id="marketplace-total-sales">0</span>
+                </div>
+            </div>
+
+            <div class="graph-container">
+                <canvas id="price-history-chart"></canvas>
+            </div>
+
+            <div class="marketplace-tabs">
+                <button class="tab-btn" data-tab="your-listings">Your Listings</button>
+                <button class="tab-btn active" data-tab="marketplace" id="marketplace-tab-btn">Marketplace</button>
+            </div>
+
+            <div class="tab-content" id="your-listings">
+                <div class="listing-form">
+                    <h4>List 1 Action for Sale</h4>
+                    <div class="form-row">
+                        <input type="number" id="sell-price" min="1" placeholder="Price ($)" />
+                        <button class="btn-primary" id="list-action-btn">List for Sale</button>
                     </div>
                 </div>
-                
-                <div class="tab-content" id="marketplace">
-                    <div class="marketplace-info" style="margin-bottom: 16px;">
-                        <p style="margin: 0; font-size: 14px; color: #666;"><strong>💡 Tip:</strong> All actions rollover monthly. Buy actions to expand your strategic reserve!</p>
-                    </div>
-                    <div class="listings-container" id="action-listings">
-                        <div class="loading-placeholder">
-                            <p>Loading marketplace data...</p>
-                        </div>
-                    </div>
+                <div class="listings-grid" id="your-listings-grid">
+                    <p class="empty-state">You have no active listings</p>
+                </div>
+            </div>
+
+            <div class="tab-content active" id="marketplace">
+                <div class="listings-grid" id="marketplace-listings-grid">
+                    <p class="empty-state">No active listings in the marketplace</p>
                 </div>
             </div>
         </div>
@@ -3375,6 +3383,9 @@
             </div>
         </div>
     </div>
+
+    <!-- Chart.js for price history graph -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
     <!-- Independent Onboarding System -->
     <script src="connection-manager.js"></script>
