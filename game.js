@@ -4211,8 +4211,8 @@ class IsometricGrid {
                                 };
                                 parcel.owner = tx.playerId;
 
-                                // Render the new building
-                                this.renderingSystem.renderParcel(row, col, parcel);
+                                // Trigger re-render of entire scene (V2 approach)
+                                this.scheduleRender();
                                 // Player started building construction
                             }
                         }
@@ -4284,8 +4284,8 @@ class IsometricGrid {
                             };
                             parcel.owner = building.ownerId;
 
-                            // Render the building
-                            this.renderingSystem.renderParcel(row, col, parcel);
+                            // Trigger re-render of entire scene (V2 approach)
+                            this.scheduleRender();
 
                             // Synced building from server
                         }
@@ -4300,6 +4300,7 @@ class IsometricGrid {
                 // Building was auto-completed by server - handle for ANY player
                 const buildingData = update.data || update;
                 const { location, buildingId, playerId } = buildingData;
+
                 if (location) {
                     const [row, col] = location;
 
@@ -4315,17 +4316,25 @@ class IsometricGrid {
 
                     const parcel = this.grid[row][col];
 
-                    // CRITICAL FIX: Store building as ID string (not object) for rendering compatibility
+                    // Store building as ID string (not object) for rendering compatibility
                     parcel.building = buildingId;
                     parcel.owner = playerId;
 
-                    // Building construction completed
-
-                    // CRITICAL FIX: Update client-side construction state properties
+                    // Update client-side construction state properties
                     parcel._isUnderConstruction = false;
                     parcel._constructionProgress = 1.0;
                     delete parcel._constructionStartTime;
                     delete parcel._constructionDays;
+
+                    // Mark parcel and neighbors dirty for rendering optimization
+                    if (this.renderingSystem?.markParcelAndNeighborsDirty) {
+                        this.renderingSystem.markParcelAndNeighborsDirty(row, col);
+                    }
+
+                    // Trigger completion animation (queued, plays one at a time)
+                    if (this.renderingSystem?.queueBuildingCompleteAnimation) {
+                        this.renderingSystem.queueBuildingCompleteAnimation(row, col);
+                    }
 
                     // Fetch and update performance
                     this.fetchBuildingPerformance(row, col);
@@ -4407,8 +4416,8 @@ class IsometricGrid {
                 const parcel = this.grid[row]?.[col];
                 if (parcel?.building) {
                     delete parcel.building;
-                    // Re-render the now-empty parcel
-                    this.renderingSystem.renderParcel(row, col, parcel);
+                    // Trigger re-render of entire scene (V2 approach)
+                    this.scheduleRender();
                 }
             }
         }
@@ -4442,8 +4451,13 @@ class IsometricGrid {
                 // Store detailed performance data
                 parcel.building.economicPerformance = performance.summary;
 
-                // Immediately redraw this parcel with new performance
-                this.renderingSystem.renderParcel(row, col, parcel);
+                // Mark parcel and neighbors dirty for rendering optimization
+                if (this.renderingSystem?.markParcelAndNeighborsDirty) {
+                    this.renderingSystem.markParcelAndNeighborsDirty(row, col);
+                }
+
+                // Trigger re-render (V2 approach - will update all visual effects)
+                this.scheduleRender();
             }
         } catch (error) {
             // Building might not exist on server yet - set default performance
@@ -4451,7 +4465,13 @@ class IsometricGrid {
             if (parcel?.building && !parcel.building.underConstruction) {
                 // Default performance for buildings not on server (25% baseline)
                 parcel.building.performance = 25;
-                this.renderingSystem.renderParcel(row, col, parcel);
+
+                // Mark parcel and neighbors dirty for rendering optimization
+                if (this.renderingSystem?.markParcelAndNeighborsDirty) {
+                    this.renderingSystem.markParcelAndNeighborsDirty(row, col);
+                }
+
+                this.scheduleRender();
             }
         }
     }

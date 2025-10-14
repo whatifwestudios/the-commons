@@ -5,7 +5,6 @@
  * - Direct coordinate conversion using CoordinateUtils
  * - Integration with tooltip-system.js
  * - Simple visual effects for hover + adjacent parcels
- * - Building color tints for connected parcels
  */
 
 class ParcelHoverV2 {
@@ -29,9 +28,6 @@ class ParcelHoverV2 {
         this.buildingLiftHeight = 4; // pixels to lift building
         this.buildingBobDuration = 800; // ms for complete down-up cycle
         this.hoverStartTime = null; // When hover started (for animation)
-
-        // Tinted building cache (for adjacent buildings)
-        this.tintedBuildingCache = new Map(); // key: "buildingId_color" -> canvas
 
         // Debug counter for renderEffects calls
         this.renderCallCount = 0;
@@ -110,49 +106,28 @@ class ParcelHoverV2 {
             const wasHovering = this.currentHover !== null;
             const nowHovering = newHover !== null;
 
+            // Mark old hover and its neighbors dirty (before updating state)
+            if (this.currentHover && this.game.renderingSystem?.markParcelAndNeighborsDirty) {
+                this.game.renderingSystem.markParcelAndNeighborsDirty(
+                    this.currentHover.row,
+                    this.currentHover.col
+                );
+            }
+
             this.currentHover = newHover;
             this.updateAdjacentParcels();
             this.updateTooltip();
 
-            // Start animation timer when hover begins
-            if (!wasHovering && nowHovering) {
-                this.hoverStartTime = Date.now();
-                this.startBobAnimation();
-            } else if (!nowHovering) {
-                this.hoverStartTime = null;
-                this.stopBobAnimation();
+            // Mark new hover and its neighbors dirty
+            if (this.currentHover && this.game.renderingSystem?.markParcelAndNeighborsDirty) {
+                this.game.renderingSystem.markParcelAndNeighborsDirty(
+                    this.currentHover.row,
+                    this.currentHover.col
+                );
             }
 
+            // Trigger re-render on hover state change
             this.game.scheduleRender();
-        }
-    }
-
-    /**
-     * Start bob animation loop (only runs while hovering)
-     */
-    startBobAnimation() {
-        if (this.bobAnimationId) return; // Already running
-
-        const animate = () => {
-            if (!this.currentHover || !this.hoverStartTime) {
-                this.bobAnimationId = null;
-                return; // Stop if no longer hovering
-            }
-
-            this.game.scheduleRender();
-            this.bobAnimationId = requestAnimationFrame(animate);
-        };
-
-        this.bobAnimationId = requestAnimationFrame(animate);
-    }
-
-    /**
-     * Stop bob animation loop
-     */
-    stopBobAnimation() {
-        if (this.bobAnimationId) {
-            cancelAnimationFrame(this.bobAnimationId);
-            this.bobAnimationId = null;
         }
     }
 
@@ -266,112 +241,17 @@ class ParcelHoverV2 {
      */
 
     /**
-     * Calculate building bob animation offset
-     * Returns vertical offset in pixels (negative = up)
+     * Get building bob offset (removed - no more bob animation)
+     * Kept for backwards compatibility, always returns 0
      */
     getBuildingBobOffset(row, col) {
-        // Only animate if this is the hovered parcel with a building
-        if (!this.currentHover || !this.hoverStartTime) return 0;
-        if (this.currentHover.row !== row || this.currentHover.col !== col) return 0;
-
-        // Check if parcel has a building
-        const parcel = this.game.grid?.[row]?.[col];
-        if (!parcel || !parcel.building) return 0;
-
-        // Calculate animation progress
-        const elapsed = Date.now() - this.hoverStartTime;
-        const cycleProgress = (elapsed % this.buildingBobDuration) / this.buildingBobDuration;
-
-        // Ease-in-out sine wave: starts lifted, bobs down then back up
-        // 0 -> 0.5 = down from lift, 0.5 -> 1.0 = back up to lift
-        const easedProgress = (Math.cos(cycleProgress * Math.PI * 2) + 1) / 2;
-
-        // Start lifted by full amount, bob between 0 and lift height
-        const bobOffset = -this.buildingLiftHeight * easedProgress;
-
-        // Animation loop is now handled by startBobAnimation/stopBobAnimation
-        // No need to call scheduleRender here - already handled by animation loop
-
-        return bobOffset;
+        return 0; // Bob animation removed for performance
     }
 
     /**
-     * Get or create tinted building image for adjacent parcels
-     * Returns { image, opacity } or null
+     * REMOVED: getTintedBuilding - Building tinting system removed for performance
+     * Adjacent parcels now only show colored diamond overlays, not tinted buildings
      */
-    getTintedBuilding(row, col) {
-        const key = `${row},${col}`;
-
-        // Only for adjacent parcels (not hovered)
-        if (!this.adjacentParcels.has(key)) return null;
-        if (this.currentHover && this.currentHover.row === row && this.currentHover.col === col) {
-            return null;
-        }
-
-        // Check if parcel has a building
-        const parcel = this.game.grid?.[row]?.[col];
-        if (!parcel || !parcel.building) return null;
-
-        const buildingId = parcel.building;
-        const cacheKey = `${buildingId}_${this._playerColor}`;
-
-        // Return cached version if available
-        if (this.tintedBuildingCache.has(cacheKey)) {
-            return {
-                image: this.tintedBuildingCache.get(cacheKey),
-                opacity: 0.3
-            };
-        }
-
-        // Enforce cache size limit (LRU eviction)
-        const MAX_CACHE_SIZE = 50;
-        if (this.tintedBuildingCache.size >= MAX_CACHE_SIZE) {
-            // Remove oldest entry (first key in Map)
-            const firstKey = this.tintedBuildingCache.keys().next().value;
-            this.tintedBuildingCache.delete(firstKey);
-        }
-
-        // Create tinted version on-demand
-        // Get image from building definitions and global cache
-        const buildingDef = this.game.buildingManager?.getBuildingById(buildingId);
-        if (!buildingDef?.graphics?.src) return null;
-
-        const imagePath = buildingDef.graphics.src;
-        const originalImage = window.buildingImageCache?.get(imagePath);
-        if (!originalImage || !originalImage.complete) return null;
-
-        // OPTIMIZED: Use canvas composite operations instead of pixel manipulation
-        // This is GPU-accelerated and much faster than iterating over pixels
-        const canvas = document.createElement('canvas');
-        canvas.width = originalImage.width;
-        canvas.height = originalImage.height;
-        const ctx = canvas.getContext('2d', { willReadFrequently: false }); // Performance hint
-
-        // Draw original image
-        ctx.drawImage(originalImage, 0, 0);
-
-        // Apply color tint using composite operations (much faster than pixel iteration)
-        ctx.globalCompositeOperation = 'multiply';
-        ctx.fillStyle = this._playerColor;
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-        // Restore original brightness by blending with original
-        ctx.globalCompositeOperation = 'lighter';
-        ctx.globalAlpha = 0.5;
-        ctx.drawImage(originalImage, 0, 0);
-
-        // Reset composite mode
-        ctx.globalCompositeOperation = 'source-over';
-        ctx.globalAlpha = 1.0;
-
-        // Cache the result
-        this.tintedBuildingCache.set(cacheKey, canvas);
-
-        return {
-            image: canvas,
-            opacity: 0.3
-        };
-    }
 
     /**
      * Utility: Check if two parcels are the same

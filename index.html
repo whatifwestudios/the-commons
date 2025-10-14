@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>THE COMMONS</title>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect fill='%231a1a1a' width='100' height='100'/><path fill='%234CAF50' d='M20 70 L50 30 L80 70 Z M35 70 L50 50 L65 70 Z'/></svg>" type="image/svg+xml">
-    <link rel="stylesheet" href="style.css?v=5">
+    <link rel="stylesheet" href="style.css?v=11">
     <link rel="stylesheet" href="tooltip-styles.css">
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
@@ -1908,145 +1908,6 @@
             color: #f44336;
         }
 
-        /* Category Details Slide-out Panel */
-        .category-details-panel {
-            position: fixed;
-            top: 0;
-            right: 0;
-            width: 400px;
-            height: 100vh;
-            background: rgba(26, 26, 26, 0.98);
-            border-left: 2px solid #444;
-            z-index: 10002;
-            transform: translateX(100%);
-            transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-            backdrop-filter: blur(10px);
-            font-family: 'SF Mono', Monaco, 'Roboto Mono', monospace;
-            color: #e0e0e0;
-            overflow-y: auto;
-        }
-
-        .category-details-panel.open {
-            transform: translateX(0);
-        }
-
-        .panel-header {
-            padding: 20px;
-            background: rgba(40, 40, 40, 0.8);
-            border-bottom: 1px solid #444;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            position: sticky;
-            top: 0;
-            z-index: 10003;
-        }
-
-        .panel-header h4 {
-            margin: 0;
-            color: #ffffff;
-            font-size: 18px;
-            font-weight: 600;
-        }
-
-        .panel-close-btn {
-            background: none;
-            border: none;
-            color: #888;
-            font-size: 24px;
-            cursor: pointer;
-            padding: 5px;
-            border-radius: 4px;
-            transition: all 0.2s ease;
-        }
-
-        .panel-close-btn:hover {
-            color: #fff;
-            background: rgba(255, 255, 255, 0.1);
-        }
-
-        .panel-content {
-            padding: 20px;
-        }
-
-        .category-description {
-            color: #ccc;
-            line-height: 1.6;
-            margin-bottom: 20px;
-            font-size: 14px;
-        }
-
-        .maintenance-note {
-            background: rgba(76, 175, 80, 0.1);
-            border: 1px solid rgba(76, 175, 80, 0.3);
-            border-radius: 6px;
-            padding: 12px;
-            margin-bottom: 20px;
-            color: #81C784;
-            font-size: 13px;
-        }
-
-        .buildings-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-            gap: 12px;
-            margin-top: 15px;
-        }
-
-        .building-item {
-            background: rgba(255, 255, 255, 0.05);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            border-radius: 6px;
-            padding: 12px;
-            transition: all 0.2s ease;
-        }
-
-        .building-item:hover {
-            background: rgba(255, 255, 255, 0.08);
-            border-color: rgba(255, 255, 255, 0.2);
-            transform: translateY(-1px);
-        }
-
-        .building-name {
-            font-weight: 600;
-            color: #fff;
-            font-size: 13px;
-            margin-bottom: 4px;
-        }
-
-        .building-description {
-            color: #aaa;
-            font-size: 11px;
-            line-height: 1.4;
-        }
-
-        /* Panel section headers */
-        .panel-content h5 {
-            color: #fff;
-            font-size: 16px;
-            margin: 25px 0 15px 0;
-            padding-bottom: 8px;
-            border-bottom: 1px solid #444;
-        }
-
-        /* Scrollbar styling for the panel */
-        .category-details-panel::-webkit-scrollbar {
-            width: 6px;
-        }
-
-        .category-details-panel::-webkit-scrollbar-track {
-            background: rgba(255, 255, 255, 0.05);
-        }
-
-        .category-details-panel::-webkit-scrollbar-thumb {
-            background: rgba(255, 255, 255, 0.2);
-            border-radius: 3px;
-        }
-
-        .category-details-panel::-webkit-scrollbar-thumb:hover {
-            background: rgba(255, 255, 255, 0.3);
-        }
-
         /* Action Marketplace Bid Buttons */
         .bid-buttons-container {
             margin-top: 10px;
@@ -2702,188 +2563,141 @@
             <div class="modal-header">
                 <h3>City Gov</h3>
                 <div class="governance-info">
-                    <span class="voting-points">Points Available: <span id="player-voting-points">2</span></span>
+                    <span class="voting-points">Your Points Available: <span id="player-voting-points">2</span></span>
+                    <span class="treasury-info">Unallocated Funds: $<span id="monthly-lvt-amount">0</span></span>
+                    <span class="treasury-info">City Treasury: $<span id="unallocated-funds-amount">0</span></span>
                 </div>
                 <button class="close-btn" id="close-governance-modal">×</button>
             </div>
             <div class="modal-body">
-                <!-- Financial Overview Panel -->
-                <div class="financial-overview">
-                    <div class="financial-metrics">
-                        <div class="metric-item">
-                            <span class="metric-label">Unallocated Funds</span>
-                            <span class="metric-value">$<span id="monthly-lvt-amount">0</span></span>
-                        </div>
-                        <div class="metric-item">
-                            <span class="metric-label">City Treasury</span>
-                            <span class="metric-value">$<span id="unallocated-funds-amount">0</span></span>
-                        </div>
-                        <div class="metric-item lvt-adjuster">
-                            <span class="metric-label">LVT Rate</span>
-                            <div class="lvt-controls">
-                                <button class="vote-btn decrease" id="lvt-decrease-btn">-</button>
-                                <div class="lvt-display">
-                                    <div class="lvt-rates">
-                                        <span class="current-rate" id="current-lvt-display">50%</span>
-                                        <span class="rate-arrow" id="lvt-rate-arrow" style="display: none;">→</span>
-                                        <span class="proposed-rate" id="proposed-lvt-display" style="display: none;">50%</span>
-                                    </div>
-                                    <div class="lvt-effects">
-                                        <span class="vote-points" id="lvt-vote-points">0</span>
-                                        <span class="net-effect" id="lvt-net-effect" style="display: none;"></span>
-                                    </div>
-                                    <div class="player-allocation-indicators" id="lvt-player-dots"></div>
-                                </div>
-                                <button class="vote-btn increase" id="lvt-increase-btn">+</button>
+                <!-- LVT Rate Section -->
+                <div class="lvt-section-compact">
+                    <div class="lvt-current-rate">
+                        <span class="lvt-label">Current LVT Rate</span>
+                        <span class="lvt-rate-display" id="current-lvt-display">50%</span>
+                    </div>
+                    <div class="lvt-point-allocator">
+                        <span class="lvt-label">Point Allocation</span>
+                        <div class="lvt-controls">
+                            <button class="vote-btn decrease" id="lvt-decrease-btn">-</button>
+                            <div class="lvt-display">
+                                <span class="vote-points" id="lvt-vote-points">0</span>
+                                <div class="player-allocation-indicators" id="lvt-player-dots"></div>
                             </div>
+                            <button class="vote-btn increase" id="lvt-increase-btn">+</button>
                         </div>
                     </div>
+                    <div class="lvt-amended-rate">
+                        <span class="lvt-label">Pending Rate</span>
+                        <span class="lvt-rate-display" id="proposed-lvt-display" style="display: none;">50%</span>
+                        <span class="net-effect" id="lvt-net-effect" style="display: none;"></span>
+                        <div class="lvt-effective-date" id="lvt-effective-date">Takes effect: 1st of next month</div>
+                    </div>
                 </div>
-                
+
                 <div class="governance-sections">
                         <!-- Budget Allocation Section -->
                         <div class="governance-section">
-                            <h4>Budget Allocation</h4>
-                            <p class="section-description">Allocate your voting points to fund public services.</p>
+                            <h4>Budget Allocation <span class="section-helper">Allocate your voting points to fund public services.</span></h4>
                         <div class="budget-categories">
-                            <div class="budget-category" data-category="education">
-                                <div class="category-header">
-                                    <span class="category-name">Education</span>
-                                    <span class="category-allocation">0%</span>
-                                </div>
-                                <div class="category-voting">
+                            <div class="budget-category-compact" data-category="education">
+                                <span class="category-name">Education</span>
+                                <div class="category-controls">
                                     <button class="vote-btn decrease" data-category="education" data-action="decrease">-</button>
                                     <span class="vote-count">0</span>
                                     <button class="vote-btn increase" data-category="education" data-action="increase">+</button>
                                 </div>
-                                <div class="category-coffers">Current funds: $<span>0</span></div>
-                                <button class="more-info-btn" data-category="education">more info >></button>
+                                <span class="category-funds">$<span>0</span></span>
                                 <div class="player-allocation-indicators" data-category="education"></div>
                             </div>
-                            <div class="budget-category" data-category="healthcare">
-                                <div class="category-header">
-                                    <span class="category-name">Healthcare</span>
-                                    <span class="category-allocation">0%</span>
-                                </div>
-                                <div class="category-voting">
+                            <div class="budget-category-compact" data-category="healthcare">
+                                <span class="category-name">Healthcare</span>
+                                <div class="category-controls">
                                     <button class="vote-btn decrease" data-category="healthcare" data-action="decrease">-</button>
                                     <span class="vote-count">0</span>
                                     <button class="vote-btn increase" data-category="healthcare" data-action="increase">+</button>
                                 </div>
-                                <div class="category-coffers">Current funds: $<span>0</span></div>
-                                <button class="more-info-btn" data-category="healthcare">more info >></button>
+                                <span class="category-funds">$<span>0</span></span>
                                 <div class="player-allocation-indicators" data-category="healthcare"></div>
                             </div>
-                            <div class="budget-category" data-category="infrastructure">
-                                <div class="category-header">
-                                    <span class="category-name">Infrastructure</span>
-                                    <span class="category-allocation">0%</span>
-                                </div>
-                                <div class="category-voting">
+                            <div class="budget-category-compact" data-category="infrastructure">
+                                <span class="category-name">Infrastructure</span>
+                                <div class="category-controls">
                                     <button class="vote-btn decrease" data-category="infrastructure" data-action="decrease">-</button>
                                     <span class="vote-count">0</span>
                                     <button class="vote-btn increase" data-category="infrastructure" data-action="increase">+</button>
                                 </div>
-                                <div class="category-coffers">Current funds: $<span>0</span></div>
-                                <button class="more-info-btn" data-category="infrastructure">more info >></button>
+                                <span class="category-funds">$<span>0</span></span>
                                 <div class="player-allocation-indicators" data-category="infrastructure"></div>
                             </div>
-                            <div class="budget-category" data-category="housing">
-                                <div class="category-header">
-                                    <span class="category-name">Housing</span>
-                                    <span class="category-allocation">0%</span>
-                                </div>
-                                <div class="category-voting">
+                            <div class="budget-category-compact" data-category="housing">
+                                <span class="category-name">Housing</span>
+                                <div class="category-controls">
                                     <button class="vote-btn decrease" data-category="housing" data-action="decrease">-</button>
                                     <span class="vote-count">0</span>
                                     <button class="vote-btn increase" data-category="housing" data-action="increase">+</button>
                                 </div>
-                                <div class="category-coffers">Current funds: $<span>0</span></div>
-                                <button class="more-info-btn" data-category="housing">more info >></button>
+                                <span class="category-funds">$<span>0</span></span>
                                 <div class="player-allocation-indicators" data-category="housing"></div>
                             </div>
-                            <div class="budget-category" data-category="culture">
-                                <div class="category-header">
-                                    <span class="category-name">Culture</span>
-                                    <span class="category-allocation">0%</span>
-                                </div>
-                                <div class="category-voting">
+                            <div class="budget-category-compact" data-category="culture">
+                                <span class="category-name">Culture</span>
+                                <div class="category-controls">
                                     <button class="vote-btn decrease" data-category="culture" data-action="decrease">-</button>
                                     <span class="vote-count">0</span>
                                     <button class="vote-btn increase" data-category="culture" data-action="increase">+</button>
                                 </div>
-                                <div class="category-coffers">Current funds: $<span>0</span></div>
-                                <button class="more-info-btn" data-category="culture">more info >></button>
+                                <span class="category-funds">$<span>0</span></span>
                                 <div class="player-allocation-indicators" data-category="culture"></div>
                             </div>
-                            <div class="budget-category" data-category="recreation">
-                                <div class="category-header">
-                                    <span class="category-name">Recreation</span>
-                                    <span class="category-allocation">0%</span>
-                                </div>
-                                <div class="category-voting">
+                            <div class="budget-category-compact" data-category="recreation">
+                                <span class="category-name">Recreation</span>
+                                <div class="category-controls">
                                     <button class="vote-btn decrease" data-category="recreation" data-action="decrease">-</button>
                                     <span class="vote-count">0</span>
                                     <button class="vote-btn increase" data-category="recreation" data-action="increase">+</button>
                                 </div>
-                                <div class="category-coffers">Current funds: $<span>0</span></div>
-                                <button class="more-info-btn" data-category="recreation">more info >></button>
+                                <span class="category-funds">$<span>0</span></span>
                                 <div class="player-allocation-indicators" data-category="recreation"></div>
                             </div>
-                            <div class="budget-category" data-category="commercial">
-                                <div class="category-header">
-                                    <span class="category-name">Commercial</span>
-                                    <span class="category-allocation">0%</span>
-                                </div>
-                                <div class="category-voting">
+                            <div class="budget-category-compact" data-category="commercial">
+                                <span class="category-name">Commercial</span>
+                                <div class="category-controls">
                                     <button class="vote-btn decrease" data-category="commercial" data-action="decrease">-</button>
                                     <span class="vote-count">0</span>
                                     <button class="vote-btn increase" data-category="commercial" data-action="increase">+</button>
                                 </div>
-                                <div class="category-coffers">Current funds: $<span>0</span></div>
-                                <button class="more-info-btn" data-category="commercial">more info >></button>
+                                <span class="category-funds">$<span>0</span></span>
                                 <div class="player-allocation-indicators" data-category="commercial"></div>
                             </div>
-                            <div class="budget-category" data-category="civic">
-                                <div class="category-header">
-                                    <span class="category-name">Civic</span>
-                                    <span class="category-allocation">0%</span>
-                                </div>
-                                <div class="category-voting">
+                            <div class="budget-category-compact" data-category="civic">
+                                <span class="category-name">Civic</span>
+                                <div class="category-controls">
                                     <button class="vote-btn decrease" data-category="civic" data-action="decrease">-</button>
                                     <span class="vote-count">0</span>
                                     <button class="vote-btn increase" data-category="civic" data-action="increase">+</button>
                                 </div>
-                                <div class="category-coffers">Current funds: $<span>0</span></div>
-                                <button class="more-info-btn" data-category="civic">more info >></button>
+                                <span class="category-funds">$<span>0</span></span>
                                 <div class="player-allocation-indicators" data-category="civic"></div>
                             </div>
-                            <div class="budget-category" data-category="emergency">
-                                <div class="category-header">
-                                    <span class="category-name">Emergency</span>
-                                    <span class="category-allocation">0%</span>
-                                </div>
-                                <div class="category-voting">
+                            <div class="budget-category-compact" data-category="emergency">
+                                <span class="category-name">Emergency</span>
+                                <div class="category-controls">
                                     <button class="vote-btn decrease" data-category="emergency" data-action="decrease">-</button>
                                     <span class="vote-count">0</span>
                                     <button class="vote-btn increase" data-category="emergency" data-action="increase">+</button>
                                 </div>
-                                <div class="category-coffers">Current funds: $<span>0</span></div>
-                                <button class="more-info-btn" data-category="emergency">more info >></button>
+                                <span class="category-funds">$<span>0</span></span>
                                 <div class="player-allocation-indicators" data-category="emergency"></div>
                             </div>
-                            <div class="budget-category special" data-category="ubi">
-                                <div class="category-header">
-                                    <span class="category-name">Universal Basic Income</span>
-                                    <span class="category-allocation">0%</span>
-                                </div>
-                                <div class="category-voting">
+                            <div class="budget-category-compact special" data-category="ubi">
+                                <span class="category-name">Universal Basic Income</span>
+                                <div class="category-controls">
                                     <button class="vote-btn decrease" data-category="ubi" data-action="decrease">-</button>
                                     <span class="vote-count">0</span>
                                     <button class="vote-btn increase" data-category="ubi" data-action="increase">+</button>
                                 </div>
-                                <div class="category-coffers">Monthly UBI: $<span>0</span>/citizen</div>
-                                <button class="more-info-btn" data-category="ubi">more info >></button>
+                                <span class="category-funds">$<span>0</span></span>
                                 <div class="player-allocation-indicators" data-category="ubi"></div>
                             </div>
                         </div>
@@ -3591,7 +3405,7 @@
 
     <!-- Legacy economic files removed - replaced by v2 economic system -->
     <script src="parcel-hover.js"></script>
-    <script src="governance.js?v=1"></script>
+    <script src="governance.js?v=5"></script>
     <!-- game-state.js archived - legacy v1 state management conflicted with v2 server authority -->
     <script src="ui-manager.js"></script>
     <script src="parcel-header-utils.js"></script>

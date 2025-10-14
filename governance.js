@@ -102,17 +102,16 @@ class GovernanceV3 {
         // Points display - get the existing element that shows voting points
         this.domCache.votingPointsDisplay = document.getElementById('player-voting-points');
 
-        // Category elements
+        // Category elements - updated for compact design
         this.categories.forEach(cat => {
-            const btn = document.querySelector(`[data-category="${cat}"]`);
-            if (btn) {
-                const container = btn.closest('.budget-category');
+            const container = document.querySelector(`.budget-category-compact[data-category="${cat}"]`);
+            if (container) {
                 this.domCache[cat] = {
                     container,
-                    voteCount: container?.querySelector('.vote-count'),
-                    increaseBtn: container?.querySelector('[data-action="increase"]'),
-                    decreaseBtn: container?.querySelector('[data-action="decrease"]'),
-                    playerDots: container?.querySelector('.player-allocation-indicators')
+                    voteCount: container.querySelector('.vote-count'),
+                    increaseBtn: container.querySelector('[data-action="increase"]'),
+                    decreaseBtn: container.querySelector('[data-action="decrease"]'),
+                    playerDots: container.querySelector('.player-allocation-indicators')
                 };
             }
         });
@@ -173,6 +172,19 @@ class GovernanceV3 {
         if (this.domCache.resetBtn) {
             this.domCache.resetBtn.onclick = () => this.resetAllocations();
         }
+
+        // Close tray when clicking outside/below it
+        document.addEventListener('click', (e) => {
+            if (!this.modal) return;
+
+            // Only handle clicks when modal is open
+            if (!this.modal.classList.contains('visible')) return;
+
+            // Check if click was on the modal background (not the content)
+            if (e.target.id === 'governance-modal') {
+                this.closeModal();
+            }
+        });
     }
 
     /**
@@ -460,10 +472,10 @@ class GovernanceV3 {
 
             // Update category budget balance display
             if (cache?.container) {
-                const coffersSpan = cache.container.querySelector('.category-coffers span');
-                if (coffersSpan && this.treasuryData.categoryBudgets) {
+                const fundsSpan = cache.container.querySelector('.category-funds span');
+                if (fundsSpan && this.treasuryData.categoryBudgets) {
                     const balance = this.treasuryData.categoryBudgets[cat] || 0;
-                    coffersSpan.textContent = Math.floor(balance).toLocaleString();
+                    fundsSpan.textContent = Math.floor(balance).toLocaleString();
                 }
             }
         });
@@ -481,22 +493,38 @@ class GovernanceV3 {
             this.domCache.lvt.currentRate.textContent = `${currentRate}%`;
         }
 
-        // Update net effect display (shows collective impact of all players)
-        const netEffect = this.calculateNetLVTEffect();
-        if (this.domCache.lvt.netEffect && netEffect.netPoints !== 0) {
-            const sign = netEffect.netPoints > 0 ? '+' : '';
-            const previewRate = Math.round(netEffect.previewRate * 100);
-            this.domCache.lvt.netEffect.textContent = `Net: ${sign}${netEffect.netPoints} (${previewRate}% in ${netEffect.daysUntilApplied} days)`;
-            this.domCache.lvt.netEffect.style.display = 'inline';
-            this.domCache.lvt.netEffect.style.color = netEffect.netPoints > 0 ? '#4CAF50' : '#F44336';
-        } else if (this.domCache.lvt.netEffect) {
-            this.domCache.lvt.netEffect.style.display = 'none';
+        // Update pending rate optimistically (shows what rate WOULD be if your vote was applied now)
+        if (this.domCache.lvt.proposedRate) {
+            if (this.localState.lvtVote !== 0) {
+                // Optimistic preview: current rate + your vote's impact
+                const optimisticRate = this.serverLVTRate + (this.localState.lvtVote * 0.01); // Each point = 1%
+                const clampedRate = Math.max(0, Math.min(1, optimisticRate)); // Clamp to 0-100%
+                const displayRate = Math.round(clampedRate * 100);
+                this.domCache.lvt.proposedRate.textContent = `${displayRate}%`;
+                this.domCache.lvt.proposedRate.style.display = 'block';
+            } else {
+                // If no vote, show current rate
+                const currentRate = Math.round(this.serverLVTRate * 100);
+                this.domCache.lvt.proposedRate.textContent = `${currentRate}%`;
+                this.domCache.lvt.proposedRate.style.display = 'block';
+            }
         }
 
-        // Hide the old proposed rate system since we're using the net effect display
-        if (this.domCache.lvt.proposedRate) {
-            this.domCache.lvt.proposedRate.style.display = 'none';
+        // Update helper text below pending rate
+        if (this.domCache.lvt.netEffect) {
+            if (this.localState.lvtVote !== 0) {
+                const sign = this.localState.lvtVote > 0 ? '+' : '';
+                this.domCache.lvt.netEffect.textContent = `(your vote: ${sign}${this.localState.lvtVote})`;
+                this.domCache.lvt.netEffect.style.display = 'block';
+                this.domCache.lvt.netEffect.style.color = this.localState.lvtVote > 0 ? '#4CAF50' : '#F44336';
+            } else {
+                this.domCache.lvt.netEffect.textContent = '(no changes pending)';
+                this.domCache.lvt.netEffect.style.display = 'block';
+                this.domCache.lvt.netEffect.style.color = '#888';
+            }
         }
+
+        // Hide old rate arrow (not used in new design)
         if (this.domCache.lvt.rateArrow) {
             this.domCache.lvt.rateArrow.style.display = 'none';
         }
@@ -807,9 +835,13 @@ class GovernanceV3 {
         // Ensure we're synced before showing
         this.syncWithServer();
 
-        // Show modal
-        this.modal.style.display = 'flex';
-        this.modal.classList.add('visible');
+        // Show modal with proper animation
+        this.modal.style.display = 'block';
+        // Force reflow to ensure display change is applied before transition
+        this.modal.offsetHeight;
+        requestAnimationFrame(() => {
+            this.modal.classList.add('visible');
+        });
 
         // Governance modal opened
     }
@@ -898,16 +930,25 @@ class GovernanceV3 {
         // Track currently open category
         this.currentOpenCategory = null;
 
-        // Add click handlers to all more-info-btn buttons
+        // Add click handlers to category containers (but not the buttons inside)
         document.addEventListener('click', (e) => {
-            if (e.target.classList.contains('more-info-btn')) {
-                const category = e.target.getAttribute('data-category');
+            // Check if clicking on a budget category container
+            const categoryContainer = e.target.closest('.budget-category-compact');
+
+            // Don't trigger if clicking on buttons or their children
+            if (e.target.closest('.vote-btn') || e.target.classList.contains('vote-btn')) {
+                return;
+            }
+
+            if (categoryContainer) {
+                const category = categoryContainer.getAttribute('data-category');
+                console.log('🖱️ Category clicked:', category, 'Has data:', !!categoryData[category]);
                 if (category && categoryData[category]) {
                     // If clicking the same category that's already open, close it
                     if (this.currentOpenCategory === category) {
                         this.closeCategoryDetails();
                     } else {
-                        this.showCategoryDetails(categoryData[category]);
+                        this.showCategoryDetails(categoryData[category], category);
                         this.currentOpenCategory = category;
                     }
                 }
@@ -931,44 +972,91 @@ class GovernanceV3 {
                 const isClickInsideModal = governanceModal.contains(e.target);
                 const isClickInsidePanel = panel.contains(e.target);
                 const isMoreInfoButton = e.target.classList.contains('more-info-btn');
+                const isCategoryContainer = e.target.closest('.budget-category-compact');
 
-                // Close if clicked inside modal but outside panel (and not on a more info button)
-                if (isClickInsideModal && !isClickInsidePanel && !isMoreInfoButton) {
+                // Close if clicked inside modal but outside panel (and not on more info button or category container)
+                if (isClickInsideModal && !isClickInsidePanel && !isMoreInfoButton && !isCategoryContainer) {
                     this.closeCategoryDetails();
                 }
             }
         });
     }
 
-    showCategoryDetails(data) {
+    showCategoryDetails(data, category) {
         const panel = document.getElementById('category-details-panel');
         const title = document.getElementById('category-details-title');
         const content = document.getElementById('category-details-content');
 
-        if (!panel || !title || !content) return;
+        console.log('📋 showCategoryDetails called:', {
+            category,
+            panelExists: !!panel,
+            titleExists: !!title,
+            contentExists: !!content
+        });
+
+        if (!panel || !title || !content) {
+            console.error('❌ Side panel elements not found!');
+            return;
+        }
 
         title.textContent = data.title;
 
+        // Calculate percentage allocated for this category
+        const pointsAllocated = this.localState.allocations[category] || 0;
+        const totalAllocated = Object.values(this.localState.allocations).reduce((sum, val) => sum + val, 0) + Math.abs(this.localState.lvtVote);
+        const percentage = totalAllocated > 0 ? Math.round((pointsAllocated / totalAllocated) * 100) : 0;
+
+        // Get all buildings that match this category from the player's actual buildings
+        let actualBuildings = [];
+        if (this.economicClient && this.economicClient.gameState && this.economicClient.gameState.buildings) {
+            const playerId = this.economicClient.playerId;
+            for (const [locationKey, building] of this.economicClient.gameState.buildings) {
+                if (building.ownerId === playerId) {
+                    // Check if building matches this category (you can expand this logic)
+                    const buildingDef = this.economicClient.buildingDefinitions?.get(building.id);
+                    if (buildingDef && buildingDef.category === category) {
+                        actualBuildings.push(buildingDef.name || building.id);
+                    }
+                }
+            }
+        }
+
         let buildingsHtml = '';
-        if (Array.isArray(data.buildings)) {
-            buildingsHtml = data.buildings.map(building =>
+        if (actualBuildings.length > 0) {
+            buildingsHtml = actualBuildings.map(buildingName =>
                 `<div class="building-item">
-                    <div class="building-name">${building}</div>
-                    <div class="building-description">Click to place this building type</div>
+                    <div class="building-name">${buildingName}</div>
                 </div>`
             ).join('');
+        } else {
+            buildingsHtml = `<div class="no-buildings">You don't have any ${category} buildings yet.</div>`;
         }
 
         content.innerHTML = `
             <div class="category-description">${data.description}</div>
-            <div class="maintenance-note">${data.maintenance}</div>
+            <div class="allocation-stats">
+                <div class="stat-item">
+                    <span class="stat-label">Points Allocated:</span>
+                    <span class="stat-value">${pointsAllocated}</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">% of Total Budget:</span>
+                    <span class="stat-value">${percentage}%</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">Current Funds:</span>
+                    <span class="stat-value">$${(this.treasuryData.categoryBudgets?.[category] || 0).toLocaleString()}</span>
+                </div>
+            </div>
             <div class="buildings-list">
-                <h5>Related Buildings:</h5>
+                <h5>Your ${data.title.replace(' Budget', '')} Buildings:</h5>
                 <div class="buildings-grid">${buildingsHtml}</div>
             </div>
         `;
 
+        console.log('✅ About to add "open" class to panel. Current classList:', panel.classList.toString());
         panel.classList.add('open');
+        console.log('✅ Panel classList after adding "open":', panel.classList.toString());
     }
 
     closeCategoryDetails() {

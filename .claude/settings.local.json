@@ -85,7 +85,10 @@
       "Read(//WSL.LOCALHOST/UBUNTU-24.04/home/zjb/the-commons-clean/**)",
       "Bash(git log:*)",
       "Bash(./restart.sh)",
-      "Bash(tasklist)"
+      "Bash(tasklist)",
+      "Bash(findstr:*)",
+      "Bash(cmd /c \"taskkill /F /PID 3972 & taskkill /F /PID 4740\")",
+      "Bash(cmd /c \"taskkill /F /PID 26076 & taskkill /F /PID 3972\")"
     ],
     "deny": [],
     "ask": []

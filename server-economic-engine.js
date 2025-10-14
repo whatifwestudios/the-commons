@@ -453,7 +453,6 @@ class ServerEconomicEngine {
         const completedBuildings = [];
 
         // Check buildings for completion
-
         for (const [locationKey, building] of this.gameState.buildings.entries()) {
             // Check completion status
             if (building.underConstruction) {
@@ -462,12 +461,12 @@ class ServerEconomicEngine {
 
                 if (constructionElapsed >= constructionRequired) {
                     // Building should be completed
-        // console.log(`[INFO] Auto-completing construction: ${building.id} at ${locationKey} after ${building.constructionDays} days`);
 
                     // Mark as completed
                     building.underConstruction = false;
                     building.constructionCompleteTime = now;
                     building.age = 0; // Reset age to 0 when completed
+                    building.constructionDay = Math.floor(this.gameState.gameTime / this.GAME_DAY_MS); // Record day completed for client-side decay calculation
 
                     // Update grid parcel to reference the completed building
                     const [row, col] = building.location;
@@ -489,7 +488,6 @@ class ServerEconomicEngine {
 
         // If any buildings completed, trigger room-wide recalculation
         if (completedBuildings.length > 0) {
-        // console.log(`[INFO] ${completedBuildings.length} buildings completed construction automatically`);
 
             // Recalculate room-wide economics with new completed buildings
             this.recalculateGlobalEconomics();
@@ -507,9 +505,7 @@ class ServerEconomicEngine {
 
             // Broadcast building completion updates
             completedBuildings.forEach(({ locationKey, building }) => {
-                // Broadcast the building completion
-                this.broadcastGameState({
-                    type: 'ECONOMIC_UPDATE',
+                this.broadcastGameState('ECONOMIC_UPDATE', {
                     transaction: {
                         type: 'BUILD_COMPLETE_AUTO',
                         buildingId: building.id,
@@ -518,8 +514,6 @@ class ServerEconomicEngine {
                         timestamp: Date.now()
                     }
                 });
-
-        // console.log(`[BROADCAST] Broadcasting BUILD_COMPLETE_AUTO for ${building.id} at ${locationKey}`);
             });
         }
     }
@@ -736,8 +730,8 @@ class ServerEconomicEngine {
             }
         });
 
-        // Refresh monthly actions for all players
-        this.refreshMonthlyActions();
+        // REMOVED: No monthly action refresh - players start with 100 actions
+        // this.refreshMonthlyActions();
 
         // Broadcast monthly update to all clients
         if (this.broadcastFunction) {
@@ -993,6 +987,7 @@ class ServerEconomicEngine {
             age: 0,
             decay: 0,
             condition: 1.0,
+            constructionDay: null, // Will be set when construction completes
             performance: null, // Will be calculated after construction
             // Include graphics data from building definition
             graphics: buildingDef.graphics,
@@ -1145,6 +1140,65 @@ class ServerEconomicEngine {
             destroyed: true,
             demolitionCost,
             newBalance: player.cash
+        };
+    }
+
+    /**
+     * Process building repair transaction
+     */
+    async processRepairBuilding(transaction) {
+        const { location, playerId, cost } = transaction;
+        const [row, col] = location;
+        const locationKey = `${row},${col}`;
+
+        const building = this.gameState.buildings.get(locationKey);
+        if (!building) {
+            throw new Error(`No building at location ${locationKey}`);
+        }
+
+        // Check ownership
+        if (building.ownerId !== playerId) {
+            throw new Error(`Player ${playerId} does not own building at ${locationKey}`);
+        }
+
+        // Calculate actual repair cost using server method
+        const actualRepairCost = this.calculateRepairCost(building, 1.0);
+
+        // Check if player can afford repair
+        const player = this.getOrCreatePlayer(playerId);
+        if (player.cash < actualRepairCost) {
+            throw new Error(`Insufficient funds for repair: need $${actualRepairCost.toFixed(2)}, have $${player.cash.toFixed(2)}`);
+        }
+
+        // Charge repair cost
+        player.cash -= actualRepairCost;
+        this.gameState.playerBalances.set(playerId, player.cash);
+
+        player.transactions.push({
+            type: 'BUILDING_REPAIR',
+            amount: -actualRepairCost,
+            timestamp: Date.now(),
+            description: `Repaired ${building.id} at [${row},${col}]`
+        });
+
+        // Reset building age to 0 (restores condition to 100%)
+        building.age = 0;
+
+        // Invalidate performance cache for this building
+        this.invalidateCaches('building_repaired', [locationKey]);
+        this.pendingChanges.buildings.add(locationKey);
+
+        // Mark building as stale in performance cache
+        this.performanceCache.markBuildingStale(locationKey, 'repaired');
+
+        console.log(`🔧 Building repaired: ${building.id} at ${locationKey} (cost: $${actualRepairCost.toFixed(2)})`);
+
+        return {
+            location,
+            repaired: true,
+            repairCost: actualRepairCost,
+            newBalance: player.cash,
+            newAge: 0
         };
     }
 
@@ -2420,9 +2474,9 @@ class ServerEconomicEngine {
                 buildings: [],
                 lastCashflowUpdate: 0,
 
-                // Action inventory (server-authoritative) - SIMPLIFIED: Single bucket, all actions rollover
+                // Action inventory (server-authoritative) - No monthly refresh, fixed starting amount
                 actions: {
-                    total: this.calculateMonthlyActionAllowance() // All actions rollover monthly
+                    total: this.isSoloMode() ? 9999 : 100 // 100 actions for multiplayer, unlimited for solo
                 },
                 governance: {
                     votingPoints: 2, // Players start with 2 points, earn 2 more each month
@@ -3576,11 +3630,12 @@ class ServerEconomicEngine {
             // Calculate raw civic contribution (sum of CARENS-based building scores)
             let civicContribution = 0;
             for (const [locationKey, building] of this.gameState.buildings) {
-                if (building.owner !== playerId) continue;
+                if (building.ownerId !== playerId) continue;
 
-                const buildingDef = this.getBuildingDefinition(building.type);
+                const buildingDef = this.buildingDefinitions.get(building.id);
                 if (buildingDef && buildingDef.civicScore !== undefined) {
                     civicContribution += buildingDef.civicScore;
+                    console.log(`[CIVIC] Player ${playerId} building ${building.id} contributes ${buildingDef.civicScore} civic points`);
                 }
             }
 
@@ -5291,14 +5346,14 @@ class ServerEconomicEngine {
             col,
             buildingId: building.id,
             owner: building.owner,
-            condition: condition, // 0.1 to 1.0
+            // CLIENT-SIDE DECAY: Removed condition, repairCost, currentValue - client calculates from age+constructionDay
+            age: building.age || 0, // Building age in days
+            constructionDay: building.constructionDay || 0, // Day building was completed (for decay calculation)
             performance: performanceMultiplier, // 0.0 to 1.0 multiplier
             isUnderConstruction: building.underConstruction || false,
             constructionProgress: constructionProgress,
             constructionDays: buildingDef.economics?.constructionDays || 1,
             constructionStartTime: building.constructionStartTime || Date.now(),
-            repairCost: this.calculateRepairCost(building, 1.0),
-            currentValue: this.calculateBuildingValue(building),
 
             // Detailed performance data for tooltips
             efficiency: efficiency, // Percentage (0-100+)
@@ -5396,7 +5451,8 @@ class ServerEconomicEngine {
                 location: `[${s.row},${s.col}]`,
                 isUnderConstruction: s.isUnderConstruction,
                 performance: s.performance,
-                condition: s.condition
+                age: s.age,
+                constructionDay: s.constructionDay
             }))
         );
 

@@ -18,10 +18,20 @@ class RenderingSystemV2 {
         this.tileWidth = 100.0;
         this.tileHeight = 50.0;  // Standard 30° isometric (2:1 ratio)
 
+        // Building completion animation system (event-driven, not loop-based)
+        this.animatingBuildings = new Map(); // key: "row,col" -> {startTime, duration}
+        this.animationQueue = []; // Queue of {row, col} waiting to animate
+        this.isPlayingAnimation = false; // Only one animation at a time
+        this.COMPLETION_ANIMATION_DURATION = 1500; // 1.5 seconds
+
+        // Dirty region tracking for partial redraws
+        this.dirtyParcels = new Set(); // Set of "row,col" strings that need redrawing
+        this.forceFullRedraw = false; // Flag to force complete canvas redraw
+        this.DIRTY_THRESHOLD = 0.3; // If >30% of parcels are dirty, do full redraw
+
         // Performance
         this.renderScheduled = false;
         this.animationFrameId = null;
-        this.hasConstructionBuildings = false;
 
         // Performance monitoring
         this.renderCount = 0;
@@ -62,6 +72,9 @@ class RenderingSystemV2 {
         this.cleanupLegacyHandlers();
         // Mouse handling delegated to ParcelHoverV2 - no duplicate handlers
 
+        // Mark everything dirty for first render
+        this.markAllDirty();
+
         // Trigger initial render
         setTimeout(() => {
             this.scheduleRender();
@@ -83,12 +96,6 @@ class RenderingSystemV2 {
         this.game.canvas = newCanvas;
         this.game.ctx = this.ctx;
 
-        // CRITICAL: Update V1 rendering system references too!
-        if (this.game.renderingSystem) {
-            this.game.renderingSystem.canvas = newCanvas;
-            this.game.renderingSystem.ctx = this.ctx;
-        }
-
     }
 
 
@@ -103,7 +110,7 @@ class RenderingSystemV2 {
 
 
     /**
-     * Complete V2 rendering pipeline - clean and efficient
+     * Complete V2 rendering pipeline with dirty region tracking
      */
     render() {
         if (!this.renderScheduled) return;
@@ -111,25 +118,38 @@ class RenderingSystemV2 {
 
         const renderStart = performance.now();
 
-        // Clear canvas
-        this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+        // Determine if we should do a full or partial redraw
+        const totalParcels = this.game.gridSize * this.game.gridSize;
+        const dirtyCount = this.dirtyParcels.size;
+        const dirtyRatio = dirtyCount / totalParcels;
 
-        // Apply transformations with defensive checks
-        this.ctx.save();
+        // TEMPORARY: Always do full redraw until we implement proper dirty region rendering
+        // Partial redraws with clearRect don't work well with isometric overlap
+        const shouldDoFullRedraw = true; // TODO: Implement proper dirty region tracking with Z-order awareness
 
-        // Complete V2 rendering pipeline
-        this.renderGrid();
-        this.renderBuildings();
-        this.renderHoverEffects();
+        if (shouldDoFullRedraw) {
+            // Full redraw: clear entire canvas and render everything
+            this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
 
-        this.ctx.restore();
-
-        // Check if we have construction buildings and need continuous animation
-        this.checkConstructionBuildings();
-        if (this.hasConstructionBuildings) {
-            // Schedule next frame for oscillating animation
-            this.scheduleRender();
+            this.ctx.save();
+            this.renderGrid();
+            this.renderBuildings();
+            this.renderHoverEffects();
+            this.ctx.restore();
+        } else {
+            // Partial redraw: only redraw dirty parcels
+            // NOTE: We still need to clear and redraw affected regions
+            // This is a simplified approach - a full implementation would track Z-order
+            this.ctx.save();
+            this.renderDirtyParcels();
+            this.ctx.restore();
         }
+
+        // Clear dirty regions after rendering
+        this.clearDirtyRegions();
+
+        // NOTE: Construction animation removed - buildings are static at 70% dim until completion
+        // Completion animation is event-driven (16 keyframes over 1.5s), not a continuous loop
 
         // Performance monitoring
         const renderEnd = performance.now();
@@ -159,74 +179,100 @@ class RenderingSystemV2 {
     }
 
     /**
-     * Check if there are any buildings under construction
+     * Render only dirty parcels (partial redraw optimization)
      */
-    checkConstructionBuildings() {
-        this.hasConstructionBuildings = false;
+    renderDirtyParcels() {
+        // Convert dirty parcel set to sorted array for Z-order rendering
+        const dirtyTiles = [];
+        for (const key of this.dirtyParcels) {
+            const [row, col] = key.split(',').map(Number);
+            const iso = this.toIsometric(col, row);
+            dirtyTiles.push({ col, row, zIndex: iso.zIndex || (row + col) });
+        }
 
-        if (!this.game.grid || !this.game.gridSize) return;
+        // Sort by Z-index for correct isometric overlap (back to front)
+        dirtyTiles.sort((a, b) => a.zIndex - b.zIndex);
 
-        window.GridUtils.forEachPosition(this.game.gridSize, (row, col) => {
-            const parcel = this.game.grid[row][col];
-            if (parcel && parcel.building && parcel._isUnderConstruction) {
-                this.hasConstructionBuildings = true;
+        // Clear and redraw each dirty tile
+        for (const tile of dirtyTiles) {
+            // Clear the region around this parcel (approximate bounding box)
+            const iso = this.toIsometric(tile.col, tile.row);
+            const clearWidth = this.tileWidth * 1.5;  // Extra space for buildings
+            const clearHeight = this.tileHeight * 4;  // Extra space for tall buildings
+            this.ctx.clearRect(
+                iso.x - clearWidth / 2,
+                iso.y - clearHeight + this.tileHeight / 2,
+                clearWidth,
+                clearHeight
+            );
+
+            // Render tile, building, and effects for this parcel
+            this.renderTile(tile.col, tile.row);
+            this.renderBuilding(tile.row, tile.col);
+
+            // Render hover effects if this parcel is involved in hover
+            const key = `${tile.row},${tile.col}`;
+            if (this.game.parcelHover) {
+                const isHovered = this.game.parcelHover.currentHover &&
+                                this.game.parcelHover.currentHover.row === tile.row &&
+                                this.game.parcelHover.currentHover.col === tile.col;
+                const isAdjacent = this.game.parcelHover.adjacentParcels.has(key);
+
+                if (isHovered || isAdjacent) {
+                    this.game.parcelHover.renderEffects(tile.row, tile.col, this.ctx, iso.x, iso.y,
+                        this.tileWidth, this.tileHeight);
+                }
             }
-        });
+        }
     }
 
     /**
-     * Render the isometric grid
+     * Render the isometric grid (full redraw)
      */
     renderGrid() {
-        // Use V1's proven approach: direct grid access and V1's methods
+        // Direct grid access for efficient rendering
         if (!this.game.grid || !this.game.gridSize) {
             return; // No grid data available
         }
 
-        // Use V1's exact tile ordering approach
+        // Build tile list with Z-index for proper isometric rendering
         const tiles = [];
         window.GridUtils.forEachPosition(this.game.gridSize, (row, col) => {
-            // Use V1's toIsometric method for consistency
-            const iso = this.game.renderingSystem.toIsometric(col, row);
+            const iso = this.toIsometric(col, row);
             tiles.push({ col, row, zIndex: iso.zIndex || (row + col) });
         });
 
-        // Sort by Z-index (V1's approach)
+        // Sort by Z-index for correct overlap (back to front)
         tiles.sort((a, b) => a.zIndex - b.zIndex);
 
-        // Draw tiles using V1's proven data access pattern
+        // Render tiles in correct order
         for (const tile of tiles) {
-            this.renderTileV2(tile.col, tile.row);
+            this.renderTile(tile.col, tile.row);
         }
     }
-
-    // Basic grid rendering removed - using V1's proven data access
 
     /**
      * Render a single tile
      */
-    /**
-     * V2 tile rendering using V1's proven data access
-     */
-    renderTileV2(col, row) {
-        // Use V1's exact data access pattern
+    renderTile(col, row) {
+        // Get parcel data from grid
         const parcel = this.game.grid[row][col];
         if (!parcel) return;
 
-        // Use V2's coordinate system
+        // Convert to isometric coordinates
         const iso = this.toIsometric(col, row);
 
         this.ctx.save();
 
-        // Get tile color - simplified for V2
+        // Get tile color based on ownership and state
         const tileColor = this.getTileColor(parcel, row, col);
 
-        // Draw tile using V2's drawDiamond method
+        // Draw tile using diamond method
         this.ctx.fillStyle = tileColor;
         this.drawDiamond(iso.x, iso.y, this.tileWidth, this.tileHeight);
         this.ctx.fill();
 
-        // Draw parcel borders using V2's method
+        // Draw parcel borders
         this.drawParcelBorders(row, col, this.tileWidth, this.tileHeight);
 
         // Add hover effects using ParcelHoverV2
@@ -736,24 +782,15 @@ class RenderingSystemV2 {
      * Draw the loaded image at the building position
      */
     drawImageAtPosition(img, x, y, row, col) {
-        // Check for hover effects from ParcelHoverV2
-        let useImage = img;
-        let useOpacity = 1.0;
+        // Check for hover effects from ParcelHoverV2 (bob animation removed)
         const bobOffset = this.game.parcelHover?.getBuildingBobOffset(row, col) || 0;
-        const tintedBuilding = this.game.parcelHover?.getTintedBuilding(row, col);
-
-        // Use tinted version for adjacent buildings
-        if (tintedBuilding) {
-            useImage = tintedBuilding.image;
-            useOpacity = tintedBuilding.opacity;
-        }
 
         // PRECISE ALIGNMENT: Building width slightly smaller than diamond parcel width
         // Left/right edges align with diamond left/right points, reduced by 4px
         const buildingWidth = this.tileWidth - 4; // 4px smaller than parcel width
 
         // Height maintains aspect ratio, unbounded vertically for tall cities
-        const aspectRatio = useImage.naturalWidth / useImage.naturalHeight;
+        const aspectRatio = img.naturalWidth / img.naturalHeight;
         const buildingHeight = buildingWidth / aspectRatio;
 
         // x,y from toIsometric is the center of the diamond
@@ -766,9 +803,12 @@ class RenderingSystemV2 {
         const buildingX = x;
         const buildingTopY = diamondBottomY - buildingHeight;
 
-        // Apply dynamic offsets from position adjuster (if active) and bob animation
+        // Get completion animation effects (if animating)
+        const animEffects = this.getBuildingAnimationEffects(row, col);
+
+        // Apply dynamic offsets from position adjuster (if active), bob animation, and completion animation
         const finalX = buildingX - (buildingWidth / 2) + (this.buildingXOffset || 0);  // Center horizontally
-        const finalY = buildingTopY + (this.buildingYOffset || 0) + bobOffset; // Add bob offset
+        const finalY = buildingTopY + (this.buildingYOffset || 0) + bobOffset + animEffects.yOffset; // Add bob + animation offset
 
         // Calculate visual effects
         const constructionDimming = this.calculateConstructionDimming(row, col);
@@ -787,28 +827,37 @@ class RenderingSystemV2 {
         // Save canvas state for effects
         this.ctx.save();
 
-        // Apply opacity for adjacent buildings (tinted versions)
-        if (useOpacity < 1.0) {
-            this.ctx.globalAlpha = useOpacity;
-        }
-
         // Build combined filter string to apply all effects at once
         let filterParts = [];
 
-        // Apply construction dimming (makes building darker during construction)
-        if (constructionDimming > 0) {
-            const brightness = Math.round((1.0 - constructionDimming) * 100); // 40% to 100% brightness
+        // Check if we're currently animating this building
+        const locationKey = `${row},${col}`;
+        const isAnimating = this.animatingBuildings.has(locationKey);
+
+        // During animation: use animation effects exclusively (no performance coloring)
+        // After animation: use performance coloring
+        if (isAnimating) {
+            // Animation phase: dim → bright → bright (no performance coloring)
+            const brightness = Math.round(animEffects.brightness * 100);
             filterParts.push(`brightness(${brightness}%)`);
+
+            const saturation = Math.round(animEffects.saturation * 100);
+            filterParts.push(`saturate(${saturation}%)`);
+        } else {
+            // Normal rendering: apply construction dimming and performance coloring
+            if (constructionDimming > 0) {
+                const brightness = Math.round((1.0 - constructionDimming) * 100);
+                filterParts.push(`brightness(${brightness}%)`);
+            }
+
+            if (performanceSaturation < 1.0) {
+                filterParts.push(`saturate(${Math.round(performanceSaturation * 100)}%)`);
+            }
         }
 
-        // Apply sepia filter for building condition
+        // Apply sepia filter for building condition (always apply, not affected by animation)
         if (conditionSepia > 0) {
             filterParts.push(`sepia(${Math.round(conditionSepia * 100)}%)`);
-        }
-
-        // Apply performance-based saturation (desaturation for poor performance)
-        if (performanceSaturation < 1.0) {
-            filterParts.push(`saturate(${Math.round(performanceSaturation * 100)}%)`);
         }
 
         // Apply combined filter if we have any effects
@@ -816,9 +865,9 @@ class RenderingSystemV2 {
             this.ctx.filter = filterParts.join(' ');
         }
 
-        // Draw building with effects applied (use tinted image if adjacent)
+        // Draw building with effects applied
         this.ctx.drawImage(
-            useImage,
+            img,
             finalX,                      // Left edge (already centered in finalX calculation)
             finalY,                      // Top edge (building bottom sits on diamond bottom)
             buildingWidth,               // Exactly match parcel width
@@ -1066,5 +1115,227 @@ class RenderingSystemV2 {
         if (update && (update.type === 'BUILDING_COMPLETED' || update.type === 'SERVER_STATE_SYNC')) {
             this.scheduleRender();
         }
+    }
+
+    /**
+     * Mark a single parcel as dirty (needs redraw)
+     */
+    markParcelDirty(row, col) {
+        const key = `${row},${col}`;
+        this.dirtyParcels.add(key);
+    }
+
+    /**
+     * Mark a parcel and its neighbors as dirty (for isometric overlap)
+     */
+    markParcelAndNeighborsDirty(row, col) {
+        this.markParcelDirty(row, col);
+
+        // Mark neighbors that might overlap due to isometric rendering
+        // In isometric view, a parcel can overlap with parcels above/left/right/below
+        const neighbors = [
+            [row - 1, col],     // Above
+            [row + 1, col],     // Below
+            [row, col - 1],     // Left
+            [row, col + 1],     // Right
+            [row - 1, col - 1], // Top-left diagonal
+            [row - 1, col + 1], // Top-right diagonal
+            [row + 1, col - 1], // Bottom-left diagonal
+            [row + 1, col + 1]  // Bottom-right diagonal
+        ];
+
+        for (const [nRow, nCol] of neighbors) {
+            if (nRow >= 0 && nRow < this.game.gridSize && nCol >= 0 && nCol < this.game.gridSize) {
+                this.markParcelDirty(nRow, nCol);
+            }
+        }
+    }
+
+    /**
+     * Clear all dirty parcels and mark entire canvas for redraw
+     */
+    markAllDirty() {
+        this.forceFullRedraw = true;
+        this.dirtyParcels.clear();
+    }
+
+    /**
+     * Clear dirty regions after rendering
+     */
+    clearDirtyRegions() {
+        this.dirtyParcels.clear();
+        this.forceFullRedraw = false;
+    }
+
+    /**
+     * Queue a building for completion animation
+     * Buildings animate one at a time in quick succession
+     */
+    queueBuildingCompleteAnimation(row, col) {
+        const locationKey = `${row},${col}`;
+
+        // Prevent duplicate animations for the same building
+        if (this.animatingBuildings.has(locationKey)) {
+            return;
+        }
+
+        // Check if already in queue
+        const alreadyQueued = this.animationQueue.some(item => item.row === row && item.col === col);
+        if (alreadyQueued) {
+            return;
+        }
+
+        // Add to queue
+        this.animationQueue.push({ row, col });
+
+        // Start processing queue if not already playing
+        if (!this.isPlayingAnimation) {
+            this.processAnimationQueue();
+        }
+    }
+
+    /**
+     * Process animation queue (one at a time)
+     */
+    processAnimationQueue() {
+        // If nothing in queue, we're done
+        if (this.animationQueue.length === 0) {
+            this.isPlayingAnimation = false;
+            return;
+        }
+
+        // Mark as playing
+        this.isPlayingAnimation = true;
+
+        // Get next animation from queue
+        const { row, col } = this.animationQueue.shift();
+
+        // Play this animation
+        this.playBuildingCompleteAnimation(row, col);
+
+        // Queue next animation (with small delay between animations)
+        setTimeout(() => {
+            this.processAnimationQueue();
+        }, this.COMPLETION_ANIMATION_DURATION + 200); // 200ms gap between animations
+    }
+
+    /**
+     * Play building completion animation (event-driven, not loop-based)
+     * Schedules 16 renders over 1.5 seconds at key animation points
+     */
+    playBuildingCompleteAnimation(row, col) {
+        const startTime = Date.now();
+        const duration = this.COMPLETION_ANIMATION_DURATION;
+
+        // Mark this building as animating
+        const locationKey = `${row},${col}`;
+        this.animatingBuildings.set(locationKey, { startTime, duration });
+
+        // Schedule renders at key animation points (eased timing)
+        // 20 keyframes for smoother animation (extra frames added to descent for smoothness)
+        const keyframeTimes = [
+            0,      // Frame 1: Start state (immediate)
+            30,     // Frame 2: Early rise
+            60,     // Frame 3: Rising
+            100,    // Frame 4: Rising fast
+            150,    // Frame 5: Approaching peak
+            210,    // Frame 6: At peak
+            280,    // Frame 7: Holding peak
+            360,    // Frame 8: Still holding
+            450,    // Frame 9: Begin descent
+            560,    // Frame 10: Descending
+            650,    // Frame 11: Mid descent (NEW)
+            740,    // Frame 12: Continuing descent (NEW)
+            830,    // Frame 13: Settling
+            920,    // Frame 14: Almost settled (NEW)
+            1010,   // Frame 15: Nearly complete (NEW)
+            1150,   // Frame 16: Final approach
+            1250,   // Frame 17: Very close (NEW)
+            1350,   // Frame 18: Last adjustment (NEW)
+            1450,   // Frame 19: Final settling (NEW)
+            1500    // Frame 20: Final rest state
+        ];
+
+        keyframeTimes.forEach(ms => {
+            setTimeout(() => {
+                // Only render if animation still active
+                if (this.animatingBuildings.has(locationKey)) {
+                    // Mark this parcel and neighbors as dirty for animation frame
+                    this.markParcelAndNeighborsDirty(row, col);
+                    this.scheduleRender();
+                }
+            }, ms);
+        });
+
+        // Clean up after animation completes
+        setTimeout(() => {
+            this.animatingBuildings.delete(locationKey);
+            this.scheduleRender(); // Final render to ensure clean state
+        }, duration + 10); // Small buffer to ensure last frame renders
+    }
+
+    /**
+     * Calculate animation effects for a building (called during render)
+     * Returns visual effects to apply during completion animation
+     */
+    getBuildingAnimationEffects(row, col) {
+        const locationKey = `${row},${col}`;
+        const animation = this.animatingBuildings.get(locationKey);
+
+        // No animation - return normal state
+        if (!animation) {
+            return { yOffset: 0, opacity: 1, brightness: 1, saturation: 1 };
+        }
+
+        // Calculate animation progress (0.0 to 1.0)
+        const elapsed = Date.now() - animation.startTime;
+        const progress = Math.min(1.0, elapsed / animation.duration);
+
+        // Animation curve: Quick pop up, gentle settle down
+        let yOffset, opacity, brightness, saturation;
+
+        if (progress < 0.2) {
+            // 0-20% (0-300ms): QUICK POP UP
+            const t = progress / 0.2; // 0 to 1
+            const eased = this.easeOutQuad(t); // Smooth acceleration
+            yOffset = -20 * eased; // Rise to -20px
+            opacity = 0.3 + (0.7 * eased); // 30% to 100%
+            brightness = 0.3 + (0.7 * eased); // Dim to bright
+            saturation = 0.2 + (0.8 * eased); // Gray to color
+
+        } else if (progress < 0.5) {
+            // 20-50% (300-750ms): HOLD AT PEAK
+            yOffset = -20; // Stay elevated
+            opacity = 1;
+            brightness = 1;
+            saturation = 1;
+
+        } else {
+            // 50-100% (750-1500ms): GENTLE SETTLE DOWN
+            const t = (progress - 0.5) / 0.5; // 0 to 1
+            const eased = this.easeInOutQuad(t); // Smooth deceleration
+            yOffset = -20 * (1 - eased); // Drop from -20px to 0
+            opacity = 1;
+            brightness = 1;
+            saturation = 1;
+        }
+
+        return { yOffset, opacity, brightness, saturation };
+    }
+
+    /**
+     * Easing function: ease out quad (decelerating curve)
+     */
+    easeOutQuad(t) {
+        return t * (2 - t);
+    }
+
+    /**
+     * Easing function: ease in-out quad (smooth acceleration and deceleration)
+     */
+    easeInOutQuad(t) {
+        return t < 0.5
+            ? 2 * t * t
+            : -1 + (4 - 2 * t) * t;
     }
 }

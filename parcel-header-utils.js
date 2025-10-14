@@ -47,9 +47,19 @@ class ParcelHeaderUtils {
      * Get player color from game state
      */
     static getPlayerColor(game, playerId) {
-        // Try to get from connected players first
-        if (game.connectedPlayers) {
-            const player = game.connectedPlayers.find(p => p.id === playerId);
+        // Use global PlayerUtils if available
+        if (window.PlayerUtils) {
+            return window.PlayerUtils.getPlayerColor(playerId);
+        }
+
+        // Fallback: Try to get from economicClient game state
+        if (game?.economicClient?.gameState?.players) {
+            let player = null;
+            if (game.economicClient.gameState.players instanceof Map) {
+                player = game.economicClient.gameState.players.get(playerId);
+            } else {
+                player = game.economicClient.gameState.players[playerId];
+            }
             if (player?.color) return player.color;
         }
 
@@ -66,9 +76,19 @@ class ParcelHeaderUtils {
      * Get player name from game state
      */
     static getPlayerName(game, playerId) {
-        // Try to get from connected players first
-        if (game.connectedPlayers) {
-            const player = game.connectedPlayers.find(p => p.id === playerId);
+        // Use global PlayerUtils if available
+        if (window.PlayerUtils) {
+            return window.PlayerUtils.getPlayerName(playerId);
+        }
+
+        // Fallback: Try to get from economicClient game state
+        if (game?.economicClient?.gameState?.players) {
+            let player = null;
+            if (game.economicClient.gameState.players instanceof Map) {
+                player = game.economicClient.gameState.players.get(playerId);
+            } else {
+                player = game.economicClient.gameState.players[playerId];
+            }
             if (player?.name) return player.name;
         }
 

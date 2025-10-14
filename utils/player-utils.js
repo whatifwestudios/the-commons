@@ -31,6 +31,28 @@ const PlayerUtils = {
      * Get player display name
      */
     getPlayerName(playerId) {
+        // If it's the current player, always show "You"
+        if (this.isCurrentPlayer(playerId)) {
+            return 'You';
+        }
+
+        // Try to get player name from game state (server-authoritative)
+        if (window.game?.economicClient?.gameState?.players) {
+            let player = null;
+
+            // Handle both Map and Object structures for compatibility
+            if (window.game.economicClient.gameState.players instanceof Map) {
+                player = window.game.economicClient.gameState.players.get(playerId);
+            } else {
+                player = window.game.economicClient.gameState.players[playerId];
+            }
+
+            if (player && player.name) {
+                return player.name;
+            }
+        }
+
+        // Fallback for legacy/static player IDs
         const playerNames = {
             'player': 'You',
             'competitor1': 'Blue Corp',
@@ -40,11 +62,6 @@ const PlayerUtils = {
             'competitor5': 'Gray Holdings',
             'competitor6': 'Brown Enterprises'
         };
-
-        // If it's the current player, always show "You"
-        if (this.isCurrentPlayer(playerId)) {
-            return 'You';
-        }
 
         // Handle anonymous guest players
         if (playerId && playerId.startsWith('guest_')) {
@@ -66,6 +83,40 @@ const PlayerUtils = {
      */
     isCurrentPlayer(playerId) {
         return playerId === this.getCurrentPlayerId();
+    },
+
+    /**
+     * Get player color
+     */
+    getPlayerColor(playerId) {
+        // Try to get player color from game state (server-authoritative)
+        if (window.game?.economicClient?.gameState?.players) {
+            let player = null;
+
+            // Handle both Map and Object structures for compatibility
+            if (window.game.economicClient.gameState.players instanceof Map) {
+                player = window.game.economicClient.gameState.players.get(playerId);
+            } else {
+                player = window.game.economicClient.gameState.players[playerId];
+            }
+
+            if (player && player.color) {
+                return player.color;
+            }
+        }
+
+        // Fallback colors for legacy/static player IDs
+        const playerColors = {
+            'player': '#4CAF50',
+            'competitor1': '#2196F3',
+            'competitor2': '#FF9800',
+            'competitor3': '#9C27B0',
+            'competitor4': '#F44336',
+            'competitor5': '#757575',
+            'competitor6': '#795548'
+        };
+
+        return playerColors[playerId] || '#888888';
     },
 
     /**

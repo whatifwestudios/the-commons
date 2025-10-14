@@ -35,36 +35,16 @@ body.beer-hall-active #top-bar {
 
 /* Ready check modal should allow top bar access since players might need it */
 
-/* CARENS extreme value pulsing glow effect */
+/* CARENS extreme value static glow effect (animation removed for performance) */
 .carens-extreme-pulse {
-    animation: carens-pulse 1.5s ease-in-out infinite alternate;
+    box-shadow: 0 0 10px currentColor, 0 0 20px currentColor;
+    filter: brightness(1.15);
 }
 
-@keyframes carens-pulse {
-    0% {
-        box-shadow: 0 0 5px currentColor;
-        filter: brightness(1);
-    }
-    100% {
-        box-shadow: 0 0 15px currentColor, 0 0 25px currentColor;
-        filter: brightness(1.3);
-    }
-}
-
-/* Attractiveness emigration warning pulse */
+/* Attractiveness emigration warning (animation removed for performance) */
 .attractiveness-warning-pulse {
-    animation: attractiveness-warning 2s ease-in-out infinite;
-}
-
-@keyframes attractiveness-warning {
-    0%, 100% {
-        box-shadow: 0 0 3px #FF6B6B;
-        filter: brightness(1);
-    }
-    50% {
-        box-shadow: 0 0 8px #FF6B6B, 0 0 12px #FF6B6B;
-        filter: brightness(1.2);
-    }
+    box-shadow: 0 0 6px #FF6B6B, 0 0 10px #FF6B6B;
+    filter: brightness(1.1);
 }
 
 /* Attractiveness reveal animation - appears with flourish at 100 residents */
@@ -392,12 +372,7 @@ body.beer-hall-active #top-bar {
 }
 
 /* Setup Screen Updates for Multiplayer */
-.setup-form {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 40px;
-    align-items: start;
-}
+/* Note: .setup-form styles defined later in file (line ~4827) */
 
 .setup-column-left,
 .setup-column-right {
@@ -678,85 +653,10 @@ body.beer-hall-active #top-bar {
 
 /* Enhanced Modal System */
 
-.parcel-info {
-    color: #888888;
-    font-size: 12px;
-    font-family: 'SF Mono', Monaco, monospace;
-}
+/* Legacy parcel selector system removed - now using parcel-hover.js */
 
 .modal-body {
     padding: 20px;
-}
-
-.parcel-diagram {
-    position: relative;
-    width: 200px;
-    height: 200px;
-    margin: 0 auto 20px;
-    background: #1a1a1a;
-    border: 2px solid #333333;
-    border-radius: 8px;
-}
-
-.parcel-center {
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    width: 80px;
-    height: 80px;
-    background: #2a2a2a;
-    border: 1px solid #444444;
-    border-radius: 4px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-}
-
-.land-value {
-    color: #ffffff;
-    font-size: 12px;
-    font-weight: 600;
-    font-family: 'SF Mono', Monaco, monospace;
-}
-
-.parcel-side {
-    position: absolute;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 8px;
-}
-
-.parcel-side.north {
-    top: 10px;
-    left: 50%;
-    transform: translateX(-50%);
-}
-
-.parcel-side.east {
-    right: 10px;
-    top: 50%;
-    transform: translateY(-50%);
-}
-
-.parcel-side.south {
-    bottom: 10px;
-    left: 50%;
-    transform: translateX(-50%);
-}
-
-.parcel-side.west {
-    left: 10px;
-    top: 50%;
-    transform: translateY(-50%);
-}
-
-.side-label {
-    color: #888888;
-    font-size: 10px;
-    font-weight: 600;
-    letter-spacing: 1px;
 }
 
 
@@ -1079,10 +979,6 @@ body.beer-hall-active #top-bar {
     color: #ececec;
 }
 
-.modal-body {
-    padding: 20px;
-}
-
 /* Route Configuration Modal Styles */
 .route-config {
     max-width: 700px;
@@ -1144,18 +1040,18 @@ body.beer-hall-active #top-bar {
     margin-top: 15px;
 }
 
-.stat-item {
+.route-stats .stat-item {
     display: flex;
     align-items: center;
     gap: 8px;
 }
 
-.stat-label {
+.route-stats .stat-label {
     color: #888888;
     font-size: 14px;
 }
 
-.stat-value {
+.route-stats .stat-value {
     color: #ececec;
     font-weight: 600;
     font-size: 14px;
@@ -1330,7 +1226,7 @@ body.beer-hall-active #top-bar {
     letter-spacing: 0.3px;
 }
 
-.marketplace-tabs {
+.action-marketplace .marketplace-tabs {
     display: flex;
     gap: 4px;
     margin-bottom: 20px;
@@ -1681,19 +1577,13 @@ body.beer-hall-active #top-bar {
 
 .listing-time.urgent {
     color: #FF6B35;
-    font-weight: 600;
-    animation: pulse 1s infinite;
+    font-weight: 700;
+    text-shadow: 0 0 4px rgba(255, 107, 53, 0.5);
 }
 
 .listing-time.expired {
     color: #E74C3C;
     font-weight: 600;
-}
-
-@keyframes pulse {
-    0% { opacity: 1; }
-    50% { opacity: 0.6; }
-    100% { opacity: 1; }
 }
 
 .reserve-countdown {
@@ -1704,7 +1594,8 @@ body.beer-hall-active #top-bar {
 
 .reserve-countdown.urgent {
     color: #FF6B35;
-    animation: pulse 1s infinite;
+    font-weight: 700;
+    text-shadow: 0 0 4px rgba(255, 107, 53, 0.5);
 }
 
 .section-header {
@@ -1814,47 +1705,36 @@ body.beer-hall-active #top-bar {
 }
 
 .metric-value.warning {
-    color: #ffc107 !important;
+    color: #ffc107;
     text-shadow: 0 0 4px rgba(255, 193, 7, 0.5);
 }
 
 .metric-value.critical-warning {
-    color: #dc3545 !important;
-    text-shadow: 0 0 6px rgba(220, 53, 69, 0.7);
-    animation: pulse-warning 2s infinite;
+    color: #dc3545;
+    text-shadow: 0 0 8px rgba(220, 53, 69, 0.8);
+    font-weight: 700;
 }
 
 .metric-value.excellent {
-    color: #28a745 !important;
+    color: #28a745;
     text-shadow: 0 0 4px rgba(40, 167, 69, 0.5);
 }
 
-/* City Treasury - Golden yellow for both label and value, remove highlighting */
+/* City Treasury - Golden yellow for both label and value */
 #treasury-row {
-    background: transparent !important;
-    border: none !important;
-    box-shadow: none !important;
+    background: transparent;
+    border: none;
+    box-shadow: none;
 }
 
 #treasury-row .metric-label,
 #treasury-row .metric-value {
-    color: #DAA520 !important;
+    color: #DAA520;
 }
 
 /* Residents - Keep white */
 #residents-row .metric-value {
-    color: #ffffff !important;
-}
-
-@keyframes pulse-warning {
-    0%, 100% { 
-        opacity: 1; 
-        text-shadow: 0 0 6px rgba(220, 53, 69, 0.7);
-    }
-    50% { 
-        opacity: 0.7; 
-        text-shadow: 0 0 10px rgba(220, 53, 69, 0.9);
-    }
+    color: #ffffff;
 }
 
 @keyframes governance-highlight {
@@ -2357,64 +2237,19 @@ body.beer-hall-active #top-bar {
     background: #ef4444; /* Red for negative values */
 }
 
-/* Add streaming dots container for balanced state */
-.jeefhh-bar.balanced::before,
-.jeefhh-bar.balanced::after {
+/* Streaming dots removed for performance - balanced state indicated by static dot at center */
+.jeefhh-bar.balanced::before {
     content: '';
     position: absolute;
     top: 50%;
-    width: 4px;
-    height: 4px;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 6px;
+    height: 6px;
     border-radius: 50%;
     background: #4A90E2;
     z-index: 2;
-    animation-duration: 3s;
-    animation-iteration-count: infinite;
-    animation-timing-function: ease-out;
-}
-
-/* Left streaming dot */
-.jeefhh-bar.balanced::before {
-    left: 50%;
-    animation-name: streamLeft;
-}
-
-/* Right streaming dot */
-.jeefhh-bar.balanced::after {
-    right: 50%;
-    animation-name: streamRight;
-}
-
-/* Stream left animation - dots move left, shrink and fade */
-@keyframes streamLeft {
-    0% {
-        transform: translate(0, -50%) scale(0.5);
-        opacity: 0.8;
-    }
-    50% {
-        transform: translate(-30px, -50%) scale(0.3);
-        opacity: 0.4;
-    }
-    100% {
-        transform: translate(-60px, -50%) scale(0.1);
-        opacity: 0;
-    }
-}
-
-/* Stream right animation - dots move right, shrink and fade */
-@keyframes streamRight {
-    0% {
-        transform: translate(0, -50%) scale(0.5);
-        opacity: 0.8;
-    }
-    50% {
-        transform: translate(30px, -50%) scale(0.3);
-        opacity: 0.4;
-    }
-    100% {
-        transform: translate(60px, -50%) scale(0.1);
-        opacity: 0;
-    }
+    box-shadow: 0 0 4px rgba(74, 144, 226, 0.6);
 }
 
 /* Enhanced progress bar styling for gradients */
@@ -2429,11 +2264,11 @@ body.beer-hall-active #top-bar {
 }
 
 /* Tooltip color classes for supply/demand numbers */
-.tooltip-balanced { color: #4A90E2 !important; }
-.tooltip-surplus-light { color: #8B7FE5 !important; }
-.tooltip-surplus-heavy { color: #E74C3C !important; }
-.tooltip-deficit-light { color: #8B7FE5 !important; }
-.tooltip-deficit-heavy { color: #E74C3C !important; }
+.tooltip-balanced { color: #4A90E2; }
+.tooltip-surplus-light { color: #8B7FE5; }
+.tooltip-surplus-heavy { color: #E74C3C; }
+.tooltip-deficit-light { color: #8B7FE5; }
+.tooltip-deficit-heavy { color: #E74C3C; }
 
 
 
@@ -2919,15 +2754,15 @@ body.beer-hall-active #top-bar {
 
 /* Building Info Panel System Styles - Clean Data-Driven Approach */
 
-/* Labels - Override legacy styles with higher specificity */
+/* Labels - ID selector provides sufficient specificity */
 #building-info-panel .jeefhh-label,
 #building-info-panel .carens-label {
-    font-size: 15px !important;
-    font-weight: 600 !important;
-    letter-spacing: 0.5px !important;
-    text-transform: uppercase !important;
-    min-width: 110px !important;
-    margin-right: 12px !important;
+    font-size: 15px;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    min-width: 110px;
+    margin-right: 12px;
 }
 
 /* JEEFHH label colors */
@@ -2956,15 +2791,15 @@ body.beer-hall-active #top-bar {
     font-size: 14px;
 }
 
-/* Section titles - Override legacy styles */
+/* Section titles - ID selector provides sufficient specificity */
 #building-info-panel .vitality-group-title {
-    font-size: 16px !important;
-    font-weight: 600 !important;
-    color: #888888 !important;
-    letter-spacing: 1px !important;
-    margin-bottom: 12px !important;
-    text-transform: uppercase !important;
-    display: block !important;
+    font-size: 16px;
+    font-weight: 600;
+    color: #888888;
+    letter-spacing: 1px;
+    margin-bottom: 12px;
+    text-transform: uppercase;
+    display: block;
 }
 
 /* Progress bars with data attributes */
@@ -3075,24 +2910,24 @@ body.beer-hall-active #top-bar {
     border-color: #F44336;
 }
 
-/* Metrics - Override legacy styles */
+/* Metrics - ID selector provides sufficient specificity */
 #building-info-panel .metric-label {
-    font-size: 14px !important;
-    color: #808080 !important;
+    font-size: 14px;
+    color: #808080;
 }
 
 #building-info-panel .metric-value {
-    font-size: 15px !important;
-    font-weight: 600 !important;
-    color: #ffffff !important;
+    font-size: 15px;
+    font-weight: 600;
+    color: #ffffff;
 }
 
-/* Info values - Override legacy styles */
+/* Info values - ID selector provides sufficient specificity */
 #building-info-panel .info-value {
-    font-size: 15px !important;
-    font-weight: 600 !important;
-    color: #ffffff !important;
-    font-variant-numeric: tabular-nums !important;
+    font-size: 15px;
+    font-weight: 600;
+    color: #ffffff;
+    font-variant-numeric: tabular-nums;
 }
 
 /* Cost container */
@@ -3453,7 +3288,7 @@ body.beer-hall-active #top-bar {
     max-height: calc(85vh - 100px);
 }
 
-.close-btn {
+.cashflow-modal .close-btn {
     background: none;
     border: none;
     color: #666;
@@ -3469,7 +3304,7 @@ body.beer-hall-active #top-bar {
     transition: all 0.2s;
 }
 
-.close-btn:hover {
+.cashflow-modal .close-btn:hover {
     background-color: #f44336;
     color: white;
 }
@@ -3633,14 +3468,10 @@ body.beer-hall-active #top-bar {
     padding-left: 20px;
 }
 
-.modal-body {
-    padding: 0px !important;
-}
-
 /* Enhanced Parcel Diagram */
 .parcel-diagram-enhanced {
     display: grid;
-    grid-template-areas: 
+    grid-template-areas:
         ". north ."
         "west center east"
         ". south .";
@@ -3649,6 +3480,11 @@ body.beer-hall-active #top-bar {
     gap: 15px;
     max-width: 900px;
     margin: 0 auto;
+}
+
+/* Parcel diagram needs no padding on modal body */
+.parcel-diagram-enhanced .modal-body {
+    padding: 0;
 }
 
 .parcel-diagram-enhanced .parcel-center {
@@ -3700,52 +3536,48 @@ body.beer-hall-active #top-bar {
 /* Governance Modal */
 .governance-modal {
     position: fixed;
-    top: 40px;
+    top: 0;
     left: 0;
     width: 100%;
-    height: calc(100% - 40px);
+    height: 100vh;
     background: rgba(0, 0, 0, 0);
     z-index: 10000;
-    align-items: center;
-    justify-content: center;
-    opacity: 0;
-    visibility: hidden;
-    transition: all 0.28s cubic-bezier(0.4, 0, 0.2, 1);
-    display: flex;
+    pointer-events: none;
+    transition: background 0.35s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .governance-modal.visible {
-    opacity: 1;
-    visibility: visible;
     background: rgba(0, 0, 0, 0.6);
-    backdrop-filter: blur(15px);
+    pointer-events: auto;
 }
 
 .governance-modal .modal-content {
     background: linear-gradient(145deg, #111111, #0a0a0a);
     border: 1px solid #2a2a2a;
-    border-radius: 16px;
-    width: 75vw;
-    max-width: 1200px;
-    min-width: 900px;
-    max-height: 85%;
-    overflow: hidden;
-    box-shadow: 
-        0 25px 50px rgba(0, 0, 0, 0.6),
+    border-bottom-left-radius: 12px;
+    border-bottom-right-radius: 12px;
+    border-top: none;
+    width: 90vw;
+    max-width: 1400px;
+    margin: 0 auto;
+    margin-top: 40px;
+    box-shadow:
+        0 15px 35px rgba(0, 0, 0, 0.7),
         0 0 0 1px rgba(255, 255, 255, 0.05),
         inset 0 1px 0 rgba(255, 255, 255, 0.1);
-    transform: scale(0.9) translateY(30px);
-    transition: all 0.28s cubic-bezier(0.4, 0, 0.2, 1);
+    transform: translateY(calc(-100% - 40px));
+    transition: transform 0.35s cubic-bezier(0.4, 0, 0.2, 1);
     position: relative;
-    overflow-y: clip;
+    max-height: calc(100vh - 60px);
+    overflow: visible;
 }
 
 .governance-modal.visible .modal-content {
-    transform: scale(1) translateY(0);
+    transform: translateY(0);
 }
 
 .governance-modal .modal-body {
-    padding: 0;
+    padding: 20px;
 }
 
 .governance-modal .modal-header {
@@ -3846,13 +3678,13 @@ body.beer-hall-active #top-bar {
     align-items: center;
 }
 
-.metric-item {
+.financial-overview .metric-item {
     display: flex;
     flex-direction: column;
     gap: 6px;
 }
 
-.metric-label {
+.financial-overview .metric-label {
     color: #999;
     font-size: 14px;
     font-weight: 600;
@@ -3860,7 +3692,7 @@ body.beer-hall-active #top-bar {
     letter-spacing: 0.3px;
 }
 
-.metric-value {
+.financial-overview .metric-value {
     color: #DAA520;
     font-size: 14px;
     font-weight: 500;
@@ -3949,21 +3781,30 @@ body.beer-hall-active #top-bar {
 
 /* Category Details Slide-out Panel */
 .category-details-panel {
-    position: fixed;
+    position: absolute;
     top: 0;
-    right: -400px;
-    width: 380px;
-    height: 100vh;
+    right: 0;
+    width: 400px;
+    height: 100%;
     background: linear-gradient(135deg, rgba(20, 20, 20, 0.95), rgba(15, 15, 15, 0.98));
     border-left: 1px solid rgba(147, 112, 219, 0.3);
-    backdrop-filter: blur(12px);
-    z-index: 10001;
-    transition: right 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+    border-bottom-right-radius: 12px;
+    backdrop-filter: blur(8px);
+    z-index: 10;
+    transform: translateX(100%);
+    transition: transform 0.35s cubic-bezier(0.4, 0, 0.2, 1);
     overflow-y: auto;
+    pointer-events: none;
+    opacity: 0;
+}
+
+.governance-modal.visible .category-details-panel {
+    pointer-events: auto;
+    opacity: 1;
 }
 
 .category-details-panel.open {
-    right: 0;
+    transform: translateX(0);
 }
 
 .panel-header {
@@ -4229,6 +4070,220 @@ body.beer-hall-active #top-bar {
     cursor: pointer;
 }
 
+/* Budget Categories Grid - 5 columns */
+.budget-categories {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 12px;
+    margin-top: 16px;
+}
+
+/* Compact Budget Category Design - Column Layout */
+.budget-category-compact {
+    background: linear-gradient(135deg, rgba(15, 15, 15, 0.7), rgba(8, 8, 8, 0.8));
+    border: 1px solid rgba(42, 42, 42, 0.5);
+    border-radius: 8px;
+    padding: 10px 12px;
+    backdrop-filter: blur(3px);
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 9px;
+    cursor: pointer;
+    text-align: center;
+    min-height: 100px;
+}
+
+.budget-category-compact:hover {
+    background: linear-gradient(135deg, rgba(20, 20, 20, 0.8), rgba(12, 12, 12, 0.9));
+    border-color: rgba(147, 112, 219, 0.4);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+}
+
+.budget-category-compact.special {
+    border-color: rgba(218, 165, 32, 0.3);
+    box-shadow: 0 0 15px rgba(218, 165, 32, 0.06);
+}
+
+.budget-category-compact .category-name {
+    color: #ffffff;
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.3px;
+    text-transform: capitalize;
+    width: 100%;
+}
+
+.budget-category-compact .category-controls {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    width: 100%;
+}
+
+.budget-category-compact .vote-count {
+    color: #DAA520;
+    font-size: 18px;
+    font-weight: 700;
+    min-width: 35px;
+    text-align: center;
+}
+
+.budget-category-compact .category-funds {
+    color: #88cc88;
+    font-size: 13px;
+    font-weight: 600;
+    width: 100%;
+}
+
+/* LVT Section Compact - 3 Column Layout */
+.lvt-section-compact {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 16px;
+    padding: 16px;
+    background: linear-gradient(135deg, rgba(15, 15, 15, 0.8), rgba(8, 8, 8, 0.9));
+    border: 1px solid rgba(42, 42, 42, 0.6);
+    border-radius: 10px;
+    margin-bottom: 20px;
+}
+
+.lvt-current-rate {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 16px;
+    background: rgba(10, 10, 10, 0.5);
+    border-radius: 8px;
+    border: 1px solid rgba(42, 42, 42, 0.4);
+    text-align: center;
+}
+
+.lvt-point-allocator {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 16px;
+    background: rgba(10, 10, 10, 0.5);
+    border-radius: 8px;
+    border: 1px solid rgba(42, 42, 42, 0.4);
+    text-align: center;
+}
+
+.lvt-amended-rate {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 16px;
+    background: rgba(10, 10, 10, 0.5);
+    border-radius: 8px;
+    border: 1px solid rgba(42, 42, 42, 0.4);
+    text-align: center;
+}
+
+.lvt-label {
+    color: #888;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.lvt-rate-display {
+    color: #ffffff;
+    font-size: 24px;
+    font-weight: 700;
+}
+
+.lvt-effective-date {
+    color: #888;
+    font-size: 11px;
+    font-style: italic;
+    margin-top: 4px;
+}
+
+.lvt-controls {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+}
+
+.lvt-display {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+}
+
+/* Header Updates */
+.governance-info {
+    display: flex;
+    gap: 20px;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+.treasury-info {
+    color: #88cc88;
+    font-size: 12px;
+    font-weight: 500;
+}
+
+.section-helper {
+    color: #888;
+    font-size: 12px;
+    font-weight: 400;
+    font-style: italic;
+    margin-left: 8px;
+}
+
+/* Side Panel Stats */
+.allocation-stats {
+    background: rgba(10, 10, 10, 0.5);
+    border-radius: 8px;
+    padding: 16px;
+    margin: 16px 0;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.stat-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.stat-label {
+    color: #888;
+    font-size: 12px;
+    font-weight: 500;
+}
+
+.stat-value {
+    color: #ffffff;
+    font-size: 14px;
+    font-weight: 700;
+}
+
+.no-buildings {
+    color: #666;
+    font-style: italic;
+    text-align: center;
+    padding: 20px;
+}
+
 .category-header {
     display: flex;
     justify-content: space-between;
@@ -4388,466 +4443,7 @@ body.beer-hall-active #top-bar {
 }
 
 /* LVT Point Allocation Section */
-.lvt-point-allocation {
-    background: #0a0a0a;
-    border: 1px solid #2a2a2a;
-    border-radius: 6px;
-    padding: 20px;
-    margin-bottom: 20px;
-}
-
-.lvt-control {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 15px;
-}
-
-.lvt-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    width: 100%;
-    margin-bottom: 10px;
-}
-
-.lvt-title {
-    color: #ffffff;
-    font-size: 14px;
-    font-weight: 600;
-}
-
-.current-rate {
-    color: #888888;
-    font-size: 12px;
-}
-
-.current-rate span {
-    color: #4CAF50;
-    font-weight: 600;
-}
-
-.lvt-voting-controls {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 15px;
-}
-
-.lvt-vote-display {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    min-width: 60px;
-}
-
-.lvt-vote-count {
-    color: #ffffff;
-    font-size: 18px;
-    font-weight: 600;
-}
-
-.lvt-vote-label {
-    color: #888888;
-    font-size: 10px;
-}
-
-.proposed-rate {
-    text-align: center;
-    color: #888888;
-    font-size: 14px;
-}
-
-.proposed-rate span {
-    color: #ffffff;
-    font-size: 18px;
-    font-weight: 600;
-}
-
-.vote-summary {
-    color: #cccccc;
-    font-size: 14px;
-}
-
-.vote-summary span {
-    color: #ffffff;
-    font-weight: 600;
-}
-
-/* Governance Overlay */
-.governance-overlay {
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: rgba(0, 0, 0, 0.8);
-    backdrop-filter: blur(4px);
-    z-index: 10;
-    padding: 20px;
-    overflow-y: auto;
-}
-
-.governance-panel {
-    background: rgba(20, 20, 20, 0.95);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    border-radius: 8px;
-    padding: 20px;
-    max-width: 500px;
-    margin: 0 auto;
-}
-
-/* Professional LVT Voting Interface */
-.lvt-voting-interface {
-    background: rgba(255, 255, 255, 0.02);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    border-radius: 8px;
-    padding: 20px;
-    margin: 16px 0;
-}
-
-.lvt-main-display {
-    text-align: center;
-    margin-bottom: 24px;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-    padding-bottom: 20px;
-}
-
-.lvt-title {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 6px;
-    margin-bottom: 16px;
-}
-
-.lvt-icon {
-    font-size: 20px;
-    margin-bottom: 4px;
-}
-
-.lvt-title h4 {
-    color: #FFFFFF;
-    font-size: 18px;
-    font-weight: 600;
-    margin: 0;
-}
-
-.lvt-subtitle {
-    color: #888;
-    font-size: 12px;
-    font-weight: 400;
-}
-
-.lvt-current-rate {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 4px;
-}
-
-.rate-value {
-    font-size: 32px;
-    font-weight: 700;
-    color: #FFFFFF;
-    letter-spacing: -1px;
-}
-
-.rate-label {
-    color: #888;
-    font-size: 12px;
-    font-weight: 500;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-}
-
-.lvt-voting-section {
-    display: flex;
-    flex-direction: column;
-    gap: 24px;
-}
-
-.voting-controls {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 16px;
-    background: rgba(255, 255, 255, 0.02);
-    border: 1px solid rgba(255, 255, 255, 0.05);
-    border-radius: 6px;
-    padding: 16px;
-}
-
-.lvt-vote-btn {
-    background: rgba(255, 255, 255, 0.03);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    border-radius: 4px;
-    color: #FFF;
-    padding: 12px 20px;
-    font-size: 14px;
-    font-weight: 500;
-    cursor: pointer;
-    transition: all 0.2s ease;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 4px;
-    min-width: 80px;
-}
-
-.lvt-vote-btn:hover {
-    background: rgba(255, 255, 255, 0.08);
-    border-color: rgba(255, 255, 255, 0.2);
-}
-
-.lvt-vote-btn:active {
-    background: rgba(255, 255, 255, 0.05);
-}
-
-.lvt-vote-btn:disabled {
-    background: rgba(255, 255, 255, 0.01);
-    border-color: rgba(255, 255, 255, 0.05);
-    color: #666;
-    cursor: not-allowed;
-}
-
-
-.vote-symbol {
-    font-size: 16px;
-    font-weight: 600;
-    line-height: 1;
-}
-
-.vote-text {
-    font-size: 11px;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    font-weight: 500;
-}
-
-.voting-status {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 12px;
-    background: rgba(255, 255, 255, 0.02);
-    border: 1px solid rgba(255, 255, 255, 0.05);
-    border-radius: 4px;
-    padding: 12px;
-    min-width: 100px;
-}
-
-.my-votes, .points-remaining {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 4px;
-}
-
-.vote-count, .points-count {
-    font-size: 20px;
-    font-weight: 600;
-    color: #FFFFFF;
-}
-
-.vote-label, .points-label {
-    font-size: 10px;
-    color: #888;
-    text-transform: uppercase;
-    font-weight: 500;
-    letter-spacing: 0.5px;
-}
-
-
-/* Governance Tooltips - Disabled CSS tooltips, using unified manager */
-.budget-category {
-    position: relative;
-}
-
-/* Metric Tooltips - matches vitality styling */
-.metric-tooltip {
-    position: relative;
-    cursor: pointer;
-}
-
-/* Metric tooltip pseudo-elements disabled - using unified manager */
-
-/* Data Insights Overlay */
-.data-insights-overlay {
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: #1a1a1a;
-    border-left: 2px solid #9C27B0;
-    z-index: 1000;
-    overflow-y: auto;
-    font-family: 'SF Mono', Monaco, monospace;
-}
-
-.insights-header {
-    background: linear-gradient(145deg, #9C27B0, #7B1FA2);
-    color: white;
-    padding: 16px;
-    position: sticky;
-    top: 0;
-    z-index: 1001;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    border-bottom: 1px solid #3a3a3a;
-}
-
-.insights-header h3 {
-    margin: 0;
-    font-size: 16px;
-    font-weight: 600;
-}
-
-.close-btn {
-    background: rgba(255, 255, 255, 0.2);
-    border: none;
-    color: white;
-    width: 28px;
-    height: 28px;
-    border-radius: 50%;
-    cursor: pointer;
-    font-size: 18px;
-    font-weight: bold;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-}
-
-.close-btn:hover {
-    background: rgba(255, 255, 255, 0.3);
-}
-
-.insights-content {
-    padding: 16px;
-}
-
-.insights-section {
-    margin-bottom: 24px;
-}
-
-.insights-section h4 {
-    margin: 0 0 12px 0;
-    font-size: 14px;
-    font-weight: 600;
-    color: #ffffff;
-    border-bottom: 1px solid #3a3a3a;
-    padding-bottom: 8px;
-}
-
-.data-grid {
-    display: grid;
-    gap: 8px;
-}
-
-.data-item {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 8px 12px;
-    background: #0a0a0a;
-    border-radius: 4px;
-    border-left: 3px solid #3a3a3a;
-}
-
-.data-item.total {
-    border-left-color: #9C27B0;
-    background: rgba(156, 39, 176, 0.1);
-    font-weight: 600;
-}
-
-.data-item .label {
-    color: #cccccc;
-    font-size: 11px;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-}
-
-.data-item .value {
-    color: #ffffff;
-    font-size: 12px;
-    font-weight: 500;
-}
-
-.data-item .value.good {
-    color: #4CAF50;
-}
-
-.data-item .value.ok {
-    color: #FF9800;
-}
-
-.data-item .value.poor {
-    color: #f44336;
-}
-
-/* Month Progress Bar */
-.month-progress-container {
-    position: relative;
-    width: 100%;
-    height: 18px;
-    background: #1a1a1a;
-    border: 1px solid #333333;
-    border-radius: 9px;
-    overflow: hidden;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-}
-
-.month-progress-bar {
-    position: absolute;
-    left: 0;
-    top: 0;
-    height: 100%;
-    background: rgba(255, 255, 255, 0.1);
-    border-radius: 8px;
-    transition: all 0.3s ease;
-    width: 100%;
-    opacity: 0.3;
-}
-
-.month-progress-container.urgent .month-progress-bar {
-    background: linear-gradient(90deg, #ef4444 0%, #f97316 50%, #eab308 100%);
-    opacity: 1;
-}
-
-.month-progress-container.urgent {
-    animation: pulse-urgent 1s ease-in-out infinite alternate;
-}
-
-@keyframes pulse-urgent {
-    from { box-shadow: 0 0 5px rgba(239, 68, 68, 0.3); }
-    to { box-shadow: 0 0 15px rgba(239, 68, 68, 0.6); }
-}
-
-.month-progress-text {
-    position: absolute;
-    z-index: 2;
-    font-size: 10px;
-    font-weight: 600;
-    color: #ffffff;
-    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
-    pointer-events: none;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    padding: 4px 8px;
-    text-align: center;
-}
-
-
-/* Game Interface (hidden during setup) */
-.game-interface.hidden {
-    display: none;
-}
-
+/* Legacy LVT voting interface removed - now using new governance modal */
 /* Game Setup Screen */
 .setup-screen {
     position: fixed;
@@ -5196,7 +4792,7 @@ body.beer-hall-active #top-bar {
     margin-bottom: 8px;
 }
 
-.stat-value {
+.stat-card .stat-value {
     font-size: 20px;
     font-weight: 600;
     color: #ffffff;
@@ -5570,383 +5166,7 @@ body.beer-hall-active #top-bar {
     margin-top: 4px;
 }
 
-.auth-btn {
-    width: 100%;
-    border: none;
-    padding: 12px 16px;
-    border-radius: 4px;
-    font-size: 13px;
-    font-weight: 500;
-    cursor: pointer;
-    transition: all 0.2s ease;
-    margin-bottom: 12px;
-    font-family: inherit;
-    letter-spacing: 0.3px;
-}
-
-.auth-btn.primary {
-    background: #52C77E;
-    color: #0a0a0a;
-}
-
-.auth-btn.primary:hover {
-    background: #42B96E;
-    transform: translateY(-1px);
-    box-shadow: 0 4px 12px rgba(82, 199, 126, 0.3);
-}
-
-.auth-btn.secondary {
-    background: transparent;
-    color: #cccccc;
-    border: 1px solid #2a2a2a;
-}
-
-.auth-btn.secondary:hover {
-    background: #1a1a1a;
-    border-color: #3a3a3a;
-    color: #ffffff;
-}
-
-.auth-divider {
-    text-align: center;
-    margin: 20px 0;
-    position: relative;
-}
-
-.auth-divider::before {
-    content: '';
-    position: absolute;
-    top: 50%;
-    left: 0;
-    right: 0;
-    height: 1px;
-    background: #2a2a2a;
-}
-
-.auth-divider span {
-    background: #0a0a0a;
-    color: #666666;
-    font-size: 11px;
-    padding: 0 12px;
-    position: relative;
-}
-
-.auth-note {
-    margin: 20px 0 0 0;
-    text-align: center;
-}
-
-.auth-note small {
-    color: #666666;
-    font-size: 11px;
-    line-height: 1.4;
-}
-
-.auth-success {
-    padding: 32px;
-    text-align: center;
-}
-
-.success-icon {
-    font-size: 48px;
-    margin-bottom: 16px;
-}
-
-.auth-success h3 {
-    color: #52C77E;
-    margin: 0 0 12px 0;
-    font-size: 18px;
-    font-weight: 600;
-}
-
-.auth-success p {
-    color: #cccccc;
-    margin: 0 0 8px 0;
-    font-size: 13px;
-    line-height: 1.4;
-}
-
-.auth-success small {
-    color: #666666;
-    font-size: 11px;
-}
-
-.auth-success strong {
-    color: #ffffff;
-    font-weight: 500;
-}
-
-.auth-error {
-    padding: 32px;
-    text-align: center;
-}
-
-.auth-error p {
-    color: #ff6666;
-    margin: 0 0 20px 0;
-    font-size: 13px;
-    line-height: 1.4;
-}
-
-.hidden {
-    display: none !important;
-}
-
-/* Profile Panel */
-.profile-panel {
-    position: fixed;
-    top: 0;
-    right: 0;
-    width: 400px;
-    height: 100vh;
-    background: #0a0a0a;
-    border-left: 1px solid #2a2a2a;
-    z-index: 12000;
-    transform: translateX(100%);
-    transition: transform 0.3s ease;
-    display: flex;
-    flex-direction: column;
-}
-
-.profile-panel:not(.hidden) {
-    transform: translateX(0);
-}
-
-.profile-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 20px;
-    border-bottom: 1px solid #2a2a2a;
-    background: #111111;
-}
-
-.profile-header h3 {
-    color: #52C77E;
-    margin: 0;
-    font-size: 16px;
-    font-weight: 600;
-}
-
-.close-btn {
-    background: none;
-    border: none;
-    color: #888888;
-    font-size: 24px;
-    cursor: pointer;
-    width: 32px;
-    height: 32px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    border-radius: 4px;
-    transition: all 0.2s;
-}
-
-.close-btn:hover {
-    background: #1a1a1a;
-    color: #ffffff;
-}
-
-.profile-content {
-    flex: 1;
-    overflow-y: auto;
-    padding: 0;
-}
-
-.profile-info {
-    padding: 24px 20px;
-    border-bottom: 1px solid #2a2a2a;
-    display: flex;
-    align-items: center;
-    gap: 16px;
-}
-
-.profile-avatar {
-    flex-shrink: 0;
-}
-
-.profile-emoji {
-    width: 48px;
-    height: 48px;
-    background: #52C77E;
-    border-radius: 8px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 24px;
-    transform: rotate(45deg);
-}
-
-.profile-emoji span {
-    transform: rotate(-45deg);
-}
-
-.profile-details {
-    flex: 1;
-}
-
-.profile-details h4 {
-    color: #ffffff;
-    margin: 0 0 4px 0;
-    font-size: 16px;
-    font-weight: 600;
-}
-
-.profile-details p {
-    color: #888888;
-    margin: 0 0 2px 0;
-    font-size: 12px;
-}
-
-.profile-joined {
-    color: #666666 !important;
-    font-size: 11px !important;
-}
-
-.profile-stats {
-    padding: 24px 20px;
-    border-bottom: 1px solid #2a2a2a;
-}
-
-.profile-stats h4 {
-    color: #ffffff;
-    margin: 0 0 16px 0;
-    font-size: 14px;
-    font-weight: 600;
-}
-
-.stats-grid {
-    display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    gap: 12px;
-    margin-bottom: 20px;
-}
-
-.stat-item {
-    background: #1a1a1a;
-    border: 1px solid #2a2a2a;
-    border-radius: 4px;
-    padding: 12px;
-    text-align: center;
-}
-
-.stat-item.highlight {
-    border-color: #52C77E;
-    background: rgba(82, 199, 126, 0.05);
-}
-
-.stat-value {
-    display: block;
-    color: #ffffff;
-    font-size: 16px;
-    font-weight: 600;
-    font-family: 'SF Mono', Monaco, monospace;
-    margin-bottom: 4px;
-}
-
-.stat-item.highlight .stat-value {
-    color: #52C77E;
-}
-
-.stat-label {
-    display: block;
-    color: #888888;
-    font-size: 10px;
-    font-weight: 500;
-    letter-spacing: 0.5px;
-}
-
-.next-game-bonus {
-    background: #0a0a0a;
-    border: 1px solid #2a2a2a;
-    border-radius: 6px;
-    padding: 16px;
-    text-align: center;
-}
-
-.next-game-bonus h4 {
-    color: #ffffff;
-    margin: 0 0 8px 0;
-    font-size: 12px;
-    font-weight: 600;
-    letter-spacing: 0.5px;
-}
-
-.bonus-amount {
-    color: #52C77E;
-    font-size: 20px;
-    font-weight: 600;
-    font-family: 'SF Mono', Monaco, monospace;
-}
-
-.recent-games {
-    padding: 24px 20px;
-    border-bottom: 1px solid #2a2a2a;
-}
-
-.recent-games h4 {
-    color: #ffffff;
-    margin: 0 0 16px 0;
-    font-size: 14px;
-    font-weight: 600;
-}
-
-.profile-actions {
-    padding: 20px;
-}
-
-.profile-actions .auth-btn {
-    margin-bottom: 0;
-}
-
-/* Auth Status in Setup Screen */
-.auth-status {
-    margin-bottom: 20px;
-}
-
-.auth-logged-in,
-.auth-logged-out {
-    background: #111111;
-    border: 1px solid #2a2a2a;
-    border-radius: 6px;
-    padding: 16px;
-    text-align: center;
-}
-
-.auth-logged-in {
-    border-color: #52C77E;
-    background: rgba(82, 199, 126, 0.05);
-}
-
-.auth-logged-in span {
-    color: #52C77E;
-    font-weight: 500;
-}
-
-.auth-logged-out p {
-    color: #ffffff;
-    margin: 0 0 12px 0;
-    font-size: 13px;
-}
-
-.link-btn {
-    background: none;
-    border: none;
-    color: #52C77E;
-    font-size: 12px;
-    font-weight: 500;
-    cursor: pointer;
-    text-decoration: underline;
-    padding: 0;
-    font-family: inherit;
-}
-
-.link-btn:hover {
-    color: #42B96E;
-}
-
-
+/* Legacy auth and profile system removed - authentication disabled */
 /* State management classes */
 .hidden {
     display: none !important;

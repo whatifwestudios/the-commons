@@ -273,12 +273,14 @@ async function handleWebSocketMessage(ws, data) {
                 return;
             }
 
+            // Get player data from room to ensure we use the correct name and color
+            const player = room.players.get(playerId);
             const chatMessage = {
                 type: 'CHAT_MESSAGE',
                 playerId: playerId,
-                playerName: data.playerName || 'Player',
+                playerName: player?.name || data.playerName || 'Player',
                 message: data.message,
-                color: data.color,
+                color: player?.color || data.color || '#888888',
                 timestamp: Date.now()
             };
 

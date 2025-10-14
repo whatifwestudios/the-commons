@@ -160,13 +160,21 @@ class BuildingSystem {
             return false;
         }
         
-        // Place the building
+        // CRITICAL: Set construction state FIRST before anything else
+        console.log(`🏗️ [CONSTRUCT] Step 1: Setting construction state for [${row},${col}]`);
+        parcel._isUnderConstruction = true;
+        parcel._serverManaged = true; // Mark as server-managed construction
+        parcel._constructionProgress = 0.0; // Start at 0%
+
+        // Place the building AFTER construction state is set
+        console.log(`🏗️ [CONSTRUCT] Step 2: Placing building ${buildingId} at [${row},${col}]`);
         parcel.building = buildingId;
         parcel.owner = owner || this.game.currentPlayerId;
         parcel.buildingAge = 0;
         parcel.decay = 0;
         parcel.population = 0;
 
+        console.log(`🏗️ [CONSTRUCT] Step 3: Building placed - State: _isUnderConstruction=${parcel._isUnderConstruction}, building=${parcel.building}`);
 
         // Re-enabled: Generate tinted variants with proper error handling
         if (this.game.renderingSystem?.buildingTintManager) {
@@ -178,13 +186,6 @@ class BuildingSystem {
                     console.warn(`Failed to generate variants for ${buildingId}:`, error);
                 });
         }
-
-        // Server handles all construction state and timing - just update UI state
-        parcel._isUnderConstruction = true;
-        parcel._serverManaged = true; // Mark as server-managed construction
-
-        // Initialize construction progress - server will manage timing
-        parcel._constructionProgress = 0.1; // Show initial progress for UI
         
         // Track building ownership locally (UI only)
         if (this.game.isCurrentPlayer(owner)) {
@@ -199,6 +200,12 @@ class BuildingSystem {
         // Update various systems for UI
         this.markBuildingEconomicsDirty(row, col);
         this.markPrereqDirty();
+
+        // Mark parcel and neighbors dirty for rendering optimization
+        if (this.game.renderingSystem?.markParcelAndNeighborsDirty) {
+            this.game.renderingSystem.markParcelAndNeighborsDirty(row, col);
+        }
+
         this.game.scheduleRender();
 
         console.log(`✅ Building placement complete: ${buildingId} at (${row},${col}) - server managing construction`);
@@ -325,6 +332,11 @@ class BuildingSystem {
             delete parcel._constructionDays;
             delete parcel._constructionProgress;
 
+            // Mark parcel and neighbors dirty for rendering optimization
+            if (this.game.renderingSystem?.markParcelAndNeighborsDirty) {
+                this.game.renderingSystem.markParcelAndNeighborsDirty(row, col);
+            }
+
             // Update various systems for UI
             this.markBuildingEconomicsDirty(row, col);
             this.game.scheduleRender();
@@ -363,8 +375,14 @@ class BuildingSystem {
         this.markBuildingEconomicsDirty(row, col);
         this.game.markVitalityDirty();
         this.markPrereqDirty();
+
+        // Mark parcel and neighbors dirty for rendering optimization
+        if (this.game.renderingSystem?.markParcelAndNeighborsDirty) {
+            this.game.renderingSystem.markParcelAndNeighborsDirty(row, col);
+        }
+
         this.game.scheduleRender();
-        
+
         return true;
     }
     
@@ -1022,69 +1040,67 @@ class BuildingSystem {
 
         if (!buildingId) return false;
 
-        // Calculate demolition fee (25% of current building value based on condition)
+        // Calculate demolition fee using client-side calculation
+        // Server will recalculate to ensure accuracy
         const building = this.buildingManager?.getBuildingById(buildingId);
         if (!building) {
             console.error('Building definition not found for:', buildingId);
             return false;
         }
-        const buildingCost = building.cost || 0;
-        const condition = parcel.condition || 100;
-        const currentValue = Math.round(buildingCost * (condition / 100));
-        const demolitionFee = Math.round(currentValue * 0.25);
 
         // Check if player can afford demolition fee - use server-authoritative balance
+        // Server will do final check
         const currentBalance = this.game.economicClient?.getCurrentPlayerBalance();
-        if (currentBalance === null) return false; // Wait for server data
-
-        if (currentBalance < demolitionFee) {
-            this.game.showInsufficientFundsFeedback();
-            this.game.hideContextMenu();
+        if (currentBalance === null) {
+            this.game.showNotification('Loading balance data...', 'info');
             return false;
         }
 
-        // ✅ CLEANED: Server-authoritative demolition transaction
-        // Demolition cost is removed from economy (not added to treasury)
+        // ✅ SERVER-AUTHORITATIVE: Send destroy transaction to server
         if (this.game.economicClient) {
             try {
-                await this.game.economicClient.spendCash(this.game.currentPlayerId, demolitionFee, 'Building demolition fee');
-                console.log('💰 Demolition fee processed by server');
+                const result = await this.game.economicClient.destroyBuilding([row, col], this.game.currentPlayerId);
+
+                if (!result.success) {
+                    console.error('❌ Demolition transaction failed:', result.error);
+                    this.game.showNotification(result.error || 'Demolition failed!', 'error');
+                    this.game.hideContextMenu();
+                    return false;
+                }
+
+                console.log('✅ Demolition transaction successful:', result);
             } catch (error) {
                 console.error('❌ Demolition payment failed:', error);
+                this.game.showNotification('Demolition failed: ' + error.message, 'error');
+                this.game.hideContextMenu();
                 return false;
             }
         }
-        
-        
-        // Remove building and amenities
-        parcel.building = null;
-        parcel.amenities = [];
-        
-        // Broadcast demolition to other players
-        if (this.game.multiplayerManager) {
-            this.game.multiplayerManager.onBuildingConstructed(row, col, null);
-        }
-        
-        // Reset building-specific properties
-        parcel.buildingAge = 0;
-        parcel.decay = 0;
-        
-        // Remove from tracking
+
+        // Server will remove building and broadcast updated state
+        // Client will receive the update via WebSocket
+
+        // Remove from local tracking
         if (this.game.isCurrentPlayer(parcel.owner)) {
             this.playerBuildings.delete(`${row},${col}`);
-            
+
             const count = this.buildingsByType.get(buildingId) || 0;
             if (count > 0) {
                 this.buildingsByType.set(buildingId, count - 1);
             }
         }
-        
+
         // Mark building for economic recalculation removal
         this.markBuildingEconomicsDirty(row, col);
-        
+
+        // Mark parcel and neighbors dirty for rendering optimization
+        if (this.game.renderingSystem?.markParcelAndNeighborsDirty) {
+            this.game.renderingSystem.markParcelAndNeighborsDirty(row, col);
+        }
+
         // Mark region as dirty for cache invalidation (performance optimization)
         this.game.markRegionDirty(row, col, 3);
-        
+
         // Update vitality, cashflow and re-render
         // V2: Use ui-manager for display updates
         if (this.game.uiManager && this.game.economicClient) {
@@ -1094,7 +1110,7 @@ class BuildingSystem {
         this.game.updatePlayerStats();
         this.game.scheduleRender();
         this.game.hideContextMenu();
-        
+
         return true;
     }
 
@@ -1116,10 +1132,15 @@ class BuildingSystem {
                 amenities: this.game.grid[row][col].amenities || []
             });
         }
-        
+
+        // Mark parcel and neighbors dirty for rendering optimization
+        if (this.game.renderingSystem?.markParcelAndNeighborsDirty) {
+            this.game.renderingSystem.markParcelAndNeighborsDirty(row, col);
+        }
+
         // Mark building for economic recalculation
         this.markBuildingEconomicsDirty(row, col);
-        
+
         // Update vitality and re-render
         // V2: Use ui-manager for display updates
         if (this.game.uiManager && this.game.economicClient) {
@@ -1149,7 +1170,12 @@ class BuildingSystem {
                 amenities: this.game.grid[row][col].amenities
             });
         }
-        
+
+        // Mark parcel and neighbors dirty for rendering optimization
+        if (this.game.renderingSystem?.markParcelAndNeighborsDirty) {
+            this.game.renderingSystem.markParcelAndNeighborsDirty(row, col);
+        }
+
         // Update vitality and re-render
         // V2: Use ui-manager for display updates
         if (this.game.uiManager && this.game.economicClient) {
@@ -1176,41 +1202,50 @@ class BuildingSystem {
         if (currentBalance === null) return false; // Wait for server data
 
         if (currentBalance < repairCost) {
+            this.game.showNotification('Insufficient funds for repair!', 'error');
             return false;
         }
-        
-        // ✅ CLEANED: Server-authoritative repair transaction
+
+        // ✅ SERVER-AUTHORITATIVE: Send repair transaction to server
         if (this.game.economicClient) {
             try {
-                await this.game.economicClient.spendCash(this.game.currentPlayerId, repairCost, 'Building repair');
-                console.log('💰 Repair cost processed by server');
+                const result = await this.game.economicClient.repairBuilding([row, col], this.game.currentPlayerId, repairCost);
+
+                if (!result.success) {
+                    console.error('❌ Repair transaction failed:', result.error);
+                    this.game.showNotification(result.error || 'Repair failed!', 'error');
+                    return false;
+                }
+
+                console.log('✅ Repair transaction successful:', result);
             } catch (error) {
                 console.error('❌ Repair payment failed:', error);
+                this.game.showNotification('Repair failed: ' + error.message, 'error');
                 return false;
             }
         }
-        
-        // Reset decay to 0 (fully repaired) but keep building age for history
-        const oldDecay = parcel.decay;
-        const oldMaintenance = building.economics.maintenanceCost * (1 + (oldDecay * 2));
-        const newMaintenance = building.economics.maintenanceCost;
-        
-        parcel.decay = 0;
-        
+
+        // Server will update building age to 0 and broadcast updated state
+        // Client will receive the update via WebSocket and condition will automatically recalculate
+
+        // Mark parcel and neighbors dirty for rendering optimization
+        if (this.game.renderingSystem?.markParcelAndNeighborsDirty) {
+            this.game.renderingSystem.markParcelAndNeighborsDirty(row, col);
+        }
+
         // Mark building for economic recalculation
         this.markBuildingEconomicsDirty(row, col);
-        
+
         // Update cashflow preview immediately
         // V2: Economic client automatically handles cashflow updates via server sync
         this.game.updatePlayerStats();
-        
-        
+
         // Hide context menu after repair
         this.game.hideContextMenu();
-        
+
         // Re-render to show repaired state
         this.game.scheduleRender();
-        
+
         return true;
     }
 

@@ -709,20 +709,10 @@ class EconomicClient {
      */
     handleEconomicUpdate(update) {
         // Processing economic update
+        console.log(`📨 [ECONOMIC-UPDATE] Received update:`, update);
 
-        // Handle transaction types within ECONOMIC_UPDATE messages
-        if (update.transaction && update.transaction.type) {
-
-            switch (update.transaction.type) {
-                case 'BUILD_COMPLETE_AUTO':
-                    // Building automatically completed construction
-                    // Building construction completed
-                    this.triggerUIUpdate('BUILDING_COMPLETED', update.transaction);
-                    break;
-
-                // Add other transaction types here as needed
-            }
-        }
+        // Note: BUILD_COMPLETE_AUTO is handled in GAME_STATE handler, not here
+        // This prevents duplicate animation triggers
 
         // Update local state
         if (update.jeefhh) {
@@ -1182,6 +1172,100 @@ class EconomicClient {
     }
 
     /**
+     * CLIENT-SIDE DECAY CALCULATION
+     * Deterministic calculation to avoid server broadcasts
+     */
+
+    /**
+     * Get building age in game days
+     */
+    getBuildingAge(building) {
+        if (!building.constructionDay && building.constructionDay !== 0) {
+            // Building doesn't have constructionDay set (old building or in construction)
+            return building.age || 0;
+        }
+
+        // gameTime is already in days, no need to divide
+        const currentDay = Math.floor(this.gameTime);
+        return Math.max(0, currentDay - building.constructionDay);
+    }
+
+    /**
+     * Calculate current building condition based on age and decay rate
+     * Formula matches server: condition = (1 - dailyDecayRate)^age
+     */
+    calculateLocalCondition(building) {
+        console.log('[DECAY] calculateLocalCondition called with:', building);
+
+        // Get building age
+        const age = this.getBuildingAge(building);
+        console.log('[DECAY] Calculated age:', age, 'constructionDay:', building.constructionDay, 'gameTime:', this.gameTime);
+
+        // Get decay rate from building definition
+        // Try multiple field names for building ID (buildingId, id, type)
+        const buildingId = building.buildingId || building.id || building.type;
+        const buildingDef = window.buildingManager?.getBuildingById(buildingId);
+        console.log('[DECAY] Building ID:', buildingId, 'Has def:', !!buildingDef, 'Decay rate:', buildingDef?.economics?.decayRate);
+
+        if (!buildingDef?.economics?.decayRate) {
+            console.log('[DECAY] No decay rate found, returning 1.0');
+            return 1.0; // No decay if definition missing
+        }
+
+        const dailyDecayRate = buildingDef.economics.decayRate / 100;
+
+        // Exponential decay formula (matches server exactly)
+        const condition = Math.pow(1 - dailyDecayRate, age);
+        console.log('[DECAY] Final condition:', condition, 'from dailyDecayRate:', dailyDecayRate, 'age:', age);
+
+        // Minimum 10% condition
+        return Math.max(0.1, condition);
+    }
+
+    /**
+     * Calculate repair cost for a building based on current condition
+     */
+    calculateLocalRepairCost(building) {
+        const condition = this.calculateLocalCondition(building);
+
+        // Get building definition for base cost
+        const buildingId = building.buildingId || building.id || building.type;
+        const buildingDef = this.game?.buildingDefinitions?.[buildingId];
+        if (!buildingDef?.economics?.cost) {
+            return 0;
+        }
+
+        const baseCost = buildingDef.economics.cost;
+
+        // Repair cost = (1 - condition) * baseCost
+        // e.g., 50% condition = 50% of base cost to repair
+        const repairCost = (1.0 - condition) * baseCost;
+
+        return Math.round(repairCost);
+    }
+
+    /**
+     * Calculate building value based on condition
+     */
+    calculateLocalBuildingValue(building) {
+        const condition = this.calculateLocalCondition(building);
+
+        // Get building definition for base cost
+        const buildingId = building.buildingId || building.id || building.type;
+        const buildingDef = this.game?.buildingDefinitions?.[buildingId];
+        if (!buildingDef?.economics?.cost) {
+            return 0;
+        }
+
+        const baseCost = buildingDef.economics.cost;
+
+        // Building value = condition * baseCost
+        const value = condition * baseCost;
+
+        return Math.round(value);
+    }
+
+    /**
      * Get JEEFHH status for UI displays
      */
     getJEEFHHStatus() {
@@ -1271,33 +1355,9 @@ class EconomicClient {
             this.handleWebSocketUpdate(message);
         });
 
-        // Handle special GAME_STARTED event for city names and roomId
-        this.connectionManager.subscribe('GAME_STATE', (message) => {
-            if (message.eventType === 'GAME_STARTED' && message.eventData?.players) {
-                // Extract roomId from eventData (server sends it there)
-                if (message.eventData.roomId) {
-                    this.roomId = message.eventData.roomId;
-                    console.log(`[EconomicClient] RoomId set from GAME_STARTED: ${this.roomId}`);
-                }
-
-                const players = message.eventData.players;
-                const currentPlayer = players.find(p => p.id === this.game?.playerId);
-
-                if (currentPlayer && currentPlayer.cityName) {
-                    localStorage.setItem('playerCityName', currentPlayer.cityName);
-                    if (this.game && this.game.updateCityNameFromServer) {
-                        this.game.updateCityNameFromServer(currentPlayer.cityName);
-                    }
-                } else {
-                    console.warn('⚠️ City name not found in GAME_STARTED message');
-                }
-
-                // Reset auction system for fresh game (board game pulled from shelf)
-                if (this.game && this.game.parcelAuctionSystem) {
-                    this.game.parcelAuctionSystem.resetForNewGame();
-                }
-            }
-        });
+        // NOTE: GAME_STATE messages are handled by the main subscription above (line 1231)
+        // Special GAME_STARTED logic is handled in handleWebSocketUpdate's GAME_STATE case
+        // This duplicate subscription has been removed to prevent double-processing
 
         // Connection status tracking
         this.connectionManager.on('connected', () => {
@@ -1397,9 +1457,9 @@ class EconomicClient {
 
 
             case 'BUILD_COMPLETE_AUTO':
-                // Building automatically completed construction
-                // Building construction completed
-                this.triggerUIUpdate('BUILDING_COMPLETED', update);
+                // DEPRECATED: BUILD_COMPLETE_AUTO now comes wrapped in GAME_STATE messages
+                // Handled in GAME_STATE case above (eventType: ECONOMIC_UPDATE)
+                console.warn(`⚠️ Received direct BUILD_COMPLETE_AUTO - should be wrapped in GAME_STATE`);
                 break;
 
             case 'ROOM_RESET':
@@ -1423,6 +1483,13 @@ class EconomicClient {
             case 'GAME_STATE':
                 // 🔧 FIX: Handle GAME_STATE messages received from shared Beer Hall WebSocket
                 // Game state received - syncing with server
+
+                // Handle eventData.transaction for ECONOMIC_UPDATE events
+                if (update.eventType === 'ECONOMIC_UPDATE' && update.eventData?.transaction) {
+                    if (update.eventData.transaction.type === 'BUILD_COMPLETE_AUTO') {
+                        this.triggerUIUpdate('BUILDING_COMPLETED', update.eventData.transaction);
+                    }
+                }
 
                 // Special handling for GAME_STARTED events with city names
                 if (update.eventType === 'GAME_STARTED' && update.eventData?.players) {
@@ -1888,10 +1955,12 @@ class EconomicClient {
             // This is the critical missing link!
             const buildingData = {
                 id: state.buildingId,
+                buildingId: state.buildingId, // CLIENT-SIDE DECAY: Add buildingId field
                 owner: state.owner,
                 row: state.row,
                 col: state.col,
-                condition: state.condition,
+                age: state.age || 0, // CLIENT-SIDE DECAY: Add age field
+                constructionDay: state.constructionDay, // CLIENT-SIDE DECAY: Add constructionDay field
                 isUnderConstruction: state.isUnderConstruction,
                 constructionProgress: state.constructionProgress,
 
@@ -1902,9 +1971,7 @@ class EconomicClient {
                 maintenance: state.maintenance || 0,
                 performance: state.performanceDetails || null,
 
-                // Additional rendering data
-                repairCost: state.repairCost,
-                currentValue: state.currentValue,
+                // Additional rendering data - no longer sent by server, will be calculated client-side
                 lastUpdated: Date.now()
             };
 

@@ -711,22 +711,19 @@ class ContextMenuSystem {
     }
 
     /**
-     * Calculate repair cost asynchronously - handles server fetch
+     * Calculate repair cost asynchronously - CLIENT-SIDE DECAY CALCULATION
      */
     async calculateRepairCostAsync(parcel, building, row, col) {
-        // Try server data first
-        if (this.game.economicClient && row !== null && col !== null) {
-            try {
-                const serverRepairCost = await this.game.economicClient.getBuildingRepairCost(row, col);
-                if (serverRepairCost !== undefined && serverRepairCost !== null) {
-                    return serverRepairCost;
-                }
-            } catch (error) {
-                console.warn('Failed to fetch repair cost from server:', error);
+        // CLIENT-SIDE DECAY: Use local calculation instead of server HTTP call
+        if (this.game.economicClient?.calculateLocalRepairCost) {
+            // Get server building data for accurate calculation
+            const serverBuilding = this.game.economicClient.buildings?.get(`${row},${col}`);
+            if (serverBuilding) {
+                return this.game.economicClient.calculateLocalRepairCost(serverBuilding);
             }
         }
 
-        // Fallback to client calculation
+        // Fallback to building system calculation if economicClient not available
         return this.calculateRepairCost(parcel, building, row, col);
     }
 

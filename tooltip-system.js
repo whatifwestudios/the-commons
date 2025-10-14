@@ -240,7 +240,8 @@ class TooltipSystemV2 {
                     // Use server data as authoritative source
                     data.isUnderConstruction = serverBuilding.isUnderConstruction || false;
                     data.constructionProgress = serverBuilding.constructionProgress || 1.0;
-                    data.condition = (serverBuilding.condition || 1.0) * 100; // Convert 0-1 to 0-100%
+                    // CLIENT-SIDE DECAY: Calculate condition locally
+                    data.condition = this.game.economicClient?.calculateLocalCondition(serverBuilding) * 100 || 100;
                 } else {
                     // Fallback to parcel data - check both parcel and building states
                     // Be conservative: if either indicates construction, treat as under construction
@@ -248,7 +249,12 @@ class TooltipSystemV2 {
                     const buildingUnderConstruction = parcel.building?.underConstruction || false;
                     data.isUnderConstruction = parcelUnderConstruction || buildingUnderConstruction;
                     data.constructionProgress = parcel._constructionProgress || 1.0;
-                    data.condition = parcel.condition || 100;
+                    // CLIENT-SIDE DECAY: Calculate condition locally if economicClient available
+                    if (this.game.economicClient?.calculateLocalCondition && parcel.building) {
+                        data.condition = this.game.economicClient.calculateLocalCondition(parcel.building) * 100;
+                    } else {
+                        data.condition = parcel.condition || 100;
+                    }
                 }
 
                 data.constructionStartTime = parcel._constructionStartTime;
