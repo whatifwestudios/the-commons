@@ -44,38 +44,37 @@ class MapLayerLegend {
     }
 
     /**
-     * Render ownership layer legend with clickable player names sorted by score
+     * Render ownership layer legend - Net Revenue Gradient
      */
     renderOwnershipLegend() {
-        this.legendTitle.textContent = 'Ownership Map';
+        this.legendTitle.textContent = 'Net Revenue Map';
 
-        // Get all players and sort by civic score
-        const players = this.getPlayersSortedByScore();
-
-        let html = '<div class="legend-player-list">';
-
-        players.forEach(player => {
-            html += `
-                <div class="legend-player-item" data-player-id="${player.id}">
-                    <div class="legend-player-color" style="background-color: ${player.color};"></div>
-                    <span class="legend-player-name">${player.name}</span>
-                    <span class="legend-player-score">${player.score}</span>
+        const html = `
+            <div class="legend-gradient">
+                <div class="legend-gradient-bar" style="background: linear-gradient(to right, #E74C3C, #666666, #4A90E2);"></div>
+                <div class="legend-gradient-labels">
+                    <div class="legend-gradient-label">
+                        <span>Losing Money</span>
+                        <span style="color: #E74C3C;">●</span>
+                    </div>
+                    <div class="legend-gradient-label">
+                        <span>Break Even</span>
+                        <span style="color: #666666;">●</span>
+                    </div>
+                    <div class="legend-gradient-label">
+                        <span>Profitable</span>
+                        <span style="color: #4A90E2;">●</span>
+                    </div>
                 </div>
-            `;
-        });
-
-        html += '</div>';
-        html += '<div class="legend-note">Click player to focus on their parcels</div>';
+            </div>
+            <div class="legend-note">
+                Buildings colored by net cashflow (revenue - costs)<br>
+                <span style="color: #E74C3C;">Red</span> = good hostile takeover targets |
+                <span style="color: #4A90E2;">Blue</span> = high performers
+            </div>
+        `;
 
         this.legendContent.innerHTML = html;
-
-        // Add click listeners
-        this.legendContent.querySelectorAll('.legend-player-item').forEach(item => {
-            item.addEventListener('click', () => {
-                const playerId = item.getAttribute('data-player-id');
-                this.focusOnPlayerParcels(playerId);
-            });
-        });
     }
 
     /**
