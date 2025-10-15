@@ -329,12 +329,42 @@ class RenderingSystemV2 {
 
     /**
      * Render ownership layer overlay
-     * Ownership layer shows only colors - no text overlays
+     * Shows color-coded revenue text on owned buildings
      */
     renderOwnershipOverlay(parcel, row, col, iso) {
-        // Ownership layer is purely visual (colors only)
-        // No text or data overlays needed
-        return;
+        // Only show revenue for owned parcels with buildings
+        if (!parcel.owner || parcel.owner === 'City' || parcel.owner === 'unclaimed') {
+            return;
+        }
+
+        if (!parcel.building) return; // Only show for buildings
+
+        // Get cashflow data from server state
+        const serverState = this.game.economicClient?.getBuildingState?.(row, col);
+        const cashflow = serverState?.netCashflow || serverState?.cashflow || 0;
+
+        // Format text with + sign for positive values
+        const text = cashflow > 0 ? `+$${Math.round(cashflow)}` : cashflow < 0 ? `-$${Math.abs(Math.round(cashflow))}` : '$0';
+
+        // Color code: Green (positive), Red (negative), White (zero)
+        const textColor = cashflow > 0 ? '#00FF00' : cashflow < 0 ? '#FF4444' : '#FFFFFF';
+
+        // Draw text in center of parcel
+        this.ctx.save();
+        this.ctx.font = `bold ${Math.floor(this.tileHeight * 0.5)}px Arial`;
+        this.ctx.textAlign = 'center';
+        this.ctx.textBaseline = 'middle';
+
+        // Strong black outline for maximum legibility
+        this.ctx.strokeStyle = '#000';
+        this.ctx.lineWidth = 4;
+        this.ctx.strokeText(text, iso.x, iso.y);
+
+        // Fill with color-coded text
+        this.ctx.fillStyle = textColor;
+        this.ctx.fillText(text, iso.x, iso.y);
+
+        this.ctx.restore();
     }
 
     /**

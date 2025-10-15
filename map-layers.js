@@ -29,8 +29,8 @@ class MapLayerSystem {
 
     /**
      * OWNERSHIP LAYER
-     * Show net revenue gradient: Red (max negative) → Gray (zero) → Blue (max positive)
-     * Helps identify hostile takeover targets
+     * Show player color (40% opacity) so ownership is clear at a glance
+     * Revenue numbers displayed as text overlay (handled by renderOwnershipOverlay)
      */
     getOwnershipColor(parcel, row, col) {
         if (!parcel) return '#2a2a2a';
@@ -40,57 +40,13 @@ class MapLayerSystem {
             return '#2a2a2a';
         }
 
-        // Owned parcels without buildings - show in dim owner color
-        if (!parcel.building) {
-            const playerColor = this.game.renderingSystem.getPlayerColor(parcel.owner);
-            // Make it darker/dimmer to distinguish from buildings
-            const rgb = this.hexToRgb(playerColor);
-            const dimmed = this.rgbToHex(
-                Math.floor(rgb.r * 0.3),
-                Math.floor(rgb.g * 0.3),
-                Math.floor(rgb.b * 0.3)
-            );
-            return dimmed;
-        }
+        // Owned parcels - show player color with 40% opacity for visibility
+        const playerColor = this.game.renderingSystem.getPlayerColor(parcel.owner);
+        const rgb = this.hexToRgb(playerColor);
 
-        // Owned parcels WITH buildings - show net revenue gradient
-        const serverState = this.game.economicClient?.getBuildingState?.(row, col);
-        const netRevenue = serverState?.netCashflow || serverState?.cashflow || 0;
-
-        // Calculate revenue range for dynamic scaling
-        const range = this.calculateRevenueRange();
-
-        // Debug logging (only once)
-        if (!this.debugLogged.has('ownership-revenue')) {
-            console.log(`🔍 Ownership Layer - Revenue Gradient:`, {
-                parcel: `[${row},${col}]`,
-                owner: parcel.owner,
-                building: parcel.building,
-                netRevenue: netRevenue,
-                range: range,
-                hasServerState: !!serverState,
-                serverStateKeys: serverState ? Object.keys(serverState) : []
-            });
-            this.debugLogged.add('ownership-revenue');
-        }
-
-        // If no range data, show neutral gray
-        if (range.max === 0 && range.min === 0) {
-            return '#666666'; // Neutral gray for zero revenue
-        }
-
-        // Normalize revenue to -1 to +1 range
-        let normalizedValue = 0;
-        if (netRevenue < 0) {
-            // Negative revenue: -1 (most negative) to 0
-            normalizedValue = range.min < 0 ? netRevenue / Math.abs(range.min) : 0;
-        } else if (netRevenue > 0) {
-            // Positive revenue: 0 to +1 (most positive)
-            normalizedValue = range.max > 0 ? netRevenue / range.max : 0;
-        }
-
-        // Generate gradient color: Red (negative) → Gray (zero) → Blue (positive)
-        return this.getRevenueGradientColor(normalizedValue);
+        // Return rgba with 40% opacity for owned parcels with buildings, 20% for empty
+        const opacity = parcel.building ? 0.4 : 0.2;
+        return `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${opacity})`;
     }
 
     /**

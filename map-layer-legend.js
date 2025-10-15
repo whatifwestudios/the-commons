@@ -44,31 +44,28 @@ class MapLayerLegend {
     }
 
     /**
-     * Render ownership layer legend - Net Revenue Gradient
+     * Render ownership layer legend - Owner Revenue
      */
     renderOwnershipLegend() {
-        this.legendTitle.textContent = 'Net Revenue Map';
+        this.legendTitle.textContent = 'Owner Revenue';
 
         const html = `
-            <div class="legend-gradient">
-                <div class="legend-gradient-bar" style="background: linear-gradient(to right, #E74C3C, #666666, #4A90E2);"></div>
-                <div class="legend-gradient-labels">
-                    <div class="legend-gradient-label">
-                        <span>Losing Money</span>
-                        <span style="color: #E74C3C;">●</span>
-                    </div>
-                    <div class="legend-gradient-label">
-                        <span>Break Even</span>
-                        <span style="color: #666666;">●</span>
-                    </div>
-                    <div class="legend-gradient-label">
-                        <span>Profitable</span>
-                        <span style="color: #4A90E2;">●</span>
-                    </div>
-                </div>
+            <div class="legend-note" style="margin-bottom: 12px;">
+                <strong>Parcel color</strong> = owner | <strong>Number</strong> = net revenue
             </div>
-            <div class="legend-note">
-                Buildings colored by net cashflow (revenue - costs)
+            <div class="legend-gradient-labels" style="display: flex; flex-direction: column; gap: 8px;">
+                <div class="legend-gradient-label" style="display: flex; align-items: center; gap: 8px;">
+                    <span style="color: #00FF00; font-weight: bold; font-size: 16px;">+$50</span>
+                    <span>Profitable (green)</span>
+                </div>
+                <div class="legend-gradient-label" style="display: flex; align-items: center; gap: 8px;">
+                    <span style="color: #FFFFFF; font-weight: bold; font-size: 16px;">$0</span>
+                    <span>Break-even (white)</span>
+                </div>
+                <div class="legend-gradient-label" style="display: flex; align-items: center; gap: 8px;">
+                    <span style="color: #FF4444; font-weight: bold; font-size: 16px;">-$25</span>
+                    <span>Losing money (red)</span>
+                </div>
             </div>
         `;
 
