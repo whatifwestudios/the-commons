@@ -21,10 +21,6 @@ class MapLayerSystem {
                 return this.getOwnershipColor(parcel, row, col);
             case 'landvalue':
                 return this.getLandValueColor(parcel, row, col);
-            case 'civic':
-                return this.getCivicImpactColor(parcel, row, col);
-            case 'needs':
-                return this.getNeedsColor(parcel, row, col);
             case 'normal':
             default:
                 return normalColor; // Use the normal color provided by rendering system
@@ -106,7 +102,7 @@ class MapLayerSystem {
         // Normalize price to 0-1 range
         const normalizedValue = (price - range.min) / (range.max - range.min);
 
-        // Blue → Cyan → Green → Yellow → Orange → Red gradient
+        // Blue → Red gradient
         return this.getHeatmapColor(normalizedValue);
     }
 
@@ -143,98 +139,6 @@ class MapLayerSystem {
         };
     }
 
-    /**
-     * CIVIC IMPACT LAYER
-     * Red (negative civic) → Gray (neutral) → Green (positive civic)
-     */
-    getCivicImpactColor(parcel, row, col) {
-        if (!parcel) return '#2a2a2a';
-
-        // Only show colors for parcels with buildings
-        if (!parcel.building) return '#2a2a2a';
-
-        // Get building civic score from server state
-        const serverState = this.game.economicClient?.getBuildingState?.(row, col);
-        const civicScore = serverState?.civic || 0;
-
-        // Debug logging (only log once per building type)
-        const debugKey = `civic-${parcel.building.type || parcel.building.id}`;
-        if (!this.debugLogged.has(debugKey)) {
-            console.log(`🔍 Civic Impact [${row},${col}]:`, {
-                buildingType: parcel.building.type || parcel.building.id,
-                hasEconomicClient: !!this.game.economicClient,
-                hasBuildingState: !!serverState,
-                civicScore: civicScore,
-                serverState: serverState
-            });
-            this.debugLogged.add(debugKey);
-        }
-
-        // Normalize civic score from -5 to +5 range to 0-1
-        // -5 = 0.0 (red), 0 = 0.5 (gray), +5 = 1.0 (green)
-        const normalizedValue = (civicScore + 5) / 10;
-        const clampedValue = Math.max(0, Math.min(1, normalizedValue));
-
-        // Red → Gray → Green gradient
-        return this.getCivicGradientColor(clampedValue);
-    }
-
-    /**
-     * NEEDS LAYER
-     * Green (satisfied) → Yellow → Orange → Red (critical needs)
-     * Based on JEEFHH system satisfaction levels
-     */
-    getNeedsColor(parcel, row, col) {
-        if (!parcel) return '#2a2a2a';
-
-        // Only show colors for parcels with buildings
-        if (!parcel.building) return '#2a2a2a';
-
-        // Get building JEEFHH needs from server state
-        const serverState = this.game.economicClient?.getBuildingState?.(row, col);
-
-        // Debug logging (only log once per building type)
-        const debugKey = `needs-${parcel.building.type || parcel.building.id}`;
-        if (!this.debugLogged.has(debugKey)) {
-            console.log(`🔍 Needs Map [${row},${col}]:`, {
-                buildingType: parcel.building.type || parcel.building.id,
-                hasEconomicClient: !!this.game.economicClient,
-                hasBuildingState: !!serverState,
-                jeefhh: serverState?.jeefhh,
-                serverState: serverState
-            });
-            this.debugLogged.add(debugKey);
-        }
-
-        // Calculate overall neediness (0 = all satisfied, 1 = critical needs)
-        // JEEFHH provides satisfaction levels: 0 = no need met, 1 = fully met
-        let totalNeediness = 0;
-        let needCount = 0;
-
-        if (serverState?.jeefhh) {
-            // Average the inverse of satisfaction (1 - satisfaction = neediness)
-            const jeefhh = serverState.jeefhh;
-            // JEEFHH: Jobs, Environment, Energy, Food, Fun, Housing, Health
-            const needTypes = ['jobs', 'environment', 'energy', 'food', 'fun', 'housing', 'health'];
-
-            needTypes.forEach(type => {
-                if (jeefhh[type] !== undefined) {
-                    const satisfaction = jeefhh[type];
-                    const neediness = 1 - satisfaction;
-                    totalNeediness += neediness;
-                    needCount++;
-                }
-            });
-        }
-
-        if (needCount === 0) return '#2a2a2a'; // No needs data
-
-        const avgNeediness = totalNeediness / needCount;
-
-        // Green → Yellow → Orange → Red gradient
-        return this.getNeedsGradientColor(avgNeediness);
-    }
-
     // ============================================================
     // GRADIENT COLOR GENERATORS
     // ============================================================
@@ -246,42 +150,6 @@ class MapLayerSystem {
         // value: 0.0 = blue (cheap), 1.0 = red (expensive)
         // Simple direct blue to red interpolation for subtle, professional look
         return this.interpolateColor('#4A90E2', '#E74C3C', value);
-    }
-
-    /**
-     * Generate civic gradient color (red → gray → green)
-     */
-    getCivicGradientColor(value) {
-        // value: 0.0 = red (negative), 0.5 = gray (neutral), 1.0 = green (positive)
-        if (value < 0.5) {
-            // Red → Gray
-            const t = value / 0.5;
-            return this.interpolateColor('#E74C3C', '#666666', t);
-        } else {
-            // Gray → Green
-            const t = (value - 0.5) / 0.5;
-            return this.interpolateColor('#666666', '#2ECC71', t);
-        }
-    }
-
-    /**
-     * Generate needs gradient color (green → yellow → orange → red)
-     */
-    getNeedsGradientColor(neediness) {
-        // neediness: 0.0 = green (satisfied), 1.0 = red (critical)
-        if (neediness < 0.33) {
-            // Green → Yellow
-            const t = neediness / 0.33;
-            return this.interpolateColor('#2ECC71', '#F1C40F', t);
-        } else if (neediness < 0.66) {
-            // Yellow → Orange
-            const t = (neediness - 0.33) / 0.33;
-            return this.interpolateColor('#F1C40F', '#E67E22', t);
-        } else {
-            // Orange → Red
-            const t = (neediness - 0.66) / 0.34;
-            return this.interpolateColor('#E67E22', '#E74C3C', t);
-        }
     }
 
     // ============================================================

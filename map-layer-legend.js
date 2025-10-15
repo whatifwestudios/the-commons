@@ -38,12 +38,6 @@ class MapLayerLegend {
             case 'landvalue':
                 this.renderLandValueLegend();
                 break;
-            case 'civic':
-                this.renderCivicLegend();
-                break;
-            case 'needs':
-                this.renderNeedsLegend();
-                break;
             default:
                 this.legendElement.style.display = 'none';
         }
