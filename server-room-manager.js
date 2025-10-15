@@ -385,11 +385,19 @@ class GameRoom {
         }
 
         // Sept 1st (Day 365) - Year-end victory (skip for solo mode - infinite sandbox)
-        if (currentDay >= 365 && !this.isSoloMode) {
-            if (scores.length > 0) {
-                const winner = scores[0];
-                this.endGame(winner.playerId, `Year-End Victory (Score: ${winner.score.toFixed(1)})`);
-                return;
+        if (currentDay >= 365) {
+            console.log(`🏆 VICTORY CHECK: Day ${currentDay}, isSoloMode=${this.isSoloMode}, scores=${scores.length}`);
+            if (!this.isSoloMode) {
+                if (scores.length > 0) {
+                    const winner = scores[0];
+                    console.log(`🏆 TRIGGERING VICTORY: Winner ${winner.playerId} with score ${winner.score.toFixed(1)}`);
+                    this.endGame(winner.playerId, `Year-End Victory (Score: ${winner.score.toFixed(1)})`);
+                    return;
+                } else {
+                    console.log(`⚠️ VICTORY BLOCKED: No scores available!`);
+                }
+            } else {
+                console.log(`⏭️ VICTORY SKIPPED: Solo mode enabled (infinite sandbox)`);
             }
         }
 
