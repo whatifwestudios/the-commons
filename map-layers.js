@@ -182,7 +182,7 @@ class MapLayerSystem {
     /**
      * NEEDS LAYER
      * Green (satisfied) → Yellow → Orange → Red (critical needs)
-     * Based on CARENS system satisfaction levels
+     * Based on JEEFHH system satisfaction levels
      */
     getNeedsColor(parcel, row, col) {
         if (!parcel) return '#2a2a2a';
@@ -190,7 +190,7 @@ class MapLayerSystem {
         // Only show colors for parcels with buildings
         if (!parcel.building) return '#2a2a2a';
 
-        // Get building needs from CARENS system via server state
+        // Get building JEEFHH needs from server state
         const serverState = this.game.economicClient?.getBuildingState?.(row, col);
 
         // Debug logging (only log once per building type)
@@ -200,25 +200,26 @@ class MapLayerSystem {
                 buildingType: parcel.building.type || parcel.building.id,
                 hasEconomicClient: !!this.game.economicClient,
                 hasBuildingState: !!serverState,
-                needs: serverState?.needs,
+                jeefhh: serverState?.jeefhh,
                 serverState: serverState
             });
             this.debugLogged.add(debugKey);
         }
 
         // Calculate overall neediness (0 = all satisfied, 1 = critical needs)
-        // CARENS provides satisfaction levels: 0 = no need met, 1 = fully met
+        // JEEFHH provides satisfaction levels: 0 = no need met, 1 = fully met
         let totalNeediness = 0;
         let needCount = 0;
 
-        if (serverState?.needs) {
+        if (serverState?.jeefhh) {
             // Average the inverse of satisfaction (1 - satisfaction = neediness)
-            const needs = serverState.needs;
-            const needTypes = ['food', 'water', 'energy', 'health', 'education'];
+            const jeefhh = serverState.jeefhh;
+            // JEEFHH: Jobs, Environment, Energy, Food, Fun, Housing, Health
+            const needTypes = ['jobs', 'environment', 'energy', 'food', 'fun', 'housing', 'health'];
 
             needTypes.forEach(type => {
-                if (needs[type] !== undefined) {
-                    const satisfaction = needs[type];
+                if (jeefhh[type] !== undefined) {
+                    const satisfaction = jeefhh[type];
                     const neediness = 1 - satisfaction;
                     totalNeediness += neediness;
                     needCount++;

@@ -162,7 +162,7 @@ class MapLayerLegend {
                     </div>
                 </div>
             </div>
-            <div class="legend-note">Building neediness from CARENS system</div>
+            <div class="legend-note">Building neediness from JEEFHH system</div>
         `;
 
         this.legendContent.innerHTML = html;
