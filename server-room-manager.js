@@ -53,6 +53,9 @@ class GameRoom {
         this.roomName = options.roomName || `Room ${id}`;
         this.isPublic = options.isPublic !== false;
 
+        // Solo mode flag (true if this is a single-player sandbox)
+        this.isSoloMode = (this.minPlayers === 1 && this.maxPlayers === 1);
+
         // Players in this room
         this.players = new Map(); // playerId -> playerData
         this.host = null; // First player becomes host
@@ -365,8 +368,8 @@ class GameRoom {
         const currentDay = Math.floor(this.economicEngine.gameState.gameTime);
         const scores = this.economicEngine.calculateCommonwealthScores();
 
-        // Aug 1 Warning (Day 335) - One month remaining
-        if (currentDay === 335 && !this.oneMonthWarningSent) {
+        // Aug 1 Warning (Day 335) - One month remaining (skip for solo mode)
+        if (currentDay === 335 && !this.oneMonthWarningSent && !this.isSoloMode) {
             this.oneMonthWarningSent = true;
             this.broadcast({
                 type: 'ONE_MONTH_WARNING',
@@ -381,8 +384,8 @@ class GameRoom {
             });
         }
 
-        // Sept 1st (Day 365) - Year-end victory (ALWAYS triggers)
-        if (currentDay >= 365) {
+        // Sept 1st (Day 365) - Year-end victory (skip for solo mode - infinite sandbox)
+        if (currentDay >= 365 && !this.isSoloMode) {
             if (scores.length > 0) {
                 const winner = scores[0];
                 this.endGame(winner.playerId, `Year-End Victory (Score: ${winner.score.toFixed(1)})`);
@@ -390,9 +393,9 @@ class GameRoom {
             }
         }
 
-        // Early Victory: Score ≥ (average + 75) after day 30
+        // Early Victory: Score ≥ (average + 75) after day 30 (skip for solo mode)
         // This scales automatically with player count due to normalization
-        if (currentDay >= 30 && scores.length > 0) {
+        if (currentDay >= 30 && scores.length > 0 && !this.isSoloMode) {
             const averageScore = scores.reduce((sum, s) => sum + s.score, 0) / scores.length;
             const topScore = scores[0].score;
             const earlyVictoryThreshold = averageScore + 75;

@@ -767,7 +767,11 @@ function startConnectionHealthMonitoring() {
             // Check if connection is stale based on last activity
             const timeSinceLastActivity = now - (ws.lastPong || ws.connectionTime);
 
-            if (timeSinceLastActivity > STALE_CONNECTION_TIMEOUT) {
+            // Skip timeout check for solo mode players (infinite session)
+            const room = ws.playerId ? roomManager.getPlayerRoom(ws.playerId) : null;
+            const isSoloMode = room?.isSoloMode || false;
+
+            if (!isSoloMode && timeSinceLastActivity > STALE_CONNECTION_TIMEOUT) {
                 staleConnections++;
                 connectedClients.delete(ws);
                 if (ws.playerId) {
