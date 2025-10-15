@@ -88,7 +88,9 @@
       "Bash(tasklist)",
       "Bash(findstr:*)",
       "Bash(cmd /c \"taskkill /F /PID 3972 & taskkill /F /PID 4740\")",
-      "Bash(cmd /c \"taskkill /F /PID 26076 & taskkill /F /PID 3972\")"
+      "Bash(cmd /c \"taskkill /F /PID 26076 & taskkill /F /PID 3972\")",
+      "Read(//c/Users/zacbe/AppData/Roaming/Cursor/User/**)",
+      "Bash(mkdir:*)"
     ],
     "deny": [],
     "ask": []

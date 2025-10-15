@@ -48,8 +48,10 @@ __pycache__/
 env/
 venv/
 
-# Archives
+# Archives and documentation (local only)
 archive/
+docs/
+Design guides/
 
 # Logs
 logs/

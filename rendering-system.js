@@ -264,6 +264,16 @@ class RenderingSystemV2 {
 
         this.ctx.save();
 
+        // Apply player selection dimming/highlighting on ownership layer
+        const currentLayer = this.game.currentLayer || 'normal';
+        if (currentLayer === 'ownership' && this.game.selectedPlayerId) {
+            const isSelected = parcel.owner === this.game.selectedPlayerId;
+            if (!isSelected && parcel.owner && parcel.owner !== 'City' && parcel.owner !== 'unclaimed') {
+                // Dim non-selected player parcels
+                this.ctx.globalAlpha = 0.3;
+            }
+        }
+
         // Get tile color based on ownership and state
         const tileColor = this.getTileColor(parcel, row, col);
 
@@ -271,6 +281,25 @@ class RenderingSystemV2 {
         this.ctx.fillStyle = tileColor;
         this.drawDiamond(iso.x, iso.y, this.tileWidth, this.tileHeight);
         this.ctx.fill();
+
+        // Draw glow for selected player parcels
+        if (currentLayer === 'ownership' && this.game.selectedPlayerId) {
+            const isSelected = parcel.owner === this.game.selectedPlayerId;
+            if (isSelected) {
+                // Draw subtle glow around selected parcels
+                const playerColor = this.getPlayerColor(parcel.owner);
+                this.ctx.strokeStyle = playerColor;
+                this.ctx.lineWidth = 3;
+                this.ctx.shadowColor = playerColor;
+                this.ctx.shadowBlur = 10;
+                this.drawDiamond(iso.x, iso.y, this.tileWidth, this.tileHeight);
+                this.ctx.stroke();
+                this.ctx.shadowBlur = 0; // Reset shadow
+            }
+        }
+
+        // Reset alpha
+        this.ctx.globalAlpha = 1.0;
 
         // Draw parcel borders
         this.drawParcelBorders(row, col, this.tileWidth, this.tileHeight);
@@ -280,6 +309,59 @@ class RenderingSystemV2 {
             this.game.parcelHover.renderEffects(row, col, this.ctx, iso.x, iso.y,
                 this.tileWidth, this.tileHeight);
         }
+
+        // Add layer-specific overlays (text, etc.)
+        this.renderLayerOverlay(parcel, row, col, iso);
+
+        this.ctx.restore();
+    }
+
+    /**
+     * Render layer-specific overlays (text, icons, etc.)
+     */
+    renderLayerOverlay(parcel, row, col, iso) {
+        const currentLayer = this.game.currentLayer || 'normal';
+
+        if (currentLayer === 'ownership') {
+            this.renderOwnershipOverlay(parcel, row, col, iso);
+        }
+    }
+
+    /**
+     * Render ownership layer overlay (cashflow text)
+     */
+    renderOwnershipOverlay(parcel, row, col, iso) {
+        // Only show cashflow for owned parcels with buildings
+        if (!parcel.owner || parcel.owner === 'City' || parcel.owner === 'unclaimed') {
+            return;
+        }
+
+        if (!parcel.building) return; // Only show for buildings
+
+        // Get cashflow data from server state
+        const serverState = this.game.economicClient?.getBuildingState?.(row, col);
+        const cashflow = serverState?.netCashflow || serverState?.cashflow || 0;
+
+        // Show zero cashflow as well (helpful to see all buildings)
+        const text = cashflow > 0 ? `+${Math.round(cashflow)}` : `${Math.round(cashflow)}`;
+
+        // Choose contrasting color (green for positive, red for negative, white for zero)
+        const textColor = cashflow > 0 ? '#00FF00' : cashflow < 0 ? '#FF4444' : '#FFFFFF';
+
+        // Draw text in center of parcel
+        this.ctx.save();
+        this.ctx.font = `bold ${Math.floor(this.tileHeight * 0.5)}px Arial`;
+        this.ctx.textAlign = 'center';
+        this.ctx.textBaseline = 'middle';
+
+        // Add strong text shadow for better readability on colored parcels
+        this.ctx.shadowColor = '#000';
+        this.ctx.shadowBlur = 4;
+        this.ctx.shadowOffsetX = 2;
+        this.ctx.shadowOffsetY = 2;
+
+        this.ctx.fillStyle = textColor;
+        this.ctx.fillText(text, iso.x, iso.y);
 
         this.ctx.restore();
     }
@@ -309,17 +391,39 @@ class RenderingSystemV2 {
     }
 
     /**
-     * Get tile color based on ownership and state
+     * Get tile color based on parcel state (delegates to map layer system)
      */
     getTileColor(parcel, row, col) {
-        if (!parcel) return '#2a2a2a'; // Default unowned
+        // Calculate normal color as fallback
+        const normalColor = this.getNormalColor(parcel, row, col);
+
+        // Delegate to map layer system for layer-specific rendering
+        if (this.game.mapLayers) {
+            return this.game.mapLayers.getTileColor(parcel, row, col, normalColor);
+        }
+
+        // Fallback if map layers not initialized
+        return normalColor;
+    }
+
+    /**
+     * Normal layer: standard ownership-based coloring
+     */
+    getNormalColor(parcel, row, col) {
+        if (!parcel) return '#2a2a2a'; // Unowned - charcoal gray
 
         // Under construction
         if (parcel._isUnderConstruction) {
-            return '#8B4513'; // Brown
+            return '#8B4513'; // Brown for construction
         }
 
-        // Based on owner
+        // If there's a building on this parcel, show neutral color
+        // Buildings should visually replace the parcel, not stack on top of colored parcels
+        if (parcel.building) {
+            return '#333333'; // Neutral dark gray for built parcels
+        }
+
+        // Based on owner - only show player colors for EMPTY owned parcels
         if (!parcel.owner || parcel.owner === 'City' || parcel.owner === 'unclaimed') {
             return '#2a2a2a'; // Unowned - charcoal gray
         } else {
@@ -327,6 +431,7 @@ class RenderingSystemV2 {
         }
     }
 
+    
     /**
      * Get player color
      */
@@ -453,6 +558,10 @@ class RenderingSystemV2 {
     renderBuilding(row, col) {
         const parcel = this.game.grid[row]?.[col];
         if (!parcel?.building) return;
+
+        // Hide buildings on non-normal layers
+        const currentLayer = this.game.currentLayer || 'normal';
+        if (currentLayer !== 'normal') return;
 
         const iso = this.toIsometric(col, row);
 
@@ -977,7 +1086,27 @@ class RenderingSystemV2 {
      * Get tile color based on parcel state (simplified for V2)
      */
     getTileColor(parcel, row, col) {
-        // Normal layer logic
+        // Check current layer and route to appropriate color function
+        const currentLayer = this.game.currentLayer || 'normal';
+
+        switch (currentLayer) {
+            case 'ownership':
+                return this.getOwnershipColor(parcel, row, col);
+            case 'landvalue':
+                return this.getLandValueColor(parcel, row, col);
+            case 'civic':
+                return this.getCivicImpactColor(parcel, row, col);
+            case 'needs':
+                return this.getNeedsColor(parcel, row, col);
+            default:
+                return this.getNormalColor(parcel, row, col);
+        }
+    }
+
+    /**
+     * Normal layer: standard ownership-based coloring
+     */
+    getNormalColor(parcel, row, col) {
         if (!parcel) return '#2a2a2a'; // Unowned - charcoal gray
 
         // Under construction
@@ -997,6 +1126,250 @@ class RenderingSystemV2 {
         } else {
             return this.getPlayerColor(parcel.owner);
         }
+    }
+
+    /**
+     * Ownership layer: show all parcels in owner colors
+     */
+    getOwnershipColor(parcel, row, col) {
+        if (!parcel) return '#2a2a2a';
+
+        // Show owner color for ALL parcels (empty or built)
+        if (!parcel.owner || parcel.owner === 'City' || parcel.owner === 'unclaimed') {
+            return '#2a2a2a'; // Unowned - charcoal gray
+        } else {
+            return this.getPlayerColor(parcel.owner);
+        }
+    }
+
+    /**
+     * Land Value layer: blue (cheap) to red (expensive) heatmap
+     * Shows city pricing for unowned parcels, purchase price for owned parcels
+     */
+    getLandValueColor(parcel, row, col) {
+        if (!parcel) return '#2a2a2a';
+
+        let price = 0;
+
+        // Get price for this parcel
+        if (!parcel.owner || parcel.owner === 'City' || parcel.owner === 'unclaimed') {
+            // Unowned parcels: use city pricing (from economicClient)
+            price = this.game.economicClient?.getParcelPrice?.(row, col) || 0;
+
+            // Debug logging for first unowned parcel encountered
+            if (price && row === 0 && col === 0) {
+                console.log(`🔍 Land Value [${row},${col}]: unowned, cityPrice=${price}`);
+            }
+        } else {
+            // Owned parcels: use price paid
+            price = parcel.pricePaid || parcel.price || 0;
+
+            // Debug logging for first owned parcel encountered
+            if (price && row === 5 && col === 5) {
+                console.log(`🔍 Land Value [${row},${col}]: owned by ${parcel.owner}, pricePaid=${price}`);
+            }
+        }
+
+        if (price === 0) return '#2a2a2a'; // No price data
+
+        // Calculate min/max prices across ALL parcels (owned and unowned) for dynamic scaling
+        let minPrice = Infinity;
+        let maxPrice = -Infinity;
+
+        for (let r = 0; r < this.game.gridSize; r++) {
+            for (let c = 0; c < this.game.gridSize; c++) {
+                const p = this.game.grid[r][c];
+                if (!p) continue;
+
+                let parcelPrice = 0;
+                if (!p.owner || p.owner === 'City' || p.owner === 'unclaimed') {
+                    parcelPrice = this.game.economicClient?.getParcelPrice?.(r, c) || 0;
+                } else {
+                    parcelPrice = p.pricePaid || p.price || 0;
+                }
+
+                if (parcelPrice > 0) {
+                    minPrice = Math.min(minPrice, parcelPrice);
+                    maxPrice = Math.max(maxPrice, parcelPrice);
+                }
+            }
+        }
+
+        // Debug log the range on first call
+        if (row === 0 && col === 0) {
+            console.log(`🔍 Land Value Range: min=${minPrice}, max=${maxPrice}`);
+        }
+
+        // Avoid division by zero
+        if (maxPrice === minPrice) return '#4CAF50'; // All same price - neutral green
+
+        // Normalize price to 0-1 range
+        const normalizedValue = (price - minPrice) / (maxPrice - minPrice);
+
+        // Blue → Cyan → Green → Yellow → Orange → Red gradient
+        return this.getHeatmapColor(normalizedValue);
+    }
+
+    /**
+     * Civic Impact layer: red (negative) to green (positive) based on civic score
+     */
+    getCivicImpactColor(parcel, row, col) {
+        if (!parcel) return '#2a2a2a';
+
+        // Only show colors for parcels with buildings
+        if (!parcel.building) return '#2a2a2a';
+
+        // Get building civic score from server state
+        const serverState = this.game.economicClient?.getBuildingState?.(row, col);
+        const civicScore = serverState?.civic || 0;
+
+        // Normalize civic score from -5 to +5 range to 0-1
+        // -5 = 0.0 (red), 0 = 0.5 (gray), +5 = 1.0 (green)
+        const normalizedValue = (civicScore + 5) / 10;
+        const clampedValue = Math.max(0, Math.min(1, normalizedValue));
+
+        // Red → Gray → Green gradient
+        return this.getCivicGradientColor(clampedValue);
+    }
+
+    /**
+     * Needs layer: green (satisfied) to red (critical needs) based on building neediness
+     */
+    getNeedsColor(parcel, row, col) {
+        if (!parcel) return '#2a2a2a';
+
+        // Only show colors for parcels with buildings
+        if (!parcel.building) return '#2a2a2a';
+
+        // Get building needs from CARENS system via server state
+        const serverState = this.game.economicClient?.getBuildingState?.(row, col);
+
+        // Calculate overall neediness (0 = all satisfied, 1 = critical needs)
+        // CARENS provides satisfaction levels: 0 = no need met, 1 = fully met
+        let totalNeediness = 0;
+        let needCount = 0;
+
+        if (serverState?.needs) {
+            // Average the inverse of satisfaction (1 - satisfaction = neediness)
+            const needs = serverState.needs;
+            const needTypes = ['food', 'water', 'energy', 'health', 'education'];
+
+            needTypes.forEach(type => {
+                if (needs[type] !== undefined) {
+                    const satisfaction = needs[type];
+                    const neediness = 1 - satisfaction;
+                    totalNeediness += neediness;
+                    needCount++;
+                }
+            });
+        }
+
+        if (needCount === 0) return '#2a2a2a'; // No needs data
+
+        const avgNeediness = totalNeediness / needCount;
+
+        // Green → Yellow → Orange → Red gradient
+        return this.getNeedsGradientColor(avgNeediness);
+    }
+
+    /**
+     * Generate heatmap color (blue → red for land value)
+     */
+    getHeatmapColor(value) {
+        // value: 0.0 = blue (cheap), 1.0 = red (expensive)
+        if (value < 0.2) {
+            // Blue → Cyan
+            const t = value / 0.2;
+            return this.interpolateColor('#0000FF', '#00FFFF', t);
+        } else if (value < 0.4) {
+            // Cyan → Green
+            const t = (value - 0.2) / 0.2;
+            return this.interpolateColor('#00FFFF', '#00FF00', t);
+        } else if (value < 0.6) {
+            // Green → Yellow
+            const t = (value - 0.4) / 0.2;
+            return this.interpolateColor('#00FF00', '#FFFF00', t);
+        } else if (value < 0.8) {
+            // Yellow → Orange
+            const t = (value - 0.6) / 0.2;
+            return this.interpolateColor('#FFFF00', '#FF8800', t);
+        } else {
+            // Orange → Red
+            const t = (value - 0.8) / 0.2;
+            return this.interpolateColor('#FF8800', '#FF0000', t);
+        }
+    }
+
+    /**
+     * Generate civic gradient color (red → gray → green)
+     */
+    getCivicGradientColor(value) {
+        // value: 0.0 = red (negative), 0.5 = gray (neutral), 1.0 = green (positive)
+        if (value < 0.5) {
+            // Red → Gray
+            const t = value / 0.5;
+            return this.interpolateColor('#E74C3C', '#666666', t);
+        } else {
+            // Gray → Green
+            const t = (value - 0.5) / 0.5;
+            return this.interpolateColor('#666666', '#2ECC71', t);
+        }
+    }
+
+    /**
+     * Generate needs gradient color (green → yellow → orange → red)
+     */
+    getNeedsGradientColor(neediness) {
+        // neediness: 0.0 = green (satisfied), 1.0 = red (critical)
+        if (neediness < 0.33) {
+            // Green → Yellow
+            const t = neediness / 0.33;
+            return this.interpolateColor('#2ECC71', '#F1C40F', t);
+        } else if (neediness < 0.66) {
+            // Yellow → Orange
+            const t = (neediness - 0.33) / 0.33;
+            return this.interpolateColor('#F1C40F', '#E67E22', t);
+        } else {
+            // Orange → Red
+            const t = (neediness - 0.66) / 0.34;
+            return this.interpolateColor('#E67E22', '#E74C3C', t);
+        }
+    }
+
+    /**
+     * Interpolate between two hex colors
+     */
+    interpolateColor(color1, color2, t) {
+        const c1 = this.hexToRgb(color1);
+        const c2 = this.hexToRgb(color2);
+
+        const r = Math.round(c1.r + (c2.r - c1.r) * t);
+        const g = Math.round(c1.g + (c2.g - c1.g) * t);
+        const b = Math.round(c1.b + (c2.b - c1.b) * t);
+
+        return this.rgbToHex(r, g, b);
+    }
+
+    /**
+     * Convert hex color to RGB object
+     */
+    hexToRgb(hex) {
+        const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+        return result ? {
+            r: parseInt(result[1], 16),
+            g: parseInt(result[2], 16),
+            b: parseInt(result[3], 16)
+        } : { r: 0, g: 0, b: 0 };
+    }
+
+    /**
+     * Convert RGB to hex color
+     */
+    rgbToHex(r, g, b) {
+        return '#' + [r, g, b].map(x => {
+            const hex = x.toString(16);
+            return hex.length === 1 ? '0' + hex : hex;
+        }).join('');
     }
 
 

@@ -33,7 +33,11 @@ class IsometricGrid {
         // Initialize V2 Rendering System (now the standard)
         this.renderingSystem = new RenderingSystemV2(this);
 
+        // Initialize map layer system (handles all layer-specific rendering)
+        this.mapLayers = new MapLayerSystem(this);
 
+        // Initialize map layer legend system
+        this.layerLegend = new MapLayerLegend(this);
 
         // Initialize unified tooltip system
         this.tooltipSystemV2 = new TooltipSystemV2(this);
@@ -1680,11 +1684,6 @@ class IsometricGrid {
         this.contextMenuSystem.hide();
     }
     
-    hideStreetEdgeContextMenu() {
-    }
-    
-    
-    
     makeDraggable(element) {
         const handle = element.querySelector('.draggable-handle');
         if (!handle) return;
@@ -3009,16 +3008,8 @@ class IsometricGrid {
     switchToLayer(layerName) {
         // Update current layer
         this.currentLayer = layerName;
-        
-        // Clear any layer-specific menus when switching layers
-        this.hideStreetEdgeContextMenu();
-        this.clearSelectedStreetEdges();
-        
-        // Clear mobility tooltip timer when switching layers
-        if (this.mobilityTooltipTimer) {
-            clearTimeout(this.mobilityTooltipTimer);
-            this.mobilityTooltipTimer = null;
-        }
+
+        // Layer switching cleanup (if needed in future)
         
         // Update active states in dropdown
         document.querySelectorAll('.layer-option').forEach(option => option.classList.remove('active'));
@@ -3034,7 +3025,12 @@ class IsometricGrid {
         
         // Update cursor style based on layer
         this.canvas.style.cursor = 'default';
-        
+
+        // Update legend for new layer
+        if (this.layerLegend) {
+            this.layerLegend.updateLegend(layerName);
+        }
+
         // Re-render with new layer
         this.scheduleRender();
     }
@@ -3046,20 +3042,13 @@ class IsometricGrid {
         const vitalitySection = vitalityElement?.parentElement;
         const playersSection = playersElement?.parentElement;
 
-        // DISABLED: Mobility layer completely removed
-        if (layerName === 'mobility') {
-            console.log('⚠️ Mobility layer disabled - using normal mode');
-            layerName = 'normal'; // Override to normal mode
-            this.currentLayer = 'normal'; // Ensure currentLayer is also updated
-        }
-
-        // Standard panel handling (mobility code completely removed)
+        // Standard panel handling for all layers
         if (layerName === 'normal') {
             // In normal view - open vitality panel
             if (vitalitySection) {
                 this.openSidebarSection(vitalitySection);
             }
-            
+
             // Remove players panel completely (not just hide)
             if (playersSection) {
                 playersSection.style.display = 'none';
@@ -3287,49 +3276,9 @@ class IsometricGrid {
     
 
 
-    // Infrastructure building methods with cost validation
+    // Infrastructure building disabled in V2
     buildInfrastructure(edgeType, row, col, infrastructureType, value, playerId = null) {
-        playerId = playerId || this.playerId || this.currentPlayerId;
-        // Only allow infrastructure building in mobility layer
-        if (this.currentLayer !== 'mobility') {
-            this.showNotification('Switch to Mobility View to build infrastructure', 'error');
-            return false;
-        }
-        
-        // Check if player has enough money
-        const cost = this.getInfrastructureCost(infrastructureType, value);
-        if (this.playerData.cash < cost) {
-            this.showNotification(`Not enough cash! Need $${cost}`, 'error');
-            return false;
-        }
-
-        // Get the edge parcel
-        let edgeParcel;
-        if (edgeType === 'horizontal') {
-            edgeParcel = this.edgeParcels.horizontal[row][col];
-        } else if (edgeType === 'vertical') {
-            edgeParcel = this.edgeParcels.vertical[row][col];
-        } else if (edgeType === 'intersection') {
-            edgeParcel = this.edgeParcels.intersections[row][col];
-        }
-
-        if (!edgeParcel) {
-            this.showNotification('Invalid edge parcel', 'error');
-            return false;
-        }
-
-        // Build the infrastructure
-        const success = this.addInfrastructureToParcel(edgeParcel, infrastructureType, value, cost, playerId);
-        
-        if (success) {
-            // SERVER HANDLES CASH DEDUCTION - client should not modify cash directly
-            // Cash will be updated via server state sync in multiplayer mode
-            this.updatePlayerDisplay();
-            // Visual confirmation via UI update - notification removed to reduce clutter
-            this.scheduleRender();
-            return true;
-        }
-
+        this.showNotification('Infrastructure building not available', 'error');
         return false;
     }
 
@@ -3595,9 +3544,6 @@ class IsometricGrid {
                 return this.getLandValueHeatmapColor(row, col);
             case 'cashflow':
                 return this.getCashflowHeatmapColor(row, col);
-            case 'mobility':
-                // DISABLED: Mobility layer disabled for testing
-                return '#2a2a2a'; // Default ground color instead
             case 'normal':
             default:
                 // Original logic for normal view
@@ -3939,10 +3885,8 @@ class IsometricGrid {
                     this.showContextMenu(tile.row, tile.col, e.clientX, e.clientY);
                 }
             } else {
-                // Clicked outside grid - hide context menu (except in transportation layer)
-                if (this.currentLayer !== 'transportation') {
-                    this.hideContextMenu();
-                }
+                // Clicked outside grid - hide context menu
+                this.hideContextMenu();
             }
         });
         

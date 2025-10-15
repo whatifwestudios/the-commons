@@ -3930,6 +3930,115 @@ body.beer-hall-active #top-bar {
     font-size: 14px;
 }
 
+/* Map Layer Legend */
+.layer-legend {
+    position: fixed;
+    bottom: 20px;
+    left: 20px;
+    background: rgba(20, 20, 20, 0.95);
+    border: 2px solid rgba(232, 212, 160, 0.3);
+    border-radius: 8px;
+    padding: 12px;
+    min-width: 200px;
+    max-width: 300px;
+    z-index: 9998;
+    backdrop-filter: blur(10px);
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+}
+
+.legend-header {
+    font-weight: 600;
+    font-size: 14px;
+    color: #E8D4A0;
+    margin-bottom: 10px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid rgba(232, 212, 160, 0.2);
+}
+
+.legend-content {
+    font-size: 13px;
+    color: #DDD;
+}
+
+/* Ownership Layer Legend */
+.legend-player-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.legend-player-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 8px;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.legend-player-item:hover {
+    background: rgba(232, 212, 160, 0.1);
+    transform: translateX(4px);
+}
+
+.legend-player-color {
+    width: 16px;
+    height: 16px;
+    border-radius: 3px;
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    flex-shrink: 0;
+}
+
+.legend-player-name {
+    flex: 1;
+    font-size: 12px;
+    color: #DDD;
+}
+
+.legend-player-score {
+    font-size: 11px;
+    color: #999;
+    font-weight: 600;
+}
+
+/* Gradient Legend */
+.legend-gradient {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.legend-gradient-bar {
+    height: 20px;
+    border-radius: 4px;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.legend-gradient-labels {
+    display: flex;
+    justify-content: space-between;
+    font-size: 11px;
+    color: #999;
+    margin-top: -4px;
+}
+
+.legend-gradient-label {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+}
+
+.legend-note {
+    font-size: 11px;
+    color: #777;
+    font-style: italic;
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
 /* Financial Overview Panel */
 .financial-overview {
     background: linear-gradient(135deg, rgba(72, 61, 139, 0.06), rgba(75, 0, 130, 0.03));

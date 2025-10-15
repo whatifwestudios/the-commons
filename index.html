@@ -2200,6 +2200,18 @@
                     <button class="dropdown-item layer-option active" id="layer-normal" data-layer="normal">
                         🗺️ Normal View
                     </button>
+                    <button class="dropdown-item layer-option" id="layer-ownership" data-layer="ownership">
+                        👥 Ownership Map
+                    </button>
+                    <button class="dropdown-item layer-option" id="layer-landvalue" data-layer="landvalue">
+                        💰 Land Value Heatmap
+                    </button>
+                    <button class="dropdown-item layer-option" id="layer-civic" data-layer="civic">
+                        🏛️ Civic Impact Map
+                    </button>
+                    <button class="dropdown-item layer-option" id="layer-needs" data-layer="needs">
+                        🆘 Needs Map
+                    </button>
                 </div>
             </div>
             <div class="top-bar-section">
@@ -3148,6 +3160,16 @@
         </div>
     </div>
 
+    <!-- Map Layer Legend Box -->
+    <div id="layer-legend" class="layer-legend" style="display: none;">
+        <div class="legend-header">
+            <span id="legend-title">Legend</span>
+        </div>
+        <div class="legend-content" id="legend-content">
+            <!-- Content will be dynamically populated based on active layer -->
+        </div>
+    </div>
+
     <!-- Route Configuration Modal -->
     <div id="route-config-modal" class="modal" style="display: none;">
         <div class="modal-content route-config">
@@ -3393,7 +3415,6 @@
 
     <script src="config.js"></script>
     <script src="utils/csv-converter.js"></script>
-    <script src="csv-uploader.js"></script>
     <script type="module" src="buildings.js"></script>
     <!-- 🚫 CLIENT STATE AUDITOR REMOVED - GHOSTS LEAD THE WAY! -->
     <!-- State Auditing System - Load FIRST to intercept all mutations -->
@@ -3422,6 +3443,8 @@
     <script src="parcel-header-utils.js"></script>
     <script src="tooltip-system.js"></script>
     <script src="rendering-system.js"></script>
+    <script src="map-layers.js"></script>
+    <script src="map-layer-legend.js"></script>
     <!-- Legacy tooltip systems archived -->
     <script src="context-menu-system.js?v=3"></script>
     <script src="action-manager.js"></script>
