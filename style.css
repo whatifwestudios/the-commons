@@ -26,6 +26,12 @@ body {
     transition: all 0.3s ease;
 }
 
+/* Hide top bar when game interface is not fully faded in (during transition overlay) */
+.game-interface:not(.fade-in) #top-bar {
+    opacity: 0;
+    pointer-events: none;
+}
+
 /* Blur top bar when in waiting/chat mode only - not during actual gameplay */
 body.beer-hall-active #top-bar {
     backdrop-filter: blur(4px);
