@@ -68,9 +68,7 @@ class MapLayerLegend {
                 </div>
             </div>
             <div class="legend-note">
-                Buildings colored by net cashflow (revenue - costs)<br>
-                <span style="color: #E74C3C;">Red</span> = good hostile takeover targets |
-                <span style="color: #4A90E2;">Blue</span> = high performers
+                Buildings colored by net cashflow (revenue - costs)
             </div>
         `;
 
@@ -99,7 +97,7 @@ class MapLayerLegend {
                     </div>
                 </div>
             </div>
-            <div class="legend-note">Shows city pricing for unowned parcels, purchase price for owned</div>
+            <div class="legend-note">Shows last paid price for parcels</div>
         `;
 
         this.legendContent.innerHTML = html;
