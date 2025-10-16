@@ -1783,6 +1783,25 @@ class ServerEconomicEngine {
 
         this.gameState.buildings.set(locationKey, building);
 
+        // Auto-cancel any active parcel listing for this location
+        const parcelListing = Array.from(this.gameState.marketplace.listings.values())
+            .find(l => l.type === 'PARCEL_SALE' && l.status === 'active' &&
+                      l.location[0] === row && l.location[1] === col);
+
+        if (parcelListing) {
+            parcelListing.status = 'cancelled';
+            parcelListing.cancelledAt = Date.now();
+            parcelListing.cancelReason = 'Building constructed on parcel';
+            console.log(`🏪 Auto-cancelled parcel listing ${parcelListing.id} at [${row},${col}] - building constructed`);
+
+            // Broadcast marketplace update
+            this.broadcastGameState('MARKETPLACE_UPDATE', {
+                type: 'LISTING_CANCELLED',
+                listingId: parcelListing.id,
+                reason: 'Building constructed'
+            });
+        }
+
         // Intelligently invalidate only affected caches
         this.invalidateCaches('building_added', [locationKey]);
         this.pendingChanges.buildings.add(locationKey);
@@ -5661,9 +5680,15 @@ class ServerEconomicEngine {
             const cash = this.getPlayerBalance(playerId);
             const cashflow = player.dailyCashflow || 0;
 
-            // Bankruptcy condition: negative cash AND negative cashflow
-            if (cash < 0 && cashflow < 0) {
-                console.log(`💸 [BANKRUPTCY] Player ${playerId} is underwater: $${cash} cash, $${cashflow}/day cashflow`);
+            // Log player status for debugging
+            if (cash < 0) {
+                console.log(`💸 [BANKRUPTCY] Player ${playerId}: $${cash.toFixed(2)} cash, $${cashflow.toFixed(2)}/day cashflow`);
+            }
+
+            // Bankruptcy condition: negative cash AND (negative cashflow OR deeply negative)
+            // Trigger if: (negative cash + negative cashflow) OR (cash < -100)
+            if ((cash < 0 && cashflow < 0) || cash < -100) {
+                console.log(`💸 [BANKRUPTCY] Player ${playerId} is underwater - triggering fire sales`);
                 this.processDistressedPlayer(playerId);
             }
         }

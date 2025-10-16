@@ -129,6 +129,12 @@ class LandExchangeSystem {
      * Create sidebar panel
      */
     createSidebar() {
+        // Hide marketplace in solo mode
+        if (!this.game.isMultiplayer) {
+            console.log('💰 Marketplace hidden (solo mode)');
+            return;
+        }
+
         let sidebar = document.getElementById('sidebar');
         if (!sidebar) {
             sidebar = document.createElement('div');
