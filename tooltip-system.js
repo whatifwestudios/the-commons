@@ -429,10 +429,14 @@ class TooltipSystemV2 {
         // Use server-synced data if available
         const serverBuilding = this.game.economicClient?.buildings?.get(`${data.row},${data.col}`);
 
-        const efficiency = serverBuilding?.efficiency || performance.efficiency || 0;
+        // PRIORITY: Use clientPerformance for instant feedback, fallback to server data
+        const clientPerf = serverBuilding?.clientPerformance?.summary;
+        const serverPerf = serverBuilding?.performance?.summary;
+
+        const efficiency = clientPerf?.performance || serverPerf?.performance || serverBuilding?.efficiency || performance.efficiency || 0;
         const efficiencyPercent = Math.round(efficiency);
         const condition = data.condition || performance.condition || 100; // Already set from server data
-        const netRevenue = Math.round(serverBuilding?.netIncome || performance.netRevenue || 0);
+        const netRevenue = Math.round(clientPerf?.netIncome || serverPerf?.netIncome || serverBuilding?.netIncome || performance.netRevenue || 0);
 
         // Use performance-based blue-to-red color system
         const efficiencyColor = this.getPerformanceColor(efficiency);
@@ -493,6 +497,12 @@ class TooltipSystemV2 {
             `;
         }
 
+        // PHASE 2: Show utilization metrics for providers
+        const utilizationHtml = this.renderUtilization(data.row, data.col, production);
+        if (utilizationHtml) {
+            html += utilizationHtml;
+        }
+
         // Show building needs or status based on Core Needs satisfaction
         if (data.needs && data.needs.length > 0) {
             // Show ALL unmet Core Needs
@@ -532,6 +542,69 @@ class TooltipSystemV2 {
         }
 
         return html;
+    }
+
+    /**
+     * PHASE 2: Render utilization metrics for provider buildings
+     */
+    renderUtilization(row, col, production) {
+        // Only show for buildings that produce resources
+        if (!production || production.length === 0) return '';
+
+        const serverBuilding = this.getServerBuildingData(row, col);
+        if (!serverBuilding) return '';
+
+        const utilizations = [];
+
+        // Check each resource type for utilization data
+        const resourceMap = {
+            'energy': { emoji: '⚡', key: 'energyUtilization', consumed: 'energyConsumed', provided: 'energyProvided' },
+            'food': { emoji: '🍎', key: 'foodUtilization', consumed: 'foodConsumed', provided: 'foodProvided' },
+            'education': { emoji: '🎓', key: 'educationUtilization', consumed: 'educationConsumed', provided: 'educationProvided' },
+            'healthcare': { emoji: '❤️', key: 'healthcareUtilization', consumed: 'healthcareConsumed', provided: 'healthcareProvided' },
+            'jobs': { emoji: '💼', key: 'workforceUtilization', consumed: 'jobsFilled', provided: 'jobsProvided' },
+            'housing': { emoji: '👷', key: 'employmentRate', consumed: 'workersEmployed', provided: 'workersAvailable' }
+        };
+
+        production.forEach(item => {
+            const resource = item.resource.toLowerCase();
+            const mapping = resourceMap[resource];
+
+            if (mapping && serverBuilding[mapping.key] !== undefined) {
+                const utilization = serverBuilding[mapping.key];
+                const consumed = serverBuilding[mapping.consumed] || 0;
+                const provided = serverBuilding[mapping.provided] || item.amount;
+                const utilizationPct = Math.round(utilization * 100);
+
+                // Color code: green for high usage, yellow for medium, red for low
+                const color = utilizationPct >= 70 ? '#4CAF50' : utilizationPct >= 40 ? '#FF9800' : '#f44336';
+
+                utilizations.push({
+                    emoji: mapping.emoji,
+                    resource: resource === 'jobs' ? 'Workforce' : resource.charAt(0).toUpperCase() + resource.slice(1),
+                    consumed: Math.round(consumed * 10) / 10,
+                    provided: Math.round(provided * 10) / 10,
+                    utilizationPct,
+                    color
+                });
+            }
+        });
+
+        if (utilizations.length === 0) return '';
+
+        return `
+            <div class="compact-section utilization-section">
+                <div class="compact-label">Utilization</div>
+                <div class="resource-list">
+                    ${utilizations.map(u => `
+                        <div class="resource-item">
+                            ${u.emoji} ${u.resource}: <span style="color: ${u.color}; font-weight: 500;">${u.utilizationPct}%</span>
+                            <span style="color: #999; font-size: 11px;"> (${u.consumed}/${u.provided})</span>
+                        </div>
+                    `).join('')}
+                </div>
+            </div>
+        `;
     }
 
     /**

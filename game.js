@@ -42,6 +42,9 @@ class IsometricGrid {
         // Initialize unified tooltip system
         this.tooltipSystemV2 = new TooltipSystemV2(this);
 
+        // Initialize Client Performance Calculator for real-time feedback
+        this.performanceCalculator = new ClientPerformanceCalculator(this);
+
         // Connect V2 systems to data sources
         if (this.economicClient) {
             this.economicClient.onUpdate((update) => {
@@ -4054,8 +4057,8 @@ class IsometricGrid {
                         promises.push(
                             this.economicClient.getBuildingPerformance(row, col)
                                 .then(performance => {
-                                    if (performance && performance.efficiency !== undefined) {
-                                        parcel._efficiency = performance.efficiency;
+                                    if (performance) {
+                                        // REMOVED: _efficiency field (legacy ghost - now using clientPerformance)
                                         parcel._revenue = performance.revenue || 0;
                                     }
                                 })
@@ -4243,6 +4246,11 @@ class IsometricGrid {
                 this.updatePlayerStats();
                 // Refresh building performances daily
                 this.refreshAllBuildingPerformances();
+
+                // Sync client performance calculator with server's authoritative data
+                if (this.performanceCalculator) {
+                    this.performanceCalculator.syncWithServer();
+                }
                 break;
 
             case 'DAILY_TICK':
@@ -4347,6 +4355,11 @@ class IsometricGrid {
 
                     // Fetch and update performance
                     this.fetchBuildingPerformance(row, col);
+
+                    // Calculate client-side performance instantly for immediate feedback
+                    if (this.performanceCalculator) {
+                        this.performanceCalculator.updateAffectedBuildings(row, col);
+                    }
                 }
                 break;
 

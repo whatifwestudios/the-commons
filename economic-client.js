@@ -434,7 +434,7 @@ class EconomicClient {
             rent: building.type === 'residential' ? (building.residents || 0) * 100 : 0,
             population: building.residents || 0,
             workers: building.workers || 0,
-            efficiency: building.efficiency || 1.0,
+            // REMOVED: efficiency field (use building.performance.summary.performance or clientPerformance instead)
             income: building.monthlyIncome || 0,
             expenses: building.monthlyExpenses || 0,
             netIncome: (building.monthlyIncome || 0) - (building.monthlyExpenses || 0)
@@ -467,7 +467,8 @@ class EconomicClient {
             performance: {
                 residents: building.residents || 0,
                 workers: building.workers || 0,
-                efficiency: building.efficiency || 1.0,
+                // REMOVED: efficiency field (use building.performance.summary.performance or clientPerformance instead)
+                performancePct: building.performance?.summary?.performance || 0,
                 revenue: building.revenue || 0,
                 expenses: building.expenses || 0,
                 netIncome: building.netIncome || 0
@@ -2043,7 +2044,7 @@ class EconomicClient {
                 constructionProgress: state.constructionProgress,
 
                 // Tooltip data
-                efficiency: state.efficiency || 0,
+                // REMOVED: efficiency field (legacy ghost - use performance.summary.performance or clientPerformance instead)
                 netIncome: state.netIncome || 0,
                 revenue: state.revenue || 0,
                 maintenance: state.maintenance || 0,
