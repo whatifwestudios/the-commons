@@ -593,7 +593,8 @@ class ServerEconomicEngine {
      */
     distributeEnergyFromSource(generatorBuilding) {
         const buildingDef = this.buildingDefinitions.get(generatorBuilding.id);
-        let remainingEnergy = buildingDef.resources.energyProvided;
+        const totalEnergyProvided = buildingDef.resources.energyProvided;
+        let remainingEnergy = totalEnergyProvided;
 
         if (remainingEnergy <= 0) return; // Not a generator
 
@@ -632,6 +633,12 @@ class ServerEconomicEngine {
 
             needyBuildings = nextRound;
         }
+
+        // PHASE 2: Track utilization - how much energy was actually consumed
+        const energyConsumed = totalEnergyProvided - remainingEnergy;
+        generatorBuilding.energyUtilization = totalEnergyProvided > 0 ? (energyConsumed / totalEnergyProvided) : 0;
+        generatorBuilding.energyConsumed = energyConsumed;
+        generatorBuilding.energyProvided = totalEnergyProvided;
     }
 
     /**
@@ -670,7 +677,8 @@ class ServerEconomicEngine {
      */
     distributeResourceFromProvider(providerBuilding, resourceType, providedKey, receivedKey) {
         const buildingDef = this.buildingDefinitions.get(providerBuilding.id);
-        let remainingResource = buildingDef.resources[providedKey];
+        const totalResourceProvided = buildingDef.resources[providedKey];
+        let remainingResource = totalResourceProvided;
 
         if (remainingResource <= 0) return; // Not a provider
 
@@ -741,6 +749,16 @@ class ServerEconomicEngine {
 
             needyBuildings = nextRound;
         }
+
+        // PHASE 2: Track utilization - how much resource was actually consumed
+        const resourceConsumed = totalResourceProvided - remainingResource;
+        const utilizationKey = `${resourceType}Utilization`;
+        const consumedKey = `${resourceType}Consumed`;
+        const providedStorageKey = `${resourceType}Provided`;
+
+        providerBuilding[utilizationKey] = totalResourceProvided > 0 ? (resourceConsumed / totalResourceProvided) : 0;
+        providerBuilding[consumedKey] = resourceConsumed;
+        providerBuilding[providedStorageKey] = totalResourceProvided;
     }
 
     /**
@@ -920,6 +938,12 @@ class ServerEconomicEngine {
 
                 needyWorkplaces = nextRound;
             }
+
+            // PHASE 2: Track employment rate for this housing
+            const workersEmployed = workersAvailable - remainingWorkers;
+            housing.employmentRate = workersAvailable > 0 ? (workersEmployed / workersAvailable) : 0;
+            housing.workersEmployed = workersEmployed;
+            housing.workersAvailable = workersAvailable;
         }
 
         console.log(`👷 [WORKERS] Distributed workers from ${housingBuildings.length} housing buildings at ${housingMetrics.density.toFixed(2)}/br density`);
@@ -1010,6 +1034,12 @@ class ServerEconomicEngine {
 
                 needyHousing = nextRound;
             }
+
+            // PHASE 2: Track utilization for this workplace
+            const jobsFilled = jobsProvided - remainingJobs;
+            workplace.workforceUtilization = jobsProvided > 0 ? (jobsFilled / jobsProvided) : 0;
+            workplace.jobsFilled = jobsFilled;
+            workplace.jobsProvided = jobsProvided;
         }
 
         console.log(`💼 [JOBS] Distributed jobs from ${workplaceBuildings.length} workplaces`);
@@ -3657,10 +3687,11 @@ class ServerEconomicEngine {
                 // PHASE 1: Use cached performance data
                 residents: 0, // TODO: Add residents to performance data
                 workers: 0,   // TODO: Add workers to performance data
-                efficiency: perfData ? (perfData.summary.performance / 100) : 1.0,
+                // REMOVED: efficiency field (legacy ghost - use performance.summary.performance instead)
                 revenue: perfData?.summary?.revenue || 0,
                 expenses: perfData?.summary?.maintenance || 0,
-                netIncome: perfData?.summary?.netIncome || 0
+                netIncome: perfData?.summary?.netIncome || 0,
+                performance: perfData // Full performance breakdown
             });
         });
 
@@ -3767,7 +3798,7 @@ class ServerEconomicEngine {
             return {
                 residents: 0,
                 workers: 0,
-                efficiency: 0,
+                performance: 0, // Was: efficiency
                 revenue: 0,
                 expenses: 0,
                 netIncome: 0
@@ -3833,7 +3864,8 @@ class ServerEconomicEngine {
         return {
             residents,
             workers,
-            efficiency: Math.round(performance * 100), // Performance % for tooltip display
+            // REMOVED: efficiency field (legacy ghost - use performance instead)
+            performance: Math.round(performance * 100), // Performance % (0-140+)
             revenue: Math.round(revenue * 100) / 100,
             expenses: Math.round(expenses * 100) / 100,
             netIncome: Math.round(netIncome * 100) / 100
@@ -6844,7 +6876,7 @@ class ServerEconomicEngine {
             constructionStartTime: building.constructionStartTime || Date.now(),
 
             // Detailed performance data for tooltips
-            efficiency: efficiency, // Percentage (0-100+)
+            // REMOVED: efficiency field (legacy ghost - use performanceDetails.summary.performance instead)
             netIncome: netIncome, // Daily net revenue
             revenue: revenue, // Daily revenue
             maintenance: maintenance, // Daily maintenance cost
