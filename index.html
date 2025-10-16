@@ -2206,6 +2206,9 @@
                     <button class="dropdown-item layer-option" id="layer-landvalue" data-layer="landvalue">
                         💰 Land Value Heatmap
                     </button>
+                    <button class="dropdown-item layer-option" id="layer-energy" data-layer="energy">
+                        ⚡ Energy Grid
+                    </button>
                 </div>
             </div>
             <div class="top-bar-section">
@@ -2217,6 +2220,10 @@
                 <button class="top-bar-btn" id="actions-btn">
                     <span>ACTIONS: </span><span id="top-bar-actions-count">--</span><span> ⚡</span>
                 </button>
+                <!-- Cashflow Warning Indicator -->
+                <div id="cashflow-indicator" style="display: none; margin-left: 10px; padding: 5px 10px; background: #ff6b6b; color: white; border-radius: 4px; font-weight: bold; font-size: 11px;">
+                    ⚠️ Days to bankruptcy: <span id="days-until-bankruptcy">3</span>
+                </div>
             </div>
             <div class="top-bar-section">
                 <div class="top-bar-info">
@@ -2378,16 +2385,17 @@
             </div>
         </div>
         <div id="sidebar">
+            <!-- Core Needs Section (formerly Vitality) -->
             <div class="sidebar-section collapsible">
-                <div class="section-header" data-target="vitality">
-                    <span>VITALITY</span>
+                <div class="section-header" data-target="core-needs">
+                    <span>CORE NEEDS</span>
+                    <span class="global-multiplier" id="global-multiplier" title="City-wide economic health. Click for details.">
+                        <span class="multiplier-value">1.0x</span>
+                    </span>
                     <span class="collapse-icon"></span>
                 </div>
-                <div id="vitality" class="section-content">
-                    <!-- JEEFHH Supply & Demand Section -->
-                    <div class="vitality-group">
-                        <div class="vitality-group-title">JEEFHH (SUPPLY & DEMAND)</div>
-                        <div class="jeefhh-bars-container">
+                <div id="core-needs" class="section-content">
+                    <div class="jeefhh-bars-container">
                             <div class="jeefhh-bar-row metric-tooltip" data-metric="housing" data-tooltip="Housing supply vs demand. Goal: balanced supply and demand.">
                                 <span class="jeefhh-label">HOUSING</span>
                                 <div class="jeefhh-bar">
@@ -2430,13 +2438,18 @@
                                     <div class="balance-dot"></div>
                                 </div>
                             </div>
-                        </div>
                     </div>
+                </div>
+            </div>
 
-                    <!-- CARENS Livability Section -->
-                    <div class="vitality-group">
-                        <div class="vitality-group-title">CARENS (LIVABILITY)</div>
-                        <div class="carens-bars-container">
+            <!-- Livability Section -->
+            <div class="sidebar-section collapsible">
+                <div class="section-header" data-target="livability">
+                    <span>LIVABILITY</span>
+                    <span class="collapse-icon"></span>
+                </div>
+                <div id="livability" class="section-content">
+                    <div class="carens-bars-container">
                             <div class="carens-bar-row metric-tooltip" data-metric="safety" data-tooltip="Safety levels in the community. Higher scores indicate lower crime rates and better public safety measures.">
                                 <span class="carens-label">SAFETY</span>
                                 <div class="carens-bar">
@@ -2479,10 +2492,11 @@
                                     <div class="balance-dot"></div>
                                 </div>
                             </div>
-                        </div>
                     </div>
                 </div>
             </div>
+
+            <!-- Metrics Section -->
             <div class="sidebar-section collapsible">
                 <div class="section-header" data-target="info">
                     <span>METRICS</span>
@@ -2940,7 +2954,44 @@
             </div>
         </div>
     </div>
-    
+
+    <!-- Core Needs Modal -->
+    <div class="modal" id="core-needs-modal">
+        <div class="modal-content core-needs-content">
+            <div class="modal-header">
+                <h3>Core Needs Economy</h3>
+                <button class="modal-close" id="core-needs-close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="global-multiplier-display">
+                    <div class="multiplier-label">City-wide Economic Health</div>
+                    <div class="multiplier-big" id="modal-global-multiplier">1.0x</div>
+                    <div class="multiplier-description">All buildings are affected by the lowest Core Need multiplier</div>
+                </div>
+
+                <div class="core-needs-breakdown">
+                    <div class="breakdown-header">Supply & Demand Breakdown</div>
+                    <div id="core-needs-bars">
+                        <!-- Dynamic content populated by JavaScript -->
+                    </div>
+                </div>
+
+                <div class="bottleneck-section" id="bottleneck-section">
+                    <div class="bottleneck-header">⚠️ Current Bottleneck</div>
+                    <div id="bottleneck-content">
+                        <!-- Dynamic content -->
+                    </div>
+                </div>
+
+                <div class="recommendations-section" id="recommendations-section">
+                    <div class="recommendations-header">💡 Recommendations</div>
+                    <div id="recommendations-content">
+                        <!-- Dynamic content -->
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
 
     <!-- Victory Screen Modal -->
     <div class="modal victory-modal" id="victory-modal">
@@ -3094,11 +3145,11 @@
 
     <!-- Solo game - no multiplayer lobby needed -->
     
-    <!-- Action Marketplace Tray -->
+    <!-- Marketplace Tray (Actions, Buildings, Parcels) -->
     <div id="action-marketplace-tray" class="action-marketplace-tray">
         <div class="tray-content">
             <div class="tray-header">
-                <h3>Action Marketplace</h3>
+                <h3>Marketplace</h3>
                 <div class="header-stats">
                     <span class="header-stat">Your Actions: <span id="marketplace-action-count">--</span></span>
                 </div>
@@ -3129,11 +3180,13 @@
             </div>
 
             <div class="marketplace-tabs">
-                <button class="tab-btn" data-tab="your-listings">Your Listings</button>
-                <button class="tab-btn active" data-tab="marketplace" id="marketplace-tab-btn">Marketplace</button>
+                <button class="tab-btn active" data-tab="actions" id="actions-tab-btn">Actions</button>
+                <button class="tab-btn" data-tab="buildings">Buildings</button>
+                <button class="tab-btn" data-tab="parcels">Parcels</button>
             </div>
 
-            <div class="tab-content" id="your-listings">
+            <!-- Actions Tab -->
+            <div class="tab-content active" id="actions">
                 <div class="listing-form">
                     <h4>List 1 Action for Sale</h4>
                     <div class="form-row">
@@ -3141,14 +3194,26 @@
                         <button class="btn-primary" id="list-action-btn">List for Sale</button>
                     </div>
                 </div>
-                <div class="listings-grid" id="your-listings-grid">
-                    <p class="empty-state">You have no active listings</p>
+
+                <h4 style="margin: 20px 0 10px 0; color: #E8D4A0;">All Action Listings</h4>
+                <div class="listings-grid" id="action-listings-grid">
+                    <p class="empty-state">No actions for sale</p>
                 </div>
             </div>
 
-            <div class="tab-content active" id="marketplace">
-                <div class="listings-grid" id="marketplace-listings-grid">
-                    <p class="empty-state">No active listings in the marketplace</p>
+            <!-- Buildings Tab -->
+            <div class="tab-content" id="buildings">
+                <p style="color: #888; margin-bottom: 15px;">Buy buildings from fire sales or player listings</p>
+                <div class="listings-grid" id="building-listings-grid">
+                    <p class="empty-state">No buildings for sale</p>
+                </div>
+            </div>
+
+            <!-- Parcels Tab -->
+            <div class="tab-content" id="parcels">
+                <p style="color: #888; margin-bottom: 15px;">Buy empty parcels from other players</p>
+                <div class="listings-grid" id="parcel-listings-grid">
+                    <p class="empty-state">No parcels for sale</p>
                 </div>
             </div>
         </div>

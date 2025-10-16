@@ -7,6 +7,7 @@ class LandExchangeSystem {
     constructor(game) {
         this.game = game;
         this.activeOffers = new Map(); // offerId -> offer data
+        this.hasExpandedForListings = false; // Track if auto-expanded for marketplace
 
         // UI elements
         this.modal = null;
@@ -15,7 +16,7 @@ class LandExchangeSystem {
         this.setupUI();
         this.setupWebSocketHandlers();
 
-        console.log('💰 Land Exchange System initialized');
+        console.log('💰 Marketplace System initialized');
     }
 
     /**
@@ -141,10 +142,24 @@ class LandExchangeSystem {
 
         section.innerHTML = `
             <div class="section-header" data-target="land-exchange-content">
-                <span>LAND EXCHANGE <span id="land-exchange-indicator" class="land-exchange-indicator" style="display: none;">●</span></span>
+                <span>MARKETPLACE <span id="land-exchange-indicator" class="land-exchange-indicator" style="display: none;">●</span></span>
                 <span class="collapse-icon"></span>
             </div>
             <div id="land-exchange-content" class="section-content">
+                <div id="marketplace-stats" style="padding: 8px 10px; border-bottom: 1px solid #1a1a1a; font-size: 14px;">
+                    <div onclick="game.marketplace?.openMarketplace(); game.marketplace?.switchTab('actions');" style="display: flex; justify-content: space-between; margin-bottom: 6px; cursor: pointer; transition: background 0.2s; padding: 4px; margin: -4px -4px 2px -4px; border-radius: 4px;" onmouseover="this.style.background='rgba(232, 212, 160, 0.1)'" onmouseout="this.style.background='transparent'">
+                        <span style="color: #888;">Actions:</span>
+                        <span id="marketplace-actions-count" style="color: #E8D4A0;">—</span>
+                    </div>
+                    <div onclick="game.marketplace?.openMarketplace(); game.marketplace?.switchTab('buildings');" style="display: flex; justify-content: space-between; margin-bottom: 6px; cursor: pointer; transition: background 0.2s; padding: 4px; margin: -4px -4px 2px -4px; border-radius: 4px;" onmouseover="this.style.background='rgba(232, 212, 160, 0.1)'" onmouseout="this.style.background='transparent'">
+                        <span style="color: #888;">Buildings:</span>
+                        <span id="marketplace-buildings-count" style="color: #E8D4A0;">—</span>
+                    </div>
+                    <div onclick="game.marketplace?.openMarketplace(); game.marketplace?.switchTab('parcels');" style="display: flex; justify-content: space-between; cursor: pointer; transition: background 0.2s; padding: 4px; margin: -4px; border-radius: 4px;" onmouseover="this.style.background='rgba(232, 212, 160, 0.1)'" onmouseout="this.style.background='transparent'">
+                        <span style="color: #888;">Parcels:</span>
+                        <span id="marketplace-parcels-count" style="color: #E8D4A0;">—</span>
+                    </div>
+                </div>
                 <div class="land-exchange-list" id="land-exchange-list">
                     <div class="no-offers" style="padding: 10px; text-align: center; color: #666; font-size: 12px;">No active offers</div>
                 </div>
@@ -559,6 +574,48 @@ class LandExchangeSystem {
         if (indicator) {
             indicator.style.display = 'none';
             indicator.classList.remove('has-offers');
+        }
+    }
+
+    /**
+     * Update marketplace stats (called by action marketplace)
+     */
+    updateMarketplaceStats(stats) {
+        const actionsEl = document.getElementById('marketplace-actions-count');
+        const buildingsEl = document.getElementById('marketplace-buildings-count');
+        const parcelsEl = document.getElementById('marketplace-parcels-count');
+
+        if (!actionsEl || !buildingsEl || !parcelsEl) return;
+
+        const actionsCount = stats.actionsCount || 0;
+        const buildingsCount = stats.buildingsCount || 0;
+        const parcelsCount = stats.parcelsCount || 0;
+
+        const avgActionPrice = stats.avgActionPrice || 0;
+        const avgBuildingPrice = stats.avgBuildingPrice || 0;
+        const avgParcelPrice = stats.avgParcelPrice || 0;
+
+        // Format: "5 @ $1,200" or "0"
+        actionsEl.textContent = actionsCount > 0
+            ? `${actionsCount} @ $${Math.round(avgActionPrice).toLocaleString()}`
+            : '0';
+        buildingsEl.textContent = buildingsCount > 0
+            ? `${buildingsCount} @ $${Math.round(avgBuildingPrice).toLocaleString()}`
+            : '0';
+        parcelsEl.textContent = parcelsCount > 0
+            ? `${parcelsCount} @ $${Math.round(avgParcelPrice).toLocaleString()}`
+            : '0';
+
+        // Auto-expand when supply goes from 0 to 1+ (only if previously all were 0)
+        const totalCount = actionsCount + buildingsCount + parcelsCount;
+        const section = document.getElementById('land-exchange-section');
+
+        if (totalCount > 0 && !this.hasExpandedForListings && section?.classList.contains('collapsed')) {
+            section.classList.remove('collapsed');
+            this.hasExpandedForListings = true;
+        } else if (totalCount === 0) {
+            // Reset flag when marketplace is empty
+            this.hasExpandedForListings = false;
         }
     }
 

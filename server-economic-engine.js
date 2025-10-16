@@ -47,6 +47,13 @@ class ServerEconomicEngine {
             // Buildings by location
             buildings: new Map(), // key: "row,col" -> BuildingState
 
+            // Energy Grid Infrastructure (power lines between parcels)
+            energyGrid: {
+                lines: new Map(), // key: edgeId -> PowerLineData
+                infrastructureBudget: 0, // Daily funds from governance allocation
+                dailyMaintenanceCost: 0  // Calculated total maintenance
+            },
+
             // Grid/Parcel ownership state (server-authoritative)
             grid: null, // Will be initialized as 2D array by initializeGrid()
 
@@ -70,16 +77,17 @@ class ServerEconomicEngine {
             },
             treasury: 0, // Unallocated tax revenue
 
-            // Action Marketplace
-            actionMarketplace: {
+            // Unified Marketplace (Actions, Buildings, Parcels)
+            marketplace: {
                 nextListingId: 1,
-                listings: new Map(), // key: listingId -> SimpleListing
+                listings: new Map(), // key: listingId -> Listing (all types)
                 priceHistory: {
-                    listings: [],  // {timestamp, gameMonth, price}
-                    sales: []      // {timestamp, gameMonth, price}
+                    actions: { listings: [], sales: [] },
+                    buildings: { listings: [], sales: [] },
+                    parcels: { listings: [], sales: [] }
                 },
-                avgListingPrice: 0,
-                avgSalePrice: 0
+                avgListingPrice: { actions: 0, buildings: 0, parcels: 0 },
+                avgSalePrice: { actions: 0, buildings: 0, parcels: 0 }
             },
 
             // Land Exchange System (offer-based parcel trading)
@@ -337,6 +345,742 @@ class ServerEconomicEngine {
         return this.gameState.grid[row][col].price;
     }
 
+    // ========================================================================
+    // ENERGY GRID INFRASTRUCTURE
+    // ========================================================================
+
+    /**
+     * Get edge ID for power line between two adjacent parcels
+     * Format: "h_row_col" (horizontal) or "v_row_col" (vertical)
+     */
+    getEdgeId(parcel1, parcel2) {
+        const [r1, c1] = typeof parcel1 === 'string' ? parcel1.split(',').map(Number) : parcel1;
+        const [r2, c2] = typeof parcel2 === 'string' ? parcel2.split(',').map(Number) : parcel2;
+
+        // Horizontal edge (same row, adjacent columns)
+        if (r1 === r2 && Math.abs(c1 - c2) === 1) {
+            const col = Math.min(c1, c2);
+            return `h_${r1}_${col}`;
+        }
+
+        // Vertical edge (same column, adjacent rows)
+        if (c1 === c2 && Math.abs(r1 - r2) === 1) {
+            const row = Math.min(r1, r2);
+            return `v_${row}_${c1}`;
+        }
+
+        return null; // Not adjacent
+    }
+
+    /**
+     * Check if two parcels are adjacent (for power line placement)
+     */
+    areAdjacent(parcel1, parcel2) {
+        const [r1, c1] = typeof parcel1 === 'string' ? parcel1.split(',').map(Number) : parcel1;
+        const [r2, c2] = typeof parcel2 === 'string' ? parcel2.split(',').map(Number) : parcel2;
+
+        const rowDiff = Math.abs(r1 - r2);
+        const colDiff = Math.abs(c1 - c2);
+
+        // Adjacent = exactly 1 space away in one direction, 0 in the other
+        return (rowDiff === 1 && colDiff === 0) || (rowDiff === 0 && colDiff === 1);
+    }
+
+    /**
+     * Build a power line between two adjacent parcels
+     * Cost: $10, Maintenance: $0.10/day, Civic: +0.1
+     */
+    buildPowerLine(parcel1, parcel2, playerId) {
+        // Validate adjacency
+        if (!this.areAdjacent(parcel1, parcel2)) {
+            return { success: false, error: 'Parcels must be adjacent' };
+        }
+
+        const edgeId = this.getEdgeId(parcel1, parcel2);
+
+        // Check if line already exists
+        if (this.gameState.energyGrid.lines.has(edgeId)) {
+            return { success: false, error: 'Power line already exists' };
+        }
+
+        // Check player balance
+        const buildCost = 40;
+        const playerBalance = this.getPlayerBalance(playerId);
+        if (playerBalance < buildCost) {
+            return { success: false, error: 'Insufficient funds' };
+        }
+
+        // Deduct cost
+        this.gameState.playerBalances.set(playerId, playerBalance - buildCost);
+
+        // Create power line
+        const powerLine = {
+            edgeId,
+            ownerId: playerId,
+            buildDay: this.gameState.gameTime.day,
+            condition: 1.0,
+            buildCost: 10,
+            maintenanceCost: 0.10,
+            civicValue: 0.1
+        };
+
+        this.gameState.energyGrid.lines.set(edgeId, powerLine);
+
+        console.log(`⚡ Power line built: ${edgeId} by ${playerId} for $${buildCost}`);
+
+        // Mark all buildings as stale (grid connectivity changed)
+        this.performanceCache.markAllBuildingsStale('power_line_built');
+
+        return { success: true, edgeId, cost: buildCost };
+    }
+
+    /**
+     * Destroy a power line (only owner can destroy)
+     */
+    destroyPowerLine(edgeId, playerId) {
+        const line = this.gameState.energyGrid.lines.get(edgeId);
+
+        if (!line) {
+            return { success: false, error: 'Power line not found' };
+        }
+
+        // Only owner can destroy (or decay destroys it)
+        if (playerId && line.ownerId !== playerId) {
+            return { success: false, error: 'You do not own this power line' };
+        }
+
+        // Remove line
+        this.gameState.energyGrid.lines.delete(edgeId);
+
+        console.log(`⚡ Power line destroyed: ${edgeId}${playerId ? ' by ' + playerId : ' (decay)'}`);
+
+        // Mark all buildings as stale (grid connectivity changed)
+        this.performanceCache.markAllBuildingsStale('power_line_destroyed');
+
+        return { success: true };
+    }
+
+    /**
+     * Get parcels connected to this parcel via power lines (BFS neighbors)
+     */
+    getEnergyConnectedNeighbors(parcelKey) {
+        const [row, col] = parcelKey.split(',').map(Number);
+        const neighbors = [];
+
+        // Check all 4 edges for power lines
+        const edges = [
+            { id: `h_${row}_${col}`, neighbor: `${row},${col+1}` },     // East
+            { id: `h_${row}_${col-1}`, neighbor: `${row},${col-1}` },   // West
+            { id: `v_${row}_${col}`, neighbor: `${row+1},${col}` },     // South
+            { id: `v_${row-1}_${col}`, neighbor: `${row-1},${col}` }    // North
+        ];
+
+        edges.forEach(({ id, neighbor }) => {
+            if (this.gameState.energyGrid.lines.has(id)) {
+                const [r, c] = neighbor.split(',').map(Number);
+                // Check bounds
+                if (r >= 0 && r < this.gameState.gridSize && c >= 0 && c < this.gameState.gridSize) {
+                    neighbors.push(neighbor);
+                }
+            }
+        });
+
+        return neighbors;
+    }
+
+    /**
+     * Find all buildings connected to a source via power lines (BFS on EDGES, not parcels)
+     * NEW LOGIC: Power flows along power lines themselves, not through parcels
+     * Any building on a parcel adjacent to a powered line segment is powered
+     */
+    findConnectedBuildings(sourceParcel) {
+        const [sourceRow, sourceCol] = sourceParcel.split(',').map(Number);
+        const connectedBuildings = [];
+        const poweredParcels = new Set();
+
+        // Step 1: Find all power line edges connected to this generator via edge-based BFS
+        const poweredEdges = new Set();
+        const edgeQueue = [];
+        const visitedEdges = new Set();
+
+        // Add all 4 edges around the generator parcel
+        const generatorEdges = [
+            `h_${sourceRow}_${sourceCol}`,
+            `h_${sourceRow}_${sourceCol - 1}`,
+            `v_${sourceRow}_${sourceCol}`,
+            `v_${sourceRow - 1}_${sourceCol}`
+        ];
+
+        for (const edgeId of generatorEdges) {
+            if (this.gameState.energyGrid.lines.has(edgeId) && !visitedEdges.has(edgeId)) {
+                edgeQueue.push(edgeId);
+                visitedEdges.add(edgeId);
+                poweredEdges.add(edgeId);
+            }
+        }
+
+        // BFS through connected edges
+        while (edgeQueue.length > 0) {
+            const currentEdge = edgeQueue.shift();
+
+            // Find the two parcels this edge connects
+            let row1, col1, row2, col2;
+            if (currentEdge.startsWith('h_')) {
+                const parts = currentEdge.substring(2).split('_');
+                row1 = parseInt(parts[0]);
+                col1 = parseInt(parts[1]);
+                row2 = row1;
+                col2 = col1 + 1;
+            } else { // v_
+                const parts = currentEdge.substring(2).split('_');
+                row1 = parseInt(parts[0]);
+                col1 = parseInt(parts[1]);
+                row2 = row1 + 1;
+                col2 = col1;
+            }
+
+            // Find all edges touching these two parcels
+            const adjacentEdges = [
+                // Parcel 1's edges
+                `h_${row1}_${col1}`, `h_${row1}_${col1 - 1}`,
+                `v_${row1}_${col1}`, `v_${row1 - 1}_${col1}`,
+                // Parcel 2's edges
+                `h_${row2}_${col2}`, `h_${row2}_${col2 - 1}`,
+                `v_${row2}_${col2}`, `v_${row2 - 1}_${col2}`
+            ];
+
+            for (const adjacentEdge of adjacentEdges) {
+                if (this.gameState.energyGrid.lines.has(adjacentEdge) && !visitedEdges.has(adjacentEdge)) {
+                    edgeQueue.push(adjacentEdge);
+                    visitedEdges.add(adjacentEdge);
+                    poweredEdges.add(adjacentEdge);
+                }
+            }
+        }
+
+        // Step 2: Add all parcels adjacent to powered edges
+        for (const edgeId of poweredEdges) {
+            if (edgeId.startsWith('h_')) {
+                const parts = edgeId.substring(2).split('_');
+                const row = parseInt(parts[0]);
+                const col = parseInt(parts[1]);
+                poweredParcels.add(`${row},${col}`);
+                poweredParcels.add(`${row},${col + 1}`);
+            } else { // v_
+                const parts = edgeId.substring(2).split('_');
+                const row = parseInt(parts[0]);
+                const col = parseInt(parts[1]);
+                poweredParcels.add(`${row},${col}`);
+                poweredParcels.add(`${row + 1},${col}`);
+            }
+        }
+
+        // Step 3: Find all buildings on powered parcels
+        for (const parcelKey of poweredParcels) {
+            const building = this.gameState.buildings.get(parcelKey);
+            if (building && !building.underConstruction) {
+                connectedBuildings.push(building);
+            }
+        }
+
+        console.log(`⚡ [SERVER] Generator at ${sourceParcel} powers ${poweredEdges.size} edge segments, reaching ${poweredParcels.size} parcels with ${connectedBuildings.length} buildings`);
+
+        return connectedBuildings;
+    }
+
+    /**
+     * Distribute energy from a generator to connected buildings (greedy allocation)
+     */
+    distributeEnergyFromSource(generatorBuilding) {
+        const buildingDef = this.buildingDefinitions.get(generatorBuilding.id);
+        let remainingEnergy = buildingDef.resources.energyProvided;
+
+        if (remainingEnergy <= 0) return; // Not a generator
+
+        const sourceParcel = `${generatorBuilding.location[0]},${generatorBuilding.location[1]}`;
+
+        // Find all connected buildings via power lines (BFS)
+        const connectedBuildings = this.findConnectedBuildings(sourceParcel);
+
+        // Filter to only buildings that still need energy (greedy: already satisfied buildings ignored)
+        let needyBuildings = connectedBuildings.filter(b => {
+            const def = this.buildingDefinitions.get(b.id);
+            const required = def.resources.energyRequired;
+            return required > 0 && (b.energyReceived || 0) < required;
+        });
+
+        // Multi-pass equal distribution
+        let passes = 0;
+        while (remainingEnergy > 0.001 && needyBuildings.length > 0 && passes < 100) {
+            passes++;
+            const sharePerBuilding = remainingEnergy / needyBuildings.length;
+            const nextRound = [];
+
+            for (const building of needyBuildings) {
+                const def = this.buildingDefinitions.get(building.id);
+                const stillNeeded = def.resources.energyRequired - (building.energyReceived || 0);
+                const allocated = Math.min(stillNeeded, sharePerBuilding);
+
+                building.energyReceived = (building.energyReceived || 0) + allocated;
+                remainingEnergy -= allocated;
+
+                // Still needs more? Add to next round
+                if (building.energyReceived < def.resources.energyRequired) {
+                    nextRound.push(building);
+                }
+            }
+
+            needyBuildings = nextRound;
+        }
+    }
+
+    /**
+     * Distribute energy from all power sources to connected buildings
+     */
+    distributeAllEnergy() {
+        console.log('⚡ [ENERGY] Starting distributeAllEnergy()');
+
+        // Reset all buildings
+        this.gameState.buildings.forEach(b => {
+            b.energyReceived = 0;
+        });
+
+        // Find all generators (buildings that produce energy)
+        const generators = [];
+        this.gameState.buildings.forEach((building, key) => {
+            if (building.underConstruction) return;
+            const def = this.buildingDefinitions.get(building.id);
+            if (def && def.resources.energyProvided > 0) {
+                generators.push(building);
+            }
+        });
+
+        // Distribute from each generator (greedy: first sources satisfy buildings completely)
+        for (const generator of generators) {
+            this.distributeEnergyFromSource(generator);
+        }
+    }
+
+    /**
+     * Distribute resource from a provider to adjacent buildings (multi-pass fair allocation)
+     * @param {Object} providerBuilding - The building providing the resource
+     * @param {string} resourceType - 'food', 'education', or 'healthcare'
+     * @param {string} providedKey - The key in resources object (e.g., 'foodProvided')
+     * @param {string} receivedKey - The key to store received amount (e.g., 'foodReceived')
+     */
+    distributeResourceFromProvider(providerBuilding, resourceType, providedKey, receivedKey) {
+        const buildingDef = this.buildingDefinitions.get(providerBuilding.id);
+        let remainingResource = buildingDef.resources[providedKey];
+
+        if (remainingResource <= 0) return; // Not a provider
+
+        const [providerRow, providerCol] = providerBuilding.location;
+
+        // Find all adjacent buildings (8 surrounding parcels)
+        const adjacentBuildings = [];
+        this.ADJACENCY_OFFSETS.forEach(([dr, dc]) => {
+            const adjKey = `${providerRow + dr},${providerCol + dc}`;
+            const adjBuilding = this.gameState.buildings.get(adjKey);
+            if (adjBuilding && !adjBuilding.underConstruction) {
+                adjacentBuildings.push(adjBuilding);
+            }
+        });
+
+        // Filter to only buildings that need this resource
+        let needyBuildings = adjacentBuildings.filter(b => {
+            const def = this.buildingDefinitions.get(b.id);
+            const housingProvided = def.resources.housingProvided || 0;
+            if (housingProvided === 0) return false; // Only housing needs these resources
+
+            const potentialResidents = housingProvided * 2;
+            let resourceNeeded = 0;
+
+            if (resourceType === 'food') {
+                resourceNeeded = potentialResidents * 2; // 2 food per resident
+            } else if (resourceType === 'education') {
+                resourceNeeded = potentialResidents * 0.3; // 0.3 education per resident
+            } else if (resourceType === 'healthcare') {
+                resourceNeeded = potentialResidents * 0.2; // 0.2 healthcare per resident
+            }
+
+            return resourceNeeded > 0 && (b[receivedKey] || 0) < resourceNeeded;
+        });
+
+        // Multi-pass equal distribution
+        let passes = 0;
+        while (remainingResource > 0.001 && needyBuildings.length > 0 && passes < 100) {
+            passes++;
+            const sharePerBuilding = remainingResource / needyBuildings.length;
+            const nextRound = [];
+
+            for (const building of needyBuildings) {
+                const def = this.buildingDefinitions.get(building.id);
+                const housingProvided = def.resources.housingProvided || 0;
+                const potentialResidents = housingProvided * 2;
+
+                let resourceNeeded = 0;
+                if (resourceType === 'food') {
+                    resourceNeeded = potentialResidents * 2;
+                } else if (resourceType === 'education') {
+                    resourceNeeded = potentialResidents * 0.3;
+                } else if (resourceType === 'healthcare') {
+                    resourceNeeded = potentialResidents * 0.2;
+                }
+
+                const stillNeeded = resourceNeeded - (building[receivedKey] || 0);
+                const allocated = Math.min(stillNeeded, sharePerBuilding);
+
+                building[receivedKey] = (building[receivedKey] || 0) + allocated;
+                remainingResource -= allocated;
+
+                // Still needs more? Add to next round
+                if (building[receivedKey] < resourceNeeded) {
+                    nextRound.push(building);
+                }
+            }
+
+            needyBuildings = nextRound;
+        }
+    }
+
+    /**
+     * Distribute all food, education, and healthcare from providers to adjacent housing
+     */
+    distributeAllResources() {
+        console.log('🍎 [RESOURCES] Starting distributeAllResources()');
+
+        // Reset all buildings
+        this.gameState.buildings.forEach(b => {
+            b.foodReceived = 0;
+            b.educationReceived = 0;
+            b.healthcareReceived = 0;
+        });
+
+        // Find all providers
+        const foodProviders = [];
+        const educationProviders = [];
+        const healthcareProviders = [];
+
+        this.gameState.buildings.forEach((building, key) => {
+            if (building.underConstruction) return;
+            const def = this.buildingDefinitions.get(building.id);
+            if (!def || !def.resources) return;
+
+            if (def.resources.foodProvided > 0) {
+                foodProviders.push(building);
+            }
+            if (def.resources.educationProvided > 0) {
+                educationProviders.push(building);
+            }
+            if (def.resources.healthcareProvided > 0) {
+                healthcareProviders.push(building);
+            }
+        });
+
+        // Distribute food
+        for (const provider of foodProviders) {
+            this.distributeResourceFromProvider(provider, 'food', 'foodProvided', 'foodReceived');
+        }
+
+        // Distribute education
+        for (const provider of educationProviders) {
+            this.distributeResourceFromProvider(provider, 'education', 'educationProvided', 'educationReceived');
+        }
+
+        // Distribute healthcare
+        for (const provider of healthcareProviders) {
+            this.distributeResourceFromProvider(provider, 'healthcare', 'healthcareProvided', 'healthcareReceived');
+        }
+
+        console.log(`🍎 [RESOURCES] Distributed from ${foodProviders.length} food, ${educationProviders.length} education, ${healthcareProviders.length} healthcare providers`);
+    }
+
+    /**
+     * Calculate housing density based on housing supply vs demand
+     * Returns residents per bedroom (2.0 to 3.0)
+     *
+     * Economic mechanics:
+     * - Balanced (ratio 1.0): 2.0 residents/bedroom, baseline affordability
+     * - Shortage (ratio 1.1): 2.1 residents/bedroom, -10 affordability, +5% revenue
+     * - Crisis (ratio 2.0+): 3.0 residents/bedroom, -100 affordability, +50% revenue
+     */
+    calculateHousingDensity() {
+        const jeefhh = this.gameState.jeefhh;
+        const housingSupply = jeefhh.housing.supply;
+        const housingDemand = jeefhh.housing.demand;
+
+        if (housingSupply === 0 || housingDemand === 0) {
+            return { density: 2.0, affordabilityPenalty: 0, revenueMultiplier: 1.0 };
+        }
+
+        // Calculate how much demand exceeds supply (shortage ratio)
+        // ratio 1.0 = balanced, 1.5 = 50% shortage, 2.0 = 100% shortage
+        const shortageRatio = Math.max(1.0, housingDemand / housingSupply);
+
+        // Density scales linearly from 2.0 to 3.0 as shortage grows from 1.0 to 2.0
+        // Capped at 3.0 residents/bedroom even if shortage exceeds 2.0x
+        const densityIncrease = Math.min(1.0, shortageRatio - 1.0); // 0.0 to 1.0
+        const density = 2.0 + densityIncrease;
+
+        // Affordability drops 10 points per 0.1 density increase (100 points max)
+        const affordabilityPenalty = Math.round(densityIncrease * 100);
+
+        // Revenue increases 5% per 0.1 density increase (50% max)
+        const revenueMultiplier = 1.0 + (densityIncrease * 0.5);
+
+        console.log(`🏘️ [HOUSING] Density: ${density.toFixed(2)}/br, Affordability: -${affordabilityPenalty}, Revenue: ${(revenueMultiplier * 100).toFixed(0)}%`);
+
+        return { density, affordabilityPenalty, revenueMultiplier };
+    }
+
+    /**
+     * Distribute workers from housing to adjacent workplaces (multi-pass fair allocation)
+     */
+    distributeAllWorkers() {
+        console.log('👷 [WORKERS] Starting distributeAllWorkers()');
+
+        // Calculate current housing density
+        const housingMetrics = this.calculateHousingDensity();
+        this.gameState.housingDensity = housingMetrics.density;
+        this.gameState.housingAffordabilityPenalty = housingMetrics.affordabilityPenalty;
+        this.gameState.housingRevenueMultiplier = housingMetrics.revenueMultiplier;
+
+        // Reset all buildings
+        this.gameState.buildings.forEach(b => {
+            b.workersReceived = 0;
+        });
+
+        // Find all housing buildings (worker providers)
+        const housingBuildings = [];
+        this.gameState.buildings.forEach((building, key) => {
+            if (building.underConstruction) return;
+            const def = this.buildingDefinitions.get(building.id);
+            if (!def || !def.resources) return;
+
+            if (def.resources.housingProvided > 0) {
+                housingBuildings.push(building);
+            }
+        });
+
+        // Each housing building distributes its workers to adjacent workplaces
+        for (const housing of housingBuildings) {
+            const [housingRow, housingCol] = housing.location;
+            const def = this.buildingDefinitions.get(housing.id);
+            const bedrooms = def.resources.housingProvided;
+
+            // Calculate workers available based on current density
+            const residents = bedrooms * housingMetrics.density;
+            const workersAvailable = Math.floor(residents * 0.6); // 60% of residents work
+
+            if (workersAvailable <= 0) continue;
+
+            let remainingWorkers = workersAvailable;
+
+            // Find all adjacent workplaces (8 surrounding parcels)
+            const adjacentWorkplaces = [];
+            this.ADJACENCY_OFFSETS.forEach(([dr, dc]) => {
+                const adjKey = `${housingRow + dr},${housingCol + dc}`;
+                const adjBuilding = this.gameState.buildings.get(adjKey);
+                if (adjBuilding && !adjBuilding.underConstruction) {
+                    const adjDef = this.buildingDefinitions.get(adjBuilding.id);
+                    if (adjDef && adjDef.resources && adjDef.resources.jobsProvided > 0) {
+                        adjacentWorkplaces.push(adjBuilding);
+                    }
+                }
+            });
+
+            // Filter to workplaces that still need workers
+            let needyWorkplaces = adjacentWorkplaces.filter(w => {
+                const wDef = this.buildingDefinitions.get(w.id);
+                const jobsProvided = wDef.resources.jobsProvided;
+                return (w.workersReceived || 0) < jobsProvided;
+            });
+
+            // Multi-pass equal distribution
+            let passes = 0;
+            while (remainingWorkers > 0 && needyWorkplaces.length > 0 && passes < 100) {
+                passes++;
+                const sharePerWorkplace = remainingWorkers / needyWorkplaces.length;
+                const nextRound = [];
+
+                for (const workplace of needyWorkplaces) {
+                    const wDef = this.buildingDefinitions.get(workplace.id);
+                    const jobsProvided = wDef.resources.jobsProvided;
+                    const stillNeeded = jobsProvided - (workplace.workersReceived || 0);
+                    const allocated = Math.min(stillNeeded, Math.floor(sharePerWorkplace));
+
+                    workplace.workersReceived = (workplace.workersReceived || 0) + allocated;
+                    remainingWorkers -= allocated;
+
+                    // Still needs more? Add to next round
+                    if (workplace.workersReceived < jobsProvided) {
+                        nextRound.push(workplace);
+                    }
+                }
+
+                needyWorkplaces = nextRound;
+            }
+        }
+
+        console.log(`👷 [WORKERS] Distributed workers from ${housingBuildings.length} housing buildings at ${housingMetrics.density.toFixed(2)}/br density`);
+    }
+
+    /**
+     * Distribute jobs from workplaces back to adjacent housing (reverse distribution)
+     */
+    distributeAllJobs() {
+        console.log('💼 [JOBS] Starting distributeAllJobs()');
+
+        // Reset all buildings
+        this.gameState.buildings.forEach(b => {
+            b.jobsReceived = 0;
+        });
+
+        // Find all workplace buildings (job providers)
+        const workplaceBuildings = [];
+        this.gameState.buildings.forEach((building, key) => {
+            if (building.underConstruction) return;
+            const def = this.buildingDefinitions.get(building.id);
+            if (!def || !def.resources) return;
+
+            if (def.resources.jobsProvided > 0) {
+                workplaceBuildings.push(building);
+            }
+        });
+
+        // Each workplace distributes its jobs to adjacent housing
+        for (const workplace of workplaceBuildings) {
+            const [workplaceRow, workplaceCol] = workplace.location;
+            const def = this.buildingDefinitions.get(workplace.id);
+            const jobsProvided = def.resources.jobsProvided;
+
+            if (jobsProvided <= 0) continue;
+
+            let remainingJobs = jobsProvided;
+
+            // Find all adjacent housing (8 surrounding parcels)
+            const adjacentHousing = [];
+            this.ADJACENCY_OFFSETS.forEach(([dr, dc]) => {
+                const adjKey = `${workplaceRow + dr},${workplaceCol + dc}`;
+                const adjBuilding = this.gameState.buildings.get(adjKey);
+                if (adjBuilding && !adjBuilding.underConstruction) {
+                    const adjDef = this.buildingDefinitions.get(adjBuilding.id);
+                    if (adjDef && adjDef.resources && adjDef.resources.housingProvided > 0) {
+                        adjacentHousing.push(adjBuilding);
+                    }
+                }
+            });
+
+            // Calculate how many jobs each housing needs based on residents
+            const housingDensity = this.gameState.housingDensity || 2.0;
+
+            let needyHousing = adjacentHousing.filter(h => {
+                const hDef = this.buildingDefinitions.get(h.id);
+                const bedrooms = hDef.resources.housingProvided;
+                const residents = bedrooms * housingDensity;
+                const workers = Math.floor(residents * 0.6);
+                const jobsNeeded = workers; // Each worker needs 1 job
+                return (h.jobsReceived || 0) < jobsNeeded;
+            });
+
+            // Multi-pass equal distribution
+            let passes = 0;
+            while (remainingJobs > 0 && needyHousing.length > 0 && passes < 100) {
+                passes++;
+                const sharePerHousing = remainingJobs / needyHousing.length;
+                const nextRound = [];
+
+                for (const housing of needyHousing) {
+                    const hDef = this.buildingDefinitions.get(housing.id);
+                    const bedrooms = hDef.resources.housingProvided;
+                    const residents = bedrooms * housingDensity;
+                    const workers = Math.floor(residents * 0.6);
+                    const jobsNeeded = workers;
+                    const stillNeeded = jobsNeeded - (housing.jobsReceived || 0);
+                    const allocated = Math.min(stillNeeded, Math.floor(sharePerHousing));
+
+                    housing.jobsReceived = (housing.jobsReceived || 0) + allocated;
+                    remainingJobs -= allocated;
+
+                    // Still needs more? Add to next round
+                    if (housing.jobsReceived < jobsNeeded) {
+                        nextRound.push(housing);
+                    }
+                }
+
+                needyHousing = nextRound;
+            }
+        }
+
+        console.log(`💼 [JOBS] Distributed jobs from ${workplaceBuildings.length} workplaces`);
+    }
+
+    /**
+     * Calculate infrastructure civic score for a player
+     */
+    calculateInfrastructureCivicScore(playerId) {
+        let score = 0;
+
+        this.gameState.energyGrid.lines.forEach(line => {
+            if (line.ownerId === playerId) {
+                // Civic value weighted by condition (0.1 when new, less as decays)
+                score += line.civicValue * line.condition;
+            }
+        });
+
+        return score;
+    }
+
+    /**
+     * Age infrastructure (daily decay)
+     */
+    ageInfrastructure() {
+        const linesToDestroy = [];
+
+        this.gameState.energyGrid.lines.forEach((line, edgeId) => {
+            // Check if maintenance is covered
+            const maintenanceCovered = this.gameState.energyGrid.infrastructureBudget >= line.maintenanceCost;
+
+            if (maintenanceCovered) {
+                // Deduct maintenance from budget
+                this.gameState.energyGrid.infrastructureBudget -= line.maintenanceCost;
+                // Normal decay: 0.001/day (~500 days to 50%)
+                line.condition = Math.max(0, line.condition - 0.001);
+            } else {
+                // Accelerated decay: 0.004/day (4x faster, ~125 days to 50%)
+                line.condition = Math.max(0, line.condition - 0.004);
+            }
+
+            // Destroy if condition falls below 50%
+            if (line.condition < 0.5) {
+                linesToDestroy.push(edgeId);
+            }
+        });
+
+        // Destroy degraded lines
+        linesToDestroy.forEach(edgeId => {
+            this.destroyPowerLine(edgeId, null); // null = decay destruction
+        });
+
+        if (linesToDestroy.length > 0) {
+            console.log(`⚡ ${linesToDestroy.length} power line(s) collapsed due to poor maintenance`);
+        }
+    }
+
+    /**
+     * Calculate total daily maintenance cost for all infrastructure
+     */
+    calculateInfrastructureMaintenanceCost() {
+        let total = 0;
+
+        this.gameState.energyGrid.lines.forEach(line => {
+            total += line.maintenanceCost;
+        });
+
+        this.gameState.energyGrid.dailyMaintenanceCost = total;
+        return total;
+    }
+
     /**
      * Centralized player balance access
      * Get player balance with proper error handling (no fallbacks that mask missing data)
@@ -551,14 +1295,35 @@ class ServerEconomicEngine {
         // PHASE 1: Age buildings FIRST (marks all stale)
         this.ageAllBuildings();
 
+        // Age infrastructure (power lines decay, destroyed if < 50% condition)
+        this.ageInfrastructure();
+
         // PHASE 1: Recalculate global economy with new building states
         this.recalculateGlobalEconomics();
+
+        // Distribute energy from all generators through power line network
+        this.distributeAllEnergy();
+
+        // Distribute food, education, and healthcare from providers to adjacent housing
+        this.distributeAllResources();
+
+        // Distribute workers from housing to workplaces (forward)
+        this.distributeAllWorkers();
+
+        // Distribute jobs from workplaces to housing (reverse)
+        this.distributeAllJobs();
 
         // PHASE 1: Batch recalculate all building performances with fresh data
         this.recalculateAllBuildingPerformances();
 
         // Calculate daily cashflow for all players (uses fresh cached performance)
         this.calculateAllPlayerCashflows();
+
+        // Check for bankrupt players and trigger forced sales
+        this.processBankruptcies();
+
+        // Decay fire sale prices daily (3% per day, auto-demolish at day 30)
+        this.decayFireSalePrices();
 
         // Always broadcast gameTime updates to keep all clients synchronized
         // Even on quiet days, time must stay in sync across all players
@@ -818,6 +1583,22 @@ class ServerEconomicEngine {
                     result = await this.processActionPurchase(transaction);
                     break;
 
+                case 'BUILDING_PURCHASE':
+                    result = await this.processBuildingPurchase(transaction);
+                    break;
+
+                case 'PARCEL_MARKETPLACE_PURCHASE':
+                    result = await this.processParcelMarketplacePurchase(transaction);
+                    break;
+
+                case 'PLAYER_BUILDING_SALE':
+                    result = await this.processPlayerBuildingSale(transaction);
+                    break;
+
+                case 'PLAYER_PARCEL_SALE':
+                    result = await this.processPlayerParcelSale(transaction);
+                    break;
+
                 case 'ACTION_CANCEL_LISTING':
                     result = await this.processCancelActionListing(transaction);
                     break;
@@ -841,6 +1622,10 @@ class ServerEconomicEngine {
 
                 case 'ACTION_SPEND':
                     result = await this.processActionSpend(transaction);
+                    break;
+
+                case 'BUILD_POWER_LINE':
+                    result = await this.processBuildPowerLine(transaction);
                     break;
 
                 default:
@@ -1204,6 +1989,54 @@ class ServerEconomicEngine {
     }
 
     /**
+     * Process power line construction transaction
+     */
+    async processBuildPowerLine(transaction) {
+        const { parcel1, parcel2, playerId } = transaction;
+
+        // Use the existing buildPowerLine method
+        const result = this.buildPowerLine(parcel1, parcel2, playerId);
+
+        if (!result.success) {
+            throw new Error(result.error);
+        }
+
+        console.log(`⚡ Power line built: ${result.edgeId} by ${playerId} (cost: $${result.cost})`);
+
+        // Broadcast power line update to all clients
+        this.broadcastPowerLineUpdate();
+
+        return {
+            success: true,
+            edgeId: result.edgeId,
+            cost: result.cost,
+            newBalance: this.getPlayerBalance(playerId)
+        };
+    }
+
+    /**
+     * Broadcast power line state to all clients
+     */
+    broadcastPowerLineUpdate() {
+        if (!this.broadcastFunction) return;
+
+        // Convert Map to plain object for JSON serialization
+        const linesArray = Array.from(this.gameState.energyGrid.lines.entries()).map(([edgeId, lineData]) => ({
+            edgeId,
+            ...lineData
+        }));
+
+        this.broadcastFunction({
+            type: 'POWER_LINES_UPDATE',
+            energyGrid: {
+                lines: linesArray,
+                infrastructureBudget: this.gameState.energyGrid.infrastructureBudget
+            },
+            timestamp: Date.now()
+        });
+    }
+
+    /**
      * ECONOMIC CALCULATIONS
      */
 
@@ -1266,17 +2099,27 @@ class ServerEconomicEngine {
         // console.log(`[CARENS] JEEFHH calculation: ${buildingCount} completed buildings`);
         // console.log(`[CARENS] Total supply: housing=${this.gameState.jeefhh.housing.supply}, jobs=${this.gameState.jeefhh.jobs.supply}, food=${this.gameState.jeefhh.food.supply}, energy=${this.gameState.jeefhh.energy.supply}`);
 
-        // Calculate multipliers (0.4x to 1.6x based on supply/demand ratio)
+        // Calculate multipliers (0.4x to 1.6x based on supply/demand balance)
+        // BALANCE IS THE GOAL: Ratio of 1.0 (perfect balance) = 1.6x (best)
+        // Both deficits AND surpluses penalize the economy
         Object.keys(this.gameState.jeefhh).forEach(resource => {
             const res = this.gameState.jeefhh[resource];
             if (res.demand === 0) {
                 res.multiplier = 1.0; // No demand = neutral
             } else {
                 const ratio = res.supply / res.demand;
-                // Convert ratio to multiplier: 0.5 ratio = 0.4x, 1.0 ratio = 1.0x, 2.0 ratio = 1.6x
+
+                // Distance from perfect balance (1.0 = balanced)
+                const distanceFromBalance = Math.abs(ratio - 1.0);
+
+                // Convert distance to multiplier:
+                // - Perfect balance (distance 0) → 1.6x multiplier (maximum reward)
+                // - Severe imbalance (distance 1.5+) → 0.4x multiplier (maximum penalty)
+                // - Linear decay: 1.6 - (distance * 0.8) clamped to [0.4, 1.6]
+                const multiplier = 1.6 - (distanceFromBalance * 0.8);
                 res.multiplier = Math.max(this.JEEFHH_MULTIPLIER_RANGE.min,
                                         Math.min(this.JEEFHH_MULTIPLIER_RANGE.max,
-                                               0.4 + (ratio * 0.6)));
+                                               multiplier));
             }
         });
 
@@ -1339,6 +2182,12 @@ class ServerEconomicEngine {
             culturePoints, affordabilityPoints, resiliencePoints,
             environmentPoints, noisePoints, safetyPoints
         });
+
+        // Apply housing density affordability penalty
+        const housingAffordabilityPenalty = this.gameState.housingAffordabilityPenalty || 0;
+        affordabilityPoints -= housingAffordabilityPenalty;
+
+        console.log(`🏘️ [HOUSING] Applied affordability penalty: -${housingAffordabilityPenalty} pts (final: ${affordabilityPoints})`);
 
         // Store raw points in both top-level (for vitality bars) and nested structure (for tooltips)
         carens.culture = culturePoints;
@@ -1478,9 +2327,15 @@ class ServerEconomicEngine {
         // building.condition is already stored as 0.0-1.0 decimal, not 0-100 percentage
         const conditionFactor = building.condition || 1.0;
 
+        // 6. Housing density multiplier (housing shortage = landlords charge more)
+        let housingMultiplier = 1.0;
+        if (buildingDef.resources.housingProvided > 0) {
+            housingMultiplier = this.gameState.housingRevenueMultiplier || 1.0;
+        }
+
         // Final revenue calculation
-        // Revenue = Base × Performance × Condition × Global JEEFHH
-        const actualRevenue = baseRevenue * performance * conditionFactor * globalJEEFHHMultiplier;
+        // Revenue = Base × Performance × Condition × Global JEEFHH × Housing Multiplier
+        const actualRevenue = baseRevenue * performance * conditionFactor * globalJEEFHHMultiplier * housingMultiplier;
 
         // Maintenance calculation - increases with age due to decay
         // PHASE 2: Use precomputed decay tables instead of Math.pow()
@@ -1535,8 +2390,8 @@ class ServerEconomicEngine {
             console.log(`[REVENUE] [${row},${col}] ${building.id} - Revenue: ${actualRevenue.toFixed(2)}, Maint: ${actualMaintenance.toFixed(2)}, Net: ${(actualRevenue - actualMaintenance).toFixed(2)}`);
         }
 
-        // TEMP DEBUG: Detailed revenue breakdown for negative net income or taqueria
-        if ((actualRevenue - actualMaintenance) < 0 || building.id === 'taqueria') {
+        // TEMP DEBUG: Detailed revenue breakdown for negative net income or specific buildings
+        if ((actualRevenue - actualMaintenance) < 0 || ['taqueria', 'cottage', 'farmers_market', 'apartment_complex'].includes(building.id)) {
             console.log(`💰 [${building.id}] Revenue calc:`, {
                 baseRevenue,
                 performance: Math.round(performance * 1000) / 10 + '%',
@@ -1673,12 +2528,22 @@ class ServerEconomicEngine {
         // Check direct building requirements (e.g., energy for operations)
         if (buildingDef.resources.energyRequired > 0) {
             const energyRequired = buildingDef.resources.energyRequired;
-            const energySatisfaction = Math.min(1.0, connectedSupply.energy / energyRequired);
+            // Use energy from power grid if available, otherwise fall back to adjacent buildings
+            const energyReceived = building.energyReceived !== undefined ? building.energyReceived : connectedSupply.energy;
+            const energySatisfaction = Math.min(1.0, energyReceived / energyRequired);
             satisfactionRatios.push(energySatisfaction);
+
+            // DEBUG: Log energy satisfaction for buildings with power needs
+            console.log(`⚡ [PERF] Building ${building.id} at [${row},${col}]:`, {
+                energyRequired,
+                energyReceived,
+                energySatisfaction,
+                satisfactionRatiosLength: satisfactionRatios.length
+            });
 
             detailedSatisfaction.energy = {
                 required: energyRequired,
-                supplied: connectedSupply.energy,
+                supplied: energyReceived,
                 satisfaction: energySatisfaction
             };
         }
@@ -1686,57 +2551,84 @@ class ServerEconomicEngine {
         // For housing buildings, check resident needs based on capacity
         const housingProvided = buildingDef.resources.housingProvided || 0;
         if (housingProvided > 0) {
-            const potentialResidents = housingProvided * 2; // 2 people per bedroom
+            // Use current housing density (2.0 to 3.0 residents per bedroom)
+            const housingDensity = this.gameState.housingDensity || 2.0;
+            const potentialResidents = housingProvided * housingDensity;
+            const workersAvailable = Math.floor(potentialResidents * 0.6);
 
             // Each resident needs nearby jobs, food, education, and healthcare access
-            const jobsNeeded = potentialResidents * 0.5; // 0.5 jobs per resident
+            const jobsNeeded = workersAvailable; // Each worker needs 1 job
             const foodNeeded = potentialResidents * 2; // 2 food units per resident
             const educationNeeded = potentialResidents * 0.3; // 0.3 education per resident
             const healthcareNeeded = potentialResidents * 0.2; // 0.2 healthcare per resident
 
+            // Jobs use distributed amount from distributeAllJobs()
             if (jobsNeeded > 0) {
-                const jobsSatisfaction = Math.min(1.0, connectedSupply.jobs / jobsNeeded);
+                const jobsReceived = building.jobsReceived || 0;
+                const jobsSatisfaction = Math.min(1.0, jobsReceived / jobsNeeded);
                 satisfactionRatios.push(jobsSatisfaction);
 
                 detailedSatisfaction.jobs = {
                     required: jobsNeeded,
-                    supplied: connectedSupply.jobs,
+                    supplied: jobsReceived,
                     satisfaction: jobsSatisfaction
                 };
             }
 
+            // Food uses distributed amount from distributeAllResources()
             if (foodNeeded > 0) {
-                const foodSatisfaction = Math.min(1.0, connectedSupply.food / foodNeeded);
+                const foodReceived = building.foodReceived || 0;
+                const foodSatisfaction = Math.min(1.0, foodReceived / foodNeeded);
                 satisfactionRatios.push(foodSatisfaction);
 
                 detailedSatisfaction.food = {
                     required: foodNeeded,
-                    supplied: connectedSupply.food,
+                    supplied: foodReceived,
                     satisfaction: foodSatisfaction
                 };
             }
 
+            // Education uses distributed amount from distributeAllResources()
             if (educationNeeded > 0) {
-                const educationSatisfaction = Math.min(1.0, connectedSupply.education / educationNeeded);
+                const educationReceived = building.educationReceived || 0;
+                const educationSatisfaction = Math.min(1.0, educationReceived / educationNeeded);
                 satisfactionRatios.push(educationSatisfaction);
 
                 detailedSatisfaction.education = {
                     required: educationNeeded,
-                    supplied: connectedSupply.education,
+                    supplied: educationReceived,
                     satisfaction: educationSatisfaction
                 };
             }
 
+            // Healthcare uses distributed amount from distributeAllResources()
             if (healthcareNeeded > 0) {
-                const healthcareSatisfaction = Math.min(1.0, connectedSupply.healthcare / healthcareNeeded);
+                const healthcareReceived = building.healthcareReceived || 0;
+                const healthcareSatisfaction = Math.min(1.0, healthcareReceived / healthcareNeeded);
                 satisfactionRatios.push(healthcareSatisfaction);
 
                 detailedSatisfaction.healthcare = {
                     required: healthcareNeeded,
-                    supplied: connectedSupply.healthcare,
+                    supplied: healthcareReceived,
                     satisfaction: healthcareSatisfaction
                 };
             }
+        }
+
+        // For workplace buildings (commercial, schools, hospitals), check worker availability
+        const jobsProvided = buildingDef.resources.jobsProvided || 0;
+        if (jobsProvided > 0) {
+            const workersReceived = building.workersReceived || 0;
+            const workerSatisfaction = Math.min(1.0, workersReceived / jobsProvided);
+            satisfactionRatios.push(workerSatisfaction);
+
+            detailedSatisfaction.workers = {
+                required: jobsProvided,
+                supplied: workersReceived,
+                satisfaction: workerSatisfaction
+            };
+
+            console.log(`👷 [WORKPLACE] Building ${building.id} at [${row},${col}]: ${workersReceived}/${jobsProvided} workers (${(workerSatisfaction * 100).toFixed(0)}%)`);
         }
 
         // If no specific requirements, building is self-sufficient
@@ -1754,7 +2646,13 @@ class ServerEconomicEngine {
         const minOperation = 0.05;
         const finalSatisfaction = Math.max(minOperation, overallSatisfaction);
 
-        // console.log(`[INFO] [${row},${col}] ${building.id} - Local Needs Satisfaction: ${(finalSatisfaction * 100).toFixed(1)}% (checked ${satisfactionRatios.length} requirements)`);
+        // DEBUG: Log final performance calculation
+        console.log(`⚡ [PERF FINAL] Building ${building.id} at [${row},${col}]:`, {
+            satisfactionRatios,
+            overallSatisfaction,
+            finalSatisfaction,
+            detailedSatisfaction
+        });
 
         return {
             overallSatisfaction: finalSatisfaction,
@@ -2659,15 +3557,15 @@ class ServerEconomicEngine {
      * Get marketplace data formatted for client broadcast
      */
     getMarketplaceDataForBroadcast() {
-        const actionMarketplace = this.gameState.actionMarketplace;
+        const marketplace = this.gameState.marketplace;
 
-        if (!actionMarketplace || !(actionMarketplace.listings instanceof Map)) {
-        // console.log('🏪 DEBUG: No actionMarketplace or invalid listings, returning null');
+        if (!marketplace || !(marketplace.listings instanceof Map)) {
+        // console.log('🏪 DEBUG: No marketplace or invalid listings, returning null');
             return null;
         }
 
         // Enhance each listing with server-calculated values
-        const enhancedListings = Array.from(actionMarketplace.listings.values()).map(listing => {
+        const enhancedListings = Array.from(marketplace.listings.values()).map(listing => {
             const enhanced = { ...listing };
 
             // Add calculated buy now price with time-based premium
@@ -2691,15 +3589,17 @@ class ServerEconomicEngine {
             return enhanced;
         });
 
-        // Count total sales from price history
-        const totalSales = actionMarketplace.priceHistory.sales.length;
+        // Count total sales from all price history categories
+        const totalSales = marketplace.priceHistory.actions.sales.length +
+                          marketplace.priceHistory.buildings.sales.length +
+                          marketplace.priceHistory.parcels.sales.length;
 
         const result = {
             listings: enhancedListings,
-            priceHistory: actionMarketplace.priceHistory,
+            priceHistory: marketplace.priceHistory,
             stats: {
-                avgListingPrice: actionMarketplace.avgListingPrice || null,
-                avgSalePrice: actionMarketplace.avgSalePrice || null,
+                avgListingPrice: marketplace.avgListingPrice || null,
+                avgSalePrice: marketplace.avgSalePrice || null,
                 totalSales: totalSales
             },
             monthProgress: this.calculateMonthProgress() // Include month progress for client use
@@ -3203,7 +4103,8 @@ class ServerEconomicEngine {
         const [row, col] = location;
         if (this.gameState.grid && this.gameState.grid[row] && this.gameState.grid[row][col]) {
             this.gameState.grid[row][col].owner = playerId;
-            console.log(`🏞️ Server grid ownership updated: [${row},${col}] → ${playerId}`);
+            this.gameState.grid[row][col].purchasePrice = amount; // Track purchase price for fire sales
+            console.log(`🏞️ Server grid ownership updated: [${row},${col}] → ${playerId} (paid $${amount})`);
 
             // Update neighboring parcel prices (dynamic pricing system)
             this.updateNeighborPrices(row, col, this.gameState.gridSize);
@@ -3635,7 +4536,7 @@ class ServerEconomicEngine {
             const playerWealth = this.calculatePlayerWealth(playerId, this.getPlayerBalance(playerId));
             totalWealth += playerWealth;
 
-            // Calculate raw civic contribution (sum of CARENS-based building scores)
+            // Calculate raw civic contribution (sum of CARENS-based building scores + infrastructure)
             let civicContribution = 0;
             for (const [locationKey, building] of this.gameState.buildings) {
                 if (building.ownerId !== playerId) continue;
@@ -3645,6 +4546,13 @@ class ServerEconomicEngine {
                     civicContribution += buildingDef.civicScore;
                     console.log(`[CIVIC] Player ${playerId} building ${building.id} contributes ${buildingDef.civicScore} civic points`);
                 }
+            }
+
+            // Add infrastructure civic score (power lines)
+            const infraScore = this.calculateInfrastructureCivicScore(playerId);
+            if (infraScore > 0) {
+                console.log(`[CIVIC] Player ${playerId} infrastructure contributes ${infraScore.toFixed(2)} civic points`);
+                civicContribution += infraScore;
             }
 
             playerCivicContributions.set(playerId, civicContribution);
@@ -4086,12 +4994,14 @@ class ServerEconomicEngine {
 
         // Create simple listing (always 1 action)
         const listing = {
-            id: this.gameState.actionMarketplace.nextListingId++,
+            id: this.gameState.marketplace.nextListingId++,
+            type: 'ACTION_SALE',  // Changed from 'ACTION' to match client filter
             sellerId: playerId,
             price: price,
             quantity: 1,  // Always 1 action per listing
             status: 'active',
             createdAt: Date.now(),
+            listedDay: this.gameState.gameTime,
             soldAt: null,
             soldTo: null
         };
@@ -4100,19 +5010,23 @@ class ServerEconomicEngine {
         this.spendActions(playerId, 1, 'action listing');
 
         // Add to marketplace
-        this.gameState.actionMarketplace.listings.set(listing.id, listing);
+        this.gameState.marketplace.listings.set(listing.id, listing);
 
         // Record in price history
-        this.gameState.actionMarketplace.priceHistory.listings.push({
+        this.gameState.marketplace.priceHistory.actions.listings.push({
             timestamp: Date.now(),
             gameMonth: this.getCurrentGameMonth(),
             price: price
         });
 
         // Recalculate average listing price
-        this.calculateAvgListingPrice();
+        this.calculateAvgListingPrice('actions');
 
         console.log(`🏪 Action listed: ${playerId} listing 1 action for $${price.toLocaleString()} (listing ${listing.id})`);
+
+
+
+
 
         return {
             success: true,
@@ -4127,7 +5041,7 @@ class ServerEconomicEngine {
     async processActionBid(transaction) {
         const { playerId, listingId, bidAmount } = transaction;
 
-        const listing = this.gameState.actionMarketplace.listings.get(listingId);
+        const listing = this.gameState.marketplace.listings.get(listingId);
         if (!listing || listing.status !== 'active') {
             throw new Error('Listing not available for bidding');
         }
@@ -4197,7 +5111,7 @@ class ServerEconomicEngine {
     async processActionPurchase(transaction) {
         const { playerId, listingId } = transaction;
 
-        const listing = this.gameState.actionMarketplace.listings.get(listingId);
+        const listing = this.gameState.marketplace.listings.get(listingId);
         if (!listing || listing.status !== 'active') {
             throw new Error('Listing not available for purchase');
         }
@@ -4246,14 +5160,14 @@ class ServerEconomicEngine {
         listing.soldTo = playerId;
 
         // Record in price history
-        this.gameState.actionMarketplace.priceHistory.sales.push({
+        this.gameState.marketplace.priceHistory.actions.sales.push({
             timestamp: Date.now(),
             gameMonth: this.getCurrentGameMonth(),
             price: price
         });
 
         // Recalculate averages
-        this.calculateAvgSalePrice();
+        this.calculateAvgSalePrice('actions');
 
         console.log(`🏪 Action purchased: ${playerId} bought 1 action from ${listing.sellerId} for $${price.toLocaleString()}`);
 
@@ -4270,7 +5184,7 @@ class ServerEconomicEngine {
     async processCancelActionListing(transaction) {
         const { playerId, listingId } = transaction;
 
-        const listing = this.gameState.actionMarketplace.listings.get(listingId);
+        const listing = this.gameState.marketplace.listings.get(listingId);
         if (!listing || listing.status !== 'active') {
             throw new Error('Listing not available for cancellation');
         }
@@ -4287,7 +5201,7 @@ class ServerEconomicEngine {
         listing.cancelledAt = Date.now();
 
         // Recalculate average listing price (exclude cancelled listings)
-        this.calculateAvgListingPrice();
+        this.calculateAvgListingPrice('actions');
 
         console.log(`🏪 Listing cancelled: ${listingId} by ${playerId}, action returned`);
 
@@ -4299,28 +5213,50 @@ class ServerEconomicEngine {
 
     /**
      * Calculate average listing price from active listings
+     * @param {string} type - 'actions', 'buildings', or 'parcels'
      */
-    calculateAvgListingPrice() {
-        const activeListings = Array.from(this.gameState.actionMarketplace.listings.values())
-            .filter(l => l.status === 'active');
+    calculateAvgListingPrice(type) {
+        // Safety check for marketplace initialization
+        if (!this.gameState.marketplace || !this.gameState.marketplace.listings) {
+            return;
+        }
+
+        const activeListings = Array.from(this.gameState.marketplace.listings.values())
+            .filter(l => l.status === 'active' && this.getListingType(l) === type);
 
         if (activeListings.length === 0) {
-            this.gameState.actionMarketplace.avgListingPrice = 0;
+            this.gameState.marketplace.avgListingPrice[type] = 0;
             return;
         }
 
         const totalPrice = activeListings.reduce((sum, listing) => sum + listing.price, 0);
-        this.gameState.actionMarketplace.avgListingPrice = totalPrice / activeListings.length;
+        this.gameState.marketplace.avgListingPrice[type] = totalPrice / activeListings.length;
+    }
+
+    /**
+     * Helper to determine listing type from listing object
+     */
+    getListingType(listing) {
+        if (listing.type === 'ACTION_SALE') return 'actions';
+        if (listing.type === 'BUILDING_SALE') return 'buildings';
+        if (listing.type === 'PARCEL_SALE') return 'parcels';
+        return null;
     }
 
     /**
      * Calculate average sale price with recency weighting
+     * @param {string} type - 'actions', 'buildings', or 'parcels'
      */
-    calculateAvgSalePrice() {
-        const sales = this.gameState.actionMarketplace.priceHistory.sales;
+    calculateAvgSalePrice(type) {
+        // Safety check for marketplace initialization
+        if (!this.gameState.marketplace || !this.gameState.marketplace.priceHistory) {
+            return;
+        }
+
+        const sales = this.gameState.marketplace.priceHistory[type].sales;
 
         if (sales.length === 0) {
-            this.gameState.actionMarketplace.avgSalePrice = 0;
+            this.gameState.marketplace.avgSalePrice[type] = 0;
             return;
         }
 
@@ -4337,7 +5273,572 @@ class ServerEconomicEngine {
             totalWeight += weight;
         });
 
-        this.gameState.actionMarketplace.avgSalePrice = totalWeight > 0 ? totalWeighted / totalWeight : 0;
+        this.gameState.marketplace.avgSalePrice[type] = totalWeight > 0 ? totalWeighted / totalWeight : 0;
+    }
+
+    /**
+     * ============================================
+     * BUILDING MARKETPLACE METHODS
+     * ============================================
+     */
+
+    /**
+     * Process building purchase from marketplace
+     */
+    async processBuildingPurchase(transaction) {
+        const { playerId, listingId } = transaction;
+
+        const listing = this.gameState.marketplace.listings.get(listingId);
+        if (!listing || listing.status !== 'active' || listing.type !== 'BUILDING_SALE') {
+            throw new Error('Building listing not available');
+        }
+
+        const buyer = this.getOrCreatePlayer(playerId);
+        const seller = this.getOrCreatePlayer(listing.sellerId);
+        const buyerCash = this.getPlayerBalance(playerId);
+
+        const price = listing.currentPrice;
+
+        // Validate buyer has enough cash
+        if (buyerCash < price) {
+            throw new Error(`Insufficient funds: need $${price}, have $${buyerCash}`);
+        }
+
+        // Transfer ownership
+        const [row, col] = listing.location;
+        const parcel = this.gameState.grid[row][col];
+        const building = this.gameState.buildings.get(`${row},${col}`);
+
+        if (!parcel || !building) {
+            throw new Error('Building no longer exists');
+        }
+
+        // Transfer cash
+        this.gameState.playerBalances.set(playerId, buyerCash - price);
+        const sellerCash = this.getPlayerBalance(listing.sellerId);
+        this.gameState.playerBalances.set(listing.sellerId, sellerCash + price);
+
+        // Transfer ownership
+        parcel.owner = playerId;
+
+        // Mark listing as sold
+        listing.status = 'sold';
+        listing.soldAt = Date.now();
+        listing.soldTo = playerId;
+        listing.finalPrice = price;
+
+        // Record in price history
+        if (!this.gameState.marketplace.priceHistory.buildings) {
+            this.gameState.marketplace.priceHistory.buildings = { sales: [] };
+        }
+        this.gameState.marketplace.priceHistory.buildings.sales.push({
+            timestamp: Date.now(),
+            gameMonth: this.getCurrentGameMonth(),
+            price: price,
+            isFireSale: listing.isFireSale
+        });
+
+        console.log(`🏪 Building sold: ${listing.buildingId} at [${row},${col}] for $${price} (${listing.sellerId} → ${playerId})`);
+
+        // Broadcast update
+        this.broadcastGameState('MARKETPLACE_UPDATE', {
+            type: 'BUILDING_SOLD',
+            listingId: listingId,
+            location: listing.location,
+            price: price
+        });
+
+        return {
+            success: true,
+            price: price,
+            location: listing.location
+        };
+    }
+
+    /**
+     * Process parcel purchase from marketplace
+     */
+    async processParcelMarketplacePurchase(transaction) {
+        const { playerId, listingId } = transaction;
+
+        const listing = this.gameState.marketplace.listings.get(listingId);
+        if (!listing || listing.status !== 'active' || listing.type !== 'PARCEL_SALE') {
+            throw new Error('Parcel listing not available');
+        }
+
+        const buyer = this.getOrCreatePlayer(playerId);
+        const seller = this.getOrCreatePlayer(listing.sellerId);
+        const buyerCash = this.getPlayerBalance(playerId);
+
+        const price = listing.price;
+
+        // Validate buyer has enough cash
+        if (buyerCash < price) {
+            throw new Error(`Insufficient funds: need $${price}, have $${buyerCash}`);
+        }
+
+        // Get location from listing
+        const [row, col] = listing.location;
+        const parcel = this.gameState.grid[row][col];
+
+        if (!parcel) {
+            throw new Error('Parcel no longer exists');
+        }
+
+        // Validate parcel is still owned by seller and empty
+        if (parcel.owner !== listing.sellerId) {
+            throw new Error('Seller no longer owns this parcel');
+        }
+
+        const building = this.gameState.buildings.get(`${row},${col}`);
+        if (building) {
+            throw new Error('Parcel is no longer empty');
+        }
+
+        // Transfer cash
+        this.gameState.playerBalances.set(playerId, buyerCash - price);
+        const sellerCash = this.getPlayerBalance(listing.sellerId);
+        this.gameState.playerBalances.set(listing.sellerId, sellerCash + price);
+
+        // Transfer ownership
+        parcel.owner = playerId;
+        parcel.purchasePrice = price;
+
+        // Mark listing as sold
+        listing.status = 'sold';
+        listing.soldAt = Date.now();
+        listing.soldTo = playerId;
+        listing.finalPrice = price;
+
+        // Record in price history
+        if (!this.gameState.marketplace.priceHistory.parcels) {
+            this.gameState.marketplace.priceHistory.parcels = { sales: [] };
+        }
+        this.gameState.marketplace.priceHistory.parcels.sales.push({
+            timestamp: Date.now(),
+            gameMonth: this.getCurrentGameMonth(),
+            price: price
+        });
+
+        console.log(`🏪 Parcel sold: [${row},${col}] for $${price} (${listing.sellerId} → ${playerId})`);
+
+        // Broadcast update
+        this.broadcastGameState('MARKETPLACE_UPDATE', {
+            type: 'PARCEL_SOLD',
+            listingId: listingId,
+            location: listing.location,
+            price: price
+        });
+
+        return {
+            success: true,
+            price: price,
+            location: listing.location
+        };
+    }
+
+    /**
+     * Process player-initiated building sale listing
+     */
+    async processPlayerBuildingSale(transaction) {
+        const { playerId, location, price } = transaction;
+
+        // Validate player has enough actions
+        const playerActions = this.gameState.playerActions.get(playerId) || 0;
+        if (playerActions < 1) {
+            throw new Error('Not enough actions (need 1)');
+        }
+
+        const [row, col] = location;
+        const parcel = this.gameState.grid[row][col];
+        const building = this.gameState.buildings.get(`${row},${col}`);
+
+        // Validate ownership
+        if (parcel.owner !== playerId) {
+            throw new Error('You do not own this parcel');
+        }
+
+        if (!building) {
+            throw new Error('No building found at this location');
+        }
+
+        // Check for duplicate listing (same location, active status)
+        const existingListing = Array.from(this.gameState.marketplace.listings.values())
+            .find(l => l.type === 'BUILDING_SALE' && l.status === 'active' &&
+                      l.location[0] === row && l.location[1] === col);
+
+        if (existingListing) {
+            throw new Error('This building is already listed for sale');
+        }
+
+        // Deduct 1 action
+        this.gameState.playerActions.set(playerId, playerActions - 1);
+
+        // Create listing
+        const listing = {
+            id: this.gameState.marketplace.nextListingId++,
+            type: 'BUILDING_SALE',
+            sellerId: playerId,
+            location: location,
+            buildingId: building.id,
+            condition: building.condition || 1.0,
+            price: price,  // Add price field for client compatibility
+            originalPrice: price,
+            currentPrice: price,
+            isFireSale: false,
+            listedDay: this.gameState.gameTime,
+            status: 'active',
+            createdAt: Date.now()
+        };
+
+        this.gameState.marketplace.listings.set(listing.id, listing);
+
+        console.log(`🏪 Player building listed: ${building.id} at [${row},${col}] for $${price} by ${playerId}`);
+
+        // Broadcast marketplace update
+        this.broadcastGameState('MARKETPLACE_UPDATE', {
+            type: 'BUILDING_LISTED',
+            listingId: listing.id,
+            location: location
+        });
+
+        return {
+            success: true,
+            listingId: listing.id
+        };
+    }
+
+    /**
+     * Process player-initiated parcel sale listing
+     */
+    async processPlayerParcelSale(transaction) {
+        const { playerId, location, price } = transaction;
+
+        // Validate player has enough actions
+        const playerActions = this.gameState.playerActions.get(playerId) || 0;
+        if (playerActions < 1) {
+            throw new Error('Not enough actions (need 1)');
+        }
+
+        const [row, col] = location;
+        const parcel = this.gameState.grid[row][col];
+        const building = this.gameState.buildings.get(`${row},${col}`);
+
+        // Validate ownership and empty
+        if (parcel.owner !== playerId) {
+            throw new Error('You do not own this parcel');
+        }
+
+        if (building) {
+            throw new Error('Can only sell empty parcels (demolish building first)');
+        }
+
+        // Check for duplicate listing (same location, active status)
+        const existingListing = Array.from(this.gameState.marketplace.listings.values())
+            .find(l => l.type === 'PARCEL_SALE' && l.status === 'active' &&
+                      l.location[0] === row && l.location[1] === col);
+
+        if (existingListing) {
+            throw new Error('This parcel is already listed for sale');
+        }
+
+        // Deduct 1 action
+        this.gameState.playerActions.set(playerId, playerActions - 1);
+
+        // Create listing
+        const listing = {
+            id: this.gameState.marketplace.nextListingId++,
+            type: 'PARCEL_SALE',
+            sellerId: playerId,
+            location: location,
+            price: price,  // Add price field for client compatibility
+            originalPrice: price,
+            currentPrice: price,
+            listedDay: this.gameState.gameTime,
+            status: 'active',
+            createdAt: Date.now()
+        };
+
+        this.gameState.marketplace.listings.set(listing.id, listing);
+
+        console.log(`🏪 Player parcel listed: [${row},${col}] for $${price} by ${playerId}`);
+
+        // Broadcast marketplace update
+        this.broadcastGameState('MARKETPLACE_UPDATE', {
+            type: 'PARCEL_LISTED',
+            listingId: listing.id,
+            location: location
+        });
+
+        return {
+            success: true,
+            listingId: listing.id
+        };
+    }
+
+    /**
+     * ============================================
+     * FIRE SALE & BANKRUPTCY METHODS
+     * ============================================
+     */
+
+    /**
+     * Calculate fire sale price for a building+parcel
+     * Formula: (building_value × condition + parcel_purchase_price) × 0.70 × (0.97^days_listed)
+     */
+    calculateFireSalePrice(location, listedDay) {
+        const [row, col] = location;
+        const building = this.gameState.buildings.get(`${row},${col}`);
+        const parcel = this.gameState.grid[row][col];
+
+        if (!building || !parcel) return 0;
+
+        const buildingDef = this.buildingDefinitions.get(building.id);
+        const buildCost = buildingDef.economics.buildCost || 0;
+        const condition = building.condition || 1.0;
+        const parcelPrice = parcel.purchasePrice || 0;
+
+        // Base fire sale price: 70% of (building value + parcel price)
+        const basePrice = (buildCost * condition + parcelPrice) * 0.70;
+
+        // Apply 3% decay per day
+        const daysListed = this.gameState.gameTime - listedDay;
+        const decayMultiplier = Math.pow(0.97, daysListed);
+
+        // Minimum 1% of base price before destruction
+        const currentPrice = Math.max(basePrice * 0.01, basePrice * decayMultiplier);
+
+        return Math.floor(currentPrice);
+    }
+
+    /**
+     * Get player's worst performing building by net income
+     */
+    getWorstPerformingBuilding(playerId) {
+        let worstBuilding = null;
+        let lowestNetIncome = Infinity;
+
+        this.gameState.buildings.forEach((building, key) => {
+            const [row, col] = key.split(',').map(Number);
+            const parcel = this.gameState.grid[row][col];
+
+            if (parcel.owner !== playerId || building.underConstruction) return;
+
+            // Get building performance
+            const performance = building.performance || {};
+            const netIncome = performance.netIncome || 0;
+
+            if (netIncome < lowestNetIncome) {
+                lowestNetIncome = netIncome;
+                worstBuilding = { location: [row, col], netIncome, building };
+            }
+        });
+
+        return worstBuilding;
+    }
+
+    /**
+     * Check if player would still be underwater after selling building at current price
+     */
+    wouldPlayerBeUnderwaterAfterSale(playerId, salePrice) {
+        const currentCash = this.getPlayerBalance(playerId);
+        const player = this.getOrCreatePlayer(playerId);
+        const dailyCashflow = player.dailyCashflow || 0;
+
+        const cashAfterSale = currentCash + salePrice;
+
+        // Both must be true: negative cash AND negative cashflow
+        return (cashAfterSale < 0 && dailyCashflow < 0);
+    }
+
+    /**
+     * Process bankruptcies: force-sell buildings for players with negative cash + negative cashflow
+     */
+    processBankruptcies() {
+        console.log('💸 [BANKRUPTCY] Checking for distressed players...');
+
+        for (const [playerId, player] of this.gameState.players) {
+            const cash = this.getPlayerBalance(playerId);
+            const cashflow = player.dailyCashflow || 0;
+
+            // Bankruptcy condition: negative cash AND negative cashflow
+            if (cash < 0 && cashflow < 0) {
+                console.log(`💸 [BANKRUPTCY] Player ${playerId} is underwater: $${cash} cash, $${cashflow}/day cashflow`);
+                this.processDistressedPlayer(playerId);
+            }
+        }
+    }
+
+    /**
+     * Process a distressed player: list buildings for fire sale until solvent
+     */
+    processDistressedPlayer(playerId) {
+        let cash = this.getPlayerBalance(playerId);
+        let cashflow = this.getOrCreatePlayer(playerId).dailyCashflow || 0;
+
+        console.log(`💸 [FIRE SALE] Processing distressed player ${playerId}: $${cash}, $${cashflow}/day`);
+
+        // Keep selling worst performing buildings until player is solvent or out of buildings
+        let attempts = 0;
+        const MAX_SALES_PER_DAY = 10; // Safety limit
+
+        while (cash < 0 && cashflow < 0 && attempts < MAX_SALES_PER_DAY) {
+            const worstBuilding = this.getWorstPerformingBuilding(playerId);
+
+            if (!worstBuilding) {
+                // No more buildings - enter zombie mode
+                console.log(`💸 [BANKRUPTCY] Player ${playerId} has no buildings left - entering zombie mode`);
+                this.enterZombieMode(playerId);
+                return;
+            }
+
+            const [row, col] = worstBuilding.location;
+            const salePrice = this.calculateFireSalePrice(worstBuilding.location, this.gameState.gameTime);
+
+            // Check if selling this building would make player solvent
+            if (!this.wouldPlayerBeUnderwaterAfterSale(playerId, salePrice)) {
+                console.log(`💸 [FIRE SALE] Selling building would make player solvent - stopping`);
+                break;
+            }
+
+            // Create fire sale listing
+            this.createFireSaleListing(playerId, worstBuilding.location);
+
+            attempts++;
+
+            // Update cash and cashflow after listing (doesn't change yet, but recalculate)
+            cash = this.getPlayerBalance(playerId);
+            cashflow = this.getOrCreatePlayer(playerId).dailyCashflow || 0;
+        }
+
+        console.log(`💸 [FIRE SALE] Listed ${attempts} buildings for player ${playerId}`);
+    }
+
+    /**
+     * Create a fire sale listing for a building
+     */
+    createFireSaleListing(playerId, location) {
+        const [row, col] = location;
+        const building = this.gameState.buildings.get(`${row},${col}`);
+        const parcel = this.gameState.grid[row][col];
+
+        if (!building || !parcel) return;
+
+        const buildingDef = this.buildingDefinitions.get(building.id);
+        const startingPrice = this.calculateFireSalePrice(location, this.gameState.gameTime);
+
+        const listing = {
+            id: this.gameState.marketplace.nextListingId++,
+            type: 'BUILDING_SALE',
+            sellerId: playerId,
+            location: location,
+            buildingId: building.id,
+            condition: building.condition || 1.0,
+            originalPrice: startingPrice,
+            currentPrice: startingPrice,
+            isFireSale: true,
+            listedDay: this.gameState.gameTime,
+            status: 'active',
+            createdAt: Date.now()
+        };
+
+        this.gameState.marketplace.listings.set(listing.id, listing);
+
+        console.log(`🔥 Fire sale created: ${building.id} at [${row},${col}] for $${startingPrice} (listing ${listing.id})`);
+
+        // Broadcast marketplace update
+        this.broadcastGameState('MARKETPLACE_UPDATE', {
+            type: 'FIRE_SALE_CREATED',
+            listingId: listing.id,
+            buildingId: building.id,
+            location: location
+        });
+    }
+
+    /**
+     * Decay fire sale prices by 3% per day, auto-demolish at day 30
+     */
+    decayFireSalePrices() {
+        const toDelete = [];
+
+        for (const [listingId, listing] of this.gameState.marketplace.listings) {
+            if (listing.type !== 'BUILDING_SALE' || !listing.isFireSale) continue;
+            if (listing.status !== 'active') continue;
+
+            // Update current price
+            listing.currentPrice = this.calculateFireSalePrice(listing.location, listing.listedDay);
+
+            const daysListed = this.gameState.gameTime - listing.listedDay;
+
+            // Auto-demolish after 30 days (price reaches ~1%)
+            if (daysListed >= 30) {
+                console.log(`💥 [FIRE SALE] Auto-demolishing building at day 30: listing ${listingId}`);
+
+                const [row, col] = listing.location;
+                const building = this.gameState.buildings.get(`${row},${col}`);
+                const parcel = this.gameState.grid[row][col];
+
+                if (building && parcel) {
+                    // Destroy building
+                    this.gameState.buildings.delete(`${row},${col}`);
+
+                    // Free parcel (reset to city price)
+                    parcel.owner = null;
+                    parcel.purchasePrice = null;
+
+                    console.log(`💥 Building demolished and parcel freed at [${row},${col}]`);
+                }
+
+                toDelete.push(listingId);
+            }
+        }
+
+        // Remove expired listings
+        toDelete.forEach(id => this.gameState.marketplace.listings.delete(id));
+
+        if (toDelete.length > 0) {
+            this.broadcastGameState('MARKETPLACE_UPDATE', {
+                type: 'FIRE_SALES_DEMOLISHED',
+                count: toDelete.length
+            });
+        }
+    }
+
+    /**
+     * Enter zombie mode: destroy all buildings, free parcels, player can still govern
+     */
+    enterZombieMode(playerId) {
+        console.log(`👻 [ZOMBIE MODE] Player ${playerId} entering zombie mode`);
+
+        const player = this.getOrCreatePlayer(playerId);
+        player.isZombie = true;
+
+        // Destroy all player's buildings and free parcels
+        const buildingsToDelete = [];
+
+        this.gameState.buildings.forEach((building, key) => {
+            const [row, col] = key.split(',').map(Number);
+            const parcel = this.gameState.grid[row][col];
+
+            if (parcel.owner === playerId) {
+                buildingsToDelete.push(key);
+
+                // Free parcel
+                parcel.owner = null;
+                parcel.purchasePrice = null;
+            }
+        });
+
+        // Delete buildings
+        buildingsToDelete.forEach(key => this.gameState.buildings.delete(key));
+
+        console.log(`👻 [ZOMBIE MODE] Destroyed ${buildingsToDelete.length} buildings for ${playerId}`);
+
+        // Set cash to 0 (can't go more negative)
+        this.gameState.playerBalances.set(playerId, 0);
+
+        // Broadcast update
+        this.broadcastGameState({ type: 'ZOMBIE_MODE', playerId });
     }
 
     // REMOVED: Auction-based method no longer used
@@ -4953,12 +6454,12 @@ class ServerEconomicEngine {
             buildingsArray.push(...this.gameState.buildings);
         }
 
-        // Convert actionMarketplace listings Map to Array with calculated values
-        let actionMarketplace = this.gameState.actionMarketplace;
+        // Convert marketplace listings Map to Array with calculated values
+        let marketplace = this.gameState.marketplace;
 
-        if (actionMarketplace && actionMarketplace.listings instanceof Map) {
+        if (marketplace && marketplace.listings instanceof Map) {
             // Enhance each listing with server-calculated values
-            const enhancedListings = Array.from(actionMarketplace.listings.values()).map(listing => {
+            const enhancedListings = Array.from(marketplace.listings.values()).map(listing => {
                 const enhanced = { ...listing };
 
                 // Add calculated buy now price with time-based premium
@@ -4982,8 +6483,8 @@ class ServerEconomicEngine {
                 return enhanced;
             });
 
-            actionMarketplace = {
-                ...actionMarketplace,
+            marketplace = {
+                ...marketplace,
                 listings: enhancedListings,
                 monthProgress: this.calculateMonthProgress() // Include month progress for client use
             };
@@ -4994,7 +6495,8 @@ class ServerEconomicEngine {
             ...this.gameState,
             players: playersObject,
             buildings: buildingsArray,
-            actionMarketplace: actionMarketplace,
+            actionMarketplace: marketplace, // For backward compatibility with client
+            marketplace: marketplace, // New property name
             // Ensure other Maps are also converted if needed
             playerBalances: this.gameState.playerBalances instanceof Map
                 ? Object.fromEntries(this.gameState.playerBalances)
