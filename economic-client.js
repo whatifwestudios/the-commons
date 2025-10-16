@@ -67,6 +67,12 @@ class EconomicClient {
         this.playerBalances = {}; // Player balances from WebSocket
         this.playerActions = {}; // Player action inventories from WebSocket
 
+        // Energy grid infrastructure (edge-based power lines)
+        this.energyGrid = {
+            lines: new Map(), // key: edgeId (e.g., "h_3_4") -> PowerLineData
+            infrastructureBudget: 0
+        };
+
         // Update callbacks
         this.updateCallbacks = new Set();
 
@@ -962,8 +968,8 @@ class EconomicClient {
         }
 
         // Sync action marketplace data
-        if (gameState.actionMarketplace && this.game.actionMarketplace?.syncMarketplaceData) {
-            this.game.actionMarketplace.syncMarketplaceData(gameState.actionMarketplace);
+        if (gameState.actionMarketplace && this.game.marketplace?.syncMarketplaceData) {
+            this.game.marketplace.syncMarketplaceData(gameState.actionMarketplace);
         }
 
         // Sync player ID if not set
@@ -1195,20 +1201,15 @@ class EconomicClient {
      * Formula matches server: condition = (1 - dailyDecayRate)^age
      */
     calculateLocalCondition(building) {
-        console.log('[DECAY] calculateLocalCondition called with:', building);
-
         // Get building age
         const age = this.getBuildingAge(building);
-        console.log('[DECAY] Calculated age:', age, 'constructionDay:', building.constructionDay, 'gameTime:', this.gameTime);
 
         // Get decay rate from building definition
         // Try multiple field names for building ID (buildingId, id, type)
         const buildingId = building.buildingId || building.id || building.type;
         const buildingDef = window.buildingManager?.getBuildingById(buildingId);
-        console.log('[DECAY] Building ID:', buildingId, 'Has def:', !!buildingDef, 'Decay rate:', buildingDef?.economics?.decayRate);
 
         if (!buildingDef?.economics?.decayRate) {
-            console.log('[DECAY] No decay rate found, returning 1.0');
             return 1.0; // No decay if definition missing
         }
 
@@ -1216,7 +1217,6 @@ class EconomicClient {
 
         // Exponential decay formula (matches server exactly)
         const condition = Math.pow(1 - dailyDecayRate, age);
-        console.log('[DECAY] Final condition:', condition, 'from dailyDecayRate:', dailyDecayRate, 'age:', age);
 
         // Minimum 10% condition
         return Math.max(0.1, condition);
@@ -1283,6 +1283,58 @@ class EconomicClient {
         });
 
         return status;
+    }
+
+    /**
+     * Calculate global JEEFHH multiplier (lowest of all Core Needs)
+     *
+     * HOW IT WORKS:
+     * 1. Each Core Need has a multiplier based on BALANCE (distance from ratio = 1.0):
+     *    - Formula: multiplier = 1.6 - (|ratio - 1.0| * 0.8), clamped to [0.4, 1.6]
+     *    - ratio = 0.0 (no supply) → 0.4x multiplier (75% penalty)
+     *    - ratio = 0.5 (deficit) → 1.2x multiplier (25% penalty)
+     *    - ratio = 1.0 (PERFECT BALANCE) → 1.6x multiplier (60% BONUS - the goal!)
+     *    - ratio = 1.5 (surplus) → 1.2x multiplier (25% penalty)
+     *    - ratio = 2.0 (severe surplus) → 0.8x multiplier (50% penalty)
+     *
+     * 2. The global multiplier = MINIMUM of all 6 Core Needs
+     *    - If FOOD is at 0.4x, the ENTIRE CITY gets 0.4x (even if others are 1.6x)
+     *    - This represents the economic bottleneck
+     *    - One shortage brings down the whole economy
+     *
+     * 2. BALANCE IS THE GOAL - Both deficits AND surpluses penalize the economy:
+     *    - Food surplus means housing deficit (people need places to live!)
+     *    - Housing surplus means jobs deficit (buildings sit empty!)
+     *    - Perfect balance (ratio 1.0) in all 6 Core Needs = citywide 1.6x bonus
+     *
+     * 3. The global multiplier = MINIMUM of all 6 Core Needs:
+     *    - If one resource is imbalanced, the ENTIRE CITY suffers
+     *    - All 6 must be balanced for maximum prosperity
+     *
+     * 4. This global multiplier affects ALL buildings' revenue:
+     *    - Revenue = Base × Performance × Condition × GlobalMultiplier
+     *    - 0.4x global = all buildings earn 75% less
+     *    - 1.6x global = all buildings earn 60% MORE
+     *
+     * STRATEGIC IMPLICATIONS:
+     * - Players compete to balance supply/demand across all 6 Core Needs
+     * - Perfect citywide balance = 1.6x multiplier for EVERYONE (prosperity!)
+     * - Any imbalance penalizes everyone (cooperation incentivized)
+     * - "Compete and prosper" - balance economy together while racing for score
+     */
+    calculateGlobalJEEFHHMultiplier() {
+        // Get all JEEFHH multipliers from server state
+        const multipliers = [
+            this.jeefhh.jobs?.multiplier || 1.0,
+            this.jeefhh.energy?.multiplier || 1.0,
+            this.jeefhh.education?.multiplier || 1.0,
+            this.jeefhh.food?.multiplier || 1.0,
+            this.jeefhh.housing?.multiplier || 1.0,
+            this.jeefhh.healthcare?.multiplier || 1.0
+        ];
+
+        // Return the minimum (worst) multiplier - this bottlenecks the whole economy
+        return Math.min(...multipliers);
     }
 
     /**
@@ -1355,8 +1407,13 @@ class EconomicClient {
             this.handleWebSocketUpdate(message);
         });
 
-        // NOTE: GAME_STATE messages are handled by the main subscription above (line 1231)
-        // Special GAME_STARTED logic is handled in handleWebSocketUpdate's GAME_STATE case
+        // Subscribe to power line updates
+        this.connectionManager.subscribe('POWER_LINES_UPDATE', (message) => {
+            this.handleWebSocketUpdate(message);
+        });
+
+        // NOTE: GAME_STATE messages are handled by the main subscription above (line 1377)
+        // Special GAME_STARTED and MARKETPLACE_UPDATE logic is handled in handleWebSocketUpdate's GAME_STATE case
         // This duplicate subscription has been removed to prevent double-processing
 
         // Connection status tracking
@@ -1491,6 +1548,20 @@ class EconomicClient {
                     }
                 }
 
+                // Handle MARKETPLACE_UPDATE events
+                if (update.eventType === 'MARKETPLACE_UPDATE') {
+                    console.log('🏪 Marketplace update received (via GAME_STATE):', update.eventData);
+
+                    // Notify marketplace UI if open
+                    if (this.game?.marketplace?.isOpen) {
+                        // Sync marketplace data from game state
+                        if (update.gameState?.actionMarketplace) {
+                            this.game.marketplace.syncMarketplaceData(update.gameState.actionMarketplace);
+                        }
+                        this.game.marketplace.refreshListings();
+                    }
+                }
+
                 // Special handling for GAME_STARTED events with city names
                 if (update.eventType === 'GAME_STARTED' && update.eventData?.players) {
                     // Game started - extracting city names
@@ -1603,6 +1674,13 @@ class EconomicClient {
                 // Building rendering states from server
                 // console.log(`📡 Received ${update.buildings?.length || 0} building states from server`);
                 this.updateBuildingStates(update.buildings);
+                break;
+
+            case 'POWER_LINES_UPDATE':
+                // Power lines update from server
+                if (update.energyGrid) {
+                    this.updateEnergyGrid(update.energyGrid);
+                }
                 break;
 
             default:
@@ -1976,17 +2054,6 @@ class EconomicClient {
             };
 
             this.buildings.set(key, buildingData);
-
-            // DEBUG: Log received data for first few buildings
-            console.log(`📥 CLIENT received [${key}] ${state.buildingId}:`, {
-                efficiency: state.efficiency,
-                netIncome: state.netIncome,
-                revenue: state.revenue,
-                maintenance: state.maintenance,
-                hasPerformanceDetails: !!state.performanceDetails,
-                hasResourceSatisfaction: !!state.performanceDetails?.resourceSatisfaction,
-                resourceSatisfaction: state.performanceDetails?.resourceSatisfaction
-            });
         });
 
         // Sync buildings to game grid for context menu and tooltips
@@ -2015,6 +2082,202 @@ class EconomicClient {
 
         const key = `${row},${col}`;
         return this.buildingStates.get(key) || null;
+    }
+
+    /**
+     * Update energy grid from server broadcasts
+     */
+    updateEnergyGrid(energyGridData) {
+        if (!energyGridData) return;
+
+        // Update infrastructure budget
+        if (energyGridData.infrastructureBudget !== undefined) {
+            this.energyGrid.infrastructureBudget = energyGridData.infrastructureBudget;
+        }
+
+        // Update power lines Map from server
+        if (energyGridData.lines && Array.isArray(energyGridData.lines)) {
+            this.energyGrid.lines.clear();
+            energyGridData.lines.forEach(lineData => {
+                this.energyGrid.lines.set(lineData.edgeId, lineData);
+            });
+
+            // Trigger rendering update to show new power lines
+            if (this.game?.scheduleRender) {
+                this.game.scheduleRender();
+            }
+        }
+    }
+
+    /**
+     * CLIENT-SIDE NEEDS CALCULATION (Hybrid Approach)
+     *
+     * Calculates local needs satisfaction for immediate UI feedback.
+     * Matches server logic exactly but runs client-side for instant updates.
+     * Server still calculates for authoritative revenue/performance.
+     * Periodic server updates validate and reconcile.
+     */
+
+    /**
+     * Calculate local needs satisfaction for a building at [row, col]
+     * This mirrors the server's calculateLocalNeedsSatisfaction() method
+     *
+     * @param {number} row - Building row
+     * @param {number} col - Building column
+     * @returns {Object} { overallSatisfaction, detailedSatisfaction }
+     */
+    calculateLocalNeedsSatisfaction(row, col) {
+        const locationKey = `${row},${col}`;
+        const building = this.buildings.get(locationKey);
+
+        if (!building) {
+            return null; // No building at this location
+        }
+
+        const buildingId = building.buildingId || building.id;
+        const buildingDef = window.buildingManager?.getBuildingById(buildingId);
+
+        if (!buildingDef || !buildingDef.resources) {
+            return null; // No building definition available
+        }
+
+        // Adjacency offsets (8 surrounding parcels)
+        const ADJACENCY_OFFSETS = [
+            [-1, -1], [-1, 0], [-1, 1],
+            [0, -1],            [0, 1],
+            [1, -1],  [1, 0],  [1, 1]
+        ];
+
+        // Scan adjacent buildings for resource supply
+        const connectedSupply = {
+            energy: 0,
+            jobs: 0,
+            food: 0,
+            education: 0,
+            healthcare: 0
+        };
+
+        ADJACENCY_OFFSETS.forEach(([dr, dc]) => {
+            const adjRow = row + dr;
+            const adjCol = col + dc;
+            const adjKey = `${adjRow},${adjCol}`;
+            const adjBuilding = this.buildings.get(adjKey);
+
+            if (adjBuilding && !adjBuilding.isUnderConstruction) {
+                const adjBuildingId = adjBuilding.buildingId || adjBuilding.id;
+                const adjBuildingDef = window.buildingManager?.getBuildingById(adjBuildingId);
+
+                if (adjBuildingDef && adjBuildingDef.resources) {
+                    connectedSupply.energy += adjBuildingDef.resources.energyProvided || 0;
+                    connectedSupply.jobs += adjBuildingDef.resources.jobsProvided || 0;
+                    connectedSupply.food += adjBuildingDef.resources.foodProvided || 0;
+                    connectedSupply.education += adjBuildingDef.resources.educationProvided || 0;
+                    connectedSupply.healthcare += adjBuildingDef.resources.healthcareProvided || 0;
+                }
+            }
+        });
+
+        const satisfactionRatios = [];
+        const detailedSatisfaction = {
+            energy: { required: 0, supplied: 0, satisfaction: 1.0 },
+            jobs: { required: 0, supplied: 0, satisfaction: 1.0 },
+            food: { required: 0, supplied: 0, satisfaction: 1.0 },
+            education: { required: 0, supplied: 0, satisfaction: 1.0 },
+            healthcare: { required: 0, supplied: 0, satisfaction: 1.0 }
+        };
+
+        // Check direct building requirements (e.g., energy for operations)
+        if (buildingDef.resources.energyRequired > 0) {
+            const energyRequired = buildingDef.resources.energyRequired;
+            // Use energy from power grid if available, otherwise fall back to adjacent buildings
+            const energyReceived = building.energyReceived !== undefined
+                ? building.energyReceived
+                : connectedSupply.energy;
+            const energySatisfaction = Math.min(1.0, energyReceived / energyRequired);
+            satisfactionRatios.push(energySatisfaction);
+
+            detailedSatisfaction.energy = {
+                required: energyRequired,
+                supplied: energyReceived,
+                satisfaction: energySatisfaction
+            };
+        }
+
+        // For housing buildings, check resident needs based on capacity
+        const housingProvided = buildingDef.resources.housingProvided || 0;
+        if (housingProvided > 0) {
+            const potentialResidents = housingProvided * 2; // 2 people per bedroom
+
+            // Each resident needs nearby jobs, food, education, and healthcare access
+            const jobsNeeded = potentialResidents * 0.5; // 0.5 jobs per resident
+            const foodNeeded = potentialResidents * 2; // 2 food units per resident
+            const educationNeeded = potentialResidents * 0.3; // 0.3 education per resident
+            const healthcareNeeded = potentialResidents * 0.2; // 0.2 healthcare per resident
+
+            if (jobsNeeded > 0) {
+                const jobsSatisfaction = Math.min(1.0, connectedSupply.jobs / jobsNeeded);
+                satisfactionRatios.push(jobsSatisfaction);
+
+                detailedSatisfaction.jobs = {
+                    required: jobsNeeded,
+                    supplied: connectedSupply.jobs,
+                    satisfaction: jobsSatisfaction
+                };
+            }
+
+            if (foodNeeded > 0) {
+                const foodSatisfaction = Math.min(1.0, connectedSupply.food / foodNeeded);
+                satisfactionRatios.push(foodSatisfaction);
+
+                detailedSatisfaction.food = {
+                    required: foodNeeded,
+                    supplied: connectedSupply.food,
+                    satisfaction: foodSatisfaction
+                };
+            }
+
+            if (educationNeeded > 0) {
+                const educationSatisfaction = Math.min(1.0, connectedSupply.education / educationNeeded);
+                satisfactionRatios.push(educationSatisfaction);
+
+                detailedSatisfaction.education = {
+                    required: educationNeeded,
+                    supplied: connectedSupply.education,
+                    satisfaction: educationSatisfaction
+                };
+            }
+
+            if (healthcareNeeded > 0) {
+                const healthcareSatisfaction = Math.min(1.0, connectedSupply.healthcare / healthcareNeeded);
+                satisfactionRatios.push(healthcareSatisfaction);
+
+                detailedSatisfaction.healthcare = {
+                    required: healthcareNeeded,
+                    supplied: connectedSupply.healthcare,
+                    satisfaction: healthcareSatisfaction
+                };
+            }
+        }
+
+        // If no specific requirements, building is self-sufficient
+        if (satisfactionRatios.length === 0) {
+            return {
+                overallSatisfaction: 1.0,
+                detailedSatisfaction: detailedSatisfaction
+            };
+        }
+
+        // Calculate overall satisfaction as average of all requirements
+        const overallSatisfaction = satisfactionRatios.reduce((sum, ratio) => sum + ratio, 0) / satisfactionRatios.length;
+
+        // Buildings can operate at 5% minimum even without all needs met
+        const minOperation = 0.05;
+        const finalSatisfaction = Math.max(minOperation, overallSatisfaction);
+
+        return {
+            overallSatisfaction: finalSatisfaction,
+            detailedSatisfaction: detailedSatisfaction
+        };
     }
 }
 

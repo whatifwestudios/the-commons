@@ -344,6 +344,7 @@ class IsometricGrid {
         
         this.renderingSystem.setupCanvas();
         this.initDOMCache();
+        this.initializeBuildingDefinitions();
         this.populateBuildingCategories();
 
         // Setting up event listeners
@@ -519,7 +520,9 @@ class IsometricGrid {
 
         // Initialize Action Marketplace V2 (multiplayer only)
         if (!this.actionMarketplace) {
-            this.actionMarketplace = new ActionMarketplaceV2(this);
+            this.marketplace = new MarketplaceV3(this);
+            // Legacy alias for backward compatibility
+            this.actionMarketplace = this.marketplace;
         }
 
         // Initialize Land Exchange System (multiplayer only)
@@ -843,13 +846,39 @@ class IsometricGrid {
     initDOMCache() {
         // Initialize the UI Manager's comprehensive DOM cache
         this.uiManager.initialize();
-        
+
         // Setup UI event listeners via UI Manager
         this.uiManager.setupEventListeners(this);
-        
+
         // ✅ BANDAID ELIMINATED: Direct uiManager usage, no compatibility layer needed
     }
 
+    /**
+     * Initialize building definitions lookup from buildingManager
+     * Creates a flat object with building ID as key for fast lookup
+     */
+    initializeBuildingDefinitions() {
+        this.buildingDefinitions = {};
+
+        if (!window.buildingManager || !window.buildingManager.buildings) {
+            console.warn('⚠️ BuildingManager not ready, will retry...');
+            // Retry after a short delay
+            setTimeout(() => this.initializeBuildingDefinitions(), 100);
+            return;
+        }
+
+        // Flatten the categorized buildings into a lookup object by ID
+        const buildings = window.buildingManager.buildings;
+        Object.values(buildings).forEach(category => {
+            if (Array.isArray(category)) {
+                category.forEach(building => {
+                    this.buildingDefinitions[building.id] = building;
+                });
+            }
+        });
+
+        console.log('✅ Building definitions initialized:', Object.keys(this.buildingDefinitions).length, 'buildings');
+    }
 
     populateBuildingCategories() {
         // Delegate to building system
@@ -3036,17 +3065,17 @@ class IsometricGrid {
     }
     
     handlePanelTransitions(layerName) {
-        const vitalityElement = document.querySelector('[data-target="vitality"]');
+        const coreNeedsElement = document.querySelector('[data-target="core-needs"]');
         const playersElement = document.querySelector('[data-target="players-panel"]');
 
-        const vitalitySection = vitalityElement?.parentElement;
+        const coreNeedsSection = coreNeedsElement?.parentElement;
         const playersSection = playersElement?.parentElement;
 
         // Standard panel handling for all layers
         if (layerName === 'normal') {
-            // In normal view - open vitality panel
-            if (vitalitySection) {
-                this.openSidebarSection(vitalitySection);
+            // In normal view - open Core Needs panel
+            if (coreNeedsSection) {
+                this.openSidebarSection(coreNeedsSection);
             }
 
             // Remove players panel completely (not just hide)
@@ -3868,6 +3897,14 @@ class IsometricGrid {
             if (tile && tile.row >= 0 && tile.row < this.gridSize &&
                 tile.col >= 0 && tile.col < this.gridSize) {
 
+                // ENERGY LAYER: Street-based power line placement on edges
+                if (this.currentLayer === 'energy') {
+                    if (this.hoveredStreetEdge) {
+                        this.handleStreetEdgeClick(this.hoveredStreetEdge);
+                    }
+                    return;
+                }
+
                 this.selectedTile = tile;
 
                 // Toggle context menu off if clicking same tile
@@ -3889,7 +3926,35 @@ class IsometricGrid {
                 this.hideContextMenu();
             }
         });
-        
+
+        // Canvas mousemove handler for street edge detection in energy layer
+        this.canvas.addEventListener('mousemove', (e) => {
+            if (this.currentLayer !== 'energy') {
+                if (this.hoveredStreetEdge) {
+                    this.hoveredStreetEdge = null;
+                    this.scheduleRender();
+                }
+                return;
+            }
+
+            const rect = this.canvas.getBoundingClientRect();
+            const screenX = e.clientX - rect.left;
+            const screenY = e.clientY - rect.top;
+
+            // Detect nearby street edge with wider hitbox (30px)
+            const edge = this.detectStreetEdge(screenX, screenY, 30);
+
+            if (edge) {
+                this.hoveredStreetEdge = edge;
+                this.scheduleRender();
+            } else {
+                if (this.hoveredStreetEdge) {
+                    this.hoveredStreetEdge = null;
+                    this.scheduleRender();
+                }
+            }
+        });
+
         document.querySelectorAll('.tool-btn').forEach(btn => {
             btn.addEventListener('click', (e) => {
                 document.querySelectorAll('.tool-btn').forEach(b => b.classList.remove('active'));
@@ -4417,6 +4482,252 @@ class IsometricGrid {
 
                 this.scheduleRender();
             }
+        }
+    }
+
+    /**
+     * Detect gridline edge near click position (for power line placement)
+     * Returns edge object {type, row, col, parcel1, parcel2} or null
+     */
+    detectGridlineEdge(screenX, screenY) {
+        const result = this.detectGridlineWithNearest(screenX, screenY);
+        return result.activeEdge;
+    }
+
+    /**
+     * Detect street edge near cursor position with wider hitbox
+     * Returns edge object {row1, col1, row2, col2, type} or null
+     */
+    detectStreetEdge(screenX, screenY, threshold = 30) {
+        let closestEdge = null;
+        let closestDistance = Infinity;
+
+        // Iterate through all parcels and check their edges
+        for (let row = 0; row < this.gridSize; row++) {
+            for (let col = 0; col < this.gridSize; col++) {
+                const iso = this.renderingSystem.toIsometric(col, row);
+
+                // Check horizontal edge (top edge of this parcel)
+                if (col < this.gridSize - 1) {
+                    const isoRight = this.renderingSystem.toIsometric(col + 1, row);
+                    const midX = (iso.x + isoRight.x) / 2;
+                    const midY = (iso.y + isoRight.y) / 2;
+                    const distance = Math.sqrt((screenX - midX) ** 2 + (screenY - midY) ** 2);
+
+                    if (distance < threshold && distance < closestDistance) {
+                        closestDistance = distance;
+                        closestEdge = {
+                            row1: row,
+                            col1: col,
+                            row2: row,
+                            col2: col + 1,
+                            type: 'h'
+                        };
+                    }
+                }
+
+                // Check vertical edge (right edge of this parcel)
+                if (row < this.gridSize - 1) {
+                    const isoBottom = this.renderingSystem.toIsometric(col, row + 1);
+                    const midX = (iso.x + isoBottom.x) / 2;
+                    const midY = (iso.y + isoBottom.y) / 2;
+                    const distance = Math.sqrt((screenX - midX) ** 2 + (screenY - midY) ** 2);
+
+                    if (distance < threshold && distance < closestDistance) {
+                        closestDistance = distance;
+                        closestEdge = {
+                            row1: row,
+                            col1: col,
+                            row2: row + 1,
+                            col2: col,
+                            type: 'v'
+                        };
+                    }
+                }
+            }
+        }
+
+        return closestEdge;
+    }
+
+    /**
+     * Detect gridline edge and find nearest 4 gridlines for selector rendering
+     * Returns {activeEdge, nearestEdges: [edge1, edge2, edge3, edge4]}
+     */
+    detectGridlineWithNearest(screenX, screenY) {
+        const EDGE_DETECTION_THRESHOLD = 15; // pixels from edge center to detect click
+        const allEdgesWithDistance = [];
+
+        // Iterate through all parcels and check their edges
+        for (let row = 0; row < this.gridSize; row++) {
+            for (let col = 0; col < this.gridSize; col++) {
+                const iso = this.renderingSystem.toIsometric(col, row);
+
+                // Check all 4 edges of this parcel
+                const edges = [
+                    // Top edge (between [row,col] and [row,col+1])
+                    {
+                        type: 'h',
+                        row: row,
+                        col: col,
+                        parcel1: [row, col],
+                        parcel2: [row, col + 1],
+                        x1: iso.x,
+                        y1: iso.y - this.tileHeight / 2,
+                        x2: iso.x + this.tileWidth / 2,
+                        y2: iso.y
+                    },
+                    // Right edge (between [row,col] and [row+1,col])
+                    {
+                        type: 'v',
+                        row: row,
+                        col: col,
+                        parcel1: [row, col],
+                        parcel2: [row + 1, col],
+                        x1: iso.x + this.tileWidth / 2,
+                        y1: iso.y,
+                        x2: iso.x,
+                        y2: iso.y + this.tileHeight / 2
+                    }
+                ];
+
+                // Calculate distance from mouse to each edge
+                for (const edge of edges) {
+                    // Check if parcel2 exists (edge is within grid)
+                    const [r2, c2] = edge.parcel2;
+                    if (r2 >= this.gridSize || c2 >= this.gridSize) continue;
+
+                    // Calculate distance from mouse to edge midpoint
+                    const midX = (edge.x1 + edge.x2) / 2;
+                    const midY = (edge.y1 + edge.y2) / 2;
+                    const distance = Math.sqrt(Math.pow(screenX - midX, 2) + Math.pow(screenY - midY, 2));
+
+                    allEdgesWithDistance.push({
+                        edge,
+                        distance,
+                        midX,
+                        midY
+                    });
+                }
+            }
+        }
+
+        // Sort by distance
+        allEdgesWithDistance.sort((a, b) => a.distance - b.distance);
+
+        // Get closest edge as active edge
+        const activeEdge = allEdgesWithDistance.length > 0 && allEdgesWithDistance[0].distance < EDGE_DETECTION_THRESHOLD
+            ? allEdgesWithDistance[0].edge
+            : null;
+
+        // Get 4 nearest edges (including active)
+        const nearestEdges = allEdgesWithDistance.slice(0, 4).map(item => item.edge);
+
+        return { activeEdge, nearestEdges };
+    }
+
+    /**
+     * Handle street edge click (street-based power line placement)
+     */
+    handleStreetEdgeClick(edge) {
+        // Check if power line already exists
+        const energyGrid = this.economicClient?.energyGrid;
+        const edgeId = edge.type === 'h' ? `h_${edge.row1}_${edge.col1}` : `v_${edge.row1}_${edge.col1}`;
+
+        if (energyGrid?.lines?.has(edgeId)) {
+            this.showNotification('Power line already exists here', 'error');
+            return;
+        }
+
+        // Build power line on this street edge
+        this.buildPowerLine([edge.row1, edge.col1], [edge.row2, edge.col2]);
+    }
+
+
+    /**
+     * Show gridline hover tooltip
+     */
+    showGridlineTooltip(clientX, clientY, edge) {
+        // Create tooltip element if it doesn't exist
+        if (!this.gridlineTooltip) {
+            this.gridlineTooltip = document.createElement('div');
+            this.gridlineTooltip.id = 'gridline-tooltip';
+            this.gridlineTooltip.style.position = 'fixed';
+            this.gridlineTooltip.style.backgroundColor = 'rgba(0, 0, 0, 0.85)';
+            this.gridlineTooltip.style.color = '#00FF41';
+            this.gridlineTooltip.style.padding = '8px 12px';
+            this.gridlineTooltip.style.borderRadius = '4px';
+            this.gridlineTooltip.style.border = '1px solid #00FF41';
+            this.gridlineTooltip.style.fontSize = '14px';
+            this.gridlineTooltip.style.fontWeight = 'bold';
+            this.gridlineTooltip.style.pointerEvents = 'none';
+            this.gridlineTooltip.style.zIndex = '10000';
+            this.gridlineTooltip.style.boxShadow = '0 0 10px rgba(0, 255, 65, 0.5)';
+            document.body.appendChild(this.gridlineTooltip);
+        }
+
+        // Check if power line already exists
+        const edgeId = edge.type === 'h' ? `h_${edge.row}_${edge.col}` : `v_${edge.row}_${edge.col}`;
+        const lineExists = this.economicClient?.energyGrid?.lines?.has(edgeId);
+
+        // Update tooltip content
+        if (lineExists) {
+            this.gridlineTooltip.innerHTML = 'Power line already exists';
+            this.gridlineTooltip.style.color = '#FF4444';
+            this.gridlineTooltip.style.border = '1px solid #FF4444';
+        } else {
+            this.gridlineTooltip.innerHTML = 'Build Power Line - $10';
+            this.gridlineTooltip.style.color = '#00FF41';
+            this.gridlineTooltip.style.border = '1px solid #00FF41';
+        }
+
+        // Position tooltip near cursor
+        this.gridlineTooltip.style.left = `${clientX + 15}px`;
+        this.gridlineTooltip.style.top = `${clientY + 15}px`;
+        this.gridlineTooltip.style.display = 'block';
+    }
+
+    /**
+     * Hide gridline hover tooltip
+     */
+    hideGridlineTooltip() {
+        if (this.gridlineTooltip) {
+            this.gridlineTooltip.style.display = 'none';
+        }
+    }
+
+
+    /**
+     * Send power line construction request to server
+     */
+    async buildPowerLine(parcel1, parcel2) {
+        if (!this.economicClient) {
+            console.error('❌ Economic client not initialized');
+            return;
+        }
+
+        try {
+            const transaction = {
+                type: 'BUILD_POWER_LINE',
+                parcel1: parcel1,
+                parcel2: parcel2,
+                playerId: this.currentPlayerId,
+                timestamp: Date.now()
+            };
+
+            // Send via WebSocket
+            const result = await this.economicClient.sendTransaction(transaction);
+
+            if (result.success) {
+                console.log(`✅ Power line built: ${result.edgeId} (cost: $${result.cost})`);
+
+                // Balance is already updated in economic client's transaction response handler
+                // No need to update here
+            } else {
+                console.error('❌ Failed to build power line:', result.error);
+            }
+        } catch (error) {
+            console.error('❌ Error building power line:', error);
         }
     }
 

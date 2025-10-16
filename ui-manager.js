@@ -426,6 +426,34 @@ class UIManager {
             }
         });
 
+        // Update global multiplier display (Core Needs)
+        this.updateGlobalMultiplier(economicClient);
+    }
+
+    /**
+     * Update global multiplier display in Core Needs header
+     */
+    updateGlobalMultiplier(economicClient) {
+        const multiplierElement = document.querySelector('.multiplier-value');
+        if (!multiplierElement) return;
+
+        // Get global JEEFHH multiplier from economic client
+        const globalMultiplier = economicClient.calculateGlobalJEEFHHMultiplier?.() || 1.0;
+
+        // Round to nearest 0.1
+        const roundedMultiplier = Math.round(globalMultiplier * 10) / 10;
+
+        // Update text with one decimal place
+        multiplierElement.textContent = `${roundedMultiplier.toFixed(1)}x`;
+
+        // Color code based on multiplier value
+        if (roundedMultiplier >= 1.0) {
+            multiplierElement.style.color = '#4A90E2'; // Blue - good
+        } else if (roundedMultiplier >= 0.7) {
+            multiplierElement.style.color = '#FF9800'; // Orange - warning
+        } else {
+            multiplierElement.style.color = '#E74C3C'; // Red - critical
+        }
     }
 
     /**
@@ -449,6 +477,49 @@ class UIManager {
         // Update attractiveness metric with dynamic tooltip
         this.updateAttractiveness(economicClient);
 
+        // Update bankruptcy warnings
+        this.updateBankruptcyWarnings(economicClient);
+
+    }
+
+    /**
+     * Update bankruptcy warning indicators
+     */
+    updateBankruptcyWarnings(economicClient) {
+        // Get player data from gameState
+        const playerId = economicClient.playerId;
+        if (!playerId || !economicClient.gameState || !economicClient.gameState.players) {
+            return;
+        }
+
+        const player = economicClient.gameState.players[playerId];
+        if (!player) return;
+
+        const cash = economicClient.getCurrentPlayerBalance();
+        if (cash === null || cash === undefined) return; // Wait for balance to sync
+
+        const cashflow = player.dailyCashflow || 0;
+
+        const indicator = document.getElementById('cashflow-indicator');
+        const daysSpan = document.getElementById('days-until-bankruptcy');
+
+        if (!indicator || !daysSpan) return;
+
+        if (cash < 0 && cashflow < 0) {
+            // Show red alert - bankruptcy in progress
+            indicator.style.display = 'block';
+            indicator.style.background = '#ff0000';
+            daysSpan.textContent = 'BANKRUPTCY!';
+        } else if (cash > 0 && cashflow < 0) {
+            // Show warning with days remaining
+            const daysUntilBankrupt = Math.floor(Math.abs(cash / cashflow));
+            indicator.style.display = 'block';
+            indicator.style.background = '#ff6b6b';
+            daysSpan.textContent = daysUntilBankrupt;
+        } else {
+            // Hide indicator - player is solvent
+            indicator.style.display = 'none';
+        }
     }
 
     /**
@@ -900,6 +971,251 @@ class UIManager {
 
         // Setup window resize handler
         this.setupWindowResize(game);
+
+        // Setup global multiplier click handler
+        this.setupGlobalMultiplierClick(game);
+    }
+
+    /**
+     * Setup global multiplier click event listener
+     */
+    setupGlobalMultiplierClick(game) {
+        const globalMultiplier = document.getElementById('global-multiplier');
+        if (globalMultiplier) {
+            globalMultiplier.addEventListener('click', (e) => {
+                e.stopPropagation(); // Prevent section collapse
+                this.openCoreNeedsModal(game);
+            });
+        }
+
+        // Setup modal close button
+        const closeButton = document.getElementById('core-needs-close');
+        if (closeButton) {
+            closeButton.addEventListener('click', () => {
+                this.closeCoreNeedsModal();
+            });
+        }
+
+        // Setup modal backdrop click to close
+        const modal = document.getElementById('core-needs-modal');
+        if (modal) {
+            modal.addEventListener('click', (e) => {
+                if (e.target === modal) {
+                    this.closeCoreNeedsModal();
+                }
+            });
+        }
+    }
+
+    /**
+     * Open Core Needs Modal and populate with data
+     */
+    openCoreNeedsModal(game) {
+        const modal = document.getElementById('core-needs-modal');
+        if (!modal || !game || !game.economicClient) return;
+
+        // Populate modal with current data
+        this.populateCoreNeedsModal(game.economicClient);
+
+        // Show modal
+        modal.classList.add('visible');
+    }
+
+    /**
+     * Close Core Needs Modal
+     */
+    closeCoreNeedsModal() {
+        const modal = document.getElementById('core-needs-modal');
+        if (modal) {
+            modal.classList.remove('visible');
+        }
+    }
+
+    /**
+     * Populate Core Needs Modal with economic data
+     */
+    populateCoreNeedsModal(economicClient) {
+        // Get global multiplier
+        const globalMultiplier = economicClient.calculateGlobalJEEFHHMultiplier?.() || 1.0;
+        const roundedMultiplier = Math.round(globalMultiplier * 10) / 10;
+
+        // Update big multiplier display
+        const multiplierBig = document.getElementById('modal-global-multiplier');
+        if (multiplierBig) {
+            multiplierBig.textContent = `${roundedMultiplier.toFixed(1)}x`;
+
+            // Color code
+            if (roundedMultiplier >= 1.0) {
+                multiplierBig.style.color = '#4A90E2'; // Blue
+            } else if (roundedMultiplier >= 0.7) {
+                multiplierBig.style.color = '#FF9800'; // Orange
+            } else {
+                multiplierBig.style.color = '#E74C3C'; // Red
+            }
+        }
+
+        // Get JEEFHH data
+        const jeefhhMetrics = economicClient.getVitalityMetrics();
+        const jeefhhStatus = economicClient.getJEEFHHStatus();
+
+        // Find bottleneck (lowest multiplier)
+        let bottleneckNeed = null;
+        let lowestMultiplier = 1.6;
+
+        const coreNeeds = ['housing', 'food', 'energy', 'jobs', 'education', 'healthcare'];
+        const needData = [];
+
+        coreNeeds.forEach(need => {
+            const metric = jeefhhMetrics[need];
+            const status = jeefhhStatus[need];
+            if (metric && status) {
+                const multiplier = status.multiplier || 1.0;
+                needData.push({
+                    name: need,
+                    supply: metric.supply || 0,
+                    demand: metric.demand || 0,
+                    multiplier: multiplier,
+                    ratio: metric.ratio || 0
+                });
+
+                if (multiplier < lowestMultiplier) {
+                    lowestMultiplier = multiplier;
+                    bottleneckNeed = need;
+                }
+            }
+        });
+
+        // Sort by multiplier (lowest first)
+        needData.sort((a, b) => a.multiplier - b.multiplier);
+
+        // Render bars
+        this.renderCoreNeedsBars(needData, bottleneckNeed);
+
+        // Render bottleneck section
+        this.renderBottleneckSection(bottleneckNeed, lowestMultiplier, needData.find(n => n.name === bottleneckNeed));
+
+        // Render recommendations
+        this.renderRecommendations(needData);
+    }
+
+    /**
+     * Render Core Needs bars in modal
+     */
+    renderCoreNeedsBars(needData, bottleneckNeed) {
+        const container = document.getElementById('core-needs-bars');
+        if (!container) return;
+
+        let html = '';
+        needData.forEach(need => {
+            const isBottleneck = need.name === bottleneckNeed;
+            const barPercent = Math.min(100, (need.supply / Math.max(1, need.demand)) * 100);
+
+            // Determine bar color based on ratio
+            let barColor = '#4A90E2'; // Blue (surplus)
+            if (need.ratio < -20) {
+                barColor = '#E74C3C'; // Red (severe shortage)
+            } else if (need.ratio < 20) {
+                barColor = '#66BB6A'; // Green (balanced)
+            }
+
+            // Format multiplier
+            const multiplierText = need.multiplier.toFixed(2) + 'x';
+            let multiplierColor = '#4A90E2';
+            if (need.multiplier < 0.7) {
+                multiplierColor = '#E74C3C';
+            } else if (need.multiplier < 1.0) {
+                multiplierColor = '#FF9800';
+            }
+
+            html += `
+                <div class="core-needs-bar-item ${isBottleneck ? 'bottleneck' : ''}">
+                    <div class="need-name">${need.name.toUpperCase()}</div>
+                    <div class="need-bar-container">
+                        <div class="need-bar-fill" style="width: ${barPercent}%; background: ${barColor};"></div>
+                    </div>
+                    <div class="need-stats">
+                        ${Math.round(need.demand)} / ${Math.round(need.supply)}
+                        <span class="need-multiplier" style="color: ${multiplierColor};">${multiplierText}</span>
+                    </div>
+                </div>
+            `;
+        });
+
+        container.innerHTML = html;
+    }
+
+    /**
+     * Render bottleneck section
+     */
+    renderBottleneckSection(bottleneckNeed, lowestMultiplier, needData) {
+        const section = document.getElementById('bottleneck-section');
+        const content = document.getElementById('bottleneck-content');
+        if (!section || !content || !bottleneckNeed) return;
+
+        if (lowestMultiplier >= 1.0) {
+            section.style.display = 'none';
+            return;
+        }
+
+        section.style.display = 'block';
+
+        const shortage = Math.round(needData.demand - needData.supply);
+        const impactPercent = Math.round((1.0 - lowestMultiplier) * 100);
+
+        content.innerHTML = `
+            <strong>${bottleneckNeed.toUpperCase()}</strong> is currently limiting your entire economy.<br><br>
+            <strong>Shortage:</strong> ${shortage} units needed<br>
+            <strong>Impact:</strong> All buildings earning ${impactPercent}% less revenue
+        `;
+    }
+
+    /**
+     * Render recommendations section
+     */
+    renderRecommendations(needData) {
+        const section = document.getElementById('recommendations-section');
+        const content = document.getElementById('recommendations-content');
+        if (!section || !content) return;
+
+        const shortages = needData.filter(n => n.multiplier < 1.0).slice(0, 3);
+
+        if (shortages.length === 0) {
+            content.innerHTML = `
+                <div class="recommendation-item">
+                    ✅ All Core Needs are balanced! Your city's economy is healthy.
+                </div>
+            `;
+            return;
+        }
+
+        let html = '';
+        shortages.forEach(need => {
+            const shortage = Math.round(need.demand - need.supply);
+            const buildingType = this.getBuildingTypeForNeed(need.name);
+
+            html += `
+                <div class="recommendation-item">
+                    <strong>${need.name.toUpperCase()}:</strong> Build ${shortage}+ units of ${buildingType}
+                </div>
+            `;
+        });
+
+        content.innerHTML = html;
+    }
+
+    /**
+     * Get building type recommendation for a need
+     */
+    getBuildingTypeForNeed(need) {
+        const recommendations = {
+            'housing': 'housing (Apartments, Houses)',
+            'food': 'food production (Farms, Groceries)',
+            'energy': 'energy generation (Solar, Wind)',
+            'jobs': 'employment (Offices, Factories)',
+            'education': 'schools (Elementary, High School)',
+            'healthcare': 'medical facilities (Clinics, Hospitals)'
+        };
+        return recommendations[need] || 'buildings providing ' + need;
     }
     
     /**

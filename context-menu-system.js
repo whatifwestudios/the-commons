@@ -484,6 +484,19 @@ class ContextMenuSystem {
      * Create empty parcel menu
      */
     createEmptyParcelMenu(contentEl, row, col) {
+        // Sell Parcel section (empty owned parcel)
+        const sellSection = document.createElement('div');
+        sellSection.className = 'context-section';
+
+        const sellBtn = document.createElement('button');
+        sellBtn.className = 'context-btn';
+        sellBtn.textContent = '💰 SELL PARCEL';
+        sellBtn.onclick = () => {
+            this.hide();
+            this.game.marketplace.showSellParcelModal(row, col);
+        };
+        sellSection.appendChild(sellBtn);
+        contentEl.appendChild(sellSection);
 
         // Build Menu section
         const buildSection = document.createElement('div');
@@ -627,6 +640,20 @@ class ContextMenuSystem {
      * Create built parcel menu
      */
     createBuiltParcelMenu(contentEl, row, col, parcel) {
+        // Sell Building section
+        const sellSection = document.createElement('div');
+        sellSection.className = 'context-section';
+
+        const sellBtn = document.createElement('button');
+        sellBtn.className = 'context-btn';
+        sellBtn.textContent = '💰 SELL BUILDING';
+        sellBtn.onclick = () => {
+            this.hide();
+            this.game.marketplace.showSellBuildingModal(row, col);
+        };
+        sellSection.appendChild(sellBtn);
+        contentEl.appendChild(sellSection);
+
         // Main actions section
         const actionsSection = document.createElement('div');
         actionsSection.className = 'context-section';

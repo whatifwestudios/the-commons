@@ -133,8 +133,11 @@ class RenderingSystemV2 {
 
             this.ctx.save();
             this.renderGrid();
+            this.renderPowerLines(); // Draw power lines on energy layer
+            this.renderStreetEdgeHover(); // Show hover effect on street edges
             this.renderBuildings();
             this.renderHoverEffects();
+            this.renderEnergyLegend(); // Show energy grid legend on energy layer
             this.ctx.restore();
         } else {
             // Partial redraw: only redraw dirty parcels
@@ -252,6 +255,253 @@ class RenderingSystemV2 {
     }
 
     /**
+     * Render power lines on street edges
+     * Only visible on energy layer
+     */
+    renderPowerLines() {
+        const currentLayer = this.game.currentLayer || 'normal';
+        if (currentLayer !== 'energy') return;
+
+        const energyGrid = this.game.economicClient?.energyGrid;
+        if (!energyGrid || !energyGrid.lines || energyGrid.lines.size === 0) return;
+
+        this.ctx.save();
+
+        // Draw each power line on street edges
+        for (const [edgeId, lineData] of energyGrid.lines) {
+            const edge = this.parseEdgeId(edgeId);
+            if (!edge) continue;
+
+            // Calculate actual edge points on the diamond, not centers
+            const edgePoints = this.getEdgePoints(edge);
+            if (!edgePoints) continue;
+
+            // Electric green power line on the street (30% darker)
+            this.ctx.strokeStyle = '#00B22D';
+            this.ctx.lineWidth = 3;
+            this.ctx.shadowColor = '#00B22D';
+            this.ctx.shadowBlur = 5;
+
+            this.ctx.beginPath();
+            this.ctx.moveTo(edgePoints.x1, edgePoints.y1);
+            this.ctx.lineTo(edgePoints.x2, edgePoints.y2);
+            this.ctx.stroke();
+        }
+
+        this.ctx.shadowBlur = 0;
+        this.ctx.restore();
+    }
+
+    /**
+     * Get actual screen coordinates for an edge between two parcels
+     * Returns the points where the edge exists on the diamond shape
+     */
+    getEdgePoints(edge) {
+        const iso1 = this.toIsometric(edge.col1, edge.row1);
+        const iso2 = this.toIsometric(edge.col2, edge.row2);
+
+        const halfWidth = this.tileWidth / 2;
+        const halfHeight = this.tileHeight / 2;
+
+        // Horizontal edge: connects [row,col] and [row,col+1]
+        // This is the RIGHT edge of parcel1 / LEFT edge of parcel2
+        if (edge.type === 'h') {
+            // Right point of first diamond = Left point of second diamond
+            return {
+                x1: iso1.x + halfWidth,  // Right point of first parcel
+                y1: iso1.y,
+                x2: iso2.x - halfWidth,  // Left point of second parcel (same as x1,y1 actually!)
+                y2: iso2.y
+            };
+        }
+        // Vertical edge: connects [row,col] and [row+1,col]
+        // This is the BOTTOM edge of parcel1 / TOP edge of parcel2
+        else if (edge.type === 'v') {
+            // Bottom point of first diamond = Top point of second diamond
+            return {
+                x1: iso1.x,              // Bottom point of first parcel
+                y1: iso1.y + halfHeight,
+                x2: iso2.x,              // Top point of second parcel (same as x1,y1 actually!)
+                y2: iso2.y - halfHeight
+            };
+        }
+
+        return null;
+    }
+
+    /**
+     * Parse edge ID into coordinates
+     * Returns {row1, col1, row2, col2} or null
+     */
+    parseEdgeId(edgeId) {
+        const parts = edgeId.split('_');
+        if (parts.length !== 3) return null;
+
+        const type = parts[0];
+        const row = parseInt(parts[1]);
+        const col = parseInt(parts[2]);
+
+        if (type === 'h') {
+            // Horizontal: connects [row,col] and [row,col+1]
+            return { type: 'h', row1: row, col1: col, row2: row, col2: col + 1 };
+        } else if (type === 'v') {
+            // Vertical: connects [row,col] and [row+1,col]
+            return { type: 'v', row1: row, col1: col, row2: row + 1, col2: col };
+        }
+
+        return null;
+    }
+
+    /**
+     * Render street edge hover effect
+     * Shows glowing edge + preview bolts on affected parcels
+     */
+    renderStreetEdgeHover() {
+        const currentLayer = this.game.currentLayer || 'normal';
+        if (currentLayer !== 'energy') return;
+
+        // Only show if hovering over an edge
+        if (!this.game.hoveredStreetEdge) return;
+
+        const edge = this.game.hoveredStreetEdge;
+        this.ctx.save();
+
+        // Calculate actual edge points on the diamond, not centers
+        const edgePoints = this.getEdgePoints(edge);
+        if (!edgePoints) {
+            this.ctx.restore();
+            return;
+        }
+
+        // Draw glowing street edge
+        this.ctx.strokeStyle = '#FFD700'; // Gold glow for hover
+        this.ctx.lineWidth = 6;
+        this.ctx.shadowColor = '#FFD700';
+        this.ctx.shadowBlur = 15;
+
+        this.ctx.beginPath();
+        this.ctx.moveTo(edgePoints.x1, edgePoints.y1);
+        this.ctx.lineTo(edgePoints.x2, edgePoints.y2);
+        this.ctx.stroke();
+
+        this.ctx.shadowBlur = 0;
+
+        // Only show preview bolts if building this line would connect parcels to a generator
+        // Check if either parcel is already powered (has path to generator)
+        const parcel1Powered = this.isParcelPowered(edge.row1, edge.col1);
+        const parcel2Powered = this.isParcelPowered(edge.row2, edge.col2);
+
+        // Only show bolts if at least one end is powered (or is a generator itself)
+        // This means building the line would extend power to the other parcel
+        if (parcel1Powered || parcel2Powered) {
+            // Draw preview bolts on the 2 parcels along this street
+            this.ctx.font = `${Math.floor(this.tileHeight * 0.28)}px Arial`;
+            this.ctx.textAlign = 'center';
+            this.ctx.textBaseline = 'middle';
+            this.ctx.globalAlpha = 0.5; // Semi-transparent
+
+            // Draw bolt on first parcel
+            const isoParcel1 = this.toIsometric(edge.col1, edge.row1);
+            this.ctx.strokeStyle = '#000';
+            this.ctx.lineWidth = 1;
+            this.ctx.strokeText('⚡', isoParcel1.x, isoParcel1.y);
+            this.ctx.fillStyle = '#FFD700';
+            this.ctx.fillText('⚡', isoParcel1.x, isoParcel1.y);
+
+            // Draw bolt on second parcel
+            const isoParcel2 = this.toIsometric(edge.col2, edge.row2);
+            this.ctx.strokeStyle = '#000';
+            this.ctx.lineWidth = 1;
+            this.ctx.strokeText('⚡', isoParcel2.x, isoParcel2.y);
+            this.ctx.fillStyle = '#FFD700';
+            this.ctx.fillText('⚡', isoParcel2.x, isoParcel2.y);
+
+            this.ctx.globalAlpha = 1.0;
+        }
+        this.ctx.restore();
+    }
+
+    /**
+     * Render energy grid legend (bottom-left corner)
+     * Only visible on energy layer
+     */
+    renderEnergyLegend() {
+        const currentLayer = this.game.currentLayer || 'normal';
+        if (currentLayer !== 'energy') return;
+
+        this.ctx.save();
+
+        // Position in bottom-left corner with padding
+        const padding = 20;
+        const boxWidth = 280;  // Larger box
+        const boxHeight = 170;  // Taller box
+        const x = padding;
+        const y = this.canvas.height - boxHeight - padding;
+
+        // Darker, more professional background
+        this.ctx.fillStyle = 'rgba(20, 20, 20, 0.9)';
+        this.ctx.fillRect(x, y, boxWidth, boxHeight);
+
+        // Subtle border
+        this.ctx.strokeStyle = '#444';
+        this.ctx.lineWidth = 1;
+        this.ctx.strokeRect(x, y, boxWidth, boxHeight);
+
+        // Title with monospace font
+        this.ctx.fillStyle = '#CCC';
+        this.ctx.font = '600 15px \'SF Mono\', Monaco, Inconsolata, \'Roboto Mono\', \'Source Code Pro\', monospace';
+        this.ctx.textAlign = 'left';
+        this.ctx.textBaseline = 'top';
+        this.ctx.fillText('ENERGY GRID', x + 15, y + 12);
+
+        // Grid layout for legend items with more spacing
+        const startY = y + 45;
+        const rowHeight = 38;  // More gap between rows
+        const iconX = x + 28;
+        const textX = x + 65;
+
+        // Helper function to draw a legend row
+        const drawLegendRow = (rowIndex, icon, iconColor, label) => {
+            const rowY = startY + (rowIndex * rowHeight);
+
+            // Draw icon
+            if (icon === 'line') {
+                // Power line
+                this.ctx.strokeStyle = '#00B22D';
+                this.ctx.lineWidth = 3;
+                this.ctx.beginPath();
+                this.ctx.moveTo(iconX - 10, rowY);
+                this.ctx.lineTo(iconX + 10, rowY);
+                this.ctx.stroke();
+            } else {
+                // Bolt icon
+                this.ctx.font = icon;
+                this.ctx.fillStyle = iconColor;
+                this.ctx.strokeStyle = '#000';
+                this.ctx.lineWidth = 1.5;
+                this.ctx.textAlign = 'center';
+                this.ctx.textBaseline = 'middle';
+                this.ctx.strokeText('⚡', iconX, rowY);
+                this.ctx.fillText('⚡', iconX, rowY);
+            }
+
+            // Draw label with monospace font
+            this.ctx.fillStyle = '#DDD';
+            this.ctx.font = '14px \'SF Mono\', Monaco, Inconsolata, \'Roboto Mono\', \'Source Code Pro\', monospace';
+            this.ctx.textAlign = 'left';
+            this.ctx.textBaseline = 'middle';
+            this.ctx.fillText(label, textX, rowY);
+        };
+
+        // Draw all three legend items in grid
+        drawLegendRow(0, 'line', null, 'Power Line ($40)');
+        drawLegendRow(1, '24px \'SF Mono\', Monaco, monospace', '#FFD700', 'Power Source');
+        drawLegendRow(2, '16px \'SF Mono\', Monaco, monospace', '#FFD700', 'Powered Parcel');
+
+        this.ctx.restore();
+    }
+
+    /**
      * Render a single tile
      */
     renderTile(col, row) {
@@ -277,9 +527,15 @@ class RenderingSystemV2 {
         // Get tile color based on ownership and state
         const tileColor = this.getTileColor(parcel, row, col);
 
+        // In energy layer mode, shrink parcels to emphasize gridlines
+        const tileWidthScale = currentLayer === 'energy' ? 0.7 : 1.0;
+        const tileHeightScale = currentLayer === 'energy' ? 0.7 : 1.0;
+        const scaledWidth = this.tileWidth * tileWidthScale;
+        const scaledHeight = this.tileHeight * tileHeightScale;
+
         // Draw tile using diamond method
         this.ctx.fillStyle = tileColor;
-        this.drawDiamond(iso.x, iso.y, this.tileWidth, this.tileHeight);
+        this.drawDiamond(iso.x, iso.y, scaledWidth, scaledHeight);
         this.ctx.fill();
 
         // Draw glow for selected player parcels
@@ -301,8 +557,10 @@ class RenderingSystemV2 {
         // Reset alpha
         this.ctx.globalAlpha = 1.0;
 
-        // Draw parcel borders
-        this.drawParcelBorders(row, col, this.tileWidth, this.tileHeight);
+        // Draw parcel borders (enlarged in energy mode)
+        const borderWidth = currentLayer === 'energy' ? this.tileWidth : this.tileWidth;
+        const borderHeight = currentLayer === 'energy' ? this.tileHeight : this.tileHeight;
+        this.drawParcelBorders(row, col, borderWidth, borderHeight);
 
         // Add hover effects using ParcelHoverV2
         if (this.game.parcelHover) {
@@ -324,6 +582,10 @@ class RenderingSystemV2 {
 
         if (currentLayer === 'ownership') {
             this.renderOwnershipOverlay(parcel, row, col, iso);
+        } else if (currentLayer === 'energy') {
+            this.renderEnergyLayerOverlay(parcel, row, col, iso);
+        } else if (currentLayer === 'normal') {
+            this.renderNormalLayerOverlay(parcel, row, col, iso);
         }
     }
 
@@ -365,6 +627,262 @@ class RenderingSystemV2 {
         this.ctx.fillText(text, iso.x, iso.y);
 
         this.ctx.restore();
+    }
+
+    /**
+     * Render energy layer overlay
+     * Shows energy source indicators (generators) and powered parcels
+     */
+    renderEnergyLayerOverlay(parcel, row, col, iso) {
+        const hasPower = this.isParcelPowered(row, col);
+
+        // Check if this is a generator by looking at economic client buildings Map (more reliable)
+        const locationKey = `${row},${col}`;
+        const building = this.game.economicClient?.buildings?.get(locationKey);
+        // Building uses 'buildingId' or 'id' field
+        const buildingId = building?.buildingId || building?.id || building?.type;
+        const buildingDef = buildingId ? this.game.buildingDefinitions?.[buildingId] : null;
+        const energyProvided = buildingDef?.resources?.energyProvided || 0;
+        const isUnderConstruction = building?.isUnderConstruction || building?.underConstruction;
+        const isGenerator = energyProvided > 0 && !isUnderConstruction;
+
+        // Show bolts on all powered parcels
+        if (hasPower) {
+            this.ctx.save();
+
+            if (isGenerator) {
+                // Generators get large gold bolts (20% larger)
+                this.ctx.font = `${Math.floor(this.tileHeight * 1.01)}px Arial`;
+                this.ctx.fillStyle = '#FFD700'; // Gold for generators
+            } else {
+                // Powered parcels get smaller bolts (20% larger than before)
+                this.ctx.font = `${Math.floor(this.tileHeight * 0.25)}px Arial`;
+                this.ctx.fillStyle = '#FFD700'; // Gold color same as generators
+            }
+
+            this.ctx.textAlign = 'center';
+            this.ctx.textBaseline = 'middle';
+
+            // Black stroke for visibility
+            this.ctx.strokeStyle = '#000';
+            this.ctx.lineWidth = 2;
+            this.ctx.strokeText('⚡', iso.x, iso.y);
+
+            this.ctx.fillText('⚡', iso.x, iso.y);
+
+            this.ctx.restore();
+        }
+    }
+
+    /**
+     * Render normal layer overlay
+     * Shows power symbols on all powered parcels
+     */
+    renderNormalLayerOverlay(parcel, row, col, iso) {
+        if (!parcel) return;
+
+        // Check if this parcel has power (connected to grid via generators)
+        const hasPower = this.isParcelPowered(row, col);
+
+        if (hasPower) {
+            this.ctx.save();
+            this.ctx.font = `${Math.floor(this.tileHeight * 0.14)}px Arial`;
+            this.ctx.textAlign = 'center';
+            this.ctx.textBaseline = 'middle';
+
+            // Small power symbol on all powered parcels
+            this.ctx.strokeStyle = '#000';
+            this.ctx.lineWidth = 1;
+            this.ctx.strokeText('⚡', iso.x, iso.y);
+
+            this.ctx.fillStyle = '#FFD700'; // Gold color
+            this.ctx.fillText('⚡', iso.x, iso.y);
+
+            this.ctx.restore();
+        }
+    }
+
+    /**
+     * Check if a parcel has power (connected to a generator via power lines)
+     * Uses BFS to trace connections from generators through power line network
+     */
+    isParcelPowered(row, col) {
+        const energyGrid = this.game.economicClient?.energyGrid;
+        if (!energyGrid || !energyGrid.lines || energyGrid.lines.size === 0) {
+            return false;
+        }
+
+        // Cache the powered parcels calculation (expensive BFS)
+        if (!this._poweredParcelsCache || this._poweredParcelsCacheTime !== energyGrid.lines.size) {
+            this._poweredParcelsCache = this.calculatePoweredParcels();
+            this._poweredParcelsCacheTime = energyGrid.lines.size;
+        }
+
+        const key = `${row},${col}`;
+        return this._poweredParcelsCache.has(key);
+    }
+
+    /**
+     * Calculate all parcels that have power (connected to generators)
+     * Returns a Set of "row,col" strings
+     */
+    calculatePoweredParcels() {
+        const poweredParcels = new Set();
+        const energyGrid = this.game.economicClient?.energyGrid;
+
+        if (!energyGrid || !energyGrid.lines) {
+            return poweredParcels;
+        }
+
+        // Find all generators (buildings that produce energy)
+        // Use the buildings Map which is more reliably populated
+        const generators = [];
+        const buildings = this.game.economicClient?.buildings;
+
+        if (!buildings || buildings.size === 0) {
+            return poweredParcels;
+        }
+
+        // Iterate through all buildings from the server
+        for (const [locationKey, building] of buildings) {
+            const [row, col] = locationKey.split(',').map(Number);
+            // Building uses 'buildingId' or 'id' field
+            const buildingId = building.buildingId || building.id || building.type;
+            const buildingDef = this.game.buildingDefinitions?.[buildingId];
+            const energyProvided = buildingDef?.resources?.energyProvided || 0;
+
+            const isUnderConstruction = building.isUnderConstruction || building.underConstruction;
+
+            // Only count buildings that have completed construction
+            if (energyProvided > 0 && !isUnderConstruction) {
+                generators.push({ row, col });
+            }
+        }
+
+        // NEW LOGIC: Power flows along the power lines themselves
+        // Any parcel adjacent to a powered line segment is powered
+        // If ANY of the four gridlines forming a parcel have a powerline connected to a source, the parcel gets power
+
+        // Step 1: Mark all generator parcels as powered (they always have power)
+        for (const generator of generators) {
+            poweredParcels.add(`${generator.row},${generator.col}`);
+        }
+
+        // Step 2: Find all power line segments connected to generators via edge-based BFS
+        const poweredEdges = new Set();
+
+        for (const generator of generators) {
+            // Start by finding all edges touching this generator parcel
+            const edgeQueue = [];
+            const visitedEdges = new Set();
+
+            // Add all 4 edges around the generator to the queue
+            const generatorEdges = [
+                `h_${generator.row}_${generator.col}`,
+                `h_${generator.row}_${generator.col - 1}`,
+                `v_${generator.row}_${generator.col}`,
+                `v_${generator.row - 1}_${generator.col}`
+            ];
+
+            for (const edgeId of generatorEdges) {
+                if (energyGrid.lines.has(edgeId) && !visitedEdges.has(edgeId)) {
+                    edgeQueue.push(edgeId);
+                    visitedEdges.add(edgeId);
+                    poweredEdges.add(edgeId);
+                }
+            }
+
+            // BFS through connected edges
+            while (edgeQueue.length > 0) {
+                const currentEdge = edgeQueue.shift();
+
+                // Find the two parcels this edge connects
+                let row1, col1, row2, col2;
+                if (currentEdge.startsWith('h_')) {
+                    const parts = currentEdge.substring(2).split('_');
+                    row1 = parseInt(parts[0]);
+                    col1 = parseInt(parts[1]);
+                    row2 = row1;
+                    col2 = col1 + 1;
+                } else { // v_
+                    const parts = currentEdge.substring(2).split('_');
+                    row1 = parseInt(parts[0]);
+                    col1 = parseInt(parts[1]);
+                    row2 = row1 + 1;
+                    col2 = col1;
+                }
+
+                // Find all edges touching these two parcels
+                const adjacentEdges = [
+                    // Parcel 1's edges
+                    `h_${row1}_${col1}`, `h_${row1}_${col1 - 1}`,
+                    `v_${row1}_${col1}`, `v_${row1 - 1}_${col1}`,
+                    // Parcel 2's edges
+                    `h_${row2}_${col2}`, `h_${row2}_${col2 - 1}`,
+                    `v_${row2}_${col2}`, `v_${row2 - 1}_${col2}`
+                ];
+
+                // IMPORTANT: Also check for edges that form visual continuity in isometric view
+                // For a visual diagonal line, adjacent edges of the same type should be connected
+                if (currentEdge.startsWith('v_')) {
+                    // For vertical edge v_row_col, also check v_row_(col±1) as they form a visual line
+                    adjacentEdges.push(`v_${row1}_${col1 - 1}`, `v_${row1}_${col1 + 1}`);
+                } else {
+                    // For horizontal edge h_row_col, also check h_(row±1)_col as they form a visual line
+                    adjacentEdges.push(`h_${row1 - 1}_${col1}`, `h_${row1 + 1}_${col1}`);
+                }
+
+                for (const adjacentEdge of adjacentEdges) {
+                    if (energyGrid.lines.has(adjacentEdge) && !visitedEdges.has(adjacentEdge)) {
+                        edgeQueue.push(adjacentEdge);
+                        visitedEdges.add(adjacentEdge);
+                        poweredEdges.add(adjacentEdge);
+                    }
+                }
+            }
+        }
+
+        // Step 3: Add all parcels adjacent to powered edges
+        // IMPORTANT: In isometric view, a visual line between two parcels appears to pass through
+        // other parcels. We need to power ALL parcels that the visual line intersects!
+        //
+        // For each edge, we power:
+        // 1. The two endpoint parcels (grid-connected)
+        // 2. The two "cross" parcels that the visual line passes through in isometric view
+        for (const edgeId of poweredEdges) {
+            if (edgeId.startsWith('h_')) {
+                // Horizontal edge: connects [row,col] and [row,col+1]
+                // In isometric view, this visual line also passes through [row-1,col] and [row+1,col+1]
+                const parts = edgeId.substring(2).split('_');
+                const row = parseInt(parts[0]);
+                const col = parseInt(parts[1]);
+
+                // Endpoint parcels (grid-connected)
+                poweredParcels.add(`${row},${col}`);
+                poweredParcels.add(`${row},${col + 1}`);
+
+                // Cross parcels (visually intersected in isometric view)
+                if (row > 0) poweredParcels.add(`${row - 1},${col + 1}`);
+                if (row < this.game.gridSize - 1) poweredParcels.add(`${row + 1},${col}`);
+
+            } else { // v_
+                // Vertical edge: connects [row,col] and [row+1,col]
+                // In isometric view, this visual line also passes through [row,col-1] and [row+1,col+1]
+                const parts = edgeId.substring(2).split('_');
+                const row = parseInt(parts[0]);
+                const col = parseInt(parts[1]);
+
+                // Endpoint parcels (grid-connected)
+                poweredParcels.add(`${row},${col}`);
+                poweredParcels.add(`${row + 1},${col}`);
+
+                // Cross parcels (visually intersected in isometric view)
+                if (col > 0) poweredParcels.add(`${row + 1},${col - 1}`);
+                if (col < this.game.gridSize - 1) poweredParcels.add(`${row},${col + 1}`);
+            }
+        }
+
+        return poweredParcels;
     }
 
     /**
@@ -1143,9 +1661,14 @@ class RenderingSystemV2 {
      */
     drawParcelBorders(row, col, tileWidth, tileHeight) {
         const parcel = this.game.grid[row][col];
+        const currentLayer = this.game.currentLayer || 'normal';
 
         // Different border styles based on state
-        if (parcel && parcel.owner) {
+        if (currentLayer === 'energy') {
+            // Energy mode: prominent gray gridlines (6px wide)
+            this.ctx.strokeStyle = '#666666';
+            this.ctx.lineWidth = 6;
+        } else if (parcel && parcel.owner) {
             this.ctx.strokeStyle = '#999';
             this.ctx.lineWidth = 1;
         } else {

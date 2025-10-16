@@ -83,6 +83,11 @@ class ParcelHoverV2 {
 
         // Clear hover when mouse leaves canvas
         this.eventManager.addEventListener(this.game.canvas, 'mouseleave', () => {
+            // Clear tooltip timer
+            if (this.tooltipTimer) {
+                clearTimeout(this.tooltipTimer);
+                this.tooltipTimer = null;
+            }
             this.updateHover(null);
         });
     }
@@ -106,6 +111,12 @@ class ParcelHoverV2 {
             const wasHovering = this.currentHover !== null;
             const nowHovering = newHover !== null;
 
+            // Clear existing tooltip timer
+            if (this.tooltipTimer) {
+                clearTimeout(this.tooltipTimer);
+                this.tooltipTimer = null;
+            }
+
             // Mark old hover and its neighbors dirty (before updating state)
             if (this.currentHover && this.game.renderingSystem?.markParcelAndNeighborsDirty) {
                 this.game.renderingSystem.markParcelAndNeighborsDirty(
@@ -116,7 +127,20 @@ class ParcelHoverV2 {
 
             this.currentHover = newHover;
             this.updateAdjacentParcels();
-            this.updateTooltip();
+
+            // Hide tooltip immediately when changing parcels
+            if (this.game.tooltipSystemV2?.hide) {
+                this.game.tooltipSystemV2.hide();
+            }
+
+            // Show tooltips instantly (no delay)
+            // Energy layer has custom gridline tooltips, so skip parcel tooltips there
+            if (this.currentHover && this.game.currentLayer !== 'energy') {
+                this.updateTooltip();
+            } else if (!this.currentHover) {
+                // Clear tooltip immediately if hover ended
+                this.updateTooltip();
+            }
 
             // Mark new hover and its neighbors dirty
             if (this.currentHover && this.game.renderingSystem?.markParcelAndNeighborsDirty) {
@@ -191,11 +215,13 @@ class ParcelHoverV2 {
      * Render hover effects during tile rendering
      */
     renderEffects(row, col, ctx, isoX, isoY, tileWidth, tileHeight) {
+        // In energy layer, show single-parcel hover only (not 9 parcels)
+        const isEnergyLayer = this.game.currentLayer === 'energy';
 
         const key = `${row},${col}`;
         const isHovered = this.currentHover &&
                          this.currentHover.row === row && this.currentHover.col === col;
-        const isAdjacent = this.adjacentParcels.has(key);
+        const isAdjacent = !isEnergyLayer && this.adjacentParcels.has(key); // No adjacent highlight in energy layer
 
         if (!isHovered && !isAdjacent) return;
 

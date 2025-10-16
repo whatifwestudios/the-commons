@@ -21,6 +21,8 @@ class MapLayerSystem {
                 return this.getOwnershipColor(parcel, row, col);
             case 'landvalue':
                 return this.getLandValueColor(parcel, row, col);
+            case 'energy':
+                return this.getEnergyLayerColor(parcel, row, col);
             case 'normal':
             default:
                 return normalColor; // Use the normal color provided by rendering system
@@ -240,6 +242,47 @@ class MapLayerSystem {
             const hex = x.toString(16);
             return hex.length === 1 ? '0' + hex : hex;
         }).join('');
+    }
+
+    /**
+     * ENERGY LAYER
+     * Show energy generators (blue) and consumers (red/yellow based on satisfaction)
+     * Power lines drawn as overlays by rendering system
+     */
+    getEnergyLayerColor(parcel, row, col) {
+        if (!parcel || !parcel.building) return '#1a1a1a'; // Dark background for empty parcels
+
+        const buildingState = this.game.economicClient?.getBuildingState?.(row, col);
+        if (!buildingState) return '#2a2a2a';
+
+        const buildingDef = this.game.economicClient?.buildingDefinitions?.get?.(parcel.building);
+        if (!buildingDef) return '#2a2a2a';
+
+        const energyProvided = buildingDef.resources?.energyProvided || 0;
+        const energyRequired = buildingDef.resources?.energyRequired || 0;
+
+        // Energy generator (provides energy)
+        if (energyProvided > 0) {
+            return '#4A90E2'; // Blue for generators
+        }
+
+        // Energy consumer (requires energy)
+        if (energyRequired > 0) {
+            const energyReceived = buildingState.energyReceived || 0;
+            const satisfaction = Math.min(1.0, energyReceived / energyRequired);
+
+            // Color code by satisfaction: Red (0%) → Yellow (50%) → Green (100%)
+            if (satisfaction >= 0.8) {
+                return '#10AC84'; // Green - well powered
+            } else if (satisfaction >= 0.4) {
+                return '#F39C12'; // Yellow - partially powered
+            } else {
+                return '#E74C3C'; // Red - underpowered
+            }
+        }
+
+        // No energy interaction
+        return '#2a2a2a';
     }
 
     /**

@@ -423,7 +423,7 @@ class TooltipSystemV2 {
     }
 
     renderCompactPerformance(data) {
-        // Get enhanced performance data from server with JEEFHH/CARENS
+        // Get enhanced performance data from server with Core Needs/Livability
         const performance = data.performance || this.getBuildingPerformance(data.row, data.col);
 
         // Use server-synced data if available
@@ -476,8 +476,8 @@ class TooltipSystemV2 {
         // Get top 2 needs for performance improvement
         const topNeeds = this.getTopBuildingNeeds(resources, needsSatisfaction);
 
-        // Check if all JEEFHH needs are satisfied for CARENS display
-        const allJeefhhSatisfied = this.areAllJeefhhNeedsSatisfied(topNeeds);
+        // Check if all Core Needs are satisfied for Livability display
+        const allCoreNeedsSatisfied = this.areAllJeefhhNeedsSatisfied(topNeeds);
 
         let html = '';
 
@@ -493,9 +493,9 @@ class TooltipSystemV2 {
             `;
         }
 
-        // Show building needs or status based on JEEFHH satisfaction
+        // Show building needs or status based on Core Needs satisfaction
         if (data.needs && data.needs.length > 0) {
-            // Show ALL unmet JEEFHH needs
+            // Show ALL unmet Core Needs
             html += `
                 <div class="compact-section needs-section">
                     <div class="compact-label">Needs</div>
@@ -505,20 +505,20 @@ class TooltipSystemV2 {
                 </div>
             `;
         } else {
-            // All JEEFHH needs are met - show confirmation
+            // All local Core Needs are met - show confirmation
             html += `
                 <div class="tooltip-section needs-section">
-                    <div class="section-label">✅ All core needs met</div>
+                    <div class="section-label">✅ Local core needs met</div>
                 </div>
             `;
 
-            // Now show CARENS boost opportunities if available
-            const carensBoosts = this.getCarensBoostOpportunities(data.row, data.col);
-            if (carensBoosts !== null) {
-                html += this.renderCarensBoostOpportunities(carensBoosts);
+            // Now show Livability boost opportunities if available
+            const livabilityBoosts = this.getCarensBoostOpportunities(data.row, data.col);
+            if (livabilityBoosts !== null) {
+                html += this.renderCarensBoostOpportunities(livabilityBoosts);
 
-                // If peak performance achieved (no CARENS boosts needed), suggest repair
-                if (carensBoosts.length === 0) {
+                // If peak performance achieved (no Livability boosts needed), suggest repair
+                if (livabilityBoosts.length === 0) {
                     const condition = performance.condition || 100;
                     if (condition < 100) {
                         html += `
@@ -624,15 +624,15 @@ class TooltipSystemV2 {
     }
 
     /**
-     * Check if all JEEFHH needs are satisfied
+     * Check if all Core Needs (JEEFHH) are satisfied
      */
     areAllJeefhhNeedsSatisfied(needs) {
-        const jeefhhResources = ['energy', 'workers', 'food', 'education', 'housing', 'healthcare'];
-        const jeefhhNeeds = needs.filter(need => jeefhhResources.includes(need.resource));
+        const coreNeedsResources = ['energy', 'workers', 'food', 'education', 'housing', 'healthcare'];
+        const coreNeeds = needs.filter(need => coreNeedsResources.includes(need.resource));
 
-        if (jeefhhNeeds.length === 0) return true; // No JEEFHH needs
+        if (coreNeeds.length === 0) return true; // No Core Needs
 
-        return jeefhhNeeds.every(need => need.satisfaction >= 0.8); // 80% threshold
+        return coreNeeds.every(need => need.satisfaction >= 0.8); // 80% threshold
     }
 
     /**
@@ -695,11 +695,11 @@ class TooltipSystemV2 {
     }
 
     /**
-     * Render CARENS boost opportunities (top 2 negative impacts only, shown when JEEFHH needs are satisfied)
+     * Render Livability boost opportunities (top 2 negative impacts only, shown when Core Needs are satisfied)
      */
     renderCarensBoostOpportunities(carensBoosts) {
         if (!carensBoosts || carensBoosts.length === 0) {
-            // Peak performance achieved - all CARENS are neutral or positive
+            // Peak performance achieved - all Livability factors are neutral or positive
             return `
                 <div class="tooltip-section boost-section">
                     <div class="section-label">✅ Peak performance achieved</div>
@@ -1381,10 +1381,27 @@ class TooltipSystemV2 {
             return null;
         }
 
-        // Get resource satisfaction data from server
-        const performanceData = this.getBuildingPerformance(row, col);
-        const resourceSatisfaction = performanceData?.resourceSatisfaction;
+        // HYBRID APPROACH: Try client-side calculation first for instant feedback
+        let resourceSatisfaction = null;
 
+        // 1. Client-side calculation (instant, deterministic)
+        if (this.game.economicClient?.calculateLocalNeedsSatisfaction) {
+            const clientCalculation = this.game.economicClient.calculateLocalNeedsSatisfaction(row, col);
+            if (clientCalculation) {
+                resourceSatisfaction = clientCalculation.detailedSatisfaction;
+            }
+        }
+
+        // 2. Fallback to server data if client calculation unavailable
+        if (!resourceSatisfaction) {
+            const performanceData = this.getBuildingPerformance(row, col);
+            resourceSatisfaction = performanceData?.resourceSatisfaction;
+        }
+
+        // 3. If still no data, return null (building might be loading)
+        if (!resourceSatisfaction) {
+            return null;
+        }
 
         const needs = [];
         const resources = buildingDef.resources;

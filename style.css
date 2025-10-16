@@ -985,6 +985,154 @@ body.beer-hall-active #top-bar {
     color: #ececec;
 }
 
+/* Core Needs Modal Styles */
+.core-needs-content {
+    width: 600px;
+    max-width: 90vw;
+}
+
+.global-multiplier-display {
+    text-align: center;
+    padding: 24px;
+    background: linear-gradient(135deg, rgba(74, 144, 226, 0.1), rgba(74, 144, 226, 0.05));
+    border: 1px solid rgba(74, 144, 226, 0.2);
+    border-radius: 8px;
+    margin-bottom: 24px;
+}
+
+.multiplier-label {
+    font-size: 12px;
+    color: #888;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-bottom: 8px;
+}
+
+.multiplier-big {
+    font-size: 48px;
+    font-weight: 700;
+    color: #4A90E2;
+    margin-bottom: 8px;
+}
+
+.multiplier-description {
+    font-size: 13px;
+    color: #aaa;
+    max-width: 400px;
+    margin: 0 auto;
+    line-height: 1.5;
+}
+
+.core-needs-breakdown {
+    margin-bottom: 24px;
+}
+
+.breakdown-header,
+.bottleneck-header,
+.recommendations-header {
+    font-size: 14px;
+    font-weight: 600;
+    color: #ececec;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-bottom: 12px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid #2a2a2a;
+}
+
+.core-needs-bar-item {
+    display: flex;
+    align-items: center;
+    padding: 12px;
+    background: #111111;
+    border: 1px solid #2a2a2a;
+    border-radius: 4px;
+    margin-bottom: 8px;
+    transition: background 0.2s ease;
+}
+
+.core-needs-bar-item:hover {
+    background: #161616;
+}
+
+.core-needs-bar-item.bottleneck {
+    border-color: #E74C3C;
+    background: rgba(231, 76, 60, 0.1);
+}
+
+.need-name {
+    width: 120px;
+    font-size: 12px;
+    font-weight: 600;
+    color: #ececec;
+    text-transform: uppercase;
+}
+
+.need-bar-container {
+    flex: 1;
+    height: 24px;
+    background: #0a0a0a;
+    border-radius: 4px;
+    position: relative;
+    margin: 0 12px;
+    overflow: hidden;
+}
+
+.need-bar-fill {
+    height: 100%;
+    border-radius: 4px;
+    transition: width 0.3s ease, background 0.3s ease;
+}
+
+.need-stats {
+    min-width: 140px;
+    text-align: right;
+    font-size: 11px;
+    color: #888;
+}
+
+.need-multiplier {
+    font-size: 13px;
+    font-weight: 700;
+    margin-left: 8px;
+}
+
+.bottleneck-section {
+    padding: 16px;
+    background: rgba(231, 76, 60, 0.1);
+    border: 1px solid rgba(231, 76, 60, 0.3);
+    border-radius: 6px;
+    margin-bottom: 24px;
+}
+
+.bottleneck-content {
+    font-size: 13px;
+    color: #ddd;
+    line-height: 1.6;
+}
+
+.recommendations-section {
+    padding: 16px;
+    background: rgba(74, 144, 226, 0.05);
+    border: 1px solid rgba(74, 144, 226, 0.2);
+    border-radius: 6px;
+}
+
+.recommendation-item {
+    padding: 12px;
+    background: #111111;
+    border-left: 3px solid #4A90E2;
+    border-radius: 4px;
+    margin-bottom: 8px;
+    font-size: 13px;
+    color: #ddd;
+    line-height: 1.5;
+}
+
+.recommendation-item:last-child {
+    margin-bottom: 0;
+}
+
 /* Route Configuration Modal Styles */
 .route-config {
     max-width: 700px;
@@ -3465,13 +3613,42 @@ body.beer-hall-active #top-bar {
 }
 
 .vitality-group-title {
-    display:none;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
     font-size: 10px;
     font-weight: 600;
     color: #666666;
     letter-spacing: 1px;
     margin-bottom: 6px;
     padding-left: 20px;
+}
+
+/* Global Multiplier (Core Needs) in section header */
+.section-header .global-multiplier {
+    display: inline-flex;
+    align-items: center;
+    padding: 4px 10px;
+    background: rgba(255, 255, 255, 0.08);
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background 0.2s ease;
+    font-size: 14px;
+    font-weight: 600;
+    margin-left: auto;
+    margin-right: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.section-header .global-multiplier:hover {
+    background: rgba(255, 255, 255, 0.15);
+    border-color: rgba(255, 255, 255, 0.2);
+}
+
+.multiplier-value {
+    color: #4A90E2;
+    font-weight: 700;
+    letter-spacing: 0.5px;
 }
 
 /* Enhanced Parcel Diagram */
