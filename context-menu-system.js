@@ -560,8 +560,8 @@ class ContextMenuSystem {
             submenu.className = 'building-submenu';
 
             // Get buildings for this category and sort alphabetically by name
-            const buildings = this.game.buildingManager.getBuildingsByCategory(category);
-            const sortedBuildings = [...buildings].sort((a, b) => a.name.localeCompare(b.name));
+            const categoryBuildings = this.game.buildingManager.getBuildingsByCategory(category);
+            const sortedBuildings = [...categoryBuildings].sort((a, b) => a.name.localeCompare(b.name));
 
             // Add all buildings for this category
             sortedBuildings.forEach(building => {
