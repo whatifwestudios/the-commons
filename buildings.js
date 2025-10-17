@@ -45,7 +45,13 @@ class BuildingManager {
             // Load JSON data for testing
             const response = await fetch('buildings-data.json');
             const jsonData = await response.json();
-            this.buildings = jsonData;
+
+            // Organize buildings by category if it's a flat array
+            if (Array.isArray(jsonData)) {
+                this.buildings = this.organizeBuildingsByCategory(jsonData);
+            } else {
+                this.buildings = jsonData;
+            }
 
             // Preload all building images for smooth rendering
             await this.preloadBuildingImages();
