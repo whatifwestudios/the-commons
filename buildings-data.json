@@ -1,2264 +1,2280 @@
-[
-  {
-    "id": "fire_station",
-    "name": "Fire Station",
-    "category": "civic",
-    "description": "Emergency response services that improve city-wide safety",
-    "graphicsFile": "assets/buildings/civic/fire_station.png",
-    "isDefault": true,
-    "civicScore": 4.8,
-    "economics": {
-      "buildCost": 300,
-      "constructionDays": 4,
-      "maxRevenue": 0,
-      "maintenanceCost": 4,
-      "decayRate": 0.0075
-    },
-    "resources": {
-      "jobsProvided": 8,
-      "energyProvided": 0,
-      "energyRequired": 15,
-      "educationProvided": 0,
-      "foodProvided": 0,
-      "housingProvided": 2,
-      "healthcareProvided": 3
-    },
-    "livability": {
-      "culture": {
-        "impact": 3,
-        "attenuation": 6
+{
+  "civic": [
+    {
+      "id": "fire_station",
+      "name": "Fire Station",
+      "category": "civic",
+      "description": "Emergency response services that improve city-wide safety",
+      "graphicsFile": "assets/buildings/civic/fire_station.png",
+      "isDefault": true,
+      "civicScore": 4.8,
+      "economics": {
+        "buildCost": 300,
+        "constructionDays": 4,
+        "maxRevenue": 0,
+        "maintenanceCost": 4,
+        "decayRate": 0.0075
       },
-      "affordability": {
-        "impact": -3,
-        "attenuation": 12
+      "resources": {
+        "jobsProvided": 8,
+        "energyProvided": 0,
+        "energyRequired": 15,
+        "educationProvided": 0,
+        "foodProvided": 0,
+        "housingProvided": 2,
+        "healthcareProvided": 3
       },
-      "resilience": {
-        "impact": 15,
-        "attenuation": 12
+      "livability": {
+        "culture": {
+          "impact": 3,
+          "attenuation": 6
+        },
+        "affordability": {
+          "impact": -3,
+          "attenuation": 12
+        },
+        "resilience": {
+          "impact": 15,
+          "attenuation": 12
+        },
+        "environment": {
+          "impact": 2,
+          "attenuation": 12
+        },
+        "noise": {
+          "impact": -19,
+          "attenuation": 12
+        },
+        "safety": {
+          "impact": 15,
+          "attenuation": 9
+        }
       },
-      "environment": {
-        "impact": 2,
-        "attenuation": 12
+      "graphics": {
+        "default": "assets/buildings/civic/fire_station.png"
       },
-      "noise": {
-        "impact": -19,
-        "attenuation": 12
-      },
-      "safety": {
-        "impact": 15,
-        "attenuation": 9
+      "images": {
+        "thumbnail": "assets/buildings/civic/fire_station.png",
+        "icon": "assets/buildings/civic/fire_station.png"
       }
     },
-    "graphics": {
-      "default": "assets/buildings/civic/fire_station.png"
-    },
-    "images": {
-      "thumbnail": "assets/buildings/civic/fire_station.png",
-      "icon": "assets/buildings/civic/fire_station.png"
-    }
-  },
-  {
-    "id": "lushpark",
-    "name": "Park",
-    "category": "civic",
-    "description": "Green space providing environmental and recreational benefits",
-    "graphicsFile": "assets/buildings/civic/lushpark.png",
-    "isDefault": true,
-    "civicScore": 12.3,
-    "economics": {
-      "buildCost": 150,
-      "constructionDays": 2,
-      "maxRevenue": 2,
-      "maintenanceCost": 4,
-      "decayRate": 0.099
-    },
-    "resources": {
-      "jobsProvided": 1,
-      "energyProvided": 0,
-      "energyRequired": 2,
-      "educationProvided": 0,
-      "foodProvided": 0,
-      "housingProvided": 0,
-      "healthcareProvided": 0
-    },
-    "livability": {
-      "culture": {
-        "impact": 4,
-        "attenuation": 4
+    {
+      "id": "lushpark",
+      "name": "Park",
+      "category": "civic",
+      "description": "Green space providing environmental and recreational benefits",
+      "graphicsFile": "assets/buildings/civic/lushpark.png",
+      "isDefault": true,
+      "civicScore": 12.3,
+      "economics": {
+        "buildCost": 150,
+        "constructionDays": 2,
+        "maxRevenue": 2,
+        "maintenanceCost": 4,
+        "decayRate": 0.099
       },
-      "affordability": {
-        "impact": -5,
-        "attenuation": 12
+      "resources": {
+        "jobsProvided": 1,
+        "energyProvided": 0,
+        "energyRequired": 2,
+        "educationProvided": 0,
+        "foodProvided": 0,
+        "housingProvided": 0,
+        "healthcareProvided": 0
       },
-      "resilience": {
-        "impact": 2,
-        "attenuation": 4
+      "livability": {
+        "culture": {
+          "impact": 4,
+          "attenuation": 4
+        },
+        "affordability": {
+          "impact": -5,
+          "attenuation": 12
+        },
+        "resilience": {
+          "impact": 2,
+          "attenuation": 4
+        },
+        "environment": {
+          "impact": 6,
+          "attenuation": 4
+        },
+        "noise": {
+          "impact": 4,
+          "attenuation": 2
+        },
+        "safety": {
+          "impact": 7,
+          "attenuation": 2
+        }
       },
-      "environment": {
-        "impact": 6,
-        "attenuation": 4
+      "graphics": {
+        "default": "assets/buildings/civic/lushpark.png"
       },
-      "noise": {
-        "impact": 4,
-        "attenuation": 2
-      },
-      "safety": {
-        "impact": 7,
-        "attenuation": 2
+      "images": {
+        "thumbnail": "assets/buildings/civic/lushpark.png",
+        "icon": "assets/buildings/civic/lushpark.png"
       }
     },
-    "graphics": {
-      "default": "assets/buildings/civic/lushpark.png"
-    },
-    "images": {
-      "thumbnail": "assets/buildings/civic/lushpark.png",
-      "icon": "assets/buildings/civic/lushpark.png"
-    }
-  },
-  {
-    "id": "library",
-    "name": "Library",
-    "category": "civic",
-    "description": "Public library providing educational and cultural resources",
-    "graphicsFile": "assets/buildings/civic/library.png",
-    "isDefault": true,
-    "civicScore": 8.4,
-    "economics": {
-      "buildCost": 350,
-      "constructionDays": 3,
-      "maxRevenue": 6,
-      "maintenanceCost": 2,
-      "decayRate": 0.004
-    },
-    "resources": {
-      "jobsProvided": 6,
-      "energyProvided": 0,
-      "energyRequired": 12,
-      "educationProvided": 0,
-      "foodProvided": 0,
-      "housingProvided": 0,
-      "healthcareProvided": 0
-    },
-    "livability": {
-      "culture": {
-        "impact": 6,
-        "attenuation": 6
+    {
+      "id": "library",
+      "name": "Library",
+      "category": "civic",
+      "description": "Public library providing educational and cultural resources",
+      "graphicsFile": "assets/buildings/civic/library.png",
+      "isDefault": true,
+      "civicScore": 8.4,
+      "economics": {
+        "buildCost": 350,
+        "constructionDays": 3,
+        "maxRevenue": 6,
+        "maintenanceCost": 2,
+        "decayRate": 0.004
       },
-      "affordability": {
-        "impact": 2,
-        "attenuation": 12
+      "resources": {
+        "jobsProvided": 6,
+        "energyProvided": 0,
+        "energyRequired": 12,
+        "educationProvided": 0,
+        "foodProvided": 0,
+        "housingProvided": 0,
+        "healthcareProvided": 0
       },
-      "resilience": {
-        "impact": 3,
-        "attenuation": 5
+      "livability": {
+        "culture": {
+          "impact": 6,
+          "attenuation": 6
+        },
+        "affordability": {
+          "impact": 2,
+          "attenuation": 12
+        },
+        "resilience": {
+          "impact": 3,
+          "attenuation": 5
+        },
+        "environment": {
+          "impact": 0,
+          "attenuation": 1
+        },
+        "noise": {
+          "impact": 2,
+          "attenuation": 1
+        },
+        "safety": {
+          "impact": 2,
+          "attenuation": 1
+        }
       },
-      "environment": {
-        "impact": 0,
-        "attenuation": 1
+      "graphics": {
+        "default": "assets/buildings/civic/library.png"
       },
-      "noise": {
-        "impact": 2,
-        "attenuation": 1
-      },
-      "safety": {
-        "impact": 2,
-        "attenuation": 1
+      "images": {
+        "thumbnail": "assets/buildings/civic/library.png",
+        "icon": "assets/buildings/civic/library.png"
       }
     },
-    "graphics": {
-      "default": "assets/buildings/civic/library.png"
-    },
-    "images": {
-      "thumbnail": "assets/buildings/civic/library.png",
-      "icon": "assets/buildings/civic/library.png"
-    }
-  },
-  {
-    "id": "public_pool",
-    "name": "Public Pool",
-    "category": "civic",
-    "description": "Community recreation and fitness facility",
-    "graphicsFile": "assets/buildings/civic/public_pool.png",
-    "isDefault": true,
-    "civicScore": -6.4,
-    "economics": {
-      "buildCost": 250,
-      "constructionDays": 3,
-      "maxRevenue": 10,
-      "maintenanceCost": 6,
-      "decayRate": 0.015
-    },
-    "resources": {
-      "jobsProvided": 2,
-      "energyProvided": 0,
-      "energyRequired": 9,
-      "educationProvided": 0,
-      "foodProvided": 0,
-      "housingProvided": 0,
-      "healthcareProvided": 0
-    },
-    "livability": {
-      "culture": {
-        "impact": 2,
-        "attenuation": 4
+    {
+      "id": "public_pool",
+      "name": "Public Pool",
+      "category": "civic",
+      "description": "Community recreation and fitness facility",
+      "graphicsFile": "assets/buildings/civic/public_pool.png",
+      "isDefault": true,
+      "civicScore": -6.4,
+      "economics": {
+        "buildCost": 250,
+        "constructionDays": 3,
+        "maxRevenue": 10,
+        "maintenanceCost": 6,
+        "decayRate": 0.015
       },
-      "affordability": {
-        "impact": 2,
-        "attenuation": 12
+      "resources": {
+        "jobsProvided": 2,
+        "energyProvided": 0,
+        "energyRequired": 9,
+        "educationProvided": 0,
+        "foodProvided": 0,
+        "housingProvided": 0,
+        "healthcareProvided": 0
       },
-      "resilience": {
-        "impact": 0,
-        "attenuation": 2
+      "livability": {
+        "culture": {
+          "impact": 2,
+          "attenuation": 4
+        },
+        "affordability": {
+          "impact": 2,
+          "attenuation": 12
+        },
+        "resilience": {
+          "impact": 0,
+          "attenuation": 2
+        },
+        "environment": {
+          "impact": -5,
+          "attenuation": 2
+        },
+        "noise": {
+          "impact": -3,
+          "attenuation": 2
+        },
+        "safety": {
+          "impact": -4,
+          "attenuation": 3
+        }
       },
-      "environment": {
-        "impact": -5,
-        "attenuation": 2
+      "graphics": {
+        "default": "assets/buildings/civic/public_pool.png"
       },
-      "noise": {
-        "impact": -3,
-        "attenuation": 2
-      },
-      "safety": {
-        "impact": -4,
-        "attenuation": 3
+      "images": {
+        "thumbnail": "assets/buildings/civic/public_pool.png",
+        "icon": "assets/buildings/civic/public_pool.png"
       }
     },
-    "graphics": {
-      "default": "assets/buildings/civic/public_pool.png"
-    },
-    "images": {
-      "thumbnail": "assets/buildings/civic/public_pool.png",
-      "icon": "assets/buildings/civic/public_pool.png"
-    }
-  },
-  {
-    "id": "art_museum",
-    "name": "Art Museum",
-    "category": "civic",
-    "description": "Cultural institution showcasing fine arts and exhibitions",
-    "graphicsFile": "assets/buildings/civic/art_museum.png",
-    "isDefault": true,
-    "civicScore": 0.6,
-    "economics": {
-      "buildCost": 1500,
-      "constructionDays": 7,
-      "maxRevenue": 40,
-      "maintenanceCost": 12,
-      "decayRate": 0.05
-    },
-    "resources": {
-      "jobsProvided": 10,
-      "energyProvided": 0,
-      "energyRequired": 20,
-      "educationProvided": 0,
-      "foodProvided": 5,
-      "housingProvided": 0,
-      "healthcareProvided": 0
-    },
-    "livability": {
-      "culture": {
-        "impact": 9,
-        "attenuation": 7
+    {
+      "id": "art_museum",
+      "name": "Art Museum",
+      "category": "civic",
+      "description": "Cultural institution showcasing fine arts and exhibitions",
+      "graphicsFile": "assets/buildings/civic/art_museum.png",
+      "isDefault": true,
+      "civicScore": 0.6,
+      "economics": {
+        "buildCost": 1500,
+        "constructionDays": 7,
+        "maxRevenue": 40,
+        "maintenanceCost": 12,
+        "decayRate": 0.05
       },
-      "affordability": {
-        "impact": -4,
-        "attenuation": 12
+      "resources": {
+        "jobsProvided": 10,
+        "energyProvided": 0,
+        "energyRequired": 20,
+        "educationProvided": 0,
+        "foodProvided": 5,
+        "housingProvided": 0,
+        "healthcareProvided": 0
       },
-      "resilience": {
-        "impact": -8,
-        "attenuation": 12
+      "livability": {
+        "culture": {
+          "impact": 9,
+          "attenuation": 7
+        },
+        "affordability": {
+          "impact": -4,
+          "attenuation": 12
+        },
+        "resilience": {
+          "impact": -8,
+          "attenuation": 12
+        },
+        "environment": {
+          "impact": -3,
+          "attenuation": 5
+        },
+        "noise": {
+          "impact": 2,
+          "attenuation": 1
+        },
+        "safety": {
+          "impact": 0,
+          "attenuation": 1
+        }
       },
-      "environment": {
-        "impact": -3,
-        "attenuation": 5
+      "graphics": {
+        "default": "assets/buildings/civic/art_museum.png"
       },
-      "noise": {
-        "impact": 2,
-        "attenuation": 1
-      },
-      "safety": {
-        "impact": 0,
-        "attenuation": 1
+      "images": {
+        "thumbnail": "assets/buildings/civic/art_museum.png",
+        "icon": "assets/buildings/civic/art_museum.png"
       }
     },
-    "graphics": {
-      "default": "assets/buildings/civic/art_museum.png"
-    },
-    "images": {
-      "thumbnail": "assets/buildings/civic/art_museum.png",
-      "icon": "assets/buildings/civic/art_museum.png"
+    {
+      "id": "bird_sanctuary",
+      "name": "Bird Sanctuary",
+      "category": "civic",
+      "description": "Protected natural habitat for local and migratory bird species",
+      "graphicsFile": "assets/buildings/civic/bird_sanctuary.png",
+      "isDefault": true,
+      "civicScore": 3.7,
+      "economics": {
+        "buildCost": 575,
+        "constructionDays": 6,
+        "maxRevenue": 25,
+        "maintenanceCost": 8,
+        "decayRate": 0.008
+      },
+      "resources": {
+        "jobsProvided": 6,
+        "energyProvided": 0,
+        "energyRequired": 4,
+        "educationProvided": 0,
+        "foodProvided": 0,
+        "housingProvided": 0,
+        "healthcareProvided": 0
+      },
+      "livability": {
+        "culture": {
+          "impact": 6,
+          "attenuation": 3
+        },
+        "affordability": {
+          "impact": -3,
+          "attenuation": 12
+        },
+        "resilience": {
+          "impact": 3,
+          "attenuation": 10
+        },
+        "environment": {
+          "impact": 2,
+          "attenuation": 8
+        },
+        "noise": {
+          "impact": -1,
+          "attenuation": 3
+        },
+        "safety": {
+          "impact": 0,
+          "attenuation": 2
+        }
+      },
+      "graphics": {
+        "default": "assets/buildings/civic/bird_sanctuary.png"
+      },
+      "images": {
+        "thumbnail": "assets/buildings/civic/bird_sanctuary.png",
+        "icon": "assets/buildings/civic/bird_sanctuary.png"
+      }
     }
-  },
-  {
-    "id": "bird_sanctuary",
-    "name": "Bird Sanctuary",
-    "category": "civic",
-    "description": "Protected natural habitat for local and migratory bird species",
-    "graphicsFile": "assets/buildings/civic/bird_sanctuary.png",
-    "isDefault": true,
-    "civicScore": 3.7,
-    "economics": {
-      "buildCost": 575,
-      "constructionDays": 6,
-      "maxRevenue": 25,
-      "maintenanceCost": 8,
-      "decayRate": 0.008
-    },
-    "resources": {
-      "jobsProvided": 6,
-      "energyProvided": 0,
-      "energyRequired": 4,
-      "educationProvided": 0,
-      "foodProvided": 0,
-      "housingProvided": 0,
-      "healthcareProvided": 0
-    },
-    "livability": {
-      "culture": {
-        "impact": 6,
-        "attenuation": 3
+  ],
+  "commercial": [
+    {
+      "id": "corporate_marvel",
+      "name": "Corporate World Headquarters",
+      "category": "commercial",
+      "description": "A marvel level building! There could be some shady dealings going down but the pay is incredible.",
+      "graphicsFile": "assets/buildings/commercial/corporate_marvel.png",
+      "isDefault": true,
+      "civicScore": -20.6,
+      "economics": {
+        "buildCost": 18000,
+        "constructionDays": 21,
+        "maxRevenue": 800,
+        "maintenanceCost": 35,
+        "decayRate": 0.095
       },
-      "affordability": {
-        "impact": -3,
-        "attenuation": 12
+      "resources": {
+        "jobsProvided": 250,
+        "energyProvided": 0,
+        "energyRequired": 180,
+        "educationProvided": 0,
+        "foodProvided": 35,
+        "housingProvided": 0,
+        "healthcareProvided": 0
       },
-      "resilience": {
-        "impact": 3,
-        "attenuation": 10
+      "livability": {
+        "culture": {
+          "impact": 7,
+          "attenuation": 5
+        },
+        "affordability": {
+          "impact": -40,
+          "attenuation": 12
+        },
+        "resilience": {
+          "impact": -10,
+          "attenuation": 10
+        },
+        "environment": {
+          "impact": -15,
+          "attenuation": 10
+        },
+        "noise": {
+          "impact": -4,
+          "attenuation": 2
+        },
+        "safety": {
+          "impact": -2,
+          "attenuation": 2
+        }
       },
-      "environment": {
-        "impact": 2,
-        "attenuation": 8
+      "graphics": {
+        "default": "assets/buildings/commercial/corporate_marvel.png"
       },
-      "noise": {
-        "impact": -1,
-        "attenuation": 3
-      },
-      "safety": {
-        "impact": 0,
-        "attenuation": 2
+      "images": {
+        "thumbnail": "assets/buildings/commercial/corporate_marvel.png",
+        "icon": "assets/buildings/commercial/corporate_marvel.png"
       }
     },
-    "graphics": {
-      "default": "assets/buildings/civic/bird_sanctuary.png"
-    },
-    "images": {
-      "thumbnail": "assets/buildings/civic/bird_sanctuary.png",
-      "icon": "assets/buildings/civic/bird_sanctuary.png"
-    }
-  },
-  {
-    "id": "corporate_marvel",
-    "name": "Corporate World Headquarters",
-    "category": "commercial",
-    "description": "A marvel level building! There could be some shady dealings going down but the pay is incredible.",
-    "graphicsFile": "assets/buildings/commercial/corporate_marvel.png",
-    "isDefault": true,
-    "civicScore": -20.6,
-    "economics": {
-      "buildCost": 18000,
-      "constructionDays": 21,
-      "maxRevenue": 800,
-      "maintenanceCost": 35,
-      "decayRate": 0.095
-    },
-    "resources": {
-      "jobsProvided": 250,
-      "energyProvided": 0,
-      "energyRequired": 180,
-      "educationProvided": 0,
-      "foodProvided": 35,
-      "housingProvided": 0,
-      "healthcareProvided": 0
-    },
-    "livability": {
-      "culture": {
-        "impact": 7,
-        "attenuation": 5
+    {
+      "id": "grand_department_store",
+      "name": "Grand Department Store",
+      "category": "commercial",
+      "description": "Large retail establishment offering diverse merchandise and shopping experiences",
+      "graphicsFile": "assets/buildings/commercial/grand_department_store.png",
+      "isDefault": true,
+      "civicScore": -5.4,
+      "economics": {
+        "buildCost": 2300,
+        "constructionDays": 11,
+        "maxRevenue": 175,
+        "maintenanceCost": 12,
+        "decayRate": 0.01
       },
-      "affordability": {
-        "impact": -40,
-        "attenuation": 12
+      "resources": {
+        "jobsProvided": 25,
+        "energyProvided": 0,
+        "energyRequired": 28,
+        "educationProvided": 0,
+        "foodProvided": 0,
+        "housingProvided": 0,
+        "healthcareProvided": 0
       },
-      "resilience": {
-        "impact": -10,
-        "attenuation": 10
+      "livability": {
+        "culture": {
+          "impact": 4,
+          "attenuation": 5
+        },
+        "affordability": {
+          "impact": -5,
+          "attenuation": 12
+        },
+        "resilience": {
+          "impact": -8,
+          "attenuation": 10
+        },
+        "environment": {
+          "impact": -8,
+          "attenuation": 10
+        },
+        "noise": {
+          "impact": -1,
+          "attenuation": 2
+        },
+        "safety": {
+          "impact": 0,
+          "attenuation": 2
+        }
       },
-      "environment": {
-        "impact": -15,
-        "attenuation": 10
+      "graphics": {
+        "default": "assets/buildings/commercial/grand_department_store.png"
       },
-      "noise": {
-        "impact": -4,
-        "attenuation": 2
-      },
-      "safety": {
-        "impact": -2,
-        "attenuation": 2
+      "images": {
+        "thumbnail": "assets/buildings/commercial/grand_department_store.png",
+        "icon": "assets/buildings/commercial/grand_department_store.png"
       }
     },
-    "graphics": {
-      "default": "assets/buildings/commercial/corporate_marvel.png"
-    },
-    "images": {
-      "thumbnail": "assets/buildings/commercial/corporate_marvel.png",
-      "icon": "assets/buildings/commercial/corporate_marvel.png"
-    }
-  },
-  {
-    "id": "grand_department_store",
-    "name": "Grand Department Store",
-    "category": "commercial",
-    "description": "Large retail establishment offering diverse merchandise and shopping experiences",
-    "graphicsFile": "assets/buildings/commercial/grand_department_store.png",
-    "isDefault": true,
-    "civicScore": -5.4,
-    "economics": {
-      "buildCost": 2300,
-      "constructionDays": 11,
-      "maxRevenue": 175,
-      "maintenanceCost": 12,
-      "decayRate": 0.01
-    },
-    "resources": {
-      "jobsProvided": 25,
-      "energyProvided": 0,
-      "energyRequired": 28,
-      "educationProvided": 0,
-      "foodProvided": 0,
-      "housingProvided": 0,
-      "healthcareProvided": 0
-    },
-    "livability": {
-      "culture": {
-        "impact": 4,
-        "attenuation": 5
+    {
+      "id": "community_theatre",
+      "name": "Community Theatre",
+      "category": "commercial",
+      "description": "Local performing arts venue hosting plays and concerts and cultural events",
+      "graphicsFile": "assets/buildings/commercial/community_theatre.png",
+      "isDefault": true,
+      "civicScore": 5.6,
+      "economics": {
+        "buildCost": 370,
+        "constructionDays": 5,
+        "maxRevenue": 35,
+        "maintenanceCost": 1,
+        "decayRate": 0.0077
       },
-      "affordability": {
-        "impact": -5,
-        "attenuation": 12
+      "resources": {
+        "jobsProvided": 15,
+        "energyProvided": 0,
+        "energyRequired": 6,
+        "educationProvided": 0,
+        "foodProvided": 0,
+        "housingProvided": 0,
+        "healthcareProvided": 0
       },
-      "resilience": {
-        "impact": -8,
-        "attenuation": 10
+      "livability": {
+        "culture": {
+          "impact": 10,
+          "attenuation": 3
+        },
+        "affordability": {
+          "impact": -2,
+          "attenuation": 12
+        },
+        "resilience": {
+          "impact": 2,
+          "attenuation": 6
+        },
+        "environment": {
+          "impact": 1,
+          "attenuation": 3
+        },
+        "noise": {
+          "impact": -1,
+          "attenuation": 1
+        },
+        "safety": {
+          "impact": 0,
+          "attenuation": 3
+        }
       },
-      "environment": {
-        "impact": -8,
-        "attenuation": 10
+      "graphics": {
+        "default": "assets/buildings/commercial/community_theatre.png"
       },
-      "noise": {
-        "impact": -1,
-        "attenuation": 2
-      },
-      "safety": {
-        "impact": 0,
-        "attenuation": 2
+      "images": {
+        "thumbnail": "assets/buildings/commercial/community_theatre.png",
+        "icon": "assets/buildings/commercial/community_theatre.png"
       }
     },
-    "graphics": {
-      "default": "assets/buildings/commercial/grand_department_store.png"
-    },
-    "images": {
-      "thumbnail": "assets/buildings/commercial/grand_department_store.png",
-      "icon": "assets/buildings/commercial/grand_department_store.png"
-    }
-  },
-  {
-    "id": "community_theatre",
-    "name": "Community Theatre",
-    "category": "commercial",
-    "description": "Local performing arts venue hosting plays and concerts and cultural events",
-    "graphicsFile": "assets/buildings/commercial/community_theatre.png",
-    "isDefault": true,
-    "civicScore": 5.6,
-    "economics": {
-      "buildCost": 370,
-      "constructionDays": 5,
-      "maxRevenue": 35,
-      "maintenanceCost": 1,
-      "decayRate": 0.0077
-    },
-    "resources": {
-      "jobsProvided": 15,
-      "energyProvided": 0,
-      "energyRequired": 6,
-      "educationProvided": 0,
-      "foodProvided": 0,
-      "housingProvided": 0,
-      "healthcareProvided": 0
-    },
-    "livability": {
-      "culture": {
-        "impact": 10,
-        "attenuation": 3
+    {
+      "id": "neighborhood_grocery",
+      "name": "Neighborhood Grocery",
+      "category": "commercial",
+      "description": "Mid-sized grocery store serving the local community",
+      "graphicsFile": "assets/buildings/commercial/neighborhood_grocery.png",
+      "isDefault": true,
+      "civicScore": 7.2,
+      "economics": {
+        "buildCost": 550,
+        "constructionDays": 5,
+        "maxRevenue": 65,
+        "maintenanceCost": 8,
+        "decayRate": 0.0086
       },
-      "affordability": {
-        "impact": -2,
-        "attenuation": 12
+      "resources": {
+        "jobsProvided": 6,
+        "energyProvided": 0,
+        "energyRequired": 25,
+        "educationProvided": 0,
+        "foodProvided": 50,
+        "housingProvided": 0,
+        "healthcareProvided": 0
       },
-      "resilience": {
-        "impact": 2,
-        "attenuation": 6
+      "livability": {
+        "culture": {
+          "impact": 7,
+          "attenuation": 3
+        },
+        "affordability": {
+          "impact": 1,
+          "attenuation": 12
+        },
+        "resilience": {
+          "impact": 4,
+          "attenuation": 6
+        },
+        "environment": {
+          "impact": -2,
+          "attenuation": 3
+        },
+        "noise": {
+          "impact": 1,
+          "attenuation": 1
+        },
+        "safety": {
+          "impact": 2,
+          "attenuation": 2
+        }
       },
-      "environment": {
-        "impact": 1,
-        "attenuation": 3
+      "graphics": {
+        "default": "assets/buildings/commercial/neighborhood_grocery.png"
       },
-      "noise": {
-        "impact": -1,
-        "attenuation": 1
-      },
-      "safety": {
-        "impact": 0,
-        "attenuation": 3
+      "images": {
+        "thumbnail": "assets/buildings/commercial/neighborhood_grocery.png",
+        "icon": "assets/buildings/commercial/neighborhood_grocery.png"
       }
     },
-    "graphics": {
-      "default": "assets/buildings/commercial/community_theatre.png"
-    },
-    "images": {
-      "thumbnail": "assets/buildings/commercial/community_theatre.png",
-      "icon": "assets/buildings/commercial/community_theatre.png"
-    }
-  },
-  {
-    "id": "neighborhood_grocery",
-    "name": "Neighborhood Grocery",
-    "category": "commercial",
-    "description": "Mid-sized grocery store serving the local community",
-    "graphicsFile": "assets/buildings/commercial/neighborhood_grocery.png",
-    "isDefault": true,
-    "civicScore": 7.2,
-    "economics": {
-      "buildCost": 550,
-      "constructionDays": 5,
-      "maxRevenue": 65,
-      "maintenanceCost": 8,
-      "decayRate": 0.0086
-    },
-    "resources": {
-      "jobsProvided": 6,
-      "energyProvided": 0,
-      "energyRequired": 25,
-      "educationProvided": 0,
-      "foodProvided": 50,
-      "housingProvided": 0,
-      "healthcareProvided": 0
-    },
-    "livability": {
-      "culture": {
-        "impact": 7,
-        "attenuation": 3
+    {
+      "id": "large_grocer",
+      "name": "Large Grocery Store",
+      "category": "commercial",
+      "description": "Full-service supermarket with extensive food and household selections",
+      "graphicsFile": "assets/buildings/commercial/large_grocer.png",
+      "isDefault": true,
+      "civicScore": 1.7,
+      "economics": {
+        "buildCost": 1500,
+        "constructionDays": 11,
+        "maxRevenue": 180,
+        "maintenanceCost": 17,
+        "decayRate": 0.0125
       },
-      "affordability": {
-        "impact": 1,
-        "attenuation": 12
+      "resources": {
+        "jobsProvided": 20,
+        "energyProvided": 0,
+        "energyRequired": 40,
+        "educationProvided": 0,
+        "foodProvided": 80,
+        "housingProvided": 0,
+        "healthcareProvided": 0
       },
-      "resilience": {
-        "impact": 4,
-        "attenuation": 6
+      "livability": {
+        "culture": {
+          "impact": 2,
+          "attenuation": 3
+        },
+        "affordability": {
+          "impact": 3,
+          "attenuation": 12
+        },
+        "resilience": {
+          "impact": 3,
+          "attenuation": 12
+        },
+        "environment": {
+          "impact": -5,
+          "attenuation": 5
+        },
+        "noise": {
+          "impact": -1,
+          "attenuation": 2
+        },
+        "safety": {
+          "impact": 3,
+          "attenuation": 3
+        }
       },
-      "environment": {
-        "impact": -2,
-        "attenuation": 3
+      "graphics": {
+        "default": "assets/buildings/commercial/large_grocer.png"
       },
-      "noise": {
-        "impact": 1,
-        "attenuation": 1
-      },
-      "safety": {
-        "impact": 2,
-        "attenuation": 2
+      "images": {
+        "thumbnail": "assets/buildings/commercial/large_grocer.png",
+        "icon": "assets/buildings/commercial/large_grocer.png"
       }
     },
-    "graphics": {
-      "default": "assets/buildings/commercial/neighborhood_grocery.png"
-    },
-    "images": {
-      "thumbnail": "assets/buildings/commercial/neighborhood_grocery.png",
-      "icon": "assets/buildings/commercial/neighborhood_grocery.png"
-    }
-  },
-  {
-    "id": "large_grocer",
-    "name": "Large Grocery Store",
-    "category": "commercial",
-    "description": "Full-service supermarket with extensive food and household selections",
-    "graphicsFile": "assets/buildings/commercial/large_grocer.png",
-    "isDefault": true,
-    "civicScore": 1.7,
-    "economics": {
-      "buildCost": 1500,
-      "constructionDays": 11,
-      "maxRevenue": 180,
-      "maintenanceCost": 17,
-      "decayRate": 0.0125
-    },
-    "resources": {
-      "jobsProvided": 20,
-      "energyProvided": 0,
-      "energyRequired": 40,
-      "educationProvided": 0,
-      "foodProvided": 80,
-      "housingProvided": 0,
-      "healthcareProvided": 0
-    },
-    "livability": {
-      "culture": {
-        "impact": 2,
-        "attenuation": 3
+    {
+      "id": "corner_store",
+      "name": "Cornerstore",
+      "category": "commercial",
+      "description": "Convenient neighborhood shop for everyday essentials",
+      "graphicsFile": "assets/buildings/commercial/corner_store.png",
+      "isDefault": true,
+      "civicScore": 6.1,
+      "economics": {
+        "buildCost": 320,
+        "constructionDays": 2,
+        "maxRevenue": 60,
+        "maintenanceCost": 1,
+        "decayRate": 0.006
       },
-      "affordability": {
-        "impact": 3,
-        "attenuation": 12
+      "resources": {
+        "jobsProvided": 3,
+        "energyProvided": 0,
+        "energyRequired": 9,
+        "educationProvided": 0,
+        "foodProvided": 35,
+        "housingProvided": 0,
+        "healthcareProvided": 0
       },
-      "resilience": {
-        "impact": 3,
-        "attenuation": 12
+      "livability": {
+        "culture": {
+          "impact": 2,
+          "attenuation": 2
+        },
+        "affordability": {
+          "impact": 2,
+          "attenuation": 12
+        },
+        "resilience": {
+          "impact": 5,
+          "attenuation": 8
+        },
+        "environment": {
+          "impact": -1,
+          "attenuation": 2
+        },
+        "noise": {
+          "impact": 1,
+          "attenuation": 1
+        },
+        "safety": {
+          "impact": 2,
+          "attenuation": 1
+        }
       },
-      "environment": {
-        "impact": -5,
-        "attenuation": 5
+      "graphics": {
+        "default": "assets/buildings/commercial/corner_store.png"
       },
-      "noise": {
-        "impact": -1,
-        "attenuation": 2
-      },
-      "safety": {
-        "impact": 3,
-        "attenuation": 3
+      "images": {
+        "thumbnail": "assets/buildings/commercial/corner_store.png",
+        "icon": "assets/buildings/commercial/corner_store.png"
       }
     },
-    "graphics": {
-      "default": "assets/buildings/commercial/large_grocer.png"
-    },
-    "images": {
-      "thumbnail": "assets/buildings/commercial/large_grocer.png",
-      "icon": "assets/buildings/commercial/large_grocer.png"
-    }
-  },
-  {
-    "id": "corner_store",
-    "name": "Cornerstore",
-    "category": "commercial",
-    "description": "Convenient neighborhood shop for everyday essentials",
-    "graphicsFile": "assets/buildings/commercial/corner_store.png",
-    "isDefault": true,
-    "civicScore": 6.1,
-    "economics": {
-      "buildCost": 320,
-      "constructionDays": 2,
-      "maxRevenue": 60,
-      "maintenanceCost": 1,
-      "decayRate": 0.006
-    },
-    "resources": {
-      "jobsProvided": 3,
-      "energyProvided": 0,
-      "energyRequired": 9,
-      "educationProvided": 0,
-      "foodProvided": 35,
-      "housingProvided": 0,
-      "healthcareProvided": 0
-    },
-    "livability": {
-      "culture": {
-        "impact": 2,
-        "attenuation": 2
+    {
+      "id": "taqueria",
+      "name": "Taqueria",
+      "category": "commercial",
+      "description": "A great little place I know",
+      "graphicsFile": "assets/buildings/commercial/taqueria.png",
+      "isDefault": true,
+      "civicScore": 4.8,
+      "economics": {
+        "buildCost": 275,
+        "constructionDays": 2,
+        "maxRevenue": 60,
+        "maintenanceCost": 4,
+        "decayRate": 0.011
       },
-      "affordability": {
-        "impact": 2,
-        "attenuation": 12
+      "resources": {
+        "jobsProvided": 8,
+        "energyProvided": 0,
+        "energyRequired": 12,
+        "educationProvided": 0,
+        "foodProvided": 26,
+        "housingProvided": 0,
+        "healthcareProvided": 0
       },
-      "resilience": {
-        "impact": 5,
-        "attenuation": 8
+      "livability": {
+        "culture": {
+          "impact": 3,
+          "attenuation": 2
+        },
+        "affordability": {
+          "impact": 1,
+          "attenuation": 12
+        },
+        "resilience": {
+          "impact": 1,
+          "attenuation": 7
+        },
+        "environment": {
+          "impact": -1,
+          "attenuation": 1
+        },
+        "noise": {
+          "impact": 1,
+          "attenuation": 1
+        },
+        "safety": {
+          "impact": 2,
+          "attenuation": 1
+        }
       },
-      "environment": {
-        "impact": -1,
-        "attenuation": 2
+      "graphics": {
+        "default": "assets/buildings/commercial/taqueria.png"
       },
-      "noise": {
-        "impact": 1,
-        "attenuation": 1
-      },
-      "safety": {
-        "impact": 2,
-        "attenuation": 1
+      "images": {
+        "thumbnail": "assets/buildings/commercial/taqueria.png",
+        "icon": "assets/buildings/commercial/taqueria.png"
       }
     },
-    "graphics": {
-      "default": "assets/buildings/commercial/corner_store.png"
-    },
-    "images": {
-      "thumbnail": "assets/buildings/commercial/corner_store.png",
-      "icon": "assets/buildings/commercial/corner_store.png"
-    }
-  },
-  {
-    "id": "taqueria",
-    "name": "Taqueria",
-    "category": "commercial",
-    "description": "A great little place I know",
-    "graphicsFile": "assets/buildings/commercial/taqueria.png",
-    "isDefault": true,
-    "civicScore": 4.8,
-    "economics": {
-      "buildCost": 275,
-      "constructionDays": 2,
-      "maxRevenue": 60,
-      "maintenanceCost": 4,
-      "decayRate": 0.011
-    },
-    "resources": {
-      "jobsProvided": 8,
-      "energyProvided": 0,
-      "energyRequired": 12,
-      "educationProvided": 0,
-      "foodProvided": 26,
-      "housingProvided": 0,
-      "healthcareProvided": 0
-    },
-    "livability": {
-      "culture": {
-        "impact": 3,
-        "attenuation": 2
+    {
+      "id": "bakery",
+      "name": "Bakery",
+      "category": "commercial",
+      "description": "Artisan bakery offering fresh bread and pastries and baked goods",
+      "graphicsFile": "assets/buildings/commercial/bakery.png",
+      "isDefault": true,
+      "civicScore": 4.8,
+      "economics": {
+        "buildCost": 250,
+        "constructionDays": 3,
+        "maxRevenue": 55,
+        "maintenanceCost": 4,
+        "decayRate": 0.01
       },
-      "affordability": {
-        "impact": 1,
-        "attenuation": 12
+      "resources": {
+        "jobsProvided": 5,
+        "energyProvided": 0,
+        "energyRequired": 13,
+        "educationProvided": 0,
+        "foodProvided": 28,
+        "housingProvided": 0,
+        "healthcareProvided": 0
       },
-      "resilience": {
-        "impact": 1,
-        "attenuation": 7
+      "livability": {
+        "culture": {
+          "impact": 3,
+          "attenuation": 2
+        },
+        "affordability": {
+          "impact": 1,
+          "attenuation": 12
+        },
+        "resilience": {
+          "impact": 1,
+          "attenuation": 7
+        },
+        "environment": {
+          "impact": -1,
+          "attenuation": 1
+        },
+        "noise": {
+          "impact": 1,
+          "attenuation": 1
+        },
+        "safety": {
+          "impact": 2,
+          "attenuation": 1
+        }
       },
-      "environment": {
-        "impact": -1,
-        "attenuation": 1
+      "graphics": {
+        "default": "assets/buildings/commercial/bakery.png"
       },
-      "noise": {
-        "impact": 1,
-        "attenuation": 1
-      },
-      "safety": {
-        "impact": 2,
-        "attenuation": 1
+      "images": {
+        "thumbnail": "assets/buildings/commercial/bakery.png",
+        "icon": "assets/buildings/commercial/bakery.png"
       }
     },
-    "graphics": {
-      "default": "assets/buildings/commercial/taqueria.png"
-    },
-    "images": {
-      "thumbnail": "assets/buildings/commercial/taqueria.png",
-      "icon": "assets/buildings/commercial/taqueria.png"
-    }
-  },
-  {
-    "id": "bakery",
-    "name": "Bakery",
-    "category": "commercial",
-    "description": "Artisan bakery offering fresh bread and pastries and baked goods",
-    "graphicsFile": "assets/buildings/commercial/bakery.png",
-    "isDefault": true,
-    "civicScore": 4.8,
-    "economics": {
-      "buildCost": 250,
-      "constructionDays": 3,
-      "maxRevenue": 55,
-      "maintenanceCost": 4,
-      "decayRate": 0.01
-    },
-    "resources": {
-      "jobsProvided": 5,
-      "energyProvided": 0,
-      "energyRequired": 13,
-      "educationProvided": 0,
-      "foodProvided": 28,
-      "housingProvided": 0,
-      "healthcareProvided": 0
-    },
-    "livability": {
-      "culture": {
-        "impact": 3,
-        "attenuation": 2
+    {
+      "id": "ice_cream_parlor",
+      "name": "Ice Cream Parlor",
+      "category": "commercial",
+      "description": "Sweet shop serving ice cream and sundaes and frozen treats",
+      "graphicsFile": "assets/buildings/commercial/ice_cream_parlor.png",
+      "isDefault": true,
+      "civicScore": 5.1,
+      "economics": {
+        "buildCost": 225,
+        "constructionDays": 3,
+        "maxRevenue": 50,
+        "maintenanceCost": 3,
+        "decayRate": 0.0065
       },
-      "affordability": {
-        "impact": 1,
-        "attenuation": 12
+      "resources": {
+        "jobsProvided": 4,
+        "energyProvided": 0,
+        "energyRequired": 11,
+        "educationProvided": 0,
+        "foodProvided": 20,
+        "housingProvided": 0,
+        "healthcareProvided": 0
       },
-      "resilience": {
-        "impact": 1,
-        "attenuation": 7
+      "livability": {
+        "culture": {
+          "impact": 5,
+          "attenuation": 2
+        },
+        "affordability": {
+          "impact": 1,
+          "attenuation": 12
+        },
+        "resilience": {
+          "impact": 0,
+          "attenuation": 7
+        },
+        "environment": {
+          "impact": -1,
+          "attenuation": 1
+        },
+        "noise": {
+          "impact": 1,
+          "attenuation": 11
+        },
+        "safety": {
+          "impact": 2,
+          "attenuation": 1
+        }
       },
-      "environment": {
-        "impact": -1,
-        "attenuation": 1
+      "graphics": {
+        "default": "assets/buildings/commercial/ice_cream_parlor.png"
       },
-      "noise": {
-        "impact": 1,
-        "attenuation": 1
-      },
-      "safety": {
-        "impact": 2,
-        "attenuation": 1
+      "images": {
+        "thumbnail": "assets/buildings/commercial/ice_cream_parlor.png",
+        "icon": "assets/buildings/commercial/ice_cream_parlor.png"
       }
     },
-    "graphics": {
-      "default": "assets/buildings/commercial/bakery.png"
-    },
-    "images": {
-      "thumbnail": "assets/buildings/commercial/bakery.png",
-      "icon": "assets/buildings/commercial/bakery.png"
-    }
-  },
-  {
-    "id": "ice_cream_parlor",
-    "name": "Ice Cream Parlor",
-    "category": "commercial",
-    "description": "Sweet shop serving ice cream and sundaes and frozen treats",
-    "graphicsFile": "assets/buildings/commercial/ice_cream_parlor.png",
-    "isDefault": true,
-    "civicScore": 5.1,
-    "economics": {
-      "buildCost": 225,
-      "constructionDays": 3,
-      "maxRevenue": 50,
-      "maintenanceCost": 3,
-      "decayRate": 0.0065
-    },
-    "resources": {
-      "jobsProvided": 4,
-      "energyProvided": 0,
-      "energyRequired": 11,
-      "educationProvided": 0,
-      "foodProvided": 20,
-      "housingProvided": 0,
-      "healthcareProvided": 0
-    },
-    "livability": {
-      "culture": {
-        "impact": 5,
-        "attenuation": 2
+    {
+      "id": "barbershop",
+      "name": "Barbershop",
+      "category": "commercial",
+      "description": "Traditional barbershop providing haircuts and grooming services",
+      "graphicsFile": "assets/buildings/commercial/barbershop.png",
+      "isDefault": true,
+      "civicScore": 6.4,
+      "economics": {
+        "buildCost": 240,
+        "constructionDays": 2,
+        "maxRevenue": 70,
+        "maintenanceCost": 3,
+        "decayRate": 0.005
       },
-      "affordability": {
-        "impact": 1,
-        "attenuation": 12
+      "resources": {
+        "jobsProvided": 4,
+        "energyProvided": 0,
+        "energyRequired": 7,
+        "educationProvided": 0,
+        "foodProvided": 0,
+        "housingProvided": 0,
+        "healthcareProvided": 0
       },
-      "resilience": {
-        "impact": 0,
-        "attenuation": 7
+      "livability": {
+        "culture": {
+          "impact": 6,
+          "attenuation": 3
+        },
+        "affordability": {
+          "impact": 2,
+          "attenuation": 12
+        },
+        "resilience": {
+          "impact": 1,
+          "attenuation": 7
+        },
+        "environment": {
+          "impact": -1,
+          "attenuation": 1
+        },
+        "noise": {
+          "impact": 1,
+          "attenuation": 1
+        },
+        "safety": {
+          "impact": 2,
+          "attenuation": 1
+        }
       },
-      "environment": {
-        "impact": -1,
-        "attenuation": 1
+      "graphics": {
+        "default": "assets/buildings/commercial/barbershop.png"
       },
-      "noise": {
-        "impact": 1,
-        "attenuation": 11
-      },
-      "safety": {
-        "impact": 2,
-        "attenuation": 1
+      "images": {
+        "thumbnail": "assets/buildings/commercial/barbershop.png",
+        "icon": "assets/buildings/commercial/barbershop.png"
       }
     },
-    "graphics": {
-      "default": "assets/buildings/commercial/ice_cream_parlor.png"
-    },
-    "images": {
-      "thumbnail": "assets/buildings/commercial/ice_cream_parlor.png",
-      "icon": "assets/buildings/commercial/ice_cream_parlor.png"
+    {
+      "id": "farmers_market",
+      "name": "Farmers Market",
+      "category": "commercial",
+      "description": "Local food distribution center",
+      "graphicsFile": "assets/buildings/commercial/farmers_market.png",
+      "isDefault": true,
+      "civicScore": 13.5,
+      "economics": {
+        "buildCost": 125,
+        "constructionDays": 2,
+        "maxRevenue": 40,
+        "maintenanceCost": 3,
+        "decayRate": 0.008
+      },
+      "resources": {
+        "jobsProvided": 5,
+        "energyProvided": 0,
+        "energyRequired": 6,
+        "educationProvided": 0,
+        "foodProvided": 30,
+        "housingProvided": 0,
+        "healthcareProvided": 0
+      },
+      "livability": {
+        "culture": {
+          "impact": 3,
+          "attenuation": 2
+        },
+        "affordability": {
+          "impact": 3,
+          "attenuation": 12
+        },
+        "resilience": {
+          "impact": 4,
+          "attenuation": 7
+        },
+        "environment": {
+          "impact": 6,
+          "attenuation": 1
+        },
+        "noise": {
+          "impact": 1,
+          "attenuation": 1
+        },
+        "safety": {
+          "impact": 2,
+          "attenuation": 1
+        }
+      },
+      "graphics": {
+        "default": "assets/buildings/commercial/farmers_market.png"
+      },
+      "images": {
+        "thumbnail": "assets/buildings/commercial/farmers_market.png",
+        "icon": "assets/buildings/commercial/farmers_market.png"
+      }
     }
-  },
-  {
-    "id": "barbershop",
-    "name": "Barbershop",
-    "category": "commercial",
-    "description": "Traditional barbershop providing haircuts and grooming services",
-    "graphicsFile": "assets/buildings/commercial/barbershop.png",
-    "isDefault": true,
-    "civicScore": 6.4,
-    "economics": {
-      "buildCost": 240,
-      "constructionDays": 2,
-      "maxRevenue": 70,
-      "maintenanceCost": 3,
-      "decayRate": 0.005
-    },
-    "resources": {
-      "jobsProvided": 4,
-      "energyProvided": 0,
-      "energyRequired": 7,
-      "educationProvided": 0,
-      "foodProvided": 0,
-      "housingProvided": 0,
-      "healthcareProvided": 0
-    },
-    "livability": {
-      "culture": {
-        "impact": 6,
-        "attenuation": 3
+  ],
+  "education": [
+    {
+      "id": "elementary_school",
+      "name": "Elementary School",
+      "category": "education",
+      "description": "Primary education for children ages 5-13",
+      "graphicsFile": "assets/buildings/education/elementary_school.png",
+      "isDefault": true,
+      "civicScore": 8.3,
+      "economics": {
+        "buildCost": 175,
+        "constructionDays": 2,
+        "maxRevenue": 0,
+        "maintenanceCost": 4,
+        "decayRate": 0.004
       },
-      "affordability": {
-        "impact": 2,
-        "attenuation": 12
+      "resources": {
+        "jobsProvided": 12,
+        "energyProvided": 0,
+        "energyRequired": 15,
+        "educationProvided": 20,
+        "foodProvided": 0,
+        "housingProvided": 0,
+        "healthcareProvided": 0
       },
-      "resilience": {
-        "impact": 1,
-        "attenuation": 7
+      "livability": {
+        "culture": {
+          "impact": 8,
+          "attenuation": 8
+        },
+        "affordability": {
+          "impact": 2,
+          "attenuation": 12
+        },
+        "resilience": {
+          "impact": 2,
+          "attenuation": 5
+        },
+        "environment": {
+          "impact": -3,
+          "attenuation": 3
+        },
+        "noise": {
+          "impact": 5,
+          "attenuation": 1
+        },
+        "safety": {
+          "impact": 1,
+          "attenuation": 2
+        }
       },
-      "environment": {
-        "impact": -1,
-        "attenuation": 1
+      "graphics": {
+        "default": "assets/buildings/education/elementary_school.png"
       },
-      "noise": {
-        "impact": 1,
-        "attenuation": 1
-      },
-      "safety": {
-        "impact": 2,
-        "attenuation": 1
+      "images": {
+        "thumbnail": "assets/buildings/education/elementary_school.png",
+        "icon": "assets/buildings/education/elementary_school.png"
       }
     },
-    "graphics": {
-      "default": "assets/buildings/commercial/barbershop.png"
-    },
-    "images": {
-      "thumbnail": "assets/buildings/commercial/barbershop.png",
-      "icon": "assets/buildings/commercial/barbershop.png"
-    }
-  },
-  {
-    "id": "farmers_market",
-    "name": "Farmers Market",
-    "category": "commercial",
-    "description": "Local food distribution center",
-    "graphicsFile": "assets/buildings/commercial/farmers_market.png",
-    "isDefault": true,
-    "civicScore": 13.5,
-    "economics": {
-      "buildCost": 125,
-      "constructionDays": 2,
-      "maxRevenue": 40,
-      "maintenanceCost": 3,
-      "decayRate": 0.008
-    },
-    "resources": {
-      "jobsProvided": 5,
-      "energyProvided": 0,
-      "energyRequired": 6,
-      "educationProvided": 0,
-      "foodProvided": 30,
-      "housingProvided": 0,
-      "healthcareProvided": 0
-    },
-    "livability": {
-      "culture": {
-        "impact": 3,
-        "attenuation": 2
+    {
+      "id": "high_school",
+      "name": "High School",
+      "category": "education",
+      "description": "Secondary education for teenagers ages 14-18",
+      "graphicsFile": "assets/buildings/education/high_school.png",
+      "isDefault": true,
+      "civicScore": 2,
+      "economics": {
+        "buildCost": 600,
+        "constructionDays": 3,
+        "maxRevenue": 0,
+        "maintenanceCost": 8,
+        "decayRate": 0.008
       },
-      "affordability": {
-        "impact": 3,
-        "attenuation": 12
+      "resources": {
+        "jobsProvided": 24,
+        "energyProvided": 0,
+        "energyRequired": 25,
+        "educationProvided": 28,
+        "foodProvided": 0,
+        "housingProvided": 0,
+        "healthcareProvided": 0
       },
-      "resilience": {
-        "impact": 4,
-        "attenuation": 7
+      "livability": {
+        "culture": {
+          "impact": 12,
+          "attenuation": 10
+        },
+        "affordability": {
+          "impact": 3,
+          "attenuation": 12
+        },
+        "resilience": {
+          "impact": 4,
+          "attenuation": 6
+        },
+        "environment": {
+          "impact": -6,
+          "attenuation": 4
+        },
+        "noise": {
+          "impact": -3,
+          "attenuation": 1
+        },
+        "safety": {
+          "impact": 3,
+          "attenuation": 3
+        }
       },
-      "environment": {
-        "impact": 6,
-        "attenuation": 1
+      "graphics": {
+        "default": "assets/buildings/education/high_school.png"
       },
-      "noise": {
-        "impact": 1,
-        "attenuation": 1
-      },
-      "safety": {
-        "impact": 2,
-        "attenuation": 1
+      "images": {
+        "thumbnail": "assets/buildings/education/high_school.png",
+        "icon": "assets/buildings/education/high_school.png"
       }
     },
-    "graphics": {
-      "default": "assets/buildings/commercial/farmers_market.png"
-    },
-    "images": {
-      "thumbnail": "assets/buildings/commercial/farmers_market.png",
-      "icon": "assets/buildings/commercial/farmers_market.png"
-    }
-  },
-  {
-    "id": "elementary_school",
-    "name": "Elementary School",
-    "category": "education",
-    "description": "Primary education for children ages 5-13",
-    "graphicsFile": "assets/buildings/education/elementary_school.png",
-    "isDefault": true,
-    "civicScore": 8.3,
-    "economics": {
-      "buildCost": 175,
-      "constructionDays": 2,
-      "maxRevenue": 0,
-      "maintenanceCost": 4,
-      "decayRate": 0.004
-    },
-    "resources": {
-      "jobsProvided": 12,
-      "energyProvided": 0,
-      "energyRequired": 15,
-      "educationProvided": 20,
-      "foodProvided": 0,
-      "housingProvided": 0,
-      "healthcareProvided": 0
-    },
-    "livability": {
-      "culture": {
-        "impact": 8,
-        "attenuation": 8
+    {
+      "id": "trade_school",
+      "name": "Trade School",
+      "category": "education",
+      "description": "Vocational training center teaching practical job skills and trades",
+      "graphicsFile": "assets/buildings/education/trade_school.png",
+      "isDefault": true,
+      "civicScore": -10.8,
+      "economics": {
+        "buildCost": 2600,
+        "constructionDays": 14,
+        "maxRevenue": 125,
+        "maintenanceCost": 18,
+        "decayRate": 0.042
       },
-      "affordability": {
-        "impact": 2,
-        "attenuation": 12
+      "resources": {
+        "jobsProvided": 55,
+        "energyProvided": 0,
+        "energyRequired": 110,
+        "educationProvided": 49,
+        "foodProvided": 0,
+        "housingProvided": 0,
+        "healthcareProvided": 0
       },
-      "resilience": {
-        "impact": 2,
-        "attenuation": 5
+      "livability": {
+        "culture": {
+          "impact": 7,
+          "attenuation": 12
+        },
+        "affordability": {
+          "impact": 1,
+          "attenuation": 12
+        },
+        "resilience": {
+          "impact": 5,
+          "attenuation": 7
+        },
+        "environment": {
+          "impact": -9,
+          "attenuation": 5
+        },
+        "noise": {
+          "impact": -12,
+          "attenuation": 1
+        },
+        "safety": {
+          "impact": 2,
+          "attenuation": 4
+        }
       },
-      "environment": {
-        "impact": -3,
-        "attenuation": 3
+      "graphics": {
+        "default": "assets/buildings/education/trade_school.png"
       },
-      "noise": {
-        "impact": 5,
-        "attenuation": 1
-      },
-      "safety": {
-        "impact": 1,
-        "attenuation": 2
+      "images": {
+        "thumbnail": "assets/buildings/education/trade_school.png",
+        "icon": "assets/buildings/education/trade_school.png"
       }
     },
-    "graphics": {
-      "default": "assets/buildings/education/elementary_school.png"
-    },
-    "images": {
-      "thumbnail": "assets/buildings/education/elementary_school.png",
-      "icon": "assets/buildings/education/elementary_school.png"
-    }
-  },
-  {
-    "id": "high_school",
-    "name": "High School",
-    "category": "education",
-    "description": "Secondary education for teenagers ages 14-18",
-    "graphicsFile": "assets/buildings/education/high_school.png",
-    "isDefault": true,
-    "civicScore": 2,
-    "economics": {
-      "buildCost": 600,
-      "constructionDays": 3,
-      "maxRevenue": 0,
-      "maintenanceCost": 8,
-      "decayRate": 0.008
-    },
-    "resources": {
-      "jobsProvided": 24,
-      "energyProvided": 0,
-      "energyRequired": 25,
-      "educationProvided": 28,
-      "foodProvided": 0,
-      "housingProvided": 0,
-      "healthcareProvided": 0
-    },
-    "livability": {
-      "culture": {
-        "impact": 12,
-        "attenuation": 10
+    {
+      "id": "art_school_marvel",
+      "name": "Art School Marvel",
+      "category": "education",
+      "description": "A marvel level building! A true show stopper and world renowned for producing best in class cutting edge art. Center of the international art scene.",
+      "graphicsFile": "assets/buildings/education/art_school_marvel.png",
+      "isDefault": true,
+      "civicScore": -10,
+      "economics": {
+        "buildCost": 15000,
+        "constructionDays": 24,
+        "maxRevenue": 750,
+        "maintenanceCost": 40,
+        "decayRate": 0.0105
       },
-      "affordability": {
-        "impact": 3,
-        "attenuation": 12
+      "resources": {
+        "jobsProvided": 220,
+        "energyProvided": 0,
+        "energyRequired": 250,
+        "educationProvided": 55,
+        "foodProvided": 0,
+        "housingProvided": 0,
+        "healthcareProvided": 0
       },
-      "resilience": {
-        "impact": 4,
-        "attenuation": 6
+      "livability": {
+        "culture": {
+          "impact": 15,
+          "attenuation": 11
+        },
+        "affordability": {
+          "impact": -25,
+          "attenuation": 12
+        },
+        "resilience": {
+          "impact": -1,
+          "attenuation": 3
+        },
+        "environment": {
+          "impact": -15,
+          "attenuation": 7
+        },
+        "noise": {
+          "impact": -2,
+          "attenuation": 1
+        },
+        "safety": {
+          "impact": 2,
+          "attenuation": 5
+        }
       },
-      "environment": {
-        "impact": -6,
-        "attenuation": 4
+      "graphics": {
+        "default": "assets/buildings/education/art_school_marvel.png"
       },
-      "noise": {
-        "impact": -3,
-        "attenuation": 1
-      },
-      "safety": {
-        "impact": 3,
-        "attenuation": 3
+      "images": {
+        "thumbnail": "assets/buildings/education/art_school_marvel.png",
+        "icon": "assets/buildings/education/art_school_marvel.png"
       }
     },
-    "graphics": {
-      "default": "assets/buildings/education/high_school.png"
-    },
-    "images": {
-      "thumbnail": "assets/buildings/education/high_school.png",
-      "icon": "assets/buildings/education/high_school.png"
+    {
+      "id": "art_school",
+      "name": "Art School",
+      "category": "education",
+      "description": "A great place to get your creative career going",
+      "graphicsFile": "assets/buildings/education/art_school.png",
+      "isDefault": true,
+      "civicScore": -1.8,
+      "economics": {
+        "buildCost": 2100,
+        "constructionDays": 16,
+        "maxRevenue": 550,
+        "maintenanceCost": 15,
+        "decayRate": 0.01
+      },
+      "resources": {
+        "jobsProvided": 42,
+        "energyProvided": 0,
+        "energyRequired": 75,
+        "educationProvided": 41,
+        "foodProvided": 0,
+        "housingProvided": 0,
+        "healthcareProvided": 0
+      },
+      "livability": {
+        "culture": {
+          "impact": 13,
+          "attenuation": 7
+        },
+        "affordability": {
+          "impact": -10,
+          "attenuation": 12
+        },
+        "resilience": {
+          "impact": 1,
+          "attenuation": 3
+        },
+        "environment": {
+          "impact": -12,
+          "attenuation": 6
+        },
+        "noise": {
+          "impact": -1,
+          "attenuation": 1
+        },
+        "safety": {
+          "impact": 3,
+          "attenuation": 4
+        }
+      },
+      "graphics": {
+        "default": "assets/buildings/education/art_school.png"
+      },
+      "images": {
+        "thumbnail": "assets/buildings/education/art_school.png",
+        "icon": "assets/buildings/education/art_school.png"
+      }
     }
-  },
-  {
-    "id": "trade_school",
-    "name": "Trade School",
-    "category": "education",
-    "description": "Vocational training center teaching practical job skills and trades",
-    "graphicsFile": "assets/buildings/education/trade_school.png",
-    "isDefault": true,
-    "civicScore": -10.8,
-    "economics": {
-      "buildCost": 2600,
-      "constructionDays": 14,
-      "maxRevenue": 125,
-      "maintenanceCost": 18,
-      "decayRate": 0.042
-    },
-    "resources": {
-      "jobsProvided": 55,
-      "energyProvided": 0,
-      "energyRequired": 110,
-      "educationProvided": 49,
-      "foodProvided": 0,
-      "housingProvided": 0,
-      "healthcareProvided": 0
-    },
-    "livability": {
-      "culture": {
-        "impact": 7,
-        "attenuation": 12
+  ],
+  "energy": [
+    {
+      "id": "coal_plant",
+      "name": "Coal Plant",
+      "category": "energy",
+      "description": "A dirty source of energy that pollutes",
+      "graphicsFile": "assets/buildings/energy/coal_plant.png",
+      "isDefault": true,
+      "civicScore": -25,
+      "economics": {
+        "buildCost": 2400,
+        "constructionDays": 6,
+        "maxRevenue": 160,
+        "maintenanceCost": 35,
+        "decayRate": 0.025
       },
-      "affordability": {
-        "impact": 1,
-        "attenuation": 12
+      "resources": {
+        "jobsProvided": 50,
+        "energyProvided": 300,
+        "energyRequired": 0,
+        "educationProvided": 0,
+        "foodProvided": 0,
+        "housingProvided": 0,
+        "healthcareProvided": 0
       },
-      "resilience": {
-        "impact": 5,
-        "attenuation": 7
+      "livability": {
+        "culture": {
+          "impact": -15,
+          "attenuation": 9
+        },
+        "affordability": {
+          "impact": 4,
+          "attenuation": 12
+        },
+        "resilience": {
+          "impact": 6,
+          "attenuation": 12
+        },
+        "environment": {
+          "impact": -35,
+          "attenuation": 12
+        },
+        "noise": {
+          "impact": -17,
+          "attenuation": 4
+        },
+        "safety": {
+          "impact": -12,
+          "attenuation": 8
+        }
       },
-      "environment": {
-        "impact": -9,
-        "attenuation": 5
+      "graphics": {
+        "default": "assets/buildings/energy/coal_plant.png"
       },
-      "noise": {
-        "impact": -12,
-        "attenuation": 1
-      },
-      "safety": {
-        "impact": 2,
-        "attenuation": 4
+      "images": {
+        "thumbnail": "assets/buildings/energy/coal_plant.png",
+        "icon": "assets/buildings/energy/coal_plant.png"
       }
     },
-    "graphics": {
-      "default": "assets/buildings/education/trade_school.png"
-    },
-    "images": {
-      "thumbnail": "assets/buildings/education/trade_school.png",
-      "icon": "assets/buildings/education/trade_school.png"
-    }
-  },
-  {
-    "id": "art_school_marvel",
-    "name": "Art School Marvel",
-    "category": "education",
-    "description": "A marvel level building! A true show stopper and world renowned for producing best in class cutting edge art. Center of the international art scene.",
-    "graphicsFile": "assets/buildings/education/art_school_marvel.png",
-    "isDefault": true,
-    "civicScore": -10,
-    "economics": {
-      "buildCost": 15000,
-      "constructionDays": 24,
-      "maxRevenue": 750,
-      "maintenanceCost": 40,
-      "decayRate": 0.0105
-    },
-    "resources": {
-      "jobsProvided": 220,
-      "energyProvided": 0,
-      "energyRequired": 250,
-      "educationProvided": 55,
-      "foodProvided": 0,
-      "housingProvided": 0,
-      "healthcareProvided": 0
-    },
-    "livability": {
-      "culture": {
-        "impact": 15,
-        "attenuation": 11
+    {
+      "id": "solar_farm",
+      "name": "Solar Farm",
+      "category": "energy",
+      "description": "Renewable energy generation facility",
+      "graphicsFile": "assets/buildings/energy/solar_farm.png",
+      "isDefault": true,
+      "civicScore": 10.3,
+      "economics": {
+        "buildCost": 600,
+        "constructionDays": 2,
+        "maxRevenue": 40,
+        "maintenanceCost": 1,
+        "decayRate": 0.002
       },
-      "affordability": {
-        "impact": -25,
-        "attenuation": 12
+      "resources": {
+        "jobsProvided": 1,
+        "energyProvided": 50,
+        "energyRequired": 0,
+        "educationProvided": 0,
+        "foodProvided": 0,
+        "housingProvided": 0,
+        "healthcareProvided": 0
       },
-      "resilience": {
-        "impact": -1,
-        "attenuation": 3
+      "livability": {
+        "culture": {
+          "impact": 1,
+          "attenuation": 2
+        },
+        "affordability": {
+          "impact": 8,
+          "attenuation": 12
+        },
+        "resilience": {
+          "impact": 11,
+          "attenuation": 12
+        },
+        "environment": {
+          "impact": 19,
+          "attenuation": 12
+        },
+        "noise": {
+          "impact": 0,
+          "attenuation": 1
+        },
+        "safety": {
+          "impact": -2,
+          "attenuation": 2
+        }
       },
-      "environment": {
-        "impact": -15,
-        "attenuation": 7
+      "graphics": {
+        "default": "assets/buildings/energy/solar_farm.png"
       },
-      "noise": {
-        "impact": -2,
-        "attenuation": 1
-      },
-      "safety": {
-        "impact": 2,
-        "attenuation": 5
+      "images": {
+        "thumbnail": "assets/buildings/energy/solar_farm.png",
+        "icon": "assets/buildings/energy/solar_farm.png"
       }
     },
-    "graphics": {
-      "default": "assets/buildings/education/art_school_marvel.png"
-    },
-    "images": {
-      "thumbnail": "assets/buildings/education/art_school_marvel.png",
-      "icon": "assets/buildings/education/art_school_marvel.png"
+    {
+      "id": "natural_gas_plant",
+      "name": "Natural Gas Plant",
+      "category": "energy",
+      "description": "Cleaner than coal but still fossil fuel",
+      "graphicsFile": "assets/buildings/energy/natural_gas_plant.png",
+      "isDefault": true,
+      "civicScore": -14.4,
+      "economics": {
+        "buildCost": 2800,
+        "constructionDays": 9,
+        "maxRevenue": 220,
+        "maintenanceCost": 20,
+        "decayRate": 0.045
+      },
+      "resources": {
+        "jobsProvided": 18,
+        "energyProvided": 500,
+        "energyRequired": 0,
+        "educationProvided": 0,
+        "foodProvided": 0,
+        "housingProvided": 0,
+        "healthcareProvided": 0
+      },
+      "livability": {
+        "culture": {
+          "impact": -8,
+          "attenuation": 8
+        },
+        "affordability": {
+          "impact": 6,
+          "attenuation": 12
+        },
+        "resilience": {
+          "impact": 7,
+          "attenuation": 12
+        },
+        "environment": {
+          "impact": -22,
+          "attenuation": 12
+        },
+        "noise": {
+          "impact": -9,
+          "attenuation": 3
+        },
+        "safety": {
+          "impact": -10,
+          "attenuation": 7
+        }
+      },
+      "graphics": {
+        "default": "assets/buildings/energy/natural_gas_plant.png"
+      },
+      "images": {
+        "thumbnail": "assets/buildings/energy/natural_gas_plant.png",
+        "icon": "assets/buildings/energy/natural_gas_plant.png"
+      }
     }
-  },
-  {
-    "id": "art_school",
-    "name": "Art School",
-    "category": "education",
-    "description": "A great place to get your creative career going",
-    "graphicsFile": "assets/buildings/education/art_school.png",
-    "isDefault": true,
-    "civicScore": -1.8,
-    "economics": {
-      "buildCost": 2100,
-      "constructionDays": 16,
-      "maxRevenue": 550,
-      "maintenanceCost": 15,
-      "decayRate": 0.01
-    },
-    "resources": {
-      "jobsProvided": 42,
-      "energyProvided": 0,
-      "energyRequired": 75,
-      "educationProvided": 41,
-      "foodProvided": 0,
-      "housingProvided": 0,
-      "healthcareProvided": 0
-    },
-    "livability": {
-      "culture": {
-        "impact": 13,
-        "attenuation": 7
+  ],
+  "healthcare": [
+    {
+      "id": "hospital",
+      "name": "Large Hospital",
+      "category": "healthcare",
+      "description": "Emergency medical and extended stay hospital care for the masses",
+      "graphicsFile": "assets/buildings/healthcare/hospital.png",
+      "isDefault": true,
+      "civicScore": -0.6,
+      "economics": {
+        "buildCost": 1800,
+        "constructionDays": 12,
+        "maxRevenue": 40,
+        "maintenanceCost": 17,
+        "decayRate": 0.033
       },
-      "affordability": {
-        "impact": -10,
-        "attenuation": 12
+      "resources": {
+        "jobsProvided": 80,
+        "energyProvided": 0,
+        "energyRequired": 95,
+        "educationProvided": 0,
+        "foodProvided": 0,
+        "housingProvided": 0,
+        "healthcareProvided": 150
       },
-      "resilience": {
-        "impact": 1,
-        "attenuation": 3
+      "livability": {
+        "culture": {
+          "impact": 5,
+          "attenuation": 7
+        },
+        "affordability": {
+          "impact": -3,
+          "attenuation": 12
+        },
+        "resilience": {
+          "impact": 12,
+          "attenuation": 12
+        },
+        "environment": {
+          "impact": -11,
+          "attenuation": 10
+        },
+        "noise": {
+          "impact": -18,
+          "attenuation": 10
+        },
+        "safety": {
+          "impact": 13,
+          "attenuation": 10
+        }
       },
-      "environment": {
-        "impact": -12,
-        "attenuation": 6
+      "graphics": {
+        "default": "assets/buildings/healthcare/hospital.png"
       },
-      "noise": {
-        "impact": -1,
-        "attenuation": 1
-      },
-      "safety": {
-        "impact": 3,
-        "attenuation": 4
+      "images": {
+        "thumbnail": "assets/buildings/healthcare/hospital.png",
+        "icon": "assets/buildings/healthcare/hospital.png"
       }
     },
-    "graphics": {
-      "default": "assets/buildings/education/art_school.png"
-    },
-    "images": {
-      "thumbnail": "assets/buildings/education/art_school.png",
-      "icon": "assets/buildings/education/art_school.png"
-    }
-  },
-  {
-    "id": "coal_plant",
-    "name": "Coal Plant",
-    "category": "energy",
-    "description": "A dirty source of energy that pollutes",
-    "graphicsFile": "assets/buildings/energy/coal_plant.png",
-    "isDefault": true,
-    "civicScore": -25,
-    "economics": {
-      "buildCost": 2400,
-      "constructionDays": 6,
-      "maxRevenue": 160,
-      "maintenanceCost": 35,
-      "decayRate": 0.025
-    },
-    "resources": {
-      "jobsProvided": 50,
-      "energyProvided": 300,
-      "energyRequired": 0,
-      "educationProvided": 0,
-      "foodProvided": 0,
-      "housingProvided": 0,
-      "healthcareProvided": 0
-    },
-    "livability": {
-      "culture": {
-        "impact": -15,
-        "attenuation": 9
+    {
+      "id": "dentist",
+      "name": "Dentist",
+      "category": "healthcare",
+      "description": "Dental clinic providing oral health care and tooth maintenance",
+      "graphicsFile": "assets/buildings/healthcare/dentist.png",
+      "isDefault": true,
+      "civicScore": 3.8,
+      "economics": {
+        "buildCost": 675,
+        "constructionDays": 4,
+        "maxRevenue": 40,
+        "maintenanceCost": 15,
+        "decayRate": 0.011
       },
-      "affordability": {
-        "impact": 4,
-        "attenuation": 12
+      "resources": {
+        "jobsProvided": 12,
+        "energyProvided": 0,
+        "energyRequired": 14,
+        "educationProvided": 0,
+        "foodProvided": 0,
+        "housingProvided": 0,
+        "healthcareProvided": 30
       },
-      "resilience": {
-        "impact": 6,
-        "attenuation": 12
+      "livability": {
+        "culture": {
+          "impact": 1,
+          "attenuation": 2
+        },
+        "affordability": {
+          "impact": -2,
+          "attenuation": 12
+        },
+        "resilience": {
+          "impact": 2,
+          "attenuation": 2
+        },
+        "environment": {
+          "impact": -2,
+          "attenuation": 2
+        },
+        "noise": {
+          "impact": 1,
+          "attenuation": 1
+        },
+        "safety": {
+          "impact": 7,
+          "attenuation": 7
+        }
       },
-      "environment": {
-        "impact": -35,
-        "attenuation": 12
+      "graphics": {
+        "default": "assets/buildings/healthcare/dentist.png"
       },
-      "noise": {
-        "impact": -17,
-        "attenuation": 4
-      },
-      "safety": {
-        "impact": -12,
-        "attenuation": 8
+      "images": {
+        "thumbnail": "assets/buildings/healthcare/dentist.png",
+        "icon": "assets/buildings/healthcare/dentist.png"
       }
     },
-    "graphics": {
-      "default": "assets/buildings/energy/coal_plant.png"
-    },
-    "images": {
-      "thumbnail": "assets/buildings/energy/coal_plant.png",
-      "icon": "assets/buildings/energy/coal_plant.png"
-    }
-  },
-  {
-    "id": "solar_farm",
-    "name": "Solar Farm",
-    "category": "energy",
-    "description": "Renewable energy generation facility",
-    "graphicsFile": "assets/buildings/energy/solar_farm.png",
-    "isDefault": true,
-    "civicScore": 10.3,
-    "economics": {
-      "buildCost": 600,
-      "constructionDays": 2,
-      "maxRevenue": 40,
-      "maintenanceCost": 1,
-      "decayRate": 0.002
-    },
-    "resources": {
-      "jobsProvided": 1,
-      "energyProvided": 50,
-      "energyRequired": 0,
-      "educationProvided": 0,
-      "foodProvided": 0,
-      "housingProvided": 0,
-      "healthcareProvided": 0
-    },
-    "livability": {
-      "culture": {
-        "impact": 1,
-        "attenuation": 2
+    {
+      "id": "medical_offices",
+      "name": "Medical Offices",
+      "category": "healthcare",
+      "description": "Primary care facilities with general practitioners and specialists",
+      "graphicsFile": "assets/buildings/healthcare/medical_offices.png",
+      "isDefault": true,
+      "civicScore": 4.1,
+      "economics": {
+        "buildCost": 925,
+        "constructionDays": 8,
+        "maxRevenue": 60,
+        "maintenanceCost": 16,
+        "decayRate": 0.02
       },
-      "affordability": {
-        "impact": 8,
-        "attenuation": 12
+      "resources": {
+        "jobsProvided": 35,
+        "energyProvided": 0,
+        "energyRequired": 21,
+        "educationProvided": 0,
+        "foodProvided": 0,
+        "housingProvided": 0,
+        "healthcareProvided": 51
       },
-      "resilience": {
-        "impact": 11,
-        "attenuation": 12
+      "livability": {
+        "culture": {
+          "impact": 1,
+          "attenuation": 3
+        },
+        "affordability": {
+          "impact": -1,
+          "attenuation": 12
+        },
+        "resilience": {
+          "impact": 4,
+          "attenuation": 4
+        },
+        "environment": {
+          "impact": -5,
+          "attenuation": 4
+        },
+        "noise": {
+          "impact": 1,
+          "attenuation": 1
+        },
+        "safety": {
+          "impact": 10,
+          "attenuation": 9
+        }
       },
-      "environment": {
-        "impact": 19,
-        "attenuation": 12
+      "graphics": {
+        "default": "assets/buildings/healthcare/medical_offices.png"
       },
-      "noise": {
-        "impact": 0,
-        "attenuation": 1
-      },
-      "safety": {
-        "impact": -2,
-        "attenuation": 2
+      "images": {
+        "thumbnail": "assets/buildings/healthcare/medical_offices.png",
+        "icon": "assets/buildings/healthcare/medical_offices.png"
       }
     },
-    "graphics": {
-      "default": "assets/buildings/energy/solar_farm.png"
-    },
-    "images": {
-      "thumbnail": "assets/buildings/energy/solar_farm.png",
-      "icon": "assets/buildings/energy/solar_farm.png"
+    {
+      "id": "massage_parlor",
+      "name": "Massage Parlor",
+      "category": "healthcare",
+      "description": "Wellness center offering therapeutic massage and relaxation services",
+      "graphicsFile": "assets/buildings/healthcare/massage_parlor.png",
+      "isDefault": true,
+      "civicScore": 7,
+      "economics": {
+        "buildCost": 415,
+        "constructionDays": 3,
+        "maxRevenue": 45,
+        "maintenanceCost": 2,
+        "decayRate": 0.006
+      },
+      "resources": {
+        "jobsProvided": 5,
+        "energyProvided": 0,
+        "energyRequired": 7,
+        "educationProvided": 0,
+        "foodProvided": 0,
+        "housingProvided": 0,
+        "healthcareProvided": 22
+      },
+      "livability": {
+        "culture": {
+          "impact": 4,
+          "attenuation": 2
+        },
+        "affordability": {
+          "impact": -1,
+          "attenuation": 12
+        },
+        "resilience": {
+          "impact": 1,
+          "attenuation": 2
+        },
+        "environment": {
+          "impact": -1,
+          "attenuation": 2
+        },
+        "noise": {
+          "impact": 1,
+          "attenuation": 1
+        },
+        "safety": {
+          "impact": 6,
+          "attenuation": 3
+        }
+      },
+      "graphics": {
+        "default": "assets/buildings/healthcare/massage_parlor.png"
+      },
+      "images": {
+        "thumbnail": "assets/buildings/healthcare/massage_parlor.png",
+        "icon": "assets/buildings/healthcare/massage_parlor.png"
+      }
     }
-  },
-  {
-    "id": "natural_gas_plant",
-    "name": "Natural Gas Plant",
-    "category": "energy",
-    "description": "Cleaner than coal but still fossil fuel",
-    "graphicsFile": "assets/buildings/energy/natural_gas_plant.png",
-    "isDefault": true,
-    "civicScore": -14.4,
-    "economics": {
-      "buildCost": 2800,
-      "constructionDays": 9,
-      "maxRevenue": 220,
-      "maintenanceCost": 20,
-      "decayRate": 0.045
-    },
-    "resources": {
-      "jobsProvided": 18,
-      "energyProvided": 500,
-      "energyRequired": 0,
-      "educationProvided": 0,
-      "foodProvided": 0,
-      "housingProvided": 0,
-      "healthcareProvided": 0
-    },
-    "livability": {
-      "culture": {
-        "impact": -8,
-        "attenuation": 8
+  ],
+  "housing": [
+    {
+      "id": "cottage",
+      "name": "Cottage",
+      "category": "housing",
+      "description": "Small family home with 2 bedrooms",
+      "graphicsFile": "assets/buildings/housing/cottage.png",
+      "isDefault": true,
+      "civicScore": 1.3,
+      "economics": {
+        "buildCost": 250,
+        "constructionDays": 1,
+        "maxRevenue": 15,
+        "maintenanceCost": 1,
+        "decayRate": 0.002
       },
-      "affordability": {
-        "impact": 6,
-        "attenuation": 12
+      "resources": {
+        "jobsProvided": 0,
+        "energyProvided": 0,
+        "energyRequired": 2,
+        "educationProvided": 0,
+        "foodProvided": 0,
+        "housingProvided": 2,
+        "healthcareProvided": 0
       },
-      "resilience": {
-        "impact": 7,
-        "attenuation": 12
+      "livability": {
+        "culture": {
+          "impact": 1,
+          "attenuation": 1
+        },
+        "affordability": {
+          "impact": 1,
+          "attenuation": 12
+        },
+        "resilience": {
+          "impact": 0,
+          "attenuation": 1
+        },
+        "environment": {
+          "impact": -1,
+          "attenuation": 1
+        },
+        "noise": {
+          "impact": 1,
+          "attenuation": 1
+        },
+        "safety": {
+          "impact": 0,
+          "attenuation": 1
+        }
       },
-      "environment": {
-        "impact": -22,
-        "attenuation": 12
+      "graphics": {
+        "default": "assets/buildings/housing/cottage.png"
       },
-      "noise": {
-        "impact": -9,
-        "attenuation": 3
-      },
-      "safety": {
-        "impact": -10,
-        "attenuation": 7
+      "images": {
+        "thumbnail": "assets/buildings/housing/cottage.png",
+        "icon": "assets/buildings/housing/cottage.png"
       }
     },
-    "graphics": {
-      "default": "assets/buildings/energy/natural_gas_plant.png"
-    },
-    "images": {
-      "thumbnail": "assets/buildings/energy/natural_gas_plant.png",
-      "icon": "assets/buildings/energy/natural_gas_plant.png"
-    }
-  },
-  {
-    "id": "hospital",
-    "name": "Large Hospital",
-    "category": "healthcare",
-    "description": "Emergency medical and extended stay hospital care for the masses",
-    "graphicsFile": "assets/buildings/healthcare/hospital.png",
-    "isDefault": true,
-    "civicScore": -0.6,
-    "economics": {
-      "buildCost": 1800,
-      "constructionDays": 12,
-      "maxRevenue": 40,
-      "maintenanceCost": 17,
-      "decayRate": 0.033
-    },
-    "resources": {
-      "jobsProvided": 80,
-      "energyProvided": 0,
-      "energyRequired": 95,
-      "educationProvided": 0,
-      "foodProvided": 0,
-      "housingProvided": 0,
-      "healthcareProvided": 150
-    },
-    "livability": {
-      "culture": {
-        "impact": 5,
-        "attenuation": 7
+    {
+      "id": "warehouse_lofts",
+      "name": "Warehouse Lofts",
+      "category": "housing",
+      "description": "Converted industrial space offering modern urban living",
+      "graphicsFile": "assets/buildings/housing/warehouse_lofts.png",
+      "isDefault": true,
+      "civicScore": 3.6,
+      "economics": {
+        "buildCost": 1290,
+        "constructionDays": 8,
+        "maxRevenue": 105,
+        "maintenanceCost": 18,
+        "decayRate": 0.036
       },
-      "affordability": {
-        "impact": -3,
-        "attenuation": 12
+      "resources": {
+        "jobsProvided": 2,
+        "energyProvided": 0,
+        "energyRequired": 50,
+        "educationProvided": 0,
+        "foodProvided": 0,
+        "housingProvided": 28,
+        "healthcareProvided": 0
       },
-      "resilience": {
-        "impact": 12,
-        "attenuation": 12
+      "livability": {
+        "culture": {
+          "impact": 6,
+          "attenuation": 3
+        },
+        "affordability": {
+          "impact": 2,
+          "attenuation": 12
+        },
+        "resilience": {
+          "impact": 1,
+          "attenuation": 2
+        },
+        "environment": {
+          "impact": -3,
+          "attenuation": 2
+        },
+        "noise": {
+          "impact": 0,
+          "attenuation": 1
+        },
+        "safety": {
+          "impact": 1,
+          "attenuation": 1
+        }
       },
-      "environment": {
-        "impact": -11,
-        "attenuation": 10
+      "graphics": {
+        "default": "assets/buildings/housing/warehouse_lofts.png"
       },
-      "noise": {
-        "impact": -18,
-        "attenuation": 10
-      },
-      "safety": {
-        "impact": 13,
-        "attenuation": 10
+      "images": {
+        "thumbnail": "assets/buildings/housing/warehouse_lofts.png",
+        "icon": "assets/buildings/housing/warehouse_lofts.png"
       }
     },
-    "graphics": {
-      "default": "assets/buildings/healthcare/hospital.png"
-    },
-    "images": {
-      "thumbnail": "assets/buildings/healthcare/hospital.png",
-      "icon": "assets/buildings/healthcare/hospital.png"
-    }
-  },
-  {
-    "id": "dentist",
-    "name": "Dentist",
-    "category": "healthcare",
-    "description": "Dental clinic providing oral health care and tooth maintenance",
-    "graphicsFile": "assets/buildings/healthcare/dentist.png",
-    "isDefault": true,
-    "civicScore": 3.8,
-    "economics": {
-      "buildCost": 675,
-      "constructionDays": 4,
-      "maxRevenue": 40,
-      "maintenanceCost": 15,
-      "decayRate": 0.011
-    },
-    "resources": {
-      "jobsProvided": 12,
-      "energyProvided": 0,
-      "energyRequired": 14,
-      "educationProvided": 0,
-      "foodProvided": 0,
-      "housingProvided": 0,
-      "healthcareProvided": 30
-    },
-    "livability": {
-      "culture": {
-        "impact": 1,
-        "attenuation": 2
+    {
+      "id": "nine_story_apartment",
+      "name": "9 Story Apartments",
+      "category": "housing",
+      "description": "High-rise residential building with multiple housing units",
+      "graphicsFile": "assets/buildings/housing/nine_story_apartment.png",
+      "isDefault": true,
+      "civicScore": 0.3,
+      "economics": {
+        "buildCost": 1900,
+        "constructionDays": 9,
+        "maxRevenue": 180,
+        "maintenanceCost": 33,
+        "decayRate": 0.061
       },
-      "affordability": {
-        "impact": -2,
-        "attenuation": 12
+      "resources": {
+        "jobsProvided": 4,
+        "energyProvided": 0,
+        "energyRequired": 75,
+        "educationProvided": 0,
+        "foodProvided": 0,
+        "housingProvided": 56,
+        "healthcareProvided": 0
       },
-      "resilience": {
-        "impact": 2,
-        "attenuation": 2
+      "livability": {
+        "culture": {
+          "impact": 5,
+          "attenuation": 2
+        },
+        "affordability": {
+          "impact": 7,
+          "attenuation": 12
+        },
+        "resilience": {
+          "impact": 5,
+          "attenuation": 6
+        },
+        "environment": {
+          "impact": -9,
+          "attenuation": 3
+        },
+        "noise": {
+          "impact": -5,
+          "attenuation": 2
+        },
+        "safety": {
+          "impact": 2,
+          "attenuation": 2
+        }
       },
-      "environment": {
-        "impact": -2,
-        "attenuation": 2
+      "graphics": {
+        "default": "assets/buildings/housing/nine_story_apartment.png"
       },
-      "noise": {
-        "impact": 1,
-        "attenuation": 1
-      },
-      "safety": {
-        "impact": 7,
-        "attenuation": 7
+      "images": {
+        "thumbnail": "assets/buildings/housing/nine_story_apartment.png",
+        "icon": "assets/buildings/housing/nine_story_apartment.png"
       }
     },
-    "graphics": {
-      "default": "assets/buildings/healthcare/dentist.png"
-    },
-    "images": {
-      "thumbnail": "assets/buildings/healthcare/dentist.png",
-      "icon": "assets/buildings/healthcare/dentist.png"
-    }
-  },
-  {
-    "id": "medical_offices",
-    "name": "Medical Offices",
-    "category": "healthcare",
-    "description": "Primary care facilities with general practitioners and specialists",
-    "graphicsFile": "assets/buildings/healthcare/medical_offices.png",
-    "isDefault": true,
-    "civicScore": 4.1,
-    "economics": {
-      "buildCost": 925,
-      "constructionDays": 8,
-      "maxRevenue": 60,
-      "maintenanceCost": 16,
-      "decayRate": 0.02
-    },
-    "resources": {
-      "jobsProvided": 35,
-      "energyProvided": 0,
-      "energyRequired": 21,
-      "educationProvided": 0,
-      "foodProvided": 0,
-      "housingProvided": 0,
-      "healthcareProvided": 51
-    },
-    "livability": {
-      "culture": {
-        "impact": 1,
-        "attenuation": 3
+    {
+      "id": "apartment_complex",
+      "name": "Apartment Complex",
+      "category": "housing",
+      "description": "Multi-family housing with 8 bedrooms",
+      "graphicsFile": "assets/buildings/housing/apartment_complex.png",
+      "isDefault": true,
+      "civicScore": -1.1,
+      "economics": {
+        "buildCost": 635,
+        "constructionDays": 2,
+        "maxRevenue": 60,
+        "maintenanceCost": 9,
+        "decayRate": 0.021
       },
-      "affordability": {
-        "impact": -1,
-        "attenuation": 12
+      "resources": {
+        "jobsProvided": 1,
+        "energyProvided": 0,
+        "energyRequired": 35,
+        "educationProvided": 0,
+        "foodProvided": 0,
+        "housingProvided": 12,
+        "healthcareProvided": 0
       },
-      "resilience": {
-        "impact": 4,
-        "attenuation": 4
+      "livability": {
+        "culture": {
+          "impact": 1,
+          "attenuation": 2
+        },
+        "affordability": {
+          "impact": 2,
+          "attenuation": 12
+        },
+        "resilience": {
+          "impact": 1,
+          "attenuation": 2
+        },
+        "environment": {
+          "impact": -3,
+          "attenuation": 2
+        },
+        "noise": {
+          "impact": -2,
+          "attenuation": 1
+        },
+        "safety": {
+          "impact": 1,
+          "attenuation": 1
+        }
       },
-      "environment": {
-        "impact": -5,
-        "attenuation": 4
+      "graphics": {
+        "default": "assets/buildings/housing/apartment_complex.png"
       },
-      "noise": {
-        "impact": 1,
-        "attenuation": 1
-      },
-      "safety": {
-        "impact": 10,
-        "attenuation": 9
+      "images": {
+        "thumbnail": "assets/buildings/housing/apartment_complex.png",
+        "icon": "assets/buildings/housing/apartment_complex.png"
       }
     },
-    "graphics": {
-      "default": "assets/buildings/healthcare/medical_offices.png"
-    },
-    "images": {
-      "thumbnail": "assets/buildings/healthcare/medical_offices.png",
-      "icon": "assets/buildings/healthcare/medical_offices.png"
-    }
-  },
-  {
-    "id": "massage_parlor",
-    "name": "Massage Parlor",
-    "category": "healthcare",
-    "description": "Wellness center offering therapeutic massage and relaxation services",
-    "graphicsFile": "assets/buildings/healthcare/massage_parlor.png",
-    "isDefault": true,
-    "civicScore": 7,
-    "economics": {
-      "buildCost": 415,
-      "constructionDays": 3,
-      "maxRevenue": 45,
-      "maintenanceCost": 2,
-      "decayRate": 0.006
-    },
-    "resources": {
-      "jobsProvided": 5,
-      "energyProvided": 0,
-      "energyRequired": 7,
-      "educationProvided": 0,
-      "foodProvided": 0,
-      "housingProvided": 0,
-      "healthcareProvided": 22
-    },
-    "livability": {
-      "culture": {
-        "impact": 4,
-        "attenuation": 2
+    {
+      "id": "seven_story_apartment",
+      "name": "7 Story Apartments",
+      "category": "housing",
+      "description": "Mid-rise apartment building providing affordable urban housing",
+      "graphicsFile": "assets/buildings/housing/seven_story_apartment.png",
+      "isDefault": true,
+      "civicScore": 0.9,
+      "economics": {
+        "buildCost": 1325,
+        "constructionDays": 7,
+        "maxRevenue": 150,
+        "maintenanceCost": 27,
+        "decayRate": 0.051
       },
-      "affordability": {
-        "impact": -1,
-        "attenuation": 12
+      "resources": {
+        "jobsProvided": 3,
+        "energyProvided": 0,
+        "energyRequired": 65,
+        "educationProvided": 0,
+        "foodProvided": 0,
+        "housingProvided": 44,
+        "healthcareProvided": 0
       },
-      "resilience": {
-        "impact": 1,
-        "attenuation": 2
+      "livability": {
+        "culture": {
+          "impact": 4,
+          "attenuation": 2
+        },
+        "affordability": {
+          "impact": 6,
+          "attenuation": 12
+        },
+        "resilience": {
+          "impact": 4,
+          "attenuation": 5
+        },
+        "environment": {
+          "impact": -7,
+          "attenuation": 3
+        },
+        "noise": {
+          "impact": -4,
+          "attenuation": 2
+        },
+        "safety": {
+          "impact": 2,
+          "attenuation": 2
+        }
       },
-      "environment": {
-        "impact": -1,
-        "attenuation": 2
+      "graphics": {
+        "default": "assets/buildings/housing/seven_story_apartment.png"
       },
-      "noise": {
-        "impact": 1,
-        "attenuation": 1
-      },
-      "safety": {
-        "impact": 6,
-        "attenuation": 3
+      "images": {
+        "thumbnail": "assets/buildings/housing/seven_story_apartment.png",
+        "icon": "assets/buildings/housing/seven_story_apartment.png"
       }
     },
-    "graphics": {
-      "default": "assets/buildings/healthcare/massage_parlor.png"
-    },
-    "images": {
-      "thumbnail": "assets/buildings/healthcare/massage_parlor.png",
-      "icon": "assets/buildings/healthcare/massage_parlor.png"
-    }
-  },
-  {
-    "id": "cottage",
-    "name": "Cottage",
-    "category": "housing",
-    "description": "Small family home with 2 bedrooms",
-    "graphicsFile": "assets/buildings/housing/cottage.png",
-    "isDefault": true,
-    "civicScore": 1.3,
-    "economics": {
-      "buildCost": 250,
-      "constructionDays": 1,
-      "maxRevenue": 15,
-      "maintenanceCost": 1,
-      "decayRate": 0.002
-    },
-    "resources": {
-      "jobsProvided": 0,
-      "energyProvided": 0,
-      "energyRequired": 2,
-      "educationProvided": 0,
-      "foodProvided": 0,
-      "housingProvided": 2,
-      "healthcareProvided": 0
-    },
-    "livability": {
-      "culture": {
-        "impact": 1,
-        "attenuation": 1
+    {
+      "id": "town_block",
+      "name": "Town Block",
+      "category": "housing",
+      "description": "Dense residential development with townhomes and apartments",
+      "graphicsFile": "assets/buildings/housing/town_block.png",
+      "isDefault": true,
+      "civicScore": 1.8,
+      "economics": {
+        "buildCost": 750,
+        "constructionDays": 3,
+        "maxRevenue": 90,
+        "maintenanceCost": 15,
+        "decayRate": 0.031
       },
-      "affordability": {
-        "impact": 1,
-        "attenuation": 12
+      "resources": {
+        "jobsProvided": 2,
+        "energyProvided": 0,
+        "energyRequired": 45,
+        "educationProvided": 0,
+        "foodProvided": 0,
+        "housingProvided": 20,
+        "healthcareProvided": 0
       },
-      "resilience": {
-        "impact": 0,
-        "attenuation": 1
+      "livability": {
+        "culture": {
+          "impact": 5,
+          "attenuation": 2
+        },
+        "affordability": {
+          "impact": 4,
+          "attenuation": 12
+        },
+        "resilience": {
+          "impact": 3,
+          "attenuation": 3
+        },
+        "environment": {
+          "impact": -4,
+          "attenuation": 3
+        },
+        "noise": {
+          "impact": -3,
+          "attenuation": 1
+        },
+        "safety": {
+          "impact": 1,
+          "attenuation": 2
+        }
       },
-      "environment": {
-        "impact": -1,
-        "attenuation": 1
+      "graphics": {
+        "default": "assets/buildings/housing/town_block.png"
       },
-      "noise": {
-        "impact": 1,
-        "attenuation": 1
-      },
-      "safety": {
-        "impact": 0,
-        "attenuation": 1
+      "images": {
+        "thumbnail": "assets/buildings/housing/town_block.png",
+        "icon": "assets/buildings/housing/town_block.png"
       }
     },
-    "graphics": {
-      "default": "assets/buildings/housing/cottage.png"
-    },
-    "images": {
-      "thumbnail": "assets/buildings/housing/cottage.png",
-      "icon": "assets/buildings/housing/cottage.png"
+    {
+      "id": "five_story_apartment",
+      "name": "5 Story Apartments",
+      "category": "housing",
+      "description": "Medium-density apartment building in residential neighborhoods",
+      "graphicsFile": "assets/buildings/housing/five_story_apartment.png",
+      "isDefault": true,
+      "civicScore": 0.8,
+      "economics": {
+        "buildCost": 990,
+        "constructionDays": 5,
+        "maxRevenue": 120,
+        "maintenanceCost": 21,
+        "decayRate": 0.041
+      },
+      "resources": {
+        "jobsProvided": 2,
+        "energyProvided": 0,
+        "energyRequired": 55,
+        "educationProvided": 0,
+        "foodProvided": 0,
+        "housingProvided": 32,
+        "healthcareProvided": 0
+      },
+      "livability": {
+        "culture": {
+          "impact": 4,
+          "attenuation": 2
+        },
+        "affordability": {
+          "impact": 5,
+          "attenuation": 12
+        },
+        "resilience": {
+          "impact": 2,
+          "attenuation": 4
+        },
+        "environment": {
+          "impact": -5,
+          "attenuation": 3
+        },
+        "noise": {
+          "impact": -3,
+          "attenuation": 1
+        },
+        "safety": {
+          "impact": 2,
+          "attenuation": 2
+        }
+      },
+      "graphics": {
+        "default": "assets/buildings/housing/five_story_apartment.png"
+      },
+      "images": {
+        "thumbnail": "assets/buildings/housing/five_story_apartment.png",
+        "icon": "assets/buildings/housing/five_story_apartment.png"
+      }
     }
-  },
-  {
-    "id": "warehouse_lofts",
-    "name": "Warehouse Lofts",
-    "category": "housing",
-    "description": "Converted industrial space offering modern urban living",
-    "graphicsFile": "assets/buildings/housing/warehouse_lofts.png",
-    "isDefault": true,
-    "civicScore": 3.6,
-    "economics": {
-      "buildCost": 1290,
-      "constructionDays": 8,
-      "maxRevenue": 105,
-      "maintenanceCost": 18,
-      "decayRate": 0.036
-    },
-    "resources": {
-      "jobsProvided": 2,
-      "energyProvided": 0,
-      "energyRequired": 50,
-      "educationProvided": 0,
-      "foodProvided": 0,
-      "housingProvided": 28,
-      "healthcareProvided": 0
-    },
-    "livability": {
-      "culture": {
-        "impact": 6,
-        "attenuation": 3
+  ],
+  "industrial": [
+    {
+      "id": "brewery",
+      "name": "Brewery",
+      "category": "industrial",
+      "description": "Craft beverage production facility",
+      "graphicsFile": "assets/buildings/industrial/brewery.png",
+      "isDefault": true,
+      "civicScore": -10.3,
+      "economics": {
+        "buildCost": 1100,
+        "constructionDays": 6,
+        "maxRevenue": 95,
+        "maintenanceCost": 31,
+        "decayRate": 0.065
       },
-      "affordability": {
-        "impact": 2,
-        "attenuation": 12
+      "resources": {
+        "jobsProvided": 15,
+        "energyProvided": 0,
+        "energyRequired": 60,
+        "educationProvided": 0,
+        "foodProvided": 10,
+        "housingProvided": 0,
+        "healthcareProvided": 0
       },
-      "resilience": {
-        "impact": 1,
-        "attenuation": 2
+      "livability": {
+        "culture": {
+          "impact": 7,
+          "attenuation": 3
+        },
+        "affordability": {
+          "impact": -1,
+          "attenuation": 12
+        },
+        "resilience": {
+          "impact": -3,
+          "attenuation": 5
+        },
+        "environment": {
+          "impact": -9,
+          "attenuation": 3
+        },
+        "noise": {
+          "impact": -3,
+          "attenuation": 3
+        },
+        "safety": {
+          "impact": -10,
+          "attenuation": 3
+        }
       },
-      "environment": {
-        "impact": -3,
-        "attenuation": 2
+      "graphics": {
+        "default": "assets/buildings/industrial/brewery.png"
       },
-      "noise": {
-        "impact": 0,
-        "attenuation": 1
-      },
-      "safety": {
-        "impact": 1,
-        "attenuation": 1
+      "images": {
+        "thumbnail": "assets/buildings/industrial/brewery.png",
+        "icon": "assets/buildings/industrial/brewery.png"
       }
     },
-    "graphics": {
-      "default": "assets/buildings/housing/warehouse_lofts.png"
-    },
-    "images": {
-      "thumbnail": "assets/buildings/housing/warehouse_lofts.png",
-      "icon": "assets/buildings/housing/warehouse_lofts.png"
-    }
-  },
-  {
-    "id": "nine_story_apartment",
-    "name": "9 Story Apartments",
-    "category": "housing",
-    "description": "High-rise residential building with multiple housing units",
-    "graphicsFile": "assets/buildings/housing/nine_story_apartment.png",
-    "isDefault": true,
-    "civicScore": 0.3,
-    "economics": {
-      "buildCost": 1900,
-      "constructionDays": 9,
-      "maxRevenue": 180,
-      "maintenanceCost": 33,
-      "decayRate": 0.061
-    },
-    "resources": {
-      "jobsProvided": 4,
-      "energyProvided": 0,
-      "energyRequired": 75,
-      "educationProvided": 0,
-      "foodProvided": 0,
-      "housingProvided": 56,
-      "healthcareProvided": 0
-    },
-    "livability": {
-      "culture": {
-        "impact": 5,
-        "attenuation": 2
+    {
+      "id": "basic_warehouse",
+      "name": "Basic Warehouse",
+      "category": "industrial",
+      "description": "Storage and distribution facility for goods and materials",
+      "graphicsFile": "assets/buildings/industrial/basic_warehouse.png",
+      "isDefault": true,
+      "civicScore": -6.1,
+      "economics": {
+        "buildCost": 700,
+        "constructionDays": 2,
+        "maxRevenue": 42,
+        "maintenanceCost": 4,
+        "decayRate": 0.03
       },
-      "affordability": {
-        "impact": 7,
-        "attenuation": 12
+      "resources": {
+        "jobsProvided": 9,
+        "energyProvided": 0,
+        "energyRequired": 15,
+        "educationProvided": 0,
+        "foodProvided": 0,
+        "housingProvided": 0,
+        "healthcareProvided": 0
       },
-      "resilience": {
-        "impact": 5,
-        "attenuation": 6
+      "livability": {
+        "culture": {
+          "impact": 1,
+          "attenuation": 2
+        },
+        "affordability": {
+          "impact": -2,
+          "attenuation": 12
+        },
+        "resilience": {
+          "impact": -1,
+          "attenuation": 2
+        },
+        "environment": {
+          "impact": -4,
+          "attenuation": 2
+        },
+        "noise": {
+          "impact": -1,
+          "attenuation": 1
+        },
+        "safety": {
+          "impact": -3,
+          "attenuation": 3
+        }
       },
-      "environment": {
-        "impact": -9,
-        "attenuation": 3
+      "graphics": {
+        "default": "assets/buildings/industrial/basic_warehouse.png"
       },
-      "noise": {
-        "impact": -5,
-        "attenuation": 2
-      },
-      "safety": {
-        "impact": 2,
-        "attenuation": 2
+      "images": {
+        "thumbnail": "assets/buildings/industrial/basic_warehouse.png",
+        "icon": "assets/buildings/industrial/basic_warehouse.png"
       }
-    },
-    "graphics": {
-      "default": "assets/buildings/housing/nine_story_apartment.png"
-    },
-    "images": {
-      "thumbnail": "assets/buildings/housing/nine_story_apartment.png",
-      "icon": "assets/buildings/housing/nine_story_apartment.png"
     }
-  },
-  {
-    "id": "apartment_complex",
-    "name": "Apartment Complex",
-    "category": "housing",
-    "description": "Multi-family housing with 8 bedrooms",
-    "graphicsFile": "assets/buildings/housing/apartment_complex.png",
-    "isDefault": true,
-    "civicScore": -1.1,
-    "economics": {
-      "buildCost": 635,
-      "constructionDays": 2,
-      "maxRevenue": 60,
-      "maintenanceCost": 9,
-      "decayRate": 0.021
-    },
-    "resources": {
-      "jobsProvided": 1,
-      "energyProvided": 0,
-      "energyRequired": 35,
-      "educationProvided": 0,
-      "foodProvided": 0,
-      "housingProvided": 12,
-      "healthcareProvided": 0
-    },
-    "livability": {
-      "culture": {
-        "impact": 1,
-        "attenuation": 2
+  ],
+  "recreation": [
+    {
+      "id": "skate_park",
+      "name": "Skate Park",
+      "category": "recreation",
+      "description": "A great place to skate and hang out!",
+      "graphicsFile": "assets/buildings/recreation/skate_park.png",
+      "isDefault": true,
+      "civicScore": -3.8,
+      "economics": {
+        "buildCost": 235,
+        "constructionDays": 1,
+        "maxRevenue": 0,
+        "maintenanceCost": 1,
+        "decayRate": 0.005
       },
-      "affordability": {
-        "impact": 2,
-        "attenuation": 12
+      "resources": {
+        "jobsProvided": 0,
+        "energyProvided": 0,
+        "energyRequired": 1,
+        "educationProvided": 0,
+        "foodProvided": 0,
+        "housingProvided": 0,
+        "healthcareProvided": 0
       },
-      "resilience": {
-        "impact": 1,
-        "attenuation": 2
+      "livability": {
+        "culture": {
+          "impact": 8,
+          "attenuation": 4
+        },
+        "affordability": {
+          "impact": -1,
+          "attenuation": 12
+        },
+        "resilience": {
+          "impact": 0,
+          "attenuation": 3
+        },
+        "environment": {
+          "impact": -1,
+          "attenuation": 1
+        },
+        "noise": {
+          "impact": -7,
+          "attenuation": 4
+        },
+        "safety": {
+          "impact": -6,
+          "attenuation": 4
+        }
       },
-      "environment": {
-        "impact": -3,
-        "attenuation": 2
+      "graphics": {
+        "default": "assets/buildings/recreation/skate_park.png"
       },
-      "noise": {
-        "impact": -2,
-        "attenuation": 1
-      },
-      "safety": {
-        "impact": 1,
-        "attenuation": 1
+      "images": {
+        "thumbnail": "assets/buildings/recreation/skate_park.png",
+        "icon": "assets/buildings/recreation/skate_park.png"
       }
-    },
-    "graphics": {
-      "default": "assets/buildings/housing/apartment_complex.png"
-    },
-    "images": {
-      "thumbnail": "assets/buildings/housing/apartment_complex.png",
-      "icon": "assets/buildings/housing/apartment_complex.png"
     }
-  },
-  {
-    "id": "seven_story_apartment",
-    "name": "7 Story Apartments",
-    "category": "housing",
-    "description": "Mid-rise apartment building providing affordable urban housing",
-    "graphicsFile": "assets/buildings/housing/seven_story_apartment.png",
-    "isDefault": true,
-    "civicScore": 0.9,
-    "economics": {
-      "buildCost": 1325,
-      "constructionDays": 7,
-      "maxRevenue": 150,
-      "maintenanceCost": 27,
-      "decayRate": 0.051
-    },
-    "resources": {
-      "jobsProvided": 3,
-      "energyProvided": 0,
-      "energyRequired": 65,
-      "educationProvided": 0,
-      "foodProvided": 0,
-      "housingProvided": 44,
-      "healthcareProvided": 0
-    },
-    "livability": {
-      "culture": {
-        "impact": 4,
-        "attenuation": 2
-      },
-      "affordability": {
-        "impact": 6,
-        "attenuation": 12
-      },
-      "resilience": {
-        "impact": 4,
-        "attenuation": 5
-      },
-      "environment": {
-        "impact": -7,
-        "attenuation": 3
-      },
-      "noise": {
-        "impact": -4,
-        "attenuation": 2
-      },
-      "safety": {
-        "impact": 2,
-        "attenuation": 2
-      }
-    },
-    "graphics": {
-      "default": "assets/buildings/housing/seven_story_apartment.png"
-    },
-    "images": {
-      "thumbnail": "assets/buildings/housing/seven_story_apartment.png",
-      "icon": "assets/buildings/housing/seven_story_apartment.png"
-    }
-  },
-  {
-    "id": "town_block",
-    "name": "Town Block",
-    "category": "housing",
-    "description": "Dense residential development with townhomes and apartments",
-    "graphicsFile": "assets/buildings/housing/town_block.png",
-    "isDefault": true,
-    "civicScore": 1.8,
-    "economics": {
-      "buildCost": 750,
-      "constructionDays": 3,
-      "maxRevenue": 90,
-      "maintenanceCost": 15,
-      "decayRate": 0.031
-    },
-    "resources": {
-      "jobsProvided": 2,
-      "energyProvided": 0,
-      "energyRequired": 45,
-      "educationProvided": 0,
-      "foodProvided": 0,
-      "housingProvided": 20,
-      "healthcareProvided": 0
-    },
-    "livability": {
-      "culture": {
-        "impact": 5,
-        "attenuation": 2
-      },
-      "affordability": {
-        "impact": 4,
-        "attenuation": 12
-      },
-      "resilience": {
-        "impact": 3,
-        "attenuation": 3
-      },
-      "environment": {
-        "impact": -4,
-        "attenuation": 3
-      },
-      "noise": {
-        "impact": -3,
-        "attenuation": 1
-      },
-      "safety": {
-        "impact": 1,
-        "attenuation": 2
-      }
-    },
-    "graphics": {
-      "default": "assets/buildings/housing/town_block.png"
-    },
-    "images": {
-      "thumbnail": "assets/buildings/housing/town_block.png",
-      "icon": "assets/buildings/housing/town_block.png"
-    }
-  },
-  {
-    "id": "five_story_apartment",
-    "name": "5 Story Apartments",
-    "category": "housing",
-    "description": "Medium-density apartment building in residential neighborhoods",
-    "graphicsFile": "assets/buildings/housing/five_story_apartment.png",
-    "isDefault": true,
-    "civicScore": 0.8,
-    "economics": {
-      "buildCost": 990,
-      "constructionDays": 5,
-      "maxRevenue": 120,
-      "maintenanceCost": 21,
-      "decayRate": 0.041
-    },
-    "resources": {
-      "jobsProvided": 2,
-      "energyProvided": 0,
-      "energyRequired": 55,
-      "educationProvided": 0,
-      "foodProvided": 0,
-      "housingProvided": 32,
-      "healthcareProvided": 0
-    },
-    "livability": {
-      "culture": {
-        "impact": 4,
-        "attenuation": 2
-      },
-      "affordability": {
-        "impact": 5,
-        "attenuation": 12
-      },
-      "resilience": {
-        "impact": 2,
-        "attenuation": 4
-      },
-      "environment": {
-        "impact": -5,
-        "attenuation": 3
-      },
-      "noise": {
-        "impact": -3,
-        "attenuation": 1
-      },
-      "safety": {
-        "impact": 2,
-        "attenuation": 2
-      }
-    },
-    "graphics": {
-      "default": "assets/buildings/housing/five_story_apartment.png"
-    },
-    "images": {
-      "thumbnail": "assets/buildings/housing/five_story_apartment.png",
-      "icon": "assets/buildings/housing/five_story_apartment.png"
-    }
-  },
-  {
-    "id": "brewery",
-    "name": "Brewery",
-    "category": "industrial",
-    "description": "Craft beverage production facility",
-    "graphicsFile": "assets/buildings/industrial/brewery.png",
-    "isDefault": true,
-    "civicScore": -10.3,
-    "economics": {
-      "buildCost": 1100,
-      "constructionDays": 6,
-      "maxRevenue": 95,
-      "maintenanceCost": 31,
-      "decayRate": 0.065
-    },
-    "resources": {
-      "jobsProvided": 15,
-      "energyProvided": 0,
-      "energyRequired": 60,
-      "educationProvided": 0,
-      "foodProvided": 10,
-      "housingProvided": 0,
-      "healthcareProvided": 0
-    },
-    "livability": {
-      "culture": {
-        "impact": 7,
-        "attenuation": 3
-      },
-      "affordability": {
-        "impact": -1,
-        "attenuation": 12
-      },
-      "resilience": {
-        "impact": -3,
-        "attenuation": 5
-      },
-      "environment": {
-        "impact": -9,
-        "attenuation": 3
-      },
-      "noise": {
-        "impact": -3,
-        "attenuation": 3
-      },
-      "safety": {
-        "impact": -10,
-        "attenuation": 3
-      }
-    },
-    "graphics": {
-      "default": "assets/buildings/industrial/brewery.png"
-    },
-    "images": {
-      "thumbnail": "assets/buildings/industrial/brewery.png",
-      "icon": "assets/buildings/industrial/brewery.png"
-    }
-  },
-  {
-    "id": "basic_warehouse",
-    "name": "Basic Warehouse",
-    "category": "industrial",
-    "description": "Storage and distribution facility for goods and materials",
-    "graphicsFile": "assets/buildings/industrial/basic_warehouse.png",
-    "isDefault": true,
-    "civicScore": -6.1,
-    "economics": {
-      "buildCost": 700,
-      "constructionDays": 2,
-      "maxRevenue": 42,
-      "maintenanceCost": 4,
-      "decayRate": 0.03
-    },
-    "resources": {
-      "jobsProvided": 9,
-      "energyProvided": 0,
-      "energyRequired": 15,
-      "educationProvided": 0,
-      "foodProvided": 0,
-      "housingProvided": 0,
-      "healthcareProvided": 0
-    },
-    "livability": {
-      "culture": {
-        "impact": 1,
-        "attenuation": 2
-      },
-      "affordability": {
-        "impact": -2,
-        "attenuation": 12
-      },
-      "resilience": {
-        "impact": -1,
-        "attenuation": 2
-      },
-      "environment": {
-        "impact": -4,
-        "attenuation": 2
-      },
-      "noise": {
-        "impact": -1,
-        "attenuation": 1
-      },
-      "safety": {
-        "impact": -3,
-        "attenuation": 3
-      }
-    },
-    "graphics": {
-      "default": "assets/buildings/industrial/basic_warehouse.png"
-    },
-    "images": {
-      "thumbnail": "assets/buildings/industrial/basic_warehouse.png",
-      "icon": "assets/buildings/industrial/basic_warehouse.png"
-    }
-  },
-  {
-    "id": "skate_park",
-    "name": "Skate Park",
-    "category": "recreation",
-    "description": "A great place to skate and hang out!",
-    "graphicsFile": "assets/buildings/recreation/skate_park.png",
-    "isDefault": true,
-    "civicScore": -3.8,
-    "economics": {
-      "buildCost": 235,
-      "constructionDays": 1,
-      "maxRevenue": 0,
-      "maintenanceCost": 1,
-      "decayRate": 0.005
-    },
-    "resources": {
-      "jobsProvided": 0,
-      "energyProvided": 0,
-      "energyRequired": 1,
-      "educationProvided": 0,
-      "foodProvided": 0,
-      "housingProvided": 0,
-      "healthcareProvided": 0
-    },
-    "livability": {
-      "culture": {
-        "impact": 8,
-        "attenuation": 4
-      },
-      "affordability": {
-        "impact": -1,
-        "attenuation": 12
-      },
-      "resilience": {
-        "impact": 0,
-        "attenuation": 3
-      },
-      "environment": {
-        "impact": -1,
-        "attenuation": 1
-      },
-      "noise": {
-        "impact": -7,
-        "attenuation": 4
-      },
-      "safety": {
-        "impact": -6,
-        "attenuation": 4
-      }
-    },
-    "graphics": {
-      "default": "assets/buildings/recreation/skate_park.png"
-    },
-    "images": {
-      "thumbnail": "assets/buildings/recreation/skate_park.png",
-      "icon": "assets/buildings/recreation/skate_park.png"
-    }
-  }
-]
+  ]
+}

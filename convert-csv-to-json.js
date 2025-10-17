@@ -33,8 +33,8 @@ function convertCSVToJSON() {
     // Parse header
     const headers = parseCSVLine(lines[0]);
 
-    const buildings = [];
-    const categories = {};
+    const buildingsByCategory = {};
+    const categoryCounts = {};
 
     // Parse each building row
     for (let i = 1; i < lines.length; i++) {
@@ -109,20 +109,27 @@ function convertCSVToJSON() {
             }
         };
 
-        buildings.push(buildingData);
-
-        // Track categories
+        // Group by category
         const category = buildingData.category;
-        categories[category] = (categories[category] || 0) + 1;
+        if (!buildingsByCategory[category]) {
+            buildingsByCategory[category] = [];
+        }
+        buildingsByCategory[category].push(buildingData);
+
+        // Track category counts
+        categoryCounts[category] = (categoryCounts[category] || 0) + 1;
     }
 
-    // Write JSON file
-    fs.writeFileSync(jsonPath, JSON.stringify(buildings, null, 2), 'utf8');
+    // Write JSON file with grouped format
+    fs.writeFileSync(jsonPath, JSON.stringify(buildingsByCategory, null, 2), 'utf8');
+
+    // Calculate total buildings
+    const totalBuildings = Object.values(buildingsByCategory).reduce((sum, arr) => sum + arr.length, 0);
 
     console.log(`✅ Successfully created buildings-data.json`);
-    console.log(`📊 Total buildings: ${buildings.length}`);
+    console.log(`📊 Total buildings: ${totalBuildings}`);
     console.log(`📁 Categories breakdown:`);
-    Object.entries(categories)
+    Object.entries(categoryCounts)
         .sort((a, b) => a[0].localeCompare(b[0]))
         .forEach(([cat, count]) => {
             console.log(`   ${cat.charAt(0).toUpperCase() + cat.slice(1)}: ${count}`);
