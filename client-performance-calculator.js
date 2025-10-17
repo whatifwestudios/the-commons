@@ -291,7 +291,7 @@ class ClientPerformanceCalculator {
     calculateGlobalJEEFHHMultiplier() {
         const jeefhh = this.game.economicClient.jeefhh;
 
-        // Find the most problematic (lowest multiplier) JEEFHH resource
+        // Collect all JEEFHH resource multipliers
         const multipliers = [
             jeefhh.jobs.multiplier,
             jeefhh.energy.multiplier,
@@ -301,8 +301,17 @@ class ClientPerformanceCalculator {
             jeefhh.healthcare.multiplier
         ];
 
-        // Use the minimum multiplier to represent room-wide economic stress
-        return Math.min(...multipliers);
+        // Calculate weighted average (maintains interdependence)
+        const avgMultiplier = multipliers.reduce((sum, m) => sum + m, 0) / multipliers.length;
+
+        // Apply penalty for imbalanced resources (resources below 1.0x)
+        const imbalancedResources = multipliers.filter(m => m < 1.0).length;
+        const imbalancePenalty = imbalancedResources * 0.05;
+
+        // Calculate final global multiplier with penalty (clamped to 0.4x - 1.6x)
+        const globalMultiplier = Math.max(0.4, Math.min(1.6, avgMultiplier - imbalancePenalty));
+
+        return globalMultiplier;
     }
 
     /**
@@ -356,11 +365,11 @@ class ClientPerformanceCalculator {
         const netCarensTotal = localCarens.culture + localCarens.affordability + localCarens.resilience +
                               localCarens.environment + localCarens.noise + localCarens.safety;
 
-        // Convert to multiplier: 0 = 1.0x (neutral), +100 = 1.4x (max), -100 = 0.6x (min)
-        const localMultiplier = 1.0 + (netCarensTotal / 100) * 0.4;
+        // Convert to multiplier: 0 = 1.0x (neutral), +100 = 1.6x (max), -100 = 0.4x (min)
+        const localMultiplier = 1.0 + (netCarensTotal / 100) * 0.6;
 
-        // Clamp to reasonable bounds (0.6x to 1.4x)
-        const clampedMultiplier = Math.max(0.6, Math.min(1.4, localMultiplier));
+        // Clamp to match JEEFHH range (0.4x to 1.6x)
+        const clampedMultiplier = Math.max(0.4, Math.min(1.6, localMultiplier));
 
         return {
             multiplier: clampedMultiplier,

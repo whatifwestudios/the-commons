@@ -144,7 +144,7 @@ class ServerEconomicEngine {
 
         // Performance multiplier ranges
         this.JEEFHH_MULTIPLIER_RANGE = { min: 0.4, max: 1.6 };
-        this.CARENS_MULTIPLIER_RANGE = { min: 0.6, max: 1.4 };
+        this.CARENS_MULTIPLIER_RANGE = { min: 0.4, max: 1.6 };
 
         // Server-authoritative action costs
         this.ACTION_COSTS = {
@@ -2743,12 +2743,13 @@ class ServerEconomicEngine {
      * Calculate JEEFHH multiplier for a specific building type
      */
     calculateGlobalJEEFHHMultiplier() {
-        // JEEFHH is truly room-wide: all buildings affected by the worst-performing resource
-        // When housing is in oversupply, ALL residential buildings earn less regardless of individual needs
+        // JEEFHH is room-wide: all buildings affected by economic balance
+        // Uses weighted average with penalties to avoid single-resource collapse
+        // while still maintaining economic interdependence
 
         const jeefhh = this.gameState.jeefhh;
 
-        // Find the most problematic (lowest multiplier) JEEFHH resource
+        // Collect all JEEFHH resource multipliers
         const multipliers = [
             jeefhh.jobs.multiplier,
             jeefhh.energy.multiplier,
@@ -2758,10 +2759,20 @@ class ServerEconomicEngine {
             jeefhh.healthcare.multiplier
         ];
 
-        // Use the minimum multiplier to represent room-wide economic stress
-        const globalMultiplier = Math.min(...multipliers);
+        // Calculate weighted average (maintains interdependence)
+        const avgMultiplier = multipliers.reduce((sum, m) => sum + m, 0) / multipliers.length;
 
-        // console.log(`🌐 Room-wide JEEFHH multiplier: ${globalMultiplier.toFixed(3)} (worst: ${Math.min(...multipliers).toFixed(3)})`);
+        // Apply penalty for imbalanced resources (resources below 1.0x)
+        const imbalancedResources = multipliers.filter(m => m < 1.0).length;
+        const imbalancePenalty = imbalancedResources * 0.05;
+
+        // Calculate final global multiplier with penalty
+        const globalMultiplier = Math.max(
+            this.JEEFHH_MULTIPLIER_RANGE.min,
+            Math.min(this.JEEFHH_MULTIPLIER_RANGE.max, avgMultiplier - imbalancePenalty)
+        );
+
+        // console.log(`🌐 Room-wide JEEFHH: avg=${avgMultiplier.toFixed(3)}, penalty=${imbalancePenalty.toFixed(3)}, final=${globalMultiplier.toFixed(3)}`);
 
         return globalMultiplier;
     }
@@ -2826,15 +2837,15 @@ class ServerEconomicEngine {
 
         // console.log(`[CARENS] CARENS for [${row},${col}]:`, localCarens, `Total: ${netCarensTotal}`);
 
-        // Convert to multiplier: 0 = 1.0x (neutral), +100 = 1.4x (max), -100 = 0.6x (min)
-        // Formula: 1.0 + (netCarensTotal / 100) * 0.4
-        // Your example: +20 points = 1.0 + (20/100) * 0.4 = 1.08x
-        const localMultiplier = 1.0 + (netCarensTotal / 100) * 0.4;
+        // Convert to multiplier: 0 = 1.0x (neutral), +100 = 1.6x (max), -100 = 0.4x (min)
+        // Formula: 1.0 + (netCarensTotal / 100) * 0.6
+        // Example: +20 points = 1.0 + (20/100) * 0.6 = 1.12x
+        const localMultiplier = 1.0 + (netCarensTotal / 100) * 0.6;
 
         // console.log(`[CARENS] CARENS multiplier for [${row},${col}]: ${localMultiplier.toFixed(3)}x (clamped from ${netCarensTotal})`);
 
-        // Clamp to reasonable bounds (0.6x to 1.4x)
-        const clampedMultiplier = Math.max(0.6, Math.min(1.4, localMultiplier));
+        // Clamp to match JEEFHH range (0.4x to 1.6x)
+        const clampedMultiplier = Math.max(this.CARENS_MULTIPLIER_RANGE.min, Math.min(this.CARENS_MULTIPLIER_RANGE.max, localMultiplier));
 
         // console.log(`[INFO] Final CARENS for [${row},${col}]: ${clampedMultiplier.toFixed(3)}x`);
 

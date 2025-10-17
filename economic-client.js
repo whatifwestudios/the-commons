@@ -1334,8 +1334,17 @@ class EconomicClient {
             this.jeefhh.healthcare?.multiplier || 1.0
         ];
 
-        // Return the minimum (worst) multiplier - this bottlenecks the whole economy
-        return Math.min(...multipliers);
+        // Calculate weighted average (maintains interdependence)
+        const avgMultiplier = multipliers.reduce((sum, m) => sum + m, 0) / multipliers.length;
+
+        // Apply penalty for imbalanced resources (resources below 1.0x)
+        const imbalancedResources = multipliers.filter(m => m < 1.0).length;
+        const imbalancePenalty = imbalancedResources * 0.05;
+
+        // Calculate final global multiplier with penalty (clamped to 0.4x - 1.6x)
+        const globalMultiplier = Math.max(0.4, Math.min(1.6, avgMultiplier - imbalancePenalty));
+
+        return globalMultiplier;
     }
 
     /**
