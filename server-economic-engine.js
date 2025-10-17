@@ -1964,19 +1964,16 @@ class ServerEconomicEngine {
         const demolitionCost = buildingValue * 0.25; // 25% of current value
 
         // Check if player can afford demolition
-        const player = this.getOrCreatePlayer(playerId);
-        if (player.cash < demolitionCost) {
-            throw new Error(`Insufficient funds for demolition: need $${demolitionCost.toFixed(2)}, have $${player.cash.toFixed(2)}`);
+        const currentBalance = this.getPlayerBalance(playerId);
+        if (currentBalance < demolitionCost) {
+            throw new Error(`Insufficient funds for demolition: need $${demolitionCost.toFixed(2)}, have $${currentBalance.toFixed(2)}`);
         }
 
         // Charge demolition cost
-        player.cash -= demolitionCost;
-        player.transactions.push({
-            type: 'DEMOLITION_COST',
-            amount: -demolitionCost,
-            timestamp: Date.now(),
-            description: `Demolition of ${building.id}`
-        });
+        const newBalance = currentBalance - demolitionCost;
+        this.gameState.playerBalances.set(playerId, newBalance);
+
+        console.log(`🗑️ [DEMOLITION] ${playerId} demolished ${building.id} at ${locationKey}: cost=$${demolitionCost.toFixed(2)}, balance ${currentBalance.toFixed(2)} → ${newBalance.toFixed(2)}`);
 
         // Remove building
         this.gameState.buildings.delete(locationKey);
@@ -2004,7 +2001,7 @@ class ServerEconomicEngine {
             location,
             destroyed: true,
             demolitionCost,
-            newBalance: player.cash
+            newBalance: newBalance
         };
     }
 
