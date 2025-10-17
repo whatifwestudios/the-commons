@@ -599,9 +599,24 @@ class ServerEconomicEngine {
         if (remainingEnergy <= 0) return; // Not a generator
 
         const sourceParcel = `${generatorBuilding.location[0]},${generatorBuilding.location[1]}`;
+        const [sourceRow, sourceCol] = generatorBuilding.location;
 
-        // Find all connected buildings via power lines (BFS)
-        const connectedBuildings = this.findConnectedBuildings(sourceParcel);
+        // Step 1: Find directly adjacent buildings (8 surrounding parcels)
+        const adjacentBuildings = [];
+        this.ADJACENCY_OFFSETS.forEach(([dr, dc]) => {
+            const adjKey = `${sourceRow + dr},${sourceCol + dc}`;
+            const adjBuilding = this.gameState.buildings.get(adjKey);
+            if (adjBuilding && !adjBuilding.underConstruction) {
+                adjacentBuildings.push(adjBuilding);
+            }
+        });
+
+        // Step 2: Find buildings connected via power lines (BFS)
+        const powerLineBuildings = this.findConnectedBuildings(sourceParcel);
+
+        // Combine both sets (avoid duplicates)
+        const buildingSet = new Set([...adjacentBuildings, ...powerLineBuildings]);
+        const connectedBuildings = Array.from(buildingSet);
 
         // Filter to only buildings that still need energy (greedy: already satisfied buildings ignored)
         let needyBuildings = connectedBuildings.filter(b => {
