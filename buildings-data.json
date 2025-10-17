@@ -63,7 +63,7 @@
       "name": "Park",
       "category": "civic",
       "description": "Green space providing environmental and recreational benefits",
-      "graphicsFile": "assets/buildings/civic/lushpark.png",
+      "graphicsFile": "assets/buildings/civic/lush_park.png",
       "isDefault": true,
       "civicScore": 12.3,
       "economics": {
@@ -109,11 +109,11 @@
         }
       },
       "graphics": {
-        "default": "assets/buildings/civic/lushpark.png"
+        "default": "assets/buildings/civic/lush_park.png"
       },
       "images": {
-        "thumbnail": "assets/buildings/civic/lushpark.png",
-        "icon": "assets/buildings/civic/lushpark.png"
+        "thumbnail": "assets/buildings/civic/lush_park.png",
+        "icon": "assets/buildings/civic/lush_park.png"
       }
     },
     {
@@ -295,7 +295,7 @@
       "name": "Bird Sanctuary",
       "category": "civic",
       "description": "Protected natural habitat for local and migratory bird species",
-      "graphicsFile": "assets/buildings/civic/bird_sanctuary.png",
+      "graphicsFile": "assets/buildings/civic/bird_sactuary.png",
       "isDefault": true,
       "civicScore": 3.7,
       "economics": {
@@ -341,11 +341,11 @@
         }
       },
       "graphics": {
-        "default": "assets/buildings/civic/bird_sanctuary.png"
+        "default": "assets/buildings/civic/bird_sactuary.png"
       },
       "images": {
-        "thumbnail": "assets/buildings/civic/bird_sanctuary.png",
-        "icon": "assets/buildings/civic/bird_sanctuary.png"
+        "thumbnail": "assets/buildings/civic/bird_sactuary.png",
+        "icon": "assets/buildings/civic/bird_sactuary.png"
       }
     }
   ],
@@ -355,7 +355,7 @@
       "name": "Corporate World Headquarters",
       "category": "commercial",
       "description": "A marvel level building! There could be some shady dealings going down but the pay is incredible.",
-      "graphicsFile": "assets/buildings/commercial/corporate_marvel.png",
+      "graphicsFile": "assets/buildings/commercial/Corporate_marvel.png",
       "isDefault": true,
       "civicScore": -20.6,
       "economics": {
@@ -401,11 +401,11 @@
         }
       },
       "graphics": {
-        "default": "assets/buildings/commercial/corporate_marvel.png"
+        "default": "assets/buildings/commercial/Corporate_marvel.png"
       },
       "images": {
-        "thumbnail": "assets/buildings/commercial/corporate_marvel.png",
-        "icon": "assets/buildings/commercial/corporate_marvel.png"
+        "thumbnail": "assets/buildings/commercial/Corporate_marvel.png",
+        "icon": "assets/buildings/commercial/Corporate_marvel.png"
       }
     },
     {
@@ -1871,7 +1871,7 @@
       "name": "Apartment Complex",
       "category": "housing",
       "description": "Multi-family housing with 8 bedrooms",
-      "graphicsFile": "assets/buildings/housing/apartment_complex.png",
+      "graphicsFile": "assets/buildings/housing/apartments.png",
       "isDefault": true,
       "civicScore": -1.1,
       "economics": {
@@ -1917,11 +1917,11 @@
         }
       },
       "graphics": {
-        "default": "assets/buildings/housing/apartment_complex.png"
+        "default": "assets/buildings/housing/apartments.png"
       },
       "images": {
-        "thumbnail": "assets/buildings/housing/apartment_complex.png",
-        "icon": "assets/buildings/housing/apartment_complex.png"
+        "thumbnail": "assets/buildings/housing/apartments.png",
+        "icon": "assets/buildings/housing/apartments.png"
       }
     },
     {
