@@ -1194,16 +1194,24 @@ class ServerEconomicEngine {
             const buildingsPath = path.join(__dirname, 'buildings-data.json');
             const buildingsData = JSON.parse(fs.readFileSync(buildingsPath, 'utf8'));
 
-            // Flatten categories into single map
-            Object.values(buildingsData).forEach(category => {
-                if (Array.isArray(category)) {
-                    category.forEach(building => {
-                        this.buildingDefinitions.set(building.id, building);
-                    });
-                }
-            });
+            // Handle both flat array and category-grouped formats
+            if (Array.isArray(buildingsData)) {
+                // Flat array format (new)
+                buildingsData.forEach(building => {
+                    this.buildingDefinitions.set(building.id, building);
+                });
+            } else {
+                // Category-grouped format (old) - flatten categories into single map
+                Object.values(buildingsData).forEach(category => {
+                    if (Array.isArray(category)) {
+                        category.forEach(building => {
+                            this.buildingDefinitions.set(building.id, building);
+                        });
+                    }
+                });
+            }
 
-        // console.log(`📋 Loaded ${this.buildingDefinitions.size} building definitions`);
+            console.log(`📋 Loaded ${this.buildingDefinitions.size} building definitions`);
         } catch (error) {
             console.error('[ERROR] Failed to load building definitions:', error);
         }
