@@ -603,13 +603,16 @@ class ServerEconomicEngine {
 
         // Step 1: Find directly adjacent buildings (8 surrounding parcels)
         const adjacentBuildings = [];
+        console.log(`⚡ [ADJACENCY] Checking 8 adjacent parcels from generator at [${sourceRow},${sourceCol}]`);
         this.ADJACENCY_OFFSETS.forEach(([dr, dc]) => {
             const adjKey = `${sourceRow + dr},${sourceCol + dc}`;
             const adjBuilding = this.gameState.buildings.get(adjKey);
+            console.log(`  - Checking [${sourceRow + dr},${sourceCol + dc}] (key: "${adjKey}"): ${adjBuilding ? `FOUND ${adjBuilding.id}, underConstruction=${adjBuilding.underConstruction}` : 'NO BUILDING'}`);
             if (adjBuilding && !adjBuilding.underConstruction) {
                 adjacentBuildings.push(adjBuilding);
             }
         });
+        console.log(`⚡ [ADJACENCY] Found ${adjacentBuildings.length} adjacent buildings needing energy`);
 
         // Step 2: Find buildings connected via power lines (BFS)
         const powerLineBuildings = this.findConnectedBuildings(sourceParcel);
@@ -617,13 +620,17 @@ class ServerEconomicEngine {
         // Combine both sets (avoid duplicates)
         const buildingSet = new Set([...adjacentBuildings, ...powerLineBuildings]);
         const connectedBuildings = Array.from(buildingSet);
+        console.log(`⚡ [COMBINE] Combined ${adjacentBuildings.length} adjacent + ${powerLineBuildings.length} power line = ${connectedBuildings.length} total connected buildings`);
 
         // Filter to only buildings that still need energy (greedy: already satisfied buildings ignored)
         let needyBuildings = connectedBuildings.filter(b => {
             const def = this.buildingDefinitions.get(b.id);
             const required = def.resources.energyRequired;
-            return required > 0 && (b.energyReceived || 0) < required;
+            const isNeedy = required > 0 && (b.energyReceived || 0) < required;
+            console.log(`  - ${b.id} at ${b.location}: required=${required}, received=${b.energyReceived || 0}, needy=${isNeedy}`);
+            return isNeedy;
         });
+        console.log(`⚡ [NEEDY] ${needyBuildings.length} buildings need energy`);
 
         // Multi-pass equal distribution
         let passes = 0;
@@ -654,6 +661,8 @@ class ServerEconomicEngine {
         generatorBuilding.energyUtilization = totalEnergyProvided > 0 ? (energyConsumed / totalEnergyProvided) : 0;
         generatorBuilding.energyConsumed = energyConsumed;
         generatorBuilding.energyProvided = totalEnergyProvided;
+
+        console.log(`📊 [UTIL] energy at ${generatorBuilding.location}: energyUtilization=${generatorBuilding.energyUtilization.toFixed(2)}, consumed=${energyConsumed}, provided=${totalEnergyProvided}`);
     }
 
     /**
@@ -774,6 +783,8 @@ class ServerEconomicEngine {
         providerBuilding[utilizationKey] = totalResourceProvided > 0 ? (resourceConsumed / totalResourceProvided) : 0;
         providerBuilding[consumedKey] = resourceConsumed;
         providerBuilding[providedStorageKey] = totalResourceProvided;
+
+        console.log(`📊 [UTIL] ${resourceType} at ${providerBuilding.location}: ${utilizationKey}=${providerBuilding[utilizationKey].toFixed(2)}, consumed=${resourceConsumed}, provided=${totalResourceProvided}`);
     }
 
     /**
@@ -1252,8 +1263,12 @@ class ServerEconomicEngine {
                 const constructionElapsed = now - building.constructionStartTime;
                 const constructionRequired = building.constructionDays * this.GAME_DAY_MS;
 
+                console.log(`🏗️ [CONSTRUCTION] ${building.id} at ${building.location}: elapsed=${constructionElapsed}ms, required=${constructionRequired}ms, days=${building.constructionDays}`);
+
                 if (constructionElapsed >= constructionRequired) {
                     // Building should be completed
+
+                    console.log(`✅ [CONSTRUCTION] ${building.id} at ${building.location} COMPLETED!`);
 
                     // Mark as completed
                     building.underConstruction = false;
@@ -1813,7 +1828,7 @@ class ServerEconomicEngine {
             location: [row, col],
             locationKey: locationKey,
             constructionStartTime: Date.now(),
-            constructionDays: buildingDef.economics?.constructionDays || 14,
+            constructionDays: buildingDef.economics?.constructionDays ?? 3,
             underConstruction: true,
             age: 0,
             decay: 0,
@@ -2111,7 +2126,10 @@ class ServerEconomicEngine {
         // console.log('[PERF] DEBUG: recalculateGlobalEconomics() called - building count:', this.gameState.buildings.size);
         this.calculateGlobalJEEFHH();
         this.calculateGlobalCARENS();
-        this.recalculateAllBuildingPerformances();
+        // NOTE: Do NOT call recalculateAllBuildingPerformances() here!
+        // Building performance depends on resource distribution (energy, food, jobs, workers)
+        // which happens AFTER this function in processDailyEvents().
+        // Performance is calculated later at line 1377 after all distributions complete.
     }
 
     /**
@@ -2830,17 +2848,9 @@ class ServerEconomicEngine {
         };
     }
 
-    /**
-     * Recalculate performance for all buildings
-     */
-    recalculateAllBuildingPerformances() {
-        for (const [locationKey, building] of this.gameState.buildings) {
-            if (!building.underConstruction) {
-                const [row, col] = building.location;
-                building.performance = this.calculateBuildingPerformance(row, col);
-            }
-        }
-    }
+    // REMOVED: Duplicate recalculateAllBuildingPerformances() function
+    // The correct version at line 2545 populates building.performanceCache
+    // This duplicate only set building.performance (old field) and caused the cache to be empty
 
     /**
      * RESIDENT DISTRIBUTION
@@ -6842,8 +6852,9 @@ class ServerEconomicEngine {
         console.log(`[BROADCAST] getBuildingRenderingState called for [${row},${col}] ${building.id}, underConstruction: ${building.underConstruction}`);
 
         // Get full performance details (revenue, maintenance, etc.) for tooltips
-        // This calls the (row, col) version which returns the detailed object
-        const performanceDetails = building.underConstruction ? null : this.calculateBuildingPerformance(row, col);
+        // Use cached performance data directly - do NOT recalculate during broadcast!
+        // Performance is calculated by recalculateAllBuildingPerformances() after resource distribution
+        const performanceDetails = building.underConstruction ? null : building.performanceCache;
 
         // console.log(`[CARENS] Performance details for [${row},${col}]:`, performanceDetails ? 'HAS DATA' : 'NULL', performanceDetails?.summary);
 
@@ -6895,7 +6906,27 @@ class ServerEconomicEngine {
             netIncome: netIncome, // Daily net revenue
             revenue: revenue, // Daily revenue
             maintenance: maintenance, // Daily maintenance cost
-            performanceDetails: performanceDetails // Full breakdown
+            performanceDetails: performanceDetails, // Full breakdown
+
+            // PHASE 2: Utilization metrics for provider buildings
+            energyUtilization: building.energyUtilization,
+            energyConsumed: building.energyConsumed,
+            energyProvided: building.energyProvided,
+            foodUtilization: building.foodUtilization,
+            foodConsumed: building.foodConsumed,
+            foodProvided: building.foodProvided,
+            educationUtilization: building.educationUtilization,
+            educationConsumed: building.educationConsumed,
+            educationProvided: building.educationProvided,
+            healthcareUtilization: building.healthcareUtilization,
+            healthcareConsumed: building.healthcareConsumed,
+            healthcareProvided: building.healthcareProvided,
+            workforceUtilization: building.workforceUtilization,
+            jobsFilled: building.jobsFilled,
+            jobsProvided: building.jobsProvided,
+            employmentRate: building.employmentRate,
+            workersEmployed: building.workersEmployed,
+            workersAvailable: building.workersAvailable
         };
 
         // console.log(`[INFO] Returning state for [${row},${col}]:`, {

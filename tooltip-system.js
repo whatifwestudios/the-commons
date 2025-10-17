@@ -552,6 +552,7 @@ class TooltipSystemV2 {
         if (!production || production.length === 0) return '';
 
         const serverBuilding = this.getServerBuildingData(row, col);
+        console.log(`📊 [TOOLTIP] renderUtilization for [${row},${col}]:`, serverBuilding);
         if (!serverBuilding) return '';
 
         const utilizations = [];
