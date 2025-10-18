@@ -549,6 +549,16 @@ class ServerEconomicEngine {
                 `v_${row2}_${col2}`, `v_${row2 - 1}_${col2}`
             ];
 
+            // IMPORTANT: Also check for edges that form visual continuity in isometric view
+            // For a visual diagonal line, adjacent edges of the same type should be connected
+            if (currentEdge.startsWith('v_')) {
+                // For vertical edge v_row_col, also check v_row_(col±1) as they form a visual line
+                adjacentEdges.push(`v_${row1}_${col1 - 1}`, `v_${row1}_${col1 + 1}`);
+            } else {
+                // For horizontal edge h_row_col, also check h_(row±1)_col as they form a visual line
+                adjacentEdges.push(`h_${row1 - 1}_${col1}`, `h_${row1 + 1}_${col1}`);
+            }
+
             for (const adjacentEdge of adjacentEdges) {
                 if (this.gameState.energyGrid.lines.has(adjacentEdge) && !visitedEdges.has(adjacentEdge)) {
                     edgeQueue.push(adjacentEdge);
@@ -559,19 +569,42 @@ class ServerEconomicEngine {
         }
 
         // Step 2: Add all parcels adjacent to powered edges
+        // IMPORTANT: In isometric view, a visual line between two parcels appears to pass through
+        // other parcels. We need to power ALL parcels that the visual line intersects!
+        //
+        // For each edge, we power:
+        // 1. The two endpoint parcels (grid-connected)
+        // 2. The two "cross" parcels that the visual line passes through in isometric view
         for (const edgeId of poweredEdges) {
             if (edgeId.startsWith('h_')) {
+                // Horizontal edge: connects [row,col] and [row,col+1]
+                // In isometric view, this visual line also passes through [row-1,col] and [row+1,col+1]
                 const parts = edgeId.substring(2).split('_');
                 const row = parseInt(parts[0]);
                 const col = parseInt(parts[1]);
+
+                // Endpoint parcels (grid-connected)
                 poweredParcels.add(`${row},${col}`);
                 poweredParcels.add(`${row},${col + 1}`);
+
+                // Cross parcels (visually intersected in isometric view)
+                if (row > 0) poweredParcels.add(`${row - 1},${col + 1}`);
+                if (row < this.gameState.gridSize - 1) poweredParcels.add(`${row + 1},${col}`);
+
             } else { // v_
+                // Vertical edge: connects [row,col] and [row+1,col]
+                // In isometric view, this visual line also passes through [row,col-1] and [row+1,col+1]
                 const parts = edgeId.substring(2).split('_');
                 const row = parseInt(parts[0]);
                 const col = parseInt(parts[1]);
+
+                // Endpoint parcels (grid-connected)
                 poweredParcels.add(`${row},${col}`);
                 poweredParcels.add(`${row + 1},${col}`);
+
+                // Cross parcels (visually intersected in isometric view)
+                if (col > 0) poweredParcels.add(`${row + 1},${col - 1}`);
+                if (col < this.gameState.gridSize - 1) poweredParcels.add(`${row},${col + 1}`);
             }
         }
 
@@ -671,7 +704,7 @@ class ServerEconomicEngine {
     distributeAllEnergy() {
         console.log('⚡ [ENERGY] Starting distributeAllEnergy()');
 
-        // Reset all buildings
+        // Reset all buildings to 0 energy
         this.gameState.buildings.forEach(b => {
             b.energyReceived = 0;
         });
@@ -920,8 +953,15 @@ class ServerEconomicEngine {
 
             let remainingWorkers = workersAvailable;
 
-            // Find all adjacent workplaces (8 surrounding parcels)
+            // Find all adjacent workplaces (8 surrounding parcels + self if has jobs)
             const adjacentWorkplaces = [];
+
+            // First, check if this housing building itself needs workers (e.g., staff)
+            if (def.resources.jobsProvided > 0) {
+                adjacentWorkplaces.push(housing);
+            }
+
+            // Then check surrounding parcels
             this.ADJACENCY_OFFSETS.forEach(([dr, dc]) => {
                 const adjKey = `${housingRow + dr},${housingCol + dc}`;
                 const adjBuilding = this.gameState.buildings.get(adjKey);
@@ -1299,6 +1339,13 @@ class ServerEconomicEngine {
 
             // Recalculate room-wide economics with new completed buildings
             this.recalculateGlobalEconomics();
+
+            // CRITICAL: Redistribute resources immediately when buildings complete
+            // This ensures new buildings get energy/resources before their first performance calculation
+            this.distributeAllEnergy();
+            this.distributeAllResources();
+            this.distributeAllWorkers();
+            this.distributeAllJobs();
 
             // PHASE 1: Mark all buildings stale and calculate performance for completed buildings
             this.performanceCache.markAllBuildingsStale('building_auto_completed');
@@ -2694,7 +2741,7 @@ class ServerEconomicEngine {
             }
         }
 
-        // For workplace buildings (commercial, schools, hospitals), check worker availability
+        // For workplace buildings (commercial, schools, hospitals, and housing with staff), check worker availability
         const jobsProvided = buildingDef.resources.jobsProvided || 0;
         if (jobsProvided > 0) {
             const workersReceived = building.workersReceived || 0;

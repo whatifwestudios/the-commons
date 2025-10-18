@@ -503,41 +503,82 @@ class TooltipSystemV2 {
             html += utilizationHtml;
         }
 
-        // Show building needs or status based on Core Needs satisfaction
-        if (data.needs && data.needs.length > 0) {
-            // Show ALL unmet Core Needs
-            html += `
-                <div class="compact-section needs-section">
-                    <div class="compact-label">Needs</div>
-                    <div class="resource-list">
-                        ${data.needs.map(need => `<div class="resource-item">${this.getResourceEmoji(need.resource)} ${need.amount} ${need.resource.toLowerCase()}</div>`).join('')}
+        // Show resource satisfaction with smart display based on user's requirements
+        const allResourceSatisfaction = this.getAllResourceSatisfaction(data.row, data.col, buildingData);
+
+        if (allResourceSatisfaction && allResourceSatisfaction.length > 0) {
+            // Check if ALL resources are at 100%
+            const allAt100 = allResourceSatisfaction.every(r => r.satisfaction >= 1.0);
+
+            if (allAt100) {
+                // User requirement: When ALL needs are met, show small "ALL NEEDS MET" without overwhelming numbers
+                html += `
+                    <div class="tooltip-section needs-section">
+                        <div class="section-label" style="color: #4CAF50; font-size: 11px;">✅ ALL NEEDS MET</div>
                     </div>
-                </div>
-            `;
-        } else {
-            // All local Core Needs are met - show confirmation
-            html += `
-                <div class="tooltip-section needs-section">
-                    <div class="section-label">✅ Local core needs met</div>
-                </div>
-            `;
+                `;
 
-            // Now show Livability boost opportunities if available
-            const livabilityBoosts = this.getCarensBoostOpportunities(data.row, data.col);
-            if (livabilityBoosts !== null) {
-                html += this.renderCarensBoostOpportunities(livabilityBoosts);
+                // Show CARENS opportunities when needs are met
+                const livabilityBoosts = this.getCarensBoostOpportunities(data.row, data.col);
+                if (livabilityBoosts !== null) {
+                    html += this.renderCarensBoostOpportunities(livabilityBoosts);
 
-                // If peak performance achieved (no Livability boosts needed), suggest repair
-                if (livabilityBoosts.length === 0) {
-                    const condition = performance.condition || 100;
-                    if (condition < 100) {
-                        html += `
-                            <div class="tooltip-section repair-section">
-                                <div class="section-label">🔧 Consider repairing to maintain peak performance</div>
-                            </div>
-                        `;
+                    // If peak performance achieved, suggest repair
+                    if (livabilityBoosts.length === 0) {
+                        const condition = performance.condition || 100;
+                        if (condition < 100) {
+                            html += `
+                                <div class="tooltip-section repair-section">
+                                    <div class="section-label" style="font-size: 11px;">🔧 Consider repairing to maintain peak performance</div>
+                                </div>
+                            `;
+                        }
                     }
                 }
+            } else {
+                // Some resources are not at 100% - show what's missing
+                // Group resources: 100% vs < 100%
+                const satisfied = allResourceSatisfaction.filter(r => r.satisfaction >= 1.0);
+                const unsatisfied = allResourceSatisfaction.filter(r => r.satisfaction < 1.0);
+
+                html += `<div class="compact-section needs-section">`;
+
+                if (unsatisfied.length > 0) {
+                    // Show problematic resources first
+                    html += `
+                        <div class="compact-label">Underperforming</div>
+                        <div class="resource-list">
+                            ${unsatisfied.map(resource => {
+                                const emoji = this.getResourceEmoji(resource.resource);
+                                const satPercent = Math.round(resource.satisfaction * 100);
+                                const color = satPercent >= 80 ? '#FF9800' : satPercent >= 50 ? '#f44336' : '#D32F2F';
+
+                                return `<div class="resource-item" style="color: ${color};">${emoji} ${resource.resource}: ${satPercent}% (${resource.supplied}/${resource.required})</div>`;
+                            }).join('')}
+                        </div>
+                    `;
+                }
+
+                if (satisfied.length > 0) {
+                    // Show satisfied resources with checkmarks
+                    html += `
+                        <div class="resource-list" style="margin-top: ${unsatisfied.length > 0 ? '8px' : '0'};">
+                            ${satisfied.map(resource => {
+                                const emoji = this.getResourceEmoji(resource.resource);
+                                return `<div class="resource-item" style="color: #4CAF50; font-size: 11px;">${emoji} ${resource.resource}: ✓</div>`;
+                            }).join('')}
+                        </div>
+                    `;
+                }
+
+                html += `</div>`;
+            }
+        } else if (!allResourceSatisfaction) {
+            // No resource data available - building might be a pure provider
+            // Check if there are CARENS opportunities even without resource requirements
+            const livabilityBoosts = this.getCarensBoostOpportunities(data.row, data.col);
+            if (livabilityBoosts !== null && livabilityBoosts.length > 0) {
+                html += this.renderCarensBoostOpportunities(livabilityBoosts);
             }
         }
 
@@ -619,7 +660,7 @@ class TooltipSystemV2 {
             'food': '🍎',
             'housing': '🏠',
             'healthcare': '❤️',
-            'workers': '💼'  // alias for jobs
+            'workers': '👷'  // workers needed (employees/staff)
         };
         return emojiMap[resource.toLowerCase()] || '';
     }
@@ -1439,7 +1480,11 @@ class TooltipSystemV2 {
         }
     }
 
-    getBuildingNeeds(row, col, buildingData = null) {
+    /**
+     * Get ALL resource satisfaction data for a building (not just unmet needs)
+     * Returns object with resources and their satisfaction levels
+     */
+    getAllResourceSatisfaction(row, col, buildingData = null) {
         let buildingDef = buildingData;
 
         // If no building data passed, try to get it from grid
@@ -1477,11 +1522,8 @@ class TooltipSystemV2 {
             return null;
         }
 
-        const needs = [];
+        const allResources = [];
         const resources = buildingDef.resources;
-
-        // Only show unmet needs (satisfaction < 100%)
-        const satisfactionThreshold = 1.0;
 
         // Check all JEEFHH resources
         const jeefhhResources = [
@@ -1489,20 +1531,20 @@ class TooltipSystemV2 {
             { key: 'jobs', label: 'Jobs', fromSatisfaction: true },
             { key: 'food', label: 'Food', fromSatisfaction: true },
             { key: 'education', label: 'Education', fromSatisfaction: true },
-            { key: 'healthcare', label: 'Healthcare', fromSatisfaction: true }
+            { key: 'healthcare', label: 'Healthcare', fromSatisfaction: true },
+            { key: 'workers', label: 'Workers', fromSatisfaction: true }
         ];
 
         for (const resource of jeefhhResources) {
             const sat = resourceSatisfaction?.[resource.key]?.satisfaction;
-            if (sat === undefined || sat >= satisfactionThreshold) continue;
-
             const supplied = resourceSatisfaction?.[resource.key]?.supplied || 0;
             const required = resourceSatisfaction?.[resource.key]?.required ||
                             (resource.fromSatisfaction ? 0 : resource.required);
 
-            if (required > 0) {
+            // Include all resources that have requirements (even if 100% satisfied)
+            if (required > 0 && sat !== undefined) {
                 const unmet = Math.max(0, required - supplied);
-                needs.push({
+                allResources.push({
                     resource: resource.label,
                     amount: Math.ceil(unmet), // Round up to nearest whole number
                     supplied: Math.round(supplied * 10) / 10,
@@ -1512,7 +1554,19 @@ class TooltipSystemV2 {
             }
         }
 
-        return needs;
+        return allResources;
+    }
+
+    /**
+     * LEGACY: Get only unmet building needs (satisfaction < 100%)
+     * Kept for backward compatibility
+     */
+    getBuildingNeeds(row, col, buildingData = null) {
+        const allResources = this.getAllResourceSatisfaction(row, col, buildingData);
+        if (!allResources) return null;
+
+        // Filter to only show resources with satisfaction < 100%
+        return allResources.filter(resource => resource.satisfaction < 1.0);
     }
 
     getCarensBoostOpportunities(row, col) {
