@@ -498,17 +498,19 @@ class ServerEconomicEngine {
         const connectedBuildings = [];
         const poweredParcels = new Set();
 
-        // Step 1: Find all power line edges connected to this generator via edge-based BFS
+        // SIMPLE RULE: If a power line touches ANY of the 4 sides of a parcel, that parcel gets power
+
+        // Step 1: Find all power line edges connected to this generator via BFS
         const poweredEdges = new Set();
         const edgeQueue = [];
         const visitedEdges = new Set();
 
-        // Add all 4 edges around the generator parcel
+        // Add all 4 edges around the generator parcel to start
         const generatorEdges = [
-            `h_${sourceRow}_${sourceCol}`,
-            `h_${sourceRow}_${sourceCol - 1}`,
-            `v_${sourceRow}_${sourceCol}`,
-            `v_${sourceRow - 1}_${sourceCol}`
+            `h_${sourceRow}_${sourceCol}`,      // Top edge
+            `h_${sourceRow}_${sourceCol - 1}`,  // Bottom edge
+            `v_${sourceRow}_${sourceCol}`,      // Right edge
+            `v_${sourceRow - 1}_${sourceCol}`   // Left edge
         ];
 
         for (const edgeId of generatorEdges) {
@@ -519,92 +521,92 @@ class ServerEconomicEngine {
             }
         }
 
-        // BFS through connected edges
+        // BFS: Follow power lines through the network
+        // Power lines connect in TWO ways:
+        // 1. Edges that share a parcel
+        // 2. Edges that meet at a vertex/intersection (grid points where lines cross/touch)
         while (edgeQueue.length > 0) {
             const currentEdge = edgeQueue.shift();
 
-            // Find the two parcels this edge connects
-            let row1, col1, row2, col2;
+            let connectedEdges = [];
+
             if (currentEdge.startsWith('h_')) {
+                // Horizontal edge h_row_col
                 const parts = currentEdge.substring(2).split('_');
-                row1 = parseInt(parts[0]);
-                col1 = parseInt(parts[1]);
-                row2 = row1;
-                col2 = col1 + 1;
+                const row = parseInt(parts[0]);
+                const col = parseInt(parts[1]);
+
+                // This horizontal edge touches two parcels: [row,col] and [row,col+1]
+                // Add all 4 edges around each parcel
+                connectedEdges = [
+                    // Parcel [row,col]'s edges
+                    `h_${row}_${col}`, `h_${row}_${col - 1}`,
+                    `v_${row}_${col}`, `v_${row - 1}_${col}`,
+                    // Parcel [row,col+1]'s edges
+                    `h_${row}_${col + 1}`, `h_${row}_${col}`,
+                    `v_${row}_${col + 1}`, `v_${row - 1}_${col + 1}`
+                ];
+
+                // VERTEX CONNECTIONS: h_row_col has two endpoints:
+                // - Left vertex at (row, col): connects to verticals v_row-1_col and v_row_col
+                // - Right vertex at (row, col+1): connects to verticals v_row-1_col+1 and v_row_col+1
+                connectedEdges.push(
+                    `v_${row - 1}_${col}`, `v_${row}_${col}`,
+                    `v_${row - 1}_${col + 1}`, `v_${row}_${col + 1}`
+                );
+
             } else { // v_
+                // Vertical edge v_row_col
                 const parts = currentEdge.substring(2).split('_');
-                row1 = parseInt(parts[0]);
-                col1 = parseInt(parts[1]);
-                row2 = row1 + 1;
-                col2 = col1;
+                const row = parseInt(parts[0]);
+                const col = parseInt(parts[1]);
+
+                // This vertical edge touches two parcels: [row,col] and [row+1,col]
+                // Add all 4 edges around each parcel
+                connectedEdges = [
+                    // Parcel [row,col]'s edges
+                    `h_${row}_${col}`, `h_${row}_${col - 1}`,
+                    `v_${row}_${col}`, `v_${row - 1}_${col}`,
+                    // Parcel [row+1,col]'s edges
+                    `h_${row + 1}_${col}`, `h_${row + 1}_${col - 1}`,
+                    `v_${row + 1}_${col}`, `v_${row}_${col}`
+                ];
+
+                // VERTEX CONNECTIONS: v_row_col has two endpoints:
+                // - Top vertex at (row, col): connects to horizontals h_row_col-1 and h_row_col
+                // - Bottom vertex at (row+1, col): connects to horizontals h_row+1_col-1 and h_row+1_col
+                connectedEdges.push(
+                    `h_${row}_${col - 1}`, `h_${row}_${col}`,
+                    `h_${row + 1}_${col - 1}`, `h_${row + 1}_${col}`
+                );
             }
 
-            // Find all edges touching these two parcels
-            const adjacentEdges = [
-                // Parcel 1's edges
-                `h_${row1}_${col1}`, `h_${row1}_${col1 - 1}`,
-                `v_${row1}_${col1}`, `v_${row1 - 1}_${col1}`,
-                // Parcel 2's edges
-                `h_${row2}_${col2}`, `h_${row2}_${col2 - 1}`,
-                `v_${row2}_${col2}`, `v_${row2 - 1}_${col2}`
-            ];
-
-            // IMPORTANT: Also check for edges that form visual continuity in isometric view
-            // For a visual diagonal line, adjacent edges of the same type should be connected
-            if (currentEdge.startsWith('v_')) {
-                // For vertical edge v_row_col, also check v_row_(col±1) as they form a visual line
-                adjacentEdges.push(`v_${row1}_${col1 - 1}`, `v_${row1}_${col1 + 1}`);
-            } else {
-                // For horizontal edge h_row_col, also check h_(row±1)_col as they form a visual line
-                adjacentEdges.push(`h_${row1 - 1}_${col1}`, `h_${row1 + 1}_${col1}`);
-            }
-
-            for (const adjacentEdge of adjacentEdges) {
-                if (this.gameState.energyGrid.lines.has(adjacentEdge) && !visitedEdges.has(adjacentEdge)) {
-                    edgeQueue.push(adjacentEdge);
-                    visitedEdges.add(adjacentEdge);
-                    poweredEdges.add(adjacentEdge);
+            // Add any power lines we find to the queue
+            for (const connectedEdge of connectedEdges) {
+                if (this.gameState.energyGrid.lines.has(connectedEdge) && !visitedEdges.has(connectedEdge)) {
+                    edgeQueue.push(connectedEdge);
+                    visitedEdges.add(connectedEdge);
+                    poweredEdges.add(connectedEdge);
                 }
             }
         }
 
-        // Step 2: Add all parcels adjacent to powered edges
-        // IMPORTANT: In isometric view, a visual line between two parcels appears to pass through
-        // other parcels. We need to power ALL parcels that the visual line intersects!
-        //
-        // For each edge, we power:
-        // 1. The two endpoint parcels (grid-connected)
-        // 2. The two "cross" parcels that the visual line passes through in isometric view
+        // Step 2: Find all parcels that have a power line on ANY of their 4 sides
         for (const edgeId of poweredEdges) {
             if (edgeId.startsWith('h_')) {
-                // Horizontal edge: connects [row,col] and [row,col+1]
-                // In isometric view, this visual line also passes through [row-1,col] and [row+1,col+1]
+                // Horizontal edge h_row_col touches parcels [row,col] and [row,col+1]
                 const parts = edgeId.substring(2).split('_');
                 const row = parseInt(parts[0]);
                 const col = parseInt(parts[1]);
-
-                // Endpoint parcels (grid-connected)
                 poweredParcels.add(`${row},${col}`);
                 poweredParcels.add(`${row},${col + 1}`);
-
-                // Cross parcels (visually intersected in isometric view)
-                if (row > 0) poweredParcels.add(`${row - 1},${col + 1}`);
-                if (row < this.gameState.gridSize - 1) poweredParcels.add(`${row + 1},${col}`);
-
             } else { // v_
-                // Vertical edge: connects [row,col] and [row+1,col]
-                // In isometric view, this visual line also passes through [row,col-1] and [row+1,col+1]
+                // Vertical edge v_row_col touches parcels [row,col] and [row+1,col]
                 const parts = edgeId.substring(2).split('_');
                 const row = parseInt(parts[0]);
                 const col = parseInt(parts[1]);
-
-                // Endpoint parcels (grid-connected)
                 poweredParcels.add(`${row},${col}`);
                 poweredParcels.add(`${row + 1},${col}`);
-
-                // Cross parcels (visually intersected in isometric view)
-                if (col > 0) poweredParcels.add(`${row + 1},${col - 1}`);
-                if (col < this.gameState.gridSize - 1) poweredParcels.add(`${row},${col + 1}`);
             }
         }
 
