@@ -34,6 +34,7 @@ yarn-error.log*
 .DS_Store
 Thumbs.db
 *.Zone.Identifier
+*:Zone.Identifier
 
 # Backup files
 *.backup
@@ -53,8 +54,30 @@ archive/
 docs/
 Design guides/
 
-# Claude Code settings (local only)
-.claude/settings.local.json
+# Development documentation (local only)
+*.md
+!README.md
+!LICENSE.md
+!CHANGELOG.md
+!CONTRIBUTING.md
+
+# Claude Code (local only)
+.claude/
+
+# Development scripts (local only)
+*.bat
+*.sh
+!start.sh
+
+# Screenshots and media (local only)
+Screenshot*.png
+Screenshot*.jpg
+*.gif
+
+# Test files
+test-*.js
+*-test.js
+*.test.js
 
 # Logs
 logs/
