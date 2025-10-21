@@ -707,7 +707,12 @@ class GameRoom {
 
         // Check if room is empty
         if (this.players.size === 0) {
-        // console.log(`⏰ Room ${this.id}: Empty room detected, starting 30s cleanup timer`);
+            // CRITICAL: Stop game clock IMMEDIATELY when room becomes empty
+            // This prevents zombie games from continuing to run daily events
+            this.stopGameClock();
+            logger.info(`⏰ Room ${this.id}: Empty room detected, game clock stopped, starting 30s cleanup timer`);
+
+            // Schedule final cleanup and deletion after 30 seconds
             this.emptyRoomTimer = setTimeout(() => {
                 this.cleanupEmptyRoom();
             }, 30000); // 30 seconds
@@ -719,15 +724,15 @@ class GameRoom {
      */
     cleanupEmptyRoom() {
         if (this.players.size === 0) {
-        // console.log(`🧹 Room ${this.id}: Cleaning up empty room after 30s`);
-            this.stopGameClock();
+            logger.info(`🧹 Room ${this.id}: Cleaning up empty room after 30s`);
+            // Note: Game clock already stopped in startEmptyRoomMonitoring()
 
             // Notify room manager to remove this room
             if (this.roomManager) {
                 this.roomManager.removeRoom(this.id);
             }
         } else {
-        // console.log(`🔄 Room ${this.id}: Players rejoined, canceling cleanup`);
+            logger.info(`🔄 Room ${this.id}: Players rejoined, canceling cleanup`);
         }
     }
 
@@ -738,7 +743,13 @@ class GameRoom {
         if (this.emptyRoomTimer) {
             clearTimeout(this.emptyRoomTimer);
             this.emptyRoomTimer = null;
-        // console.log(`✅ Room ${this.id}: Cleanup canceled - players present`);
+            logger.info(`✅ Room ${this.id}: Cleanup canceled - players rejoined`);
+
+            // Restart game clock if it was stopped and game is in progress
+            if (!this.gameTimer && this.state === 'IN_PROGRESS') {
+                logger.info(`🔄 Room ${this.id}: Restarting game clock after player rejoined`);
+                this.startGameClock();
+            }
         }
     }
 }

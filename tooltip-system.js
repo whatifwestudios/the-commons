@@ -283,7 +283,6 @@ class TooltipSystemV2 {
 
         return `
             ${header}
-            ${this.renderPriceSection(data)}
             <div class="tooltip-content">
                 ${data.hasBuilding ?
                     this.renderBuildingTooltipContent(data) :
@@ -352,11 +351,17 @@ class TooltipSystemV2 {
     }
 
     renderBuildingHeader(data) {
-        const ownershipHtml = this.formatPlayerOwnership(data.owner);
+        // Get price paid for this building
+        const pricePaid = data.parcel?.pricePaid || this.game.economicClient?.getParcelPrice(data.row, data.col);
+        const ownershipHtml = this.formatPlayerOwnership(data.owner, pricePaid);
+
+        // Add checkmark if building is fully optimized
+        const isOptimized = this.isBuildingOptimized(data.row, data.col);
+        const buildingNameDisplay = isOptimized ? `${data.buildingName} ✅` : data.buildingName;
 
         return `
             <div class="building-header">
-                <div class="building-name">${data.buildingName}</div>
+                <div class="building-name">${buildingNameDisplay}</div>
                 ${ownershipHtml ? `<div class="player-badge">${ownershipHtml}</div>` : ''}
             </div>
         `;
@@ -467,122 +472,272 @@ class TooltipSystemV2 {
     }
 
     renderCompactResources(data) {
-        const buildingData = data.building; // Use pre-fetched building data
+        const buildingData = data.building;
         if (!buildingData) return '';
 
         const resources = buildingData.resources;
-        const performance = data.performance || {};
-        const needsSatisfaction = this.getBuildingNeedsSatisfaction(data.row, data.col);
-
-        // Get production data
-        const production = this.getBuildingProduction(resources);
-
-        // Get top 2 needs for performance improvement
-        const topNeeds = this.getTopBuildingNeeds(resources, needsSatisfaction);
-
-        // Check if all Core Needs are satisfied for Livability display
-        const allCoreNeedsSatisfied = this.areAllJeefhhNeedsSatisfied(topNeeds);
+        const serverBuilding = this.getServerBuildingData(data.row, data.col);
 
         let html = '';
 
-        // Show production
-        if (production.length > 0) {
-            html += `
-                <div class="compact-section production-section">
-                    <div class="compact-label">Produces</div>
-                    <div class="resource-list">
-                        ${production.map(item => `<div class="resource-item">${this.getResourceEmoji(item.resource)} ${item.amount} ${item.resource}</div>`).join('')}
-                    </div>
+        // PRODUCES SECTION - Always show all production with utilization
+        const productionHtml = this.renderProducesSection(serverBuilding, resources);
+        if (productionHtml) {
+            html += productionHtml;
+        }
+
+        // NEEDS SECTION - Only show unmet needs
+        const needsHtml = this.renderNeedsSection(data.row, data.col, buildingData, serverBuilding);
+        html += needsHtml;
+
+        return html;
+    }
+
+    /**
+     * Render PRODUCES section - shows ALL production with utilization
+     * Format: "Energy: 261/300 (87%)"
+     */
+    renderProducesSection(serverBuilding, resources) {
+        if (!serverBuilding || !resources) return '';
+
+        const productions = [];
+
+        // Map resources to their utilization fields
+        const resourceMap = {
+            energyProvided: { emoji: '⚡', name: 'Energy', utilKey: 'energyUtilization', consumedKey: 'energyConsumed', providedKey: 'energyProvided' },
+            foodProvided: { emoji: '🍎', name: 'Food', utilKey: 'foodUtilization', consumedKey: 'foodConsumed', providedKey: 'foodProvided' },
+            educationProvided: { emoji: '🎓', name: 'Education', utilKey: 'educationUtilization', consumedKey: 'educationConsumed', providedKey: 'educationProvided' },
+            healthcareProvided: { emoji: '❤️', name: 'Healthcare', utilKey: 'healthcareUtilization', consumedKey: 'healthcareConsumed', providedKey: 'healthcareProvided' },
+            jobsProvided: { emoji: '💼', name: 'Jobs', utilKey: 'workforceUtilization', consumedKey: 'jobsFilled', providedKey: 'jobsProvided' },
+            housingProvided: { emoji: '🏠', name: 'Housing', utilKey: 'employmentRate', consumedKey: 'workersEmployed', providedKey: 'workersAvailable' }
+        };
+
+        for (const [resourceKey, mapping] of Object.entries(resourceMap)) {
+            const capacity = resources[resourceKey];
+            if (capacity && capacity > 0) {
+                const utilization = serverBuilding[mapping.utilKey];
+                const consumed = serverBuilding[mapping.consumedKey] || 0;
+                const provided = serverBuilding[mapping.providedKey] || capacity;
+
+                if (utilization !== undefined) {
+                    const utilizationPct = Math.round(utilization * 100);
+                    productions.push({
+                        emoji: mapping.emoji,
+                        name: mapping.name,
+                        consumed: Math.round(consumed),
+                        provided: Math.round(provided),
+                        utilizationPct
+                    });
+                }
+            }
+        }
+
+        if (productions.length === 0) return '';
+
+        return `
+            <div class="compact-section production-section">
+                <div class="compact-label">Produces</div>
+                <div class="resource-list">
+                    ${productions.map(p => `
+                        <div class="resource-item">
+                            ${p.emoji} ${p.name}: ${p.consumed}/${p.provided} (${p.utilizationPct}%)
+                        </div>
+                    `).join('')}
+                </div>
+            </div>
+        `;
+    }
+
+    /**
+     * Render NEEDS section - only show UNMET CONSUMPTION needs as deficits
+     * Format: "6 energy still needed"
+     * Hide entire section when all needs met, show livability feedback instead
+     *
+     * NOTE: Production underutilization is NOT a "need" - it's shown in Produces section!
+     */
+    renderNeedsSection(row, col, buildingData, serverBuilding) {
+        if (!buildingData || !serverBuilding) return '';
+
+        const allResourceSatisfaction = this.getAllResourceSatisfaction(row, col, buildingData);
+        const unmetNeeds = allResourceSatisfaction ? allResourceSatisfaction.filter(r => r.satisfaction < 1.0) : [];
+
+        // If all consumption needs are met, check for full optimization
+        if (unmetNeeds.length === 0) {
+            // Check if production is also at 100%
+            const allProductionFull = this.isAllProductionFullyUtilized(serverBuilding, buildingData.resources);
+
+            if (allProductionFull) {
+                // Both needs AND production at 100% - show livability feedback
+                return this.checkFullOptimization(serverBuilding, buildingData, row, col);
+            } else {
+                // Needs met but production not fully utilized - hide Needs section
+                // (Production utilization is already shown in Produces section)
+                return '';
+            }
+        }
+
+        // Show unmet consumption needs
+        return `
+            <div class="compact-section needs-section">
+                <div class="compact-label">Needs</div>
+                <div class="resource-list">
+                    ${unmetNeeds.map(need => {
+                        const deficit = need.required - need.supplied;
+                        const emoji = this.getResourceEmoji(need.resource);
+                        const deficitRounded = Math.round(deficit);
+                        return `<div class="resource-item">${emoji} ${deficitRounded} ${need.resource.toLowerCase()} still needed</div>`;
+                    }).join('')}
+                </div>
+            </div>
+        `;
+    }
+
+    /**
+     * Check if building is fully optimized (all needs + all production at 100%)
+     * If yes, show livability feedback instead of Produces/Needs
+     * Also sets flag for building name checkmark
+     */
+    checkFullOptimization(serverBuilding, buildingData, row, col) {
+        // Check if all production is at 100% utilization
+        const allProductionFull = this.isAllProductionFullyUtilized(serverBuilding, buildingData.resources);
+
+        if (!allProductionFull) {
+            return ''; // Not fully optimized, show nothing (needs are met but production isn't maxed)
+        }
+
+        // FULLY OPTIMIZED - mark for checkmark and show livability feedback
+        this.markBuildingOptimized(row, col);
+
+        return this.renderLivabilityFeedback(row, col, buildingData);
+    }
+
+    /**
+     * Check if all production resources are at 100% utilization
+     */
+    isAllProductionFullyUtilized(serverBuilding, resources) {
+        const utilizationChecks = [
+            { capacity: resources.energyProvided, util: serverBuilding.energyUtilization },
+            { capacity: resources.foodProvided, util: serverBuilding.foodUtilization },
+            { capacity: resources.educationProvided, util: serverBuilding.educationUtilization },
+            { capacity: resources.healthcareProvided, util: serverBuilding.healthcareUtilization },
+            { capacity: resources.jobsProvided, util: serverBuilding.workforceUtilization },
+            { capacity: resources.housingProvided, util: serverBuilding.employmentRate }
+        ];
+
+        for (const check of utilizationChecks) {
+            if (check.capacity && check.capacity > 0) {
+                // This building produces this resource - check utilization
+                if (check.util === undefined || check.util < 1.0) {
+                    return false; // Not at 100%
+                }
+            }
+        }
+
+        return true; // All production at 100% (or no production)
+    }
+
+    /**
+     * Mark building as optimized (for checkmark in name)
+     */
+    markBuildingOptimized(row, col) {
+        // Store in a Map for quick lookup when rendering building name
+        if (!this.optimizedBuildings) {
+            this.optimizedBuildings = new Set();
+        }
+        this.optimizedBuildings.add(`${row},${col}`);
+    }
+
+    /**
+     * Check if building is marked as optimized
+     */
+    isBuildingOptimized(row, col) {
+        return this.optimizedBuildings && this.optimizedBuildings.has(`${row},${col}`);
+    }
+
+    /**
+     * Render livability feedback when building is fully optimized
+     * Shows building-centric feedback about surroundings
+     */
+    renderLivabilityFeedback(row, col, buildingData) {
+        // Get CARENS scores for this parcel
+        const carensScores = this.getLocalCarensScores(row, col);
+        if (!carensScores) {
+            return `
+                <div class="compact-section livability-section">
+                    <div class="resource-item" style="color: #4CAF50;">Peak performance achieved</div>
                 </div>
             `;
         }
 
-        // PHASE 2: Show utilization metrics for providers
-        const utilizationHtml = this.renderUtilization(data.row, data.col, production);
-        if (utilizationHtml) {
-            html += utilizationHtml;
+        // Find most pressing negative impact
+        const feedback = this.getMostPressingLivabilityIssue(carensScores, buildingData);
+
+        if (!feedback) {
+            return `
+                <div class="compact-section livability-section">
+                    <div class="resource-item" style="color: #4CAF50;">Peak performance achieved</div>
+                </div>
+            `;
         }
 
-        // Show resource satisfaction with smart display based on user's requirements
-        const allResourceSatisfaction = this.getAllResourceSatisfaction(data.row, data.col, buildingData);
+        return `
+            <div class="compact-section livability-section">
+                <div class="resource-item" style="color: #FF9800;">${feedback}</div>
+            </div>
+        `;
+    }
 
-        if (allResourceSatisfaction && allResourceSatisfaction.length > 0) {
-            // Check if ALL resources are at 100%
-            const allAt100 = allResourceSatisfaction.every(r => r.satisfaction >= 1.0);
+    /**
+     * Get most pressing livability issue affecting this building
+     * Returns building-centric feedback (how surroundings affect THIS building)
+     */
+    getMostPressingLivabilityIssue(carensScores, buildingData) {
+        // Find lowest (most negative) CARENS score
+        const scores = [
+            { key: 'culture', value: carensScores.culture || 0, label: 'culture' },
+            { key: 'affordability', value: carensScores.affordability || 0, label: 'affordability' },
+            { key: 'resilience', value: carensScores.resilience || 0, label: 'resilience' },
+            { key: 'environment', value: carensScores.environment || 0, label: 'environment' },
+            { key: 'noise', value: carensScores.noise || 0, label: 'noise' },
+            { key: 'safety', value: carensScores.safety || 0, label: 'safety' }
+        ];
 
-            if (allAt100) {
-                // User requirement: When ALL needs are met, show small "ALL NEEDS MET" without overwhelming numbers
-                html += `
-                    <div class="tooltip-section needs-section">
-                        <div class="section-label" style="color: #4CAF50; font-size: 11px;">✅ ALL NEEDS MET</div>
-                    </div>
-                `;
+        // Sort by value (lowest first = most problematic)
+        scores.sort((a, b) => a.value - b.value);
 
-                // Show CARENS opportunities when needs are met
-                const livabilityBoosts = this.getCarensBoostOpportunities(data.row, data.col);
-                if (livabilityBoosts !== null) {
-                    html += this.renderCarensBoostOpportunities(livabilityBoosts);
+        const mostProblematic = scores[0];
 
-                    // If peak performance achieved, suggest repair
-                    if (livabilityBoosts.length === 0) {
-                        const condition = performance.condition || 100;
-                        if (condition < 100) {
-                            html += `
-                                <div class="tooltip-section repair-section">
-                                    <div class="section-label" style="font-size: 11px;">🔧 Consider repairing to maintain peak performance</div>
-                                </div>
-                            `;
-                        }
-                    }
-                }
-            } else {
-                // Some resources are not at 100% - show what's missing
-                // Group resources: 100% vs < 100%
-                const satisfied = allResourceSatisfaction.filter(r => r.satisfaction >= 1.0);
-                const unsatisfied = allResourceSatisfaction.filter(r => r.satisfaction < 1.0);
-
-                html += `<div class="compact-section needs-section">`;
-
-                if (unsatisfied.length > 0) {
-                    // Show problematic resources first
-                    html += `
-                        <div class="compact-label">Underperforming</div>
-                        <div class="resource-list">
-                            ${unsatisfied.map(resource => {
-                                const emoji = this.getResourceEmoji(resource.resource);
-                                const satPercent = Math.round(resource.satisfaction * 100);
-                                const color = satPercent >= 80 ? '#FF9800' : satPercent >= 50 ? '#f44336' : '#D32F2F';
-
-                                return `<div class="resource-item" style="color: ${color};">${emoji} ${resource.resource}: ${satPercent}% (${resource.supplied}/${resource.required})</div>`;
-                            }).join('')}
-                        </div>
-                    `;
-                }
-
-                if (satisfied.length > 0) {
-                    // Show satisfied resources with checkmarks
-                    html += `
-                        <div class="resource-list" style="margin-top: ${unsatisfied.length > 0 ? '8px' : '0'};">
-                            ${satisfied.map(resource => {
-                                const emoji = this.getResourceEmoji(resource.resource);
-                                return `<div class="resource-item" style="color: #4CAF50; font-size: 11px;">${emoji} ${resource.resource}: ✓</div>`;
-                            }).join('')}
-                        </div>
-                    `;
-                }
-
-                html += `</div>`;
-            }
-        } else if (!allResourceSatisfaction) {
-            // No resource data available - building might be a pure provider
-            // Check if there are CARENS opportunities even without resource requirements
-            const livabilityBoosts = this.getCarensBoostOpportunities(data.row, data.col);
-            if (livabilityBoosts !== null && livabilityBoosts.length > 0) {
-                html += this.renderCarensBoostOpportunities(livabilityBoosts);
-            }
+        // If lowest score is positive, nothing is problematic
+        if (mostProblematic.value >= 0) {
+            return null; // Peak performance
         }
 
-        return html;
+        // Generate building-centric feedback based on building type
+        const category = buildingData.category || 'building';
+        const isHousing = category === 'residential' || buildingData.resources?.housingProvided > 0;
+        const isWorkplace = buildingData.resources?.jobsProvided > 0;
+
+        const occupants = isHousing ? 'residents' : isWorkplace ? 'workers' : 'occupants';
+
+        const feedbackMap = {
+            culture: `Not enough culture nearby`,
+            affordability: `Too expensive for ${occupants} here`,
+            resilience: `Lacks resilience in surroundings`,
+            environment: `Pollution affecting ${occupants}`,
+            noise: `Too much noise frustrating ${occupants}`,
+            safety: `Not enough safety nearby`
+        };
+
+        return feedbackMap[mostProblematic.key] || `Low ${mostProblematic.label} nearby`;
+    }
+
+    /**
+     * Get local CARENS scores for a parcel (placeholder - implement actual logic)
+     */
+    getLocalCarensScores(row, col) {
+        // TODO: Implement actual CARENS score calculation for this parcel
+        // For now, return null to show "Peak performance"
+        return null;
     }
 
     /**
@@ -2031,7 +2186,7 @@ class TooltipSystemV2 {
         }
     }
 
-    formatPlayerOwnership(playerId) {
+    formatPlayerOwnership(playerId, pricePaid = null) {
         if (!playerId || playerId === 'City' || playerId === 'unclaimed') {
             return null; // Not owned by a player
         }
@@ -2043,7 +2198,10 @@ class TooltipSystemV2 {
         const playerColor = this.getPlayerColor(playerId);
         const contrastColor = this.getContrastingColor(playerColor);
 
-        return `<span style="background: ${playerColor}; color: ${contrastColor}; padding: 2px 6px; border-radius: 3px; font-weight: 600;">${playerName}</span>`;
+        // Add price if provided
+        const priceText = pricePaid ? ` (for $${typeof pricePaid === 'number' ? pricePaid.toLocaleString() : pricePaid})` : '';
+
+        return `<span style="background: ${playerColor}; color: ${contrastColor}; padding: 2px 6px; border-radius: 3px; font-weight: 600;">${playerName}${priceText}</span>`;
     }
 
     getContrastingColor(backgroundColor) {

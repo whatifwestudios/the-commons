@@ -350,10 +350,9 @@ class EconomicClient {
             return await this.waitForTransactionResponse(transaction.id);
 
         } catch (error) {
+            // Error is already handled by transaction callback (line 391-396)
+            // Just log and re-throw - don't show duplicate toast
             console.error('❌ Economic transaction failed:', error);
-            if (window.uiManager && error.message !== 'Not connected to server') {
-                window.uiManager.showError(error.message || 'Transaction failed', 'Transaction Error');
-            }
             throw error;
         }
     }
@@ -363,9 +362,7 @@ class EconomicClient {
             const timeout = setTimeout(() => {
                 this.transactionCallbacks.delete(transactionId);
                 const errorMsg = 'Transaction timed out';
-                if (window.uiManager) {
-                    window.uiManager.showError('Server did not respond in time', 'Transaction Timeout');
-                }
+                // No toast - if server doesn't respond, that's a connection issue the user will notice
                 reject(new Error(errorMsg));
             }, 10000); // 10 second timeout
 
@@ -390,9 +387,7 @@ class EconomicClient {
                 // Check for errors in result
                 if (result.success === false) {
                     const errorMsg = result.error || 'Transaction failed';
-                    if (window.uiManager) {
-                        window.uiManager.showError(errorMsg, 'Transaction Failed');
-                    }
+                    // No toast - UI feedback should happen at interaction point
                     reject(new Error(errorMsg));
                 } else {
                     resolve(result);
@@ -1063,6 +1058,10 @@ class EconomicClient {
             this.monthlyBudget = gameState.monthlyBudget;
         }
 
+        // Sync energy grid (power lines) from game state
+        if (gameState.energyGrid) {
+            this.updateEnergyGrid(gameState.energyGrid);
+        }
 
         // V2: Trigger UI updates with processed data instead of raw sync
         this.triggerUIUpdate('VITALITY_UPDATE', {
@@ -2220,7 +2219,7 @@ class EconomicClient {
 
             // Each resident needs nearby jobs, food, education, and healthcare access
             const jobsNeeded = potentialResidents * 0.5; // 0.5 jobs per resident
-            const foodNeeded = potentialResidents * 2; // 2 food units per resident
+            const foodNeeded = potentialResidents * 1; // 1 food unit per resident
             const educationNeeded = potentialResidents * 0.3; // 0.3 education per resident
             const healthcareNeeded = potentialResidents * 0.2; // 0.2 healthcare per resident
 

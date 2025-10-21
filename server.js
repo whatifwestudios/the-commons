@@ -63,7 +63,53 @@ app.use(cors());
 app.use(express.json({ limit: '10mb' })); // Increase limit for building data
 
 
-app.use(express.static('.'));
+// Automatic cache-busting for development
+// fs and path already required above
+
+// Serve index.html with automatic cache-busting timestamps
+app.get('/', (req, res) => {
+    const indexPath = path.join(__dirname, 'index.html');
+    let html = fs.readFileSync(indexPath, 'utf8');
+
+    if (NODE_ENV === 'development') {
+        // Replace all script src with timestamped versions
+        html = html.replace(/<script src="([^"]+\.js)(\?v=\d+)?"><\/script>/g, (match, filename) => {
+            // Remove any existing version parameter
+            const cleanFilename = filename.replace(/\?v=\d+$/, '');
+            const filePath = path.join(__dirname, cleanFilename);
+
+            try {
+                const stat = fs.statSync(filePath);
+                const timestamp = stat.mtimeMs;
+                return `<script src="${cleanFilename}?v=${timestamp}"></script>`;
+            } catch (err) {
+                // File doesn't exist locally (like CDN), return as-is
+                return match;
+            }
+        });
+    }
+
+    res.setHeader('Content-Type', 'text/html');
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.send(html);
+});
+
+// Serve static files with cache control for development
+if (NODE_ENV === 'development') {
+    // Development: Disable caching for immediate updates
+    app.use(express.static('.', {
+        setHeaders: (res, path) => {
+            res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+            res.setHeader('Pragma', 'no-cache');
+            res.setHeader('Expires', '0');
+        }
+    }));
+} else {
+    // Production: Enable caching for performance
+    app.use(express.static('.', {
+        maxAge: '1d'
+    }));
+}
 
 
 

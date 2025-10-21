@@ -4719,28 +4719,20 @@ class IsometricGrid {
             return;
         }
 
-        try {
-            const transaction = {
-                type: 'BUILD_POWER_LINE',
-                parcel1: parcel1,
-                parcel2: parcel2,
-                playerId: this.currentPlayerId,
-                timestamp: Date.now()
-            };
+        const transaction = {
+            type: 'BUILD_POWER_LINE',
+            parcel1: parcel1,
+            parcel2: parcel2,
+            playerId: this.currentPlayerId,
+            timestamp: Date.now()
+        };
 
-            // Send via WebSocket
-            const result = await this.economicClient.sendTransaction(transaction);
+        // Send via WebSocket - errors are handled by economic client
+        const result = await this.economicClient.sendTransaction(transaction);
 
-            if (result.success) {
-                console.log(`✅ Power line built: ${result.edgeId} (cost: $${result.cost})`);
-
-                // Balance is already updated in economic client's transaction response handler
-                // No need to update here
-            } else {
-                console.error('❌ Failed to build power line:', result.error);
-            }
-        } catch (error) {
-            console.error('❌ Error building power line:', error);
+        if (result.success) {
+            console.log(`✅ Power line built: ${result.edgeId} (cost: $${result.cost})`);
+            // Balance is already updated in economic client's transaction response handler
         }
     }
 

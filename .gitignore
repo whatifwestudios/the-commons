@@ -53,6 +53,9 @@ archive/
 docs/
 Design guides/
 
+# Claude Code settings (local only)
+.claude/settings.local.json
+
 # Logs
 logs/
 *.log

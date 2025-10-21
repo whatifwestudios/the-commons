@@ -498,135 +498,213 @@ class ServerEconomicEngine {
         const connectedBuildings = [];
         const poweredParcels = new Set();
 
-        // SIMPLE RULE: If a power line touches ANY of the 4 sides of a parcel, that parcel gets power
+        console.log(`⚡ [SIMPLE BFS] Starting from generator at [${sourceRow},${sourceCol}]`);
+        console.log(`⚡ [SIMPLE BFS] Power grid has ${this.gameState.energyGrid.lines.size} power lines`);
 
-        // Step 1: Find all power line edges connected to this generator via BFS
-        const poweredEdges = new Set();
-        const edgeQueue = [];
-        const visitedEdges = new Set();
+        // SIMPLIFIED ALGORITHM:
+        // 1. Start from generator parcel - mark it as powered
+        // 2. BFS: For each powered parcel, check its 4 edges
+        // 3. If an edge has a power line, follow it to the connected parcel
+        // 4. Mark that parcel as powered and continue BFS
 
-        // Add all 4 edges around the generator parcel to start
-        const generatorEdges = [
-            `h_${sourceRow}_${sourceCol}`,      // Top edge
-            `h_${sourceRow}_${sourceCol - 1}`,  // Bottom edge
-            `v_${sourceRow}_${sourceCol}`,      // Right edge
-            `v_${sourceRow - 1}_${sourceCol}`   // Left edge
-        ];
+        const parcelQueue = [sourceParcel];
+        poweredParcels.add(sourceParcel);
 
-        for (const edgeId of generatorEdges) {
-            if (this.gameState.energyGrid.lines.has(edgeId) && !visitedEdges.has(edgeId)) {
-                edgeQueue.push(edgeId);
-                visitedEdges.add(edgeId);
-                poweredEdges.add(edgeId);
-            }
-        }
+        while (parcelQueue.length > 0) {
+            const currentParcel = parcelQueue.shift();
+            const [row, col] = currentParcel.split(',').map(Number);
 
-        // BFS: Follow power lines through the network
-        // Power lines connect in TWO ways:
-        // 1. Edges that share a parcel
-        // 2. Edges that meet at a vertex/intersection (grid points where lines cross/touch)
-        while (edgeQueue.length > 0) {
-            const currentEdge = edgeQueue.shift();
+            // Check all 4 edges of this parcel for power lines
+            const edges = [
+                { id: `h_${row}_${col}`, connects: `${row},${col + 1}` },        // Right edge → connects to right parcel
+                { id: `h_${row}_${col - 1}`, connects: `${row},${col - 1}` },    // Left edge → connects to left parcel
+                { id: `v_${row}_${col}`, connects: `${row + 1},${col}` },        // Bottom edge → connects to bottom parcel
+                { id: `v_${row - 1}_${col}`, connects: `${row - 1},${col}` }     // Top edge → connects to top parcel
+            ];
 
-            let connectedEdges = [];
-
-            if (currentEdge.startsWith('h_')) {
-                // Horizontal edge h_row_col
-                const parts = currentEdge.substring(2).split('_');
-                const row = parseInt(parts[0]);
-                const col = parseInt(parts[1]);
-
-                // This horizontal edge touches two parcels: [row,col] and [row,col+1]
-                // Add all 4 edges around each parcel
-                connectedEdges = [
-                    // Parcel [row,col]'s edges
-                    `h_${row}_${col}`, `h_${row}_${col - 1}`,
-                    `v_${row}_${col}`, `v_${row - 1}_${col}`,
-                    // Parcel [row,col+1]'s edges
-                    `h_${row}_${col + 1}`, `h_${row}_${col}`,
-                    `v_${row}_${col + 1}`, `v_${row - 1}_${col + 1}`
-                ];
-
-                // VERTEX CONNECTIONS: h_row_col has two endpoints:
-                // - Left vertex at (row, col): connects to verticals v_row-1_col and v_row_col
-                // - Right vertex at (row, col+1): connects to verticals v_row-1_col+1 and v_row_col+1
-                connectedEdges.push(
-                    `v_${row - 1}_${col}`, `v_${row}_${col}`,
-                    `v_${row - 1}_${col + 1}`, `v_${row}_${col + 1}`
-                );
-
-            } else { // v_
-                // Vertical edge v_row_col
-                const parts = currentEdge.substring(2).split('_');
-                const row = parseInt(parts[0]);
-                const col = parseInt(parts[1]);
-
-                // This vertical edge touches two parcels: [row,col] and [row+1,col]
-                // Add all 4 edges around each parcel
-                connectedEdges = [
-                    // Parcel [row,col]'s edges
-                    `h_${row}_${col}`, `h_${row}_${col - 1}`,
-                    `v_${row}_${col}`, `v_${row - 1}_${col}`,
-                    // Parcel [row+1,col]'s edges
-                    `h_${row + 1}_${col}`, `h_${row + 1}_${col - 1}`,
-                    `v_${row + 1}_${col}`, `v_${row}_${col}`
-                ];
-
-                // VERTEX CONNECTIONS: v_row_col has two endpoints:
-                // - Top vertex at (row, col): connects to horizontals h_row_col-1 and h_row_col
-                // - Bottom vertex at (row+1, col): connects to horizontals h_row+1_col-1 and h_row+1_col
-                connectedEdges.push(
-                    `h_${row}_${col - 1}`, `h_${row}_${col}`,
-                    `h_${row + 1}_${col - 1}`, `h_${row + 1}_${col}`
-                );
-            }
-
-            // Add any power lines we find to the queue
-            for (const connectedEdge of connectedEdges) {
-                if (this.gameState.energyGrid.lines.has(connectedEdge) && !visitedEdges.has(connectedEdge)) {
-                    edgeQueue.push(connectedEdge);
-                    visitedEdges.add(connectedEdge);
-                    poweredEdges.add(connectedEdge);
+            for (const edge of edges) {
+                // If this edge has a power line AND we haven't powered the connected parcel yet
+                if (this.gameState.energyGrid.lines.has(edge.id) && !poweredParcels.has(edge.connects)) {
+                    poweredParcels.add(edge.connects);
+                    parcelQueue.push(edge.connects);
+                    console.log(`⚡ [SIMPLE BFS] Power line ${edge.id} connects ${currentParcel} → ${edge.connects}`);
                 }
             }
         }
 
-        // Step 2: Find all parcels that have a power line on ANY of their 4 sides
-        for (const edgeId of poweredEdges) {
-            if (edgeId.startsWith('h_')) {
-                // Horizontal edge h_row_col touches parcels [row,col] and [row,col+1]
-                const parts = edgeId.substring(2).split('_');
-                const row = parseInt(parts[0]);
-                const col = parseInt(parts[1]);
-                poweredParcels.add(`${row},${col}`);
-                poweredParcels.add(`${row},${col + 1}`);
-            } else { // v_
-                // Vertical edge v_row_col touches parcels [row,col] and [row+1,col]
-                const parts = edgeId.substring(2).split('_');
-                const row = parseInt(parts[0]);
-                const col = parseInt(parts[1]);
-                poweredParcels.add(`${row},${col}`);
-                poweredParcels.add(`${row + 1},${col}`);
-            }
-        }
+        console.log(`⚡ [SIMPLE BFS] Powered parcels (${poweredParcels.size}):`, Array.from(poweredParcels).sort());
+        console.log(`⚡ [SIMPLE BFS] Is [0,3] powered?`, poweredParcels.has('0,3'));
+        console.log(`⚡ [SIMPLE BFS] Is [0,4] powered?`, poweredParcels.has('0,4'));
 
-        // Step 3: Find all buildings on powered parcels
+        // Find all buildings on powered parcels
         for (const parcelKey of poweredParcels) {
             const building = this.gameState.buildings.get(parcelKey);
             if (building && !building.underConstruction) {
                 connectedBuildings.push(building);
+                console.log(`⚡ [SIMPLE BFS] Found powered building: ${building.id} at ${parcelKey}`);
             }
         }
 
-        console.log(`⚡ [SERVER] Generator at ${sourceParcel} powers ${poweredEdges.size} edge segments, reaching ${poweredParcels.size} parcels with ${connectedBuildings.length} buildings`);
+        console.log(`⚡ [SIMPLE BFS] Total: ${poweredParcels.size} powered parcels, ${connectedBuildings.length} powered buildings`);
 
         return connectedBuildings;
     }
 
     /**
+     * UNIFIED DISTRIBUTION SYSTEM
+     * Generic resource distribution from providers to consumers
+     *
+     * @param {Object} config - Distribution configuration
+     * @param {string} config.resourceName - Name of the resource (e.g., 'energy', 'food', 'workers')
+     * @param {Function} config.isProvider - fn(building, def) => boolean
+     * @param {Function} config.getProvided - fn(def) => number (how much resource this building provides)
+     * @param {Function} config.isConsumer - fn(building, def) => boolean
+     * @param {Function} config.getNeeded - fn(building, def, gameState) => number (how much this building needs)
+     * @param {Function} config.findConnected - fn(provider) => [buildings] (how to find connected consumers)
+     * @param {string} config.receivedKey - Key to store received amount (e.g., 'energyReceived')
+     * @param {string} config.utilizationKey - Key to store utilization (e.g., 'energyUtilization')
+     * @param {boolean} config.allowPartial - Whether partial satisfaction is allowed (default: true)
+     * @param {string} config.emoji - Emoji for logging
+     */
+    distributeResource(config) {
+        const {
+            resourceName,
+            isProvider,
+            getProvided,
+            isConsumer,
+            getNeeded,
+            findConnected,
+            receivedKey,
+            utilizationKey,
+            allowPartial = true,
+            emoji = '📦'
+        } = config;
+
+        // Get room ID for clear session tracking
+        const roomId = this.room?.id || 'UNKNOWN';
+        const totalBuildings = this.gameState.buildings.size;
+
+        console.log(`\n═══════════════════════════════════════════════════════`);
+        console.log(`${emoji} [ROOM: ${roomId}] [${resourceName.toUpperCase()}] Starting distribution`);
+        console.log(`${emoji} [ROOM: ${roomId}] Total buildings in game: ${totalBuildings}`);
+
+        // PHASE 1: Reset all consumers to 0
+        this.gameState.buildings.forEach(building => {
+            building[receivedKey] = 0;
+            if (utilizationKey) {
+                building[utilizationKey] = 0;
+            }
+        });
+
+        // PHASE 2: Find all providers
+        const providers = [];
+        this.gameState.buildings.forEach((building, key) => {
+            if (building.underConstruction) return;
+            const def = this.buildingDefinitions.get(building.id);
+            if (def && isProvider(building, def)) {
+                providers.push(building);
+                console.log(`${emoji} [ROOM: ${roomId}] Provider found: ${building.id} at ${building.location}`);
+            }
+        });
+
+        console.log(`${emoji} [ROOM: ${roomId}] Found ${providers.length} provider(s)`);
+        console.log(`═══════════════════════════════════════════════════════\n`);
+
+        // PHASE 3: Distribute from each provider
+        for (const provider of providers) {
+            this.distributeFromProvider(provider, config);
+        }
+
+        return providers.length;
+    }
+
+    /**
+     * Distribute from a single provider to connected consumers
+     */
+    distributeFromProvider(provider, config) {
+        const {
+            resourceName,
+            getProvided,
+            isConsumer,
+            getNeeded,
+            findConnected,
+            receivedKey,
+            utilizationKey,
+            allowPartial,
+            emoji
+        } = config;
+
+        const def = this.buildingDefinitions.get(provider.id);
+        const totalProvided = getProvided(def);
+        let remainingResource = totalProvided;
+
+        if (remainingResource <= 0) return;
+
+        // Find all connected consumers
+        const connectedBuildings = findConnected(provider);
+
+        // Filter to only consumers that need this resource
+        let needyConsumers = connectedBuildings.filter(b => {
+            if (b.underConstruction) return false;
+            const consumerDef = this.buildingDefinitions.get(b.id);
+            if (!consumerDef || !isConsumer(b, consumerDef)) return false;
+
+            const needed = getNeeded(b, consumerDef, this.gameState);
+            const currentlyHas = b[receivedKey] || 0;
+            return needed > 0 && currentlyHas < needed;
+        });
+
+        // Multi-pass fair allocation
+        let passes = 0;
+        const MAX_PASSES = 100;
+
+        while (remainingResource > 0.001 && needyConsumers.length > 0 && passes < MAX_PASSES) {
+            passes++;
+            const sharePerConsumer = remainingResource / needyConsumers.length;
+            const nextRound = [];
+
+            for (const consumer of needyConsumers) {
+                const consumerDef = this.buildingDefinitions.get(consumer.id);
+                const totalNeeded = getNeeded(consumer, consumerDef, this.gameState);
+                const currentlyHas = consumer[receivedKey] || 0;
+                const stillNeeded = totalNeeded - currentlyHas;
+
+                // Allocate the minimum of what's needed and fair share
+                const allocated = Math.min(stillNeeded, sharePerConsumer);
+
+                consumer[receivedKey] = currentlyHas + allocated;
+                remainingResource -= allocated;
+
+                // Calculate utilization if tracking it
+                if (utilizationKey && totalNeeded > 0) {
+                    consumer[utilizationKey] = consumer[receivedKey] / totalNeeded;
+                }
+
+                // Still needs more? Add to next round
+                if (allowPartial && consumer[receivedKey] < totalNeeded - 0.001) {
+                    nextRound.push(consumer);
+                }
+            }
+
+            needyConsumers = nextRound;
+        }
+
+        // Track provider utilization
+        const consumed = totalProvided - remainingResource;
+        if (utilizationKey) {
+            provider[utilizationKey] = totalProvided > 0 ? (consumed / totalProvided) : 0;
+        }
+        provider[`${resourceName}Consumed`] = consumed;
+        provider[`${resourceName}Provided`] = totalProvided;
+
+        console.log(`${emoji} [${resourceName.toUpperCase()}] Provider at ${provider.location}: consumed=${consumed.toFixed(1)}/${totalProvided}, utilization=${((consumed/totalProvided)*100).toFixed(0)}%`);
+    }
+
+    /**
+     * OLD METHOD - DEPRECATED - kept for reference during migration
      * Distribute energy from a generator to connected buildings (greedy allocation)
      */
-    distributeEnergyFromSource(generatorBuilding) {
+    distributeEnergyFromSource_OLD(generatorBuilding) {
         const buildingDef = this.buildingDefinitions.get(generatorBuilding.id);
         const totalEnergyProvided = buildingDef.resources.energyProvided;
         let remainingEnergy = totalEnergyProvided;
@@ -680,6 +758,10 @@ class ServerEconomicEngine {
                 const allocated = Math.min(stillNeeded, sharePerBuilding);
 
                 building.energyReceived = (building.energyReceived || 0) + allocated;
+                // Calculate utilization percentage for consumer buildings (0.0 to 1.0)
+                building.energyUtilization = def.resources.energyRequired > 0
+                    ? building.energyReceived / def.resources.energyRequired
+                    : 0;
                 remainingEnergy -= allocated;
 
                 // Still needs more? Add to next round
@@ -701,30 +783,57 @@ class ServerEconomicEngine {
     }
 
     /**
-     * Distribute energy from all power sources to connected buildings
+     * Helper: Find buildings connected to a provider via adjacency (8 neighbors)
      */
-    distributeAllEnergy() {
-        console.log('⚡ [ENERGY] Starting distributeAllEnergy()');
+    findAdjacentBuildings(provider) {
+        const [row, col] = provider.location;
+        const adjacent = [];
 
-        // Reset all buildings to 0 energy
-        this.gameState.buildings.forEach(b => {
-            b.energyReceived = 0;
-        });
-
-        // Find all generators (buildings that produce energy)
-        const generators = [];
-        this.gameState.buildings.forEach((building, key) => {
-            if (building.underConstruction) return;
-            const def = this.buildingDefinitions.get(building.id);
-            if (def && def.resources.energyProvided > 0) {
-                generators.push(building);
+        this.ADJACENCY_OFFSETS.forEach(([dr, dc]) => {
+            const key = `${row + dr},${col + dc}`;
+            const building = this.gameState.buildings.get(key);
+            if (building && !building.underConstruction) {
+                adjacent.push(building);
             }
         });
 
-        // Distribute from each generator (greedy: first sources satisfy buildings completely)
-        for (const generator of generators) {
-            this.distributeEnergyFromSource(generator);
-        }
+        return adjacent;
+    }
+
+    /**
+     * Helper: Find buildings connected to a generator via power lines + adjacency
+     */
+    findEnergyConnectedBuildings(generator) {
+        const [row, col] = generator.location;
+        const sourceParcel = `${row},${col}`;
+
+        // Adjacent buildings (8 neighbors)
+        const adjacent = this.findAdjacentBuildings(generator);
+
+        // Buildings connected via power line BFS
+        const powerLineBuildings = this.findConnectedBuildings(sourceParcel);
+
+        // Combine both (Set removes duplicates)
+        const combined = new Set([...adjacent, ...powerLineBuildings]);
+        return Array.from(combined);
+    }
+
+    /**
+     * Distribute energy from all power sources to connected buildings
+     */
+    distributeAllEnergy() {
+        this.distributeResource({
+            resourceName: 'energy',
+            emoji: '⚡',
+            isProvider: (building, def) => def.resources.energyProvided > 0,
+            getProvided: (def) => def.resources.energyProvided,
+            isConsumer: (building, def) => def.resources.energyRequired > 0,
+            getNeeded: (building, def) => def.resources.energyRequired,
+            findConnected: (provider) => this.findEnergyConnectedBuildings(provider),
+            receivedKey: 'energyReceived',
+            utilizationKey: 'energyUtilization',
+            allowPartial: true
+        });
     }
 
     /**
@@ -763,7 +872,7 @@ class ServerEconomicEngine {
             let resourceNeeded = 0;
 
             if (resourceType === 'food') {
-                resourceNeeded = potentialResidents * 2; // 2 food per resident
+                resourceNeeded = potentialResidents * 1; // 1 food per resident
             } else if (resourceType === 'education') {
                 resourceNeeded = potentialResidents * 0.3; // 0.3 education per resident
             } else if (resourceType === 'healthcare') {
@@ -798,6 +907,11 @@ class ServerEconomicEngine {
                 const allocated = Math.min(stillNeeded, sharePerBuilding);
 
                 building[receivedKey] = (building[receivedKey] || 0) + allocated;
+                // Calculate utilization percentage for consumer buildings (0.0 to 1.0)
+                const utilizationKey = `${resourceType}Utilization`;
+                building[utilizationKey] = resourceNeeded > 0
+                    ? building[receivedKey] / resourceNeeded
+                    : 0;
                 remainingResource -= allocated;
 
                 // Still needs more? Add to next round
@@ -826,52 +940,56 @@ class ServerEconomicEngine {
      * Distribute all food, education, and healthcare from providers to adjacent housing
      */
     distributeAllResources() {
-        console.log('🍎 [RESOURCES] Starting distributeAllResources()');
+        // Calculate how much housing needs based on residents
+        const calcHousingNeed = (building, def, gameState, perResidentRate) => {
+            const bedrooms = def.resources.housingProvided || 0;
+            if (bedrooms === 0) return 0;
+            const density = gameState.housingDensity || 2.0;
+            const residents = bedrooms * density;
+            return residents * perResidentRate;
+        };
 
-        // Reset all buildings
-        this.gameState.buildings.forEach(b => {
-            b.foodReceived = 0;
-            b.educationReceived = 0;
-            b.healthcareReceived = 0;
+        // Distribute food (1.0 per resident)
+        this.distributeResource({
+            resourceName: 'food',
+            emoji: '🍎',
+            isProvider: (building, def) => def.resources.foodProvided > 0,
+            getProvided: (def) => def.resources.foodProvided,
+            isConsumer: (building, def) => def.resources.housingProvided > 0,
+            getNeeded: (building, def, gameState) => calcHousingNeed(building, def, gameState, 1.0),
+            findConnected: (provider) => this.findAdjacentBuildings(provider),
+            receivedKey: 'foodReceived',
+            utilizationKey: 'foodUtilization',
+            allowPartial: true
         });
 
-        // Find all providers
-        const foodProviders = [];
-        const educationProviders = [];
-        const healthcareProviders = [];
-
-        this.gameState.buildings.forEach((building, key) => {
-            if (building.underConstruction) return;
-            const def = this.buildingDefinitions.get(building.id);
-            if (!def || !def.resources) return;
-
-            if (def.resources.foodProvided > 0) {
-                foodProviders.push(building);
-            }
-            if (def.resources.educationProvided > 0) {
-                educationProviders.push(building);
-            }
-            if (def.resources.healthcareProvided > 0) {
-                healthcareProviders.push(building);
-            }
+        // Distribute education (0.3 per resident)
+        this.distributeResource({
+            resourceName: 'education',
+            emoji: '📚',
+            isProvider: (building, def) => def.resources.educationProvided > 0,
+            getProvided: (def) => def.resources.educationProvided,
+            isConsumer: (building, def) => def.resources.housingProvided > 0,
+            getNeeded: (building, def, gameState) => calcHousingNeed(building, def, gameState, 0.3),
+            findConnected: (provider) => this.findAdjacentBuildings(provider),
+            receivedKey: 'educationReceived',
+            utilizationKey: 'educationUtilization',
+            allowPartial: true
         });
 
-        // Distribute food
-        for (const provider of foodProviders) {
-            this.distributeResourceFromProvider(provider, 'food', 'foodProvided', 'foodReceived');
-        }
-
-        // Distribute education
-        for (const provider of educationProviders) {
-            this.distributeResourceFromProvider(provider, 'education', 'educationProvided', 'educationReceived');
-        }
-
-        // Distribute healthcare
-        for (const provider of healthcareProviders) {
-            this.distributeResourceFromProvider(provider, 'healthcare', 'healthcareProvided', 'healthcareReceived');
-        }
-
-        console.log(`🍎 [RESOURCES] Distributed from ${foodProviders.length} food, ${educationProviders.length} education, ${healthcareProviders.length} healthcare providers`);
+        // Distribute healthcare (0.2 per resident)
+        this.distributeResource({
+            resourceName: 'healthcare',
+            emoji: '🏥',
+            isProvider: (building, def) => def.resources.healthcareProvided > 0,
+            getProvided: (def) => def.resources.healthcareProvided,
+            isConsumer: (building, def) => def.resources.housingProvided > 0,
+            getNeeded: (building, def, gameState) => calcHousingNeed(building, def, gameState, 0.2),
+            findConnected: (provider) => this.findAdjacentBuildings(provider),
+            receivedKey: 'healthcareReceived',
+            utilizationKey: 'healthcareUtilization',
+            allowPartial: true
+        });
     }
 
     /**
@@ -916,201 +1034,86 @@ class ServerEconomicEngine {
      * Distribute workers from housing to adjacent workplaces (multi-pass fair allocation)
      */
     distributeAllWorkers() {
-        console.log('👷 [WORKERS] Starting distributeAllWorkers()');
-
-        // Calculate current housing density
+        // Calculate current housing density FIRST
         const housingMetrics = this.calculateHousingDensity();
         this.gameState.housingDensity = housingMetrics.density;
         this.gameState.housingAffordabilityPenalty = housingMetrics.affordabilityPenalty;
         this.gameState.housingRevenueMultiplier = housingMetrics.revenueMultiplier;
 
-        // Reset all buildings
-        this.gameState.buildings.forEach(b => {
-            b.workersReceived = 0;
-        });
+        // Helper to find workplaces adjacent to housing (including self if it provides jobs)
+        const findAdjacentWorkplaces = (housingProvider) => {
+            const def = this.buildingDefinitions.get(housingProvider.id);
+            const workplaces = [];
 
-        // Find all housing buildings (worker providers)
-        const housingBuildings = [];
-        this.gameState.buildings.forEach((building, key) => {
-            if (building.underConstruction) return;
-            const def = this.buildingDefinitions.get(building.id);
-            if (!def || !def.resources) return;
-
-            if (def.resources.housingProvided > 0) {
-                housingBuildings.push(building);
-            }
-        });
-
-        // Each housing building distributes its workers to adjacent workplaces
-        for (const housing of housingBuildings) {
-            const [housingRow, housingCol] = housing.location;
-            const def = this.buildingDefinitions.get(housing.id);
-            const bedrooms = def.resources.housingProvided;
-
-            // Calculate workers available based on current density
-            const residents = bedrooms * housingMetrics.density;
-            const workersAvailable = Math.floor(residents * 0.6); // 60% of residents work
-
-            if (workersAvailable <= 0) continue;
-
-            let remainingWorkers = workersAvailable;
-
-            // Find all adjacent workplaces (8 surrounding parcels + self if has jobs)
-            const adjacentWorkplaces = [];
-
-            // First, check if this housing building itself needs workers (e.g., staff)
+            // Check if housing itself provides jobs (e.g., building staff)
             if (def.resources.jobsProvided > 0) {
-                adjacentWorkplaces.push(housing);
+                workplaces.push(housingProvider);
             }
 
-            // Then check surrounding parcels
-            this.ADJACENCY_OFFSETS.forEach(([dr, dc]) => {
-                const adjKey = `${housingRow + dr},${housingCol + dc}`;
-                const adjBuilding = this.gameState.buildings.get(adjKey);
-                if (adjBuilding && !adjBuilding.underConstruction) {
-                    const adjDef = this.buildingDefinitions.get(adjBuilding.id);
-                    if (adjDef && adjDef.resources && adjDef.resources.jobsProvided > 0) {
-                        adjacentWorkplaces.push(adjBuilding);
-                    }
+            // Check adjacent parcels for workplaces
+            const adjacent = this.findAdjacentBuildings(housingProvider);
+            for (const building of adjacent) {
+                const bDef = this.buildingDefinitions.get(building.id);
+                if (bDef && bDef.resources && bDef.resources.jobsProvided > 0) {
+                    workplaces.push(building);
                 }
-            });
-
-            // Filter to workplaces that still need workers
-            let needyWorkplaces = adjacentWorkplaces.filter(w => {
-                const wDef = this.buildingDefinitions.get(w.id);
-                const jobsProvided = wDef.resources.jobsProvided;
-                return (w.workersReceived || 0) < jobsProvided;
-            });
-
-            // Multi-pass equal distribution
-            let passes = 0;
-            while (remainingWorkers > 0 && needyWorkplaces.length > 0 && passes < 100) {
-                passes++;
-                const sharePerWorkplace = remainingWorkers / needyWorkplaces.length;
-                const nextRound = [];
-
-                for (const workplace of needyWorkplaces) {
-                    const wDef = this.buildingDefinitions.get(workplace.id);
-                    const jobsProvided = wDef.resources.jobsProvided;
-                    const stillNeeded = jobsProvided - (workplace.workersReceived || 0);
-                    const allocated = Math.min(stillNeeded, Math.floor(sharePerWorkplace));
-
-                    workplace.workersReceived = (workplace.workersReceived || 0) + allocated;
-                    remainingWorkers -= allocated;
-
-                    // Still needs more? Add to next round
-                    if (workplace.workersReceived < jobsProvided) {
-                        nextRound.push(workplace);
-                    }
-                }
-
-                needyWorkplaces = nextRound;
             }
 
-            // PHASE 2: Track employment rate for this housing
-            const workersEmployed = workersAvailable - remainingWorkers;
-            housing.employmentRate = workersAvailable > 0 ? (workersEmployed / workersAvailable) : 0;
-            housing.workersEmployed = workersEmployed;
-            housing.workersAvailable = workersAvailable;
-        }
+            return workplaces;
+        };
 
-        console.log(`👷 [WORKERS] Distributed workers from ${housingBuildings.length} housing buildings at ${housingMetrics.density.toFixed(2)}/br density`);
+        // Distribute workers (housing provides, workplaces consume)
+        this.distributeResource({
+            resourceName: 'workers',
+            emoji: '👷',
+            isProvider: (building, def) => def.resources.housingProvided > 0,
+            getProvided: (def) => {
+                const bedrooms = def.resources.housingProvided;
+                const residents = bedrooms * housingMetrics.density;
+                return Math.floor(residents * 0.6); // 60% of residents work
+            },
+            isConsumer: (building, def) => def.resources.jobsProvided > 0,
+            getNeeded: (building, def) => def.resources.jobsProvided, // Workplaces need workers
+            findConnected: (provider) => findAdjacentWorkplaces(provider),
+            receivedKey: 'workersReceived',
+            utilizationKey: null, // Workers don't have utilization tracking
+            allowPartial: true
+        });
+
+        console.log(`👷 [WORKERS] Distributed at ${housingMetrics.density.toFixed(2)}/br density`);
     }
 
     /**
      * Distribute jobs from workplaces back to adjacent housing (reverse distribution)
      */
     distributeAllJobs() {
-        console.log('💼 [JOBS] Starting distributeAllJobs()');
-
-        // Reset all buildings
-        this.gameState.buildings.forEach(b => {
-            b.jobsReceived = 0;
-        });
-
-        // Find all workplace buildings (job providers)
-        const workplaceBuildings = [];
-        this.gameState.buildings.forEach((building, key) => {
-            if (building.underConstruction) return;
-            const def = this.buildingDefinitions.get(building.id);
-            if (!def || !def.resources) return;
-
-            if (def.resources.jobsProvided > 0) {
-                workplaceBuildings.push(building);
-            }
-        });
-
-        // Each workplace distributes its jobs to adjacent housing
-        for (const workplace of workplaceBuildings) {
-            const [workplaceRow, workplaceCol] = workplace.location;
-            const def = this.buildingDefinitions.get(workplace.id);
-            const jobsProvided = def.resources.jobsProvided;
-
-            if (jobsProvided <= 0) continue;
-
-            let remainingJobs = jobsProvided;
-
-            // Find all adjacent housing (8 surrounding parcels)
-            const adjacentHousing = [];
-            this.ADJACENCY_OFFSETS.forEach(([dr, dc]) => {
-                const adjKey = `${workplaceRow + dr},${workplaceCol + dc}`;
-                const adjBuilding = this.gameState.buildings.get(adjKey);
-                if (adjBuilding && !adjBuilding.underConstruction) {
-                    const adjDef = this.buildingDefinitions.get(adjBuilding.id);
-                    if (adjDef && adjDef.resources && adjDef.resources.housingProvided > 0) {
-                        adjacentHousing.push(adjBuilding);
-                    }
-                }
+        // Helper to find housing adjacent to workplaces
+        const findAdjacentHousing = (workplaceProvider) => {
+            const adjacent = this.findAdjacentBuildings(workplaceProvider);
+            return adjacent.filter(building => {
+                const def = this.buildingDefinitions.get(building.id);
+                return def && def.resources && def.resources.housingProvided > 0;
             });
+        };
 
-            // Calculate how many jobs each housing needs based on residents
-            const housingDensity = this.gameState.housingDensity || 2.0;
-
-            let needyHousing = adjacentHousing.filter(h => {
-                const hDef = this.buildingDefinitions.get(h.id);
-                const bedrooms = hDef.resources.housingProvided;
-                const residents = bedrooms * housingDensity;
-                const workers = Math.floor(residents * 0.6);
-                const jobsNeeded = workers; // Each worker needs 1 job
-                return (h.jobsReceived || 0) < jobsNeeded;
-            });
-
-            // Multi-pass equal distribution
-            let passes = 0;
-            while (remainingJobs > 0 && needyHousing.length > 0 && passes < 100) {
-                passes++;
-                const sharePerHousing = remainingJobs / needyHousing.length;
-                const nextRound = [];
-
-                for (const housing of needyHousing) {
-                    const hDef = this.buildingDefinitions.get(housing.id);
-                    const bedrooms = hDef.resources.housingProvided;
-                    const residents = bedrooms * housingDensity;
-                    const workers = Math.floor(residents * 0.6);
-                    const jobsNeeded = workers;
-                    const stillNeeded = jobsNeeded - (housing.jobsReceived || 0);
-                    const allocated = Math.min(stillNeeded, Math.floor(sharePerHousing));
-
-                    housing.jobsReceived = (housing.jobsReceived || 0) + allocated;
-                    remainingJobs -= allocated;
-
-                    // Still needs more? Add to next round
-                    if (housing.jobsReceived < jobsNeeded) {
-                        nextRound.push(housing);
-                    }
-                }
-
-                needyHousing = nextRound;
-            }
-
-            // PHASE 2: Track utilization for this workplace
-            const jobsFilled = jobsProvided - remainingJobs;
-            workplace.workforceUtilization = jobsProvided > 0 ? (jobsFilled / jobsProvided) : 0;
-            workplace.jobsFilled = jobsFilled;
-            workplace.jobsProvided = jobsProvided;
-        }
-
-        console.log(`💼 [JOBS] Distributed jobs from ${workplaceBuildings.length} workplaces`);
+        // Distribute jobs (workplaces provide, housing consumes)
+        this.distributeResource({
+            resourceName: 'jobs',
+            emoji: '💼',
+            isProvider: (building, def) => def.resources.jobsProvided > 0,
+            getProvided: (def) => def.resources.jobsProvided,
+            isConsumer: (building, def) => def.resources.housingProvided > 0,
+            getNeeded: (building, def, gameState) => {
+                const bedrooms = def.resources.housingProvided;
+                const density = gameState.housingDensity || 2.0;
+                const residents = bedrooms * density;
+                return Math.floor(residents * 0.6); // Each worker needs 1 job
+            },
+            findConnected: (provider) => findAdjacentHousing(provider),
+            receivedKey: 'jobsReceived',
+            utilizationKey: null, // Jobs don't have utilization tracking
+            allowPartial: true
+        });
     }
 
     /**
@@ -2686,7 +2689,7 @@ class ServerEconomicEngine {
 
             // Each resident needs nearby jobs, food, education, and healthcare access
             const jobsNeeded = workersAvailable; // Each worker needs 1 job
-            const foodNeeded = potentialResidents * 2; // 2 food units per resident
+            const foodNeeded = potentialResidents * 1; // 1 food unit per resident
             const educationNeeded = potentialResidents * 0.3; // 0.3 education per resident
             const healthcareNeeded = potentialResidents * 0.2; // 0.2 healthcare per resident
 
@@ -3838,6 +3841,14 @@ class ServerEconomicEngine {
                     taxRate: this.governanceSystem ? this.governanceSystem.governance.taxRate : 0.5,
                     monthlyBudget: this.gameState.monthlyBudget || null,
                     budgets: this.gameState.budgets || {}
+                },
+                // Include energy grid (power lines) for client rendering
+                energyGrid: {
+                    lines: Array.from(this.gameState.energyGrid.lines.entries()).map(([edgeId, lineData]) => ({
+                        edgeId,
+                        ...lineData
+                    })),
+                    infrastructureBudget: this.gameState.energyGrid.infrastructureBudget
                 },
                 monthlyActionAllowance: 0, // No monthly refresh - players start with 100 actions
                 lvtRate: this.getCurrentLVTRate(),  // Include current LVT rate
@@ -6969,18 +6980,23 @@ class ServerEconomicEngine {
             energyUtilization: building.energyUtilization,
             energyConsumed: building.energyConsumed,
             energyProvided: building.energyProvided,
+            energyReceived: building.energyReceived, // For consumer buildings
             foodUtilization: building.foodUtilization,
             foodConsumed: building.foodConsumed,
             foodProvided: building.foodProvided,
+            foodReceived: building.foodReceived, // For consumer buildings
             educationUtilization: building.educationUtilization,
             educationConsumed: building.educationConsumed,
             educationProvided: building.educationProvided,
+            educationReceived: building.educationReceived, // For consumer buildings
             healthcareUtilization: building.healthcareUtilization,
             healthcareConsumed: building.healthcareConsumed,
             healthcareProvided: building.healthcareProvided,
+            healthcareReceived: building.healthcareReceived, // For consumer buildings
             workforceUtilization: building.workforceUtilization,
             jobsFilled: building.jobsFilled,
             jobsProvided: building.jobsProvided,
+            jobsReceived: building.jobsReceived, // For consumer buildings
             employmentRate: building.employmentRate,
             workersEmployed: building.workersEmployed,
             workersAvailable: building.workersAvailable
