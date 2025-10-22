@@ -510,27 +510,115 @@ class ServerEconomicEngine {
         const parcelQueue = [sourceParcel];
         poweredParcels.add(sourceParcel);
 
-        while (parcelQueue.length > 0) {
-            const currentParcel = parcelQueue.shift();
-            const [row, col] = currentParcel.split(',').map(Number);
+        // NEW APPROACH: BFS on EDGES instead of parcels (matches client UI logic exactly)
+        const edgeQueue = [];
+        const visitedEdges = new Set();
+        const poweredEdges = new Set();
 
-            // Check all 4 edges of this parcel for power lines
-            const edges = [
-                { id: `h_${row}_${col}`, connects: `${row},${col + 1}` },        // Right edge → connects to right parcel
-                { id: `h_${row}_${col - 1}`, connects: `${row},${col - 1}` },    // Left edge → connects to left parcel
-                { id: `v_${row}_${col}`, connects: `${row + 1},${col}` },        // Bottom edge → connects to bottom parcel
-                { id: `v_${row - 1}_${col}`, connects: `${row - 1},${col}` }     // Top edge → connects to top parcel
+        // Start by finding all edges touching the generator parcel
+        const generatorEdges = [
+            `h_${sourceRow}_${sourceCol}`,
+            `h_${sourceRow}_${sourceCol - 1}`,
+            `v_${sourceRow}_${sourceCol}`,
+            `v_${sourceRow - 1}_${sourceCol}`
+        ];
+
+        for (const edgeId of generatorEdges) {
+            if (this.gameState.energyGrid.lines.has(edgeId) && !visitedEdges.has(edgeId)) {
+                edgeQueue.push(edgeId);
+                visitedEdges.add(edgeId);
+                poweredEdges.add(edgeId);
+                console.log(`⚡ [EDGE BFS] Starting edge: ${edgeId}`);
+            }
+        }
+
+        // BFS through connected edges
+        while (edgeQueue.length > 0) {
+            const currentEdge = edgeQueue.shift();
+
+            // Find the two parcels this edge connects
+            let row1, col1, row2, col2;
+            if (currentEdge.startsWith('h_')) {
+                const parts = currentEdge.substring(2).split('_');
+                row1 = parseInt(parts[0]);
+                col1 = parseInt(parts[1]);
+                row2 = row1;
+                col2 = col1 + 1;
+            } else { // v_
+                const parts = currentEdge.substring(2).split('_');
+                row1 = parseInt(parts[0]);
+                col1 = parseInt(parts[1]);
+                row2 = row1 + 1;
+                col2 = col1;
+            }
+
+            // Find all edges touching these two parcels
+            const adjacentEdges = [
+                // Parcel 1's edges
+                `h_${row1}_${col1}`, `h_${row1}_${col1 - 1}`,
+                `v_${row1}_${col1}`, `v_${row1 - 1}_${col1}`,
+                // Parcel 2's edges
+                `h_${row2}_${col2}`, `h_${row2}_${col2 - 1}`,
+                `v_${row2}_${col2}`, `v_${row2 - 1}_${col2}`
             ];
 
-            for (const edge of edges) {
-                // If this edge has a power line AND we haven't powered the connected parcel yet
-                if (this.gameState.energyGrid.lines.has(edge.id) && !poweredParcels.has(edge.connects)) {
-                    poweredParcels.add(edge.connects);
-                    parcelQueue.push(edge.connects);
-                    console.log(`⚡ [SIMPLE BFS] Power line ${edge.id} connects ${currentParcel} → ${edge.connects}`);
+            // CRITICAL: Also check for edges that form visual continuity in isometric view
+            // This matches the client-side UI logic EXACTLY (rendering-system.js:827-833)
+            if (currentEdge.startsWith('v_')) {
+                // For vertical edge v_row_col, also check v_row_(col±1) as they form a visual line
+                adjacentEdges.push(`v_${row1}_${col1 - 1}`, `v_${row1}_${col1 + 1}`);
+            } else {
+                // For horizontal edge h_row_col, also check h_(row±1)_col as they form a visual line
+                adjacentEdges.push(`h_${row1 - 1}_${col1}`, `h_${row1 + 1}_${col1}`);
+            }
+
+            for (const adjacentEdge of adjacentEdges) {
+                if (this.gameState.energyGrid.lines.has(adjacentEdge) && !visitedEdges.has(adjacentEdge)) {
+                    edgeQueue.push(adjacentEdge);
+                    visitedEdges.add(adjacentEdge);
+                    poweredEdges.add(adjacentEdge);
                 }
             }
         }
+
+        // Add all parcels adjacent to powered edges
+        // CRITICAL: Must match client logic EXACTLY (rendering-system.js:845-883)
+        // In isometric view, visual lines pass through "cross parcels" too!
+        poweredParcels.add(sourceParcel); // Generator itself is always powered
+        for (const edgeId of poweredEdges) {
+            if (edgeId.startsWith('h_')) {
+                // Horizontal edge: connects [row,col] and [row,col+1]
+                // In isometric view, this visual line also passes through [row-1,col+1] and [row+1,col]
+                const parts = edgeId.substring(2).split('_');
+                const row = parseInt(parts[0]);
+                const col = parseInt(parts[1]);
+
+                // Endpoint parcels (grid-connected)
+                poweredParcels.add(`${row},${col}`);
+                poweredParcels.add(`${row},${col + 1}`);
+
+                // Cross parcels (visually intersected in isometric view)
+                if (row > 0) poweredParcels.add(`${row - 1},${col + 1}`);
+                if (row < this.GRID_SIZE - 1) poweredParcels.add(`${row + 1},${col}`);
+
+            } else { // v_
+                // Vertical edge: connects [row,col] and [row+1,col]
+                // In isometric view, this visual line also passes through [row+1,col-1] and [row,col+1]
+                const parts = edgeId.substring(2).split('_');
+                const row = parseInt(parts[0]);
+                const col = parseInt(parts[1]);
+
+                // Endpoint parcels (grid-connected)
+                poweredParcels.add(`${row},${col}`);
+                poweredParcels.add(`${row + 1},${col}`);
+
+                // Cross parcels (visually intersected in isometric view)
+                if (col > 0) poweredParcels.add(`${row + 1},${col - 1}`);
+                if (col < this.GRID_SIZE - 1) poweredParcels.add(`${row},${col + 1}`);
+            }
+        }
+
+        console.log(`⚡ [EDGE BFS] Found ${poweredEdges.size} powered edges`);
 
         console.log(`⚡ [SIMPLE BFS] Powered parcels (${poweredParcels.size}):`, Array.from(poweredParcels).sort());
         console.log(`⚡ [SIMPLE BFS] Is [0,3] powered?`, poweredParcels.has('0,3'));

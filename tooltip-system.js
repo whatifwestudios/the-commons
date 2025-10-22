@@ -388,24 +388,34 @@ class TooltipSystemV2 {
     }
 
     /**
-     * Get performance-based color from optimal blue to red
-     * @param {number} value - Performance value (0-100)
+     * Get performance-based color from red (poor) to blue (good) to gold (exceptional)
+     * @param {number} value - Performance value (0-160+)
      * @return {string} - Hex color code
      */
     getPerformanceColor(value) {
-        // Optimal blue at 100%, descending to red at 0%
-        const optimalBlue = { r: 74, g: 144, b: 226 }; // #4A90E2
-        const red = { r: 244, g: 67, b: 54 }; // #f44336
+        // Color scale:
+        // 0% = Red (poor)
+        // 100% = Blue (optimal)
+        // 140%+ = Gold (exceptional, boosted by CARENS)
+        const red = { r: 244, g: 67, b: 54 };      // #f44336 - Poor
+        const optimalBlue = { r: 74, g: 144, b: 226 }; // #4A90E2 - Optimal
+        const gold = { r: 255, g: 193, b: 7 };     // #FFC107 - Exceptional
 
-        // Normalize value to 0-1 range
-        const normalized = Math.max(0, Math.min(1, value / 100));
-
-        // Interpolate between red (0) and blue (1)
-        const r = Math.round(red.r + (optimalBlue.r - red.r) * normalized);
-        const g = Math.round(red.g + (optimalBlue.g - red.g) * normalized);
-        const b = Math.round(red.b + (optimalBlue.b - red.b) * normalized);
-
-        return `rgb(${r}, ${g}, ${b})`;
+        if (value <= 100) {
+            // 0-100: Red to Blue
+            const normalized = Math.max(0, Math.min(1, value / 100));
+            const r = Math.round(red.r + (optimalBlue.r - red.r) * normalized);
+            const g = Math.round(red.g + (optimalBlue.g - red.g) * normalized);
+            const b = Math.round(red.b + (optimalBlue.b - red.b) * normalized);
+            return `rgb(${r}, ${g}, ${b})`;
+        } else {
+            // 100-140: Blue to Gold (exceptional performance)
+            const normalized = Math.max(0, Math.min(1, (value - 100) / 40));
+            const r = Math.round(optimalBlue.r + (gold.r - optimalBlue.r) * normalized);
+            const g = Math.round(optimalBlue.g + (gold.g - optimalBlue.g) * normalized);
+            const b = Math.round(optimalBlue.b + (gold.b - optimalBlue.b) * normalized);
+            return `rgb(${r}, ${g}, ${b})`;
+        }
     }
 
     renderConstructionStatus(data) {
@@ -664,7 +674,8 @@ class TooltipSystemV2 {
         if (!carensScores) {
             return `
                 <div class="compact-section livability-section">
-                    <div class="resource-item" style="color: #4CAF50;">Peak performance achieved</div>
+                    <div class="resource-item" style="color: #4CAF50;">✅ Operations optimized</div>
+                    <div class="resource-item" style="color: #999; font-size: 11px;">CARENS data loading...</div>
                 </div>
             `;
         }
@@ -673,15 +684,19 @@ class TooltipSystemV2 {
         const feedback = this.getMostPressingLivabilityIssue(carensScores, buildingData);
 
         if (!feedback) {
+            // All CARENS positive - celebrate!
             return `
                 <div class="compact-section livability-section">
-                    <div class="resource-item" style="color: #4CAF50;">Peak performance achieved</div>
+                    <div class="resource-item" style="color: #4CAF50;">🌟 Peak performance achieved!</div>
+                    <div class="resource-item" style="color: #4CAF50; font-size: 11px;">All needs met, city thriving</div>
                 </div>
             `;
         }
 
+        // Show hyper-local improvement opportunity
         return `
             <div class="compact-section livability-section">
+                <div class="compact-label">Nearby Opportunities</div>
                 <div class="resource-item" style="color: #FF9800;">${feedback}</div>
             </div>
         `;
@@ -689,17 +704,17 @@ class TooltipSystemV2 {
 
     /**
      * Get most pressing livability issue affecting this building
-     * Returns building-centric feedback (how surroundings affect THIS building)
+     * Returns building-centric feedback with actionable suggestions
      */
     getMostPressingLivabilityIssue(carensScores, buildingData) {
         // Find lowest (most negative) CARENS score
         const scores = [
-            { key: 'culture', value: carensScores.culture || 0, label: 'culture' },
-            { key: 'affordability', value: carensScores.affordability || 0, label: 'affordability' },
-            { key: 'resilience', value: carensScores.resilience || 0, label: 'resilience' },
-            { key: 'environment', value: carensScores.environment || 0, label: 'environment' },
-            { key: 'noise', value: carensScores.noise || 0, label: 'noise' },
-            { key: 'safety', value: carensScores.safety || 0, label: 'safety' }
+            { key: 'culture', value: carensScores.culture || 0, label: 'culture', emoji: '🎭' },
+            { key: 'affordability', value: carensScores.affordability || 0, label: 'affordability', emoji: '💰' },
+            { key: 'resilience', value: carensScores.resilience || 0, label: 'resilience', emoji: '🛡️' },
+            { key: 'environment', value: carensScores.environment || 0, label: 'environment', emoji: '🌿' },
+            { key: 'noise', value: carensScores.noise || 0, label: 'noise', emoji: '🔇' },
+            { key: 'safety', value: carensScores.safety || 0, label: 'safety', emoji: '🚨' }
         ];
 
         // Sort by value (lowest first = most problematic)
@@ -707,37 +722,64 @@ class TooltipSystemV2 {
 
         const mostProblematic = scores[0];
 
-        // If lowest score is positive, nothing is problematic
+        // If lowest score is positive or neutral, celebrate!
         if (mostProblematic.value >= 0) {
-            return null; // Peak performance
+            return null; // Peak performance - show "Peak performance achieved"
         }
 
-        // Generate building-centric feedback based on building type
-        const category = buildingData.category || 'building';
-        const isHousing = category === 'residential' || buildingData.resources?.housingProvided > 0;
-        const isWorkplace = buildingData.resources?.jobsProvided > 0;
-
-        const occupants = isHousing ? 'residents' : isWorkplace ? 'workers' : 'occupants';
-
+        // Generate hyper-local, building-specific feedback
         const feedbackMap = {
-            culture: `Not enough culture nearby`,
-            affordability: `Too expensive for ${occupants} here`,
-            resilience: `Lacks resilience in surroundings`,
-            environment: `Pollution affecting ${occupants}`,
-            noise: `Too much noise frustrating ${occupants}`,
-            safety: `Not enough safety nearby`
+            culture: {
+                message: `Nothing fun to do nearby`,
+                suggestion: 'Add cultural buildings like parks, museums, or libraries nearby'
+            },
+            affordability: {
+                message: `Too expensive to live here`,
+                suggestion: 'This area is too costly - add affordable housing nearby'
+            },
+            resilience: {
+                message: `Area lacks economic diversity`,
+                suggestion: 'Mix different building types for better neighborhood resilience'
+            },
+            environment: {
+                message: `Air quality poor here`,
+                suggestion: 'Too much pollution - add parks or reduce industrial nearby'
+            },
+            noise: {
+                message: `Too loud around here`,
+                suggestion: 'Noisy neighbors - add parks or move industrial buildings away'
+            },
+            safety: {
+                message: `Safety is a growing concern here`,
+                suggestion: 'Add fire stations or reduce crime sources nearby'
+            }
         };
 
-        return feedbackMap[mostProblematic.key] || `Low ${mostProblematic.label} nearby`;
+        const feedback = feedbackMap[mostProblematic.key];
+        if (!feedback) {
+            return `Not enough ${mostProblematic.label} nearby`;
+        }
+
+        // Return building-specific message
+        return feedback.message;
     }
 
     /**
-     * Get local CARENS scores for a parcel (placeholder - implement actual logic)
+     * Get local CARENS scores for a specific building parcel
+     * Returns the hyper-local livability scores based on nearby buildings (within 5 parcels)
      */
     getLocalCarensScores(row, col) {
-        // TODO: Implement actual CARENS score calculation for this parcel
-        // For now, return null to show "Peak performance"
-        return null;
+        // Get building data from economic client
+        const buildingKey = `${row},${col}`;
+        const building = this.game.economicClient?.buildings?.get(buildingKey);
+
+        if (!building?.performance?.carensScores) {
+            return null; // No local CARENS data for this building yet
+        }
+
+        // Return the LOCAL CARENS scores calculated by server
+        // These represent livability effects from buildings within 5 parcels of THIS building
+        return building.performance.carensScores;
     }
 
     /**

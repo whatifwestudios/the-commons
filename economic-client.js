@@ -2058,6 +2058,31 @@ class EconomicClient {
                 maintenance: state.maintenance || 0,
                 performance: state.performanceDetails || null,
 
+                // CRITICAL: Resource distribution data from server
+                energyReceived: state.energyReceived,
+                energyUtilization: state.energyUtilization,
+                energyConsumed: state.energyConsumed,
+                energyProvided: state.energyProvided,
+                foodReceived: state.foodReceived,
+                foodUtilization: state.foodUtilization,
+                foodConsumed: state.foodConsumed,
+                foodProvided: state.foodProvided,
+                educationReceived: state.educationReceived,
+                educationUtilization: state.educationUtilization,
+                educationConsumed: state.educationConsumed,
+                educationProvided: state.educationProvided,
+                healthcareReceived: state.healthcareReceived,
+                healthcareUtilization: state.healthcareUtilization,
+                healthcareConsumed: state.healthcareConsumed,
+                healthcareProvided: state.healthcareProvided,
+                jobsReceived: state.jobsReceived,
+                workforceUtilization: state.workforceUtilization,
+                jobsFilled: state.jobsFilled,
+                jobsProvided: state.jobsProvided,
+                employmentRate: state.employmentRate,
+                workersEmployed: state.workersEmployed,
+                workersAvailable: state.workersAvailable,
+
                 // Additional rendering data - no longer sent by server, will be calculated client-side
                 lastUpdated: Date.now()
             };

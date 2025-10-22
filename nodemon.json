@@ -14,7 +14,8 @@
   "ext": "js,html,css,json",
   "delay": "1000",
   "env": {
-    "NODE_ENV": "development"
+    "NODE_ENV": "development",
+    "PORT": "3001"
   },
   "restartable": "rs",
   "colours": true,
